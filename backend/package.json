@@ -1,0 +1,38 @@
+{
+  "name": "@rabochielisty/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Backend для РабочиеЛисты AI: Hono + D1 + R2 на Cloudflare Workers.",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 execute rabochielisty --local --file=src/db/schema.sql",
+    "db:migrate:prod": "wrangler d1 execute rabochielisty --remote --file=src/db/schema.sql",
+    "db:seed": "tsx src/db/seed.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke": "tsx tests/smoke.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "ESLINT_USE_FLAT_CONFIG=false eslint src/"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
+    "hono": "^4.13.0",
+    "nanoid": "^5.1.0",
+    "openai": "^4.104.0",
+    "resend": "^4.8.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.5.41",
+    "@cloudflare/workers-types": "^4.20250701.0",
+    "@typescript-eslint/eslint-plugin": "^8.70.0",
+    "@typescript-eslint/parser": "^8.70.0",
+    "eslint": "^9.39.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.0",
+    "vitest": "^2.1.9",
+    "wrangler": "^3.114.0"
+  }
+}

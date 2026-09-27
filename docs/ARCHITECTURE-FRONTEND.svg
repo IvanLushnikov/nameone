@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1100" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+  <!-- Фон -->
+  <rect width="1600" height="1100" fill="#faf8f5"/>
+
+  <!-- Заголовок -->
+  <text x="40" y="40" font-size="24" font-weight="700" fill="#1c1917">РабочиеЛисты AI — Frontend Architecture</text>
+  <text x="40" y="62" font-size="13" fill="#78716c">Next.js 14 App Router · Static Export · Cloudflare Pages · TypeScript + Tailwind 3</text>
+
+  <!-- ========================= -->
+  <!-- LAYER 1: Pages (App Router) -->
+  <!-- ========================= -->
+  <g>
+    <rect x="40" y="90" width="1520" height="240" rx="10" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="60" y="115" font-size="14" font-weight="700" fill="#92400e">PAGES (src/app/* — App Router)</text>
+
+    <g font-size="11" fill="#1c1917">
+      <!-- Marketing -->
+      <rect x="60" y="135" width="180" height="55" rx="6" fill="#fff" stroke="#f59e0b"/>
+      <text x="68" y="155" font-weight="600">/ (лендинг)</text>
+      <text x="68" y="170" font-size="10">Hero · Features · Subjects</text>
+      <text x="68" y="183" font-size="10">Pricing · FAQ · CTA</text>
+
+      <!-- Constructor -->
+      <rect x="250" y="135" width="180" height="55" rx="6" fill="#fff" stroke="#f59e0b"/>
+      <text x="258" y="155" font-weight="600">/constructor</text>
+      <text x="258" y="170" font-size="10">4-шаговый wizard</text>
+      <text x="258" y="183" font-size="10">+ 5 Presets (F-02)</text>
+
+      <!-- ОГЭ -->
+      <rect x="440" y="135" width="180" height="55" rx="6" fill="#fff" stroke="#f59e0b"/>
+      <text x="448" y="155" font-weight="600">/oge · /ege</text>
+      <text x="448" y="170" font-size="10">ExamRunner с таймером</text>
+      <text x="448" y="183" font-size="10">+ пошаговый разбор</text>
+
+      <!-- Dashboard -->
+      <rect x="630" y="135" width="180" height="55" rx="6" fill="#fff" stroke="#f59e0b"/>
+      <text x="638" y="155" font-weight="600">/dashboard</text>
+      <text x="638" y="170" font-size="10">History · Favorites</text>
+      <text x="638" y="183" font-size="10">Templates · Profile</text>
+
+      <!-- Login -->
+      <rect x="820" y="135" width="180" height="55" rx="6" fill="#fff" stroke="#f59e0b"/>
+      <text x="828" y="155" font-weight="600">/login</text>
+      <text x="828" y="170" font-size="10">email → magic link</text>
+      <text x="828" y="183" font-size="10">→ profile в localStorage</text>
+
+      <!-- Preview -->
+      <rect x="1010" y="135" width="180" height="55" rx="6" fill="#fff" stroke="#f59e0b"/>
+      <text x="1018" y="155" font-weight="600">/preview?id=...</text>
+      <text x="1018" y="170" font-size="10">Просмотр сохранённого</text>
+      <text x="1018" y="183" font-size="10">листа (A4 с шифром)</text>
+
+      <!-- Pricing -->
+      <rect x="1200" y="135" width="170" height="55" rx="6" fill="#fff" stroke="#f59e0b"/>
+      <text x="1208" y="155" font-weight="600">/pricing</text>
+      <text x="1208" y="170" font-size="10">Free · Базовый · Плюс</text>
+      <text x="1208" y="183" font-size="10">+ B2B школа</text>
+
+      <!-- Legal -->
+      <rect x="60" y="200" width="180" height="50" rx="6" fill="#fff" stroke="#f59e0b"/>
+      <text x="68" y="220" font-weight="600">/legal/[slug]</text>
+      <text x="68" y="235" font-size="10">offer · privacy · terms · cookies</text>
+
+      <!-- SEO subjects -->
+      <rect x="250" y="200" width="380" height="50" rx="6" fill="#fff" stroke="#f59e0b"/>
+      <text x="258" y="220" font-weight="600">/subject/[subject]/[grade]/[topic]</text>
+      <text x="258" y="235" font-size="10">46 SEO-страниц тем · sitemap.xml · robots.ts</text>
+
+      <!-- sitemap -->
+      <rect x="640" y="200" width="180" height="50" rx="6" fill="#fff" stroke="#f59e0b"/>
+      <text x="648" y="220" font-weight="600">/sitemap.xml</text>
+      <text x="648" y="235" font-size="10">/robots.ts · 93 страницы</text>
+
+      <!-- 404 -->
+      <rect x="830" y="200" width="180" height="50" rx="6" fill="#fff" stroke="#f59e0b"/>
+      <text x="838" y="220" font-weight="600">/404</text>
+      <text x="838" y="235" font-size="10">Кастомная страница</text>
+
+      <text x="60" y="280" font-size="10" fill="#92400e">93 страницы генерируются статически при build → out/ директория → wrangler pages deploy</text>
+      <text x="60" y="295" font-size="10" fill="#92400e">Никаких API routes (output: "export") — всё общение с бэком через клиентский fetch</text>
+    </g>
+  </g>
+
+  <!-- ========================= -->
+  <!-- LAYER 2: Components -->
+  <!-- ========================= -->
+  <g>
+    <rect x="40" y="370" width="1520" height="220" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="60" y="395" font-size="14" font-weight="700" fill="#5b21b6">COMPONENTS (src/components/*)</text>
+
+    <g font-size="11" fill="#1c1917">
+      <!-- UI -->
+      <rect x="60" y="415" width="280" height="60" rx="6" fill="#fff" stroke="#7c3aed"/>
+      <text x="68" y="435" font-weight="600">ui/ (UI-kit)</text>
+      <text x="68" y="450" font-size="10">Button · Card · Badge · Input · Modal</text>
+      <text x="68" y="462" font-size="10">Toast · Tabs · Select · Header · Footer</text>
+
+      <!-- Landing -->
+      <rect x="350" y="415" width="280" height="60" rx="6" fill="#fff" stroke="#7c3aed"/>
+      <text x="358" y="435" font-weight="600">landing/</text>
+      <text x="358" y="450" font-size="10">Hero · Features · Subjects · Testimonials</text>
+      <text x="358" y="462" font-size="10">PricingTeaser · FAQ · CTA</text>
+
+      <!-- Constructor -->
+      <rect x="640" y="415" width="280" height="60" rx="6" fill="#fff" stroke="#7c3aed"/>
+      <text x="648" y="435" font-weight="600">constructor/</text>
+      <text x="648" y="450" font-size="10">WorksheetPreview (A4, шифр ответов)</text>
+      <text x="648" y="462" font-size="10">PresetGrid (F-02)</text>
+
+      <!-- ОГЭ -->
+      <rect x="930" y="415" width="280" height="60" rx="6" fill="#fff" stroke="#7c3aed"/>
+      <text x="938" y="435" font-weight="600">oge/</text>
+      <text x="938" y="450" font-size="10">ExamRunner (таймер + пошаговое решение)</text>
+      <text x="938" y="462" font-size="10">+ разбор каждого задания</text>
+
+      <!-- Shared -->
+      <rect x="1220" y="415" width="280" height="60" rx="6" fill="#fff" stroke="#7c3aed"/>
+      <text x="1228" y="435" font-weight="600">shared/</text>
+      <text x="1228" y="450" font-size="10">Logo · PaywallModal (тарифы)</text>
+      <text x="1228" y="462" font-size="10"></text>
+
+      <text x="60" y="510" font-size="10" fill="#5b21b6">Все компоненты — "use client" React + Tailwind 3 · mobile-first (320/640/1024/1440)</text>
+      <text x="60" y="525" font-size="10" fill="#5b21b6">A11y: aria-label, Tab/Enter · i18n: lang="ru", Inter с кириллицей · Печать: @page A4 + window.print()</text>
+    </g>
+
+    <!-- Стрелка Pages → Components -->
+    <line x1="700" y1="330" x2="700" y2="370" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrow-orange)"/>
+  </g>
+
+  <!-- ========================= -->
+  <!-- LAYER 3: Lib -->
+  <!-- ========================= -->
+  <g>
+    <rect x="40" y="630" width="1520" height="240" rx="10" fill="#d1fae5" stroke="#10b981" stroke-width="1.5"/>
+    <text x="60" y="655" font-size="14" font-weight="700" fill="#065f46">LIB (src/lib/*)</text>
+
+    <g font-size="11" fill="#1c1917">
+      <!-- client/llm -->
+      <rect x="60" y="675" width="280" height="65" rx="6" fill="#fff" stroke="#10b981"/>
+      <text x="68" y="695" font-weight="600">client/llm.ts (legacy thin)</text>
+      <text x="68" y="710" font-size="10">fetch NEXT_PUBLIC_API_URL/generate</text>
+      <text x="68" y="722" font-size="10">fallback на mock если 4xx/5xx</text>
+
+      <!-- llm stubs (new) -->
+      <rect x="350" y="675" width="280" height="65" rx="6" fill="#fff" stroke="#10b981"/>
+      <text x="358" y="695" font-weight="600">llm/{config,router,index}.ts</text>
+      <text x="358" y="710" font-size="10">прокси к бэку</text>
+      <text x="358" y="722" font-size="10">MODELS · pickModelByPlan</text>
+
+      <!-- mock -->
+      <rect x="640" y="675" width="280" height="65" rx="6" fill="#fff" stroke="#10b981"/>
+      <text x="648" y="695" font-weight="600">mock/generator.ts</text>
+      <text x="648" y="710" font-size="10">шаблонный fallback (3 предмета)</text>
+      <text x="648" y="722" font-size="10">TASK_TEMPLATES · EASY_TEMPLATES</text>
+
+      <!-- types -->
+      <rect x="930" y="675" width="280" height="65" rx="6" fill="#fff" stroke="#10b981"/>
+      <text x="938" y="695" font-weight="600">types.ts</text>
+      <text x="938" y="710" font-size="10">Subject · Worksheet · ExamVariant</text>
+      <text x="938" y="722" font-size="10">UserProfile · GenerationRequest</text>
+
+      <!-- utils -->
+      <rect x="1220" y="675" width="280" height="65" rx="6" fill="#fff" stroke="#10b981"/>
+      <text x="1228" y="695" font-weight="600">utils/{cn,storage,limit,docx}.ts</text>
+      <text x="1228" y="710" font-size="10">localStorage: history/favs/templates</text>
+      <text x="1228" y="722" font-size="10">rate-limit · DOCX · pluralize</text>
+
+      <!-- content -->
+      <rect x="60" y="755" width="280" height="65" rx="6" fill="#fff" stroke="#10b981"/>
+      <text x="68" y="775" font-weight="600">content/subjects.ts</text>
+      <text x="68" y="790" font-size="10">Таксономия: 3 × 9 × ~40 тем</text>
+      <text x="68" y="802" font-size="10">~70 тем с examples[]</text>
+
+      <!-- hooks -->
+      <rect x="350" y="755" width="280" height="65" rx="6" fill="#fff" stroke="#10b981"/>
+      <text x="358" y="775" font-weight="600">hooks/{useInView,useTilt}.ts</text>
+      <text x="358" y="790" font-size="10">UI-хуки для анимаций</text>
+      <text x="358" y="802" font-size="10">IntersectionObserver · tilt 3D</text>
+
+      <!-- llm legacy archive -->
+      <rect x="640" y="755" width="280" height="65" rx="6" fill="#fff" stroke="#10b981" stroke-dasharray="4,4"/>
+      <text x="648" y="775" font-weight="600">llm/_archive-pre-thin-client/</text>
+      <text x="648" y="790" font-size="10">657 строк legacy LLM-кода</text>
+      <text x="648" y="802" font-size="10">(adapters openai/anthropic/...) — restore в любой момент</text>
+
+      <text x="930" y="775" font-size="10" fill="#065f46">DOMAIN TYPES (синхронизированы с бэком):</text>
+      <text x="930" y="790" font-size="10" fill="#065f46">• SubjectSlug · Difficulty · TaskType</text>
+      <text x="930" y="805" font-size="10" fill="#065f46">• GenerationRequest · Worksheet · WorksheetTask · ExamVariant · ExamProblem</text>
+      <text x="930" y="820" font-size="10" fill="#065f46">• UserProfile · UserHistoryItem · UserTemplate</text>
+
+      <text x="60" y="850" font-size="10" fill="#065f46">Конструктор вызывает generateWorksheetSmart() → POST /api/worksheets/generate → response или fallback на mock</text>
+      <text x="60" y="865" font-size="10" fill="#065f46">ОГЭ вызывает generateExamVariant() локально (мок) пока бэк не подключён в /api/exams/generate</text>
+    </g>
+
+    <!-- Стрелка Components → Lib -->
+    <line x1="700" y1="590" x2="700" y2="630" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
+  </g>
+
+  <!-- ========================= -->
+  <!-- LAYER 4: External (Cloudflare Pages + Backend) -->
+  <!-- ========================= -->
+  <g>
+    <rect x="40" y="910" width="1520" height="130" rx="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="60" y="935" font-size="14" font-weight="700" fill="#1e40af">DEPLOY &amp; EXTERNAL</text>
+
+    <g font-size="11" fill="#1c1917">
+      <!-- CF Pages -->
+      <rect x="60" y="955" width="380" height="60" rx="6" fill="#fff" stroke="#3b82f6"/>
+      <text x="68" y="975" font-weight="600">Cloudflare Pages</text>
+      <text x="68" y="990" font-size="10">listai-prototype · Direct Upload</text>
+      <text x="68" y="1002" font-size="10">out/ → wrangler pages deploy (NO --branch)</text>
+      <text x="68" y="1014" font-size="10">Free Tier: 500 builds/мес · 100 custom domains</text>
+
+      <!-- Backend -->
+      <rect x="450" y="955" width="380" height="60" rx="6" fill="#fff" stroke="#3b82f6"/>
+      <text x="458" y="975" font-weight="600">Backend (Cloudflare Workers)</text>
+      <text x="458" y="990" font-size="10">rabochielisty-api · /api/*</text>
+      <text x="458" y="1002" font-size="10">D1: rabochielisty · R2: rabochielisty-pdfs</text>
+      <text x="458" y="1014" font-size="10">LLM через OpenRouter (один ключ для РФ)</text>
+
+      <!-- localStorage -->
+      <rect x="840" y="955" width="280" height="60" rx="6" fill="#fff" stroke="#3b82f6"/>
+      <text x="848" y="975" font-weight="600">localStorage (browser)</text>
+      <text x="848" y="990" font-size="10">listai.history · listai.favorites</text>
+      <text x="848" y="1002" font-size="10">listai.templates · listai.profile</text>
+      <text x="848" y="1014" font-size="10">listai_gens_v1 · listai.events</text>
+
+      <!-- Env -->
+      <rect x="1130" y="955" width="370" height="60" rx="6" fill="#fff" stroke="#3b82f6"/>
+      <text x="1138" y="975" font-weight="600">Env (.env · NEXT_PUBLIC_*)</text>
+      <text x="1138" y="990" font-size="10">NEXT_PUBLIC_API_URL → backend</text>
+      <text x="1138" y="1002" font-size="10">CLOUDFLARE_API_TOKEN (deploy, не в коде)</text>
+      <text x="1138" y="1014" font-size="10">CLOUDFLARE_ACCOUNT_ID (public)</text>
+    </g>
+  </g>
+
+  <!-- Стрелка Lib → External -->
+  <line x1="700" y1="870" x2="700" y2="910" stroke="#10b981" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+
+  <!-- Footer -->
+  <text x="40" y="1075" font-size="11" fill="#78716c">93 страницы · out/ · TS strict · Tailwind 3 · tsc OK · smoke OK · F-01/02/03 реализованы · deploy через wrangler pages deploy</text>
+  <text x="40" y="1090" font-size="11" fill="#78716c">Brand: РабочиеЛисты AI · rabochielisty.ru (временный: listai-prototype.pages.dev)</text>
+
+  <!-- Arrowheads -->
+  <defs>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#f59e0b"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#10b981"/>
+    </marker>
+  </defs>
+</svg>

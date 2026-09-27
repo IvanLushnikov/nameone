@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+
+# wrangler
+.wrangler/
+.dev.vars
+
+# logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# build artefacts
+dist/
+*.tsbuildinfo

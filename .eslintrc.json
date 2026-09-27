@@ -1,0 +1,9 @@
+{
+  "extends": ["next/core-web-vitals", "next/typescript"],
+  "ignorePatterns": ["src/lib/llm/**", "docs/**"],
+  "rules": {
+    "@typescript-eslint/no-unused-vars": "warn",
+    "prefer-const": "warn",
+    "react/no-unescaped-entities": "warn"
+  }
+}

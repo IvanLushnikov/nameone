@@ -1,0 +1,61 @@
+# Cloudflare Workers config — РабочиеЛисты AI backend.
+#
+# Deploy:    npm run deploy
+# Dev local: npm run dev   (wrangler dev --local)
+#
+# Secrets (.dev.vars для локала, wrangler secret put для прода):
+#   OPENAI_API_KEY, ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY,
+#   RESEND_API_KEY, YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY, JWT_SECRET.
+#
+# При первом деплое:
+#   1. wrangler d1 create rabochielisty       → подставить database_id ниже
+#   2. wrangler r2 bucket create rabochielisty-pdfs
+#   3. wrangler secret put <KEY>              → для каждого секрета
+#   4. npm run db:migrate:prod
+#   5. npm run deploy
+
+name = "rabochielisty-api"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Локальные/дефолтные переменные. Перекрываются [env.production] для прода.
+# database_id ниже — PLACEHOLDER, реальный id создаётся через `wrangler d1 create rabochielisty`
+# и подставляется сюда перед первым деплоем.
+
+[vars]
+APP_ENV = "development"
+APP_BASE_URL = "http://localhost:8787"
+FRONTEND_URL = "http://localhost:3000"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rabochielisty"
+database_id = "PLACEHOLDER_WILL_BE_FILLED_ON_DEPLOY"
+migrations_dir = "src/db"
+
+[[r2_buckets]]
+binding = "PDFS"
+bucket_name = "rabochielisty-pdfs"
+
+# Продакшн-окружение: отдельные URL, тот же набор ресурсов.
+[env.production]
+name = "rabochielisty-api"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+[env.production.vars]
+APP_ENV = "production"
+APP_BASE_URL = "https://rabochielisty-api.workers.dev"
+FRONTEND_URL = "https://rabochielisty.ru"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "rabochielisty"
+database_id = "PLACEHOLDER_WILL_BE_FILLED_ON_DEPLOY"
+migrations_dir = "src/db"
+
+[[env.production.r2_buckets]]
+binding = "PDFS"
+bucket_name = "rabochielisty-pdfs"

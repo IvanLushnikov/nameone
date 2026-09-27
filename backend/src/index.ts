@@ -1,0 +1,87 @@
+/**
+ * РабочиеЛисты AI — Cloudflare Workers entry point.
+ *
+ * Структура:
+ *   1. CORS (для FRONTEND_URL) — на всех запросах
+ *   2. Access-log — лёгкий, только в dev
+ *   3. Auth middleware — резолвит session → c.get('user') (для всех запросов)
+ *   4. Route mounts:
+ *        /healthz, /readyz              — health
+ *        /api/llm/*                      — публичный LLM-info (модели, embeddings)
+ *        /api/worksheets/*               — генерация, валидация, чтение листов
+ *        /api/exams/*                    — ОГЭ/ЕГЭ
+ *        /api/auth/*                     — magic-link, session
+ *        /api/users/*                    — профиль, история, избранное, шаблоны, подписка
+ *        /api/billing/*                  — ЮKassa payments, webhooks
+ *   5. Error middleware + 404 handler
+ */
+
+import { Hono } from "hono";
+import { corsMiddleware } from "./middleware/cors";
+import { errorMiddleware, notFoundHandler } from "./middleware/error";
+import { authMiddleware } from "./middleware/auth";
+import type { AppEnv } from "./types";
+
+import { healthRouter } from "./routes/health";
+import { llmRouter } from "./routes/llm";
+import { worksheetsRouter } from "./routes/worksheets";
+import { examsRouter } from "./routes/exams";
+import { authRouter } from "./routes/auth";
+import { usersRouter } from "./routes/users";
+import { billingRouter } from "./routes/billing";
+
+const app = new Hono<AppEnv>();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Global middleware
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.use("*", corsMiddleware());
+
+// Auth middleware — на всех запросах. Не бросает, ставит c.get('user') = null если аноним.
+app.use("*", authMiddleware());
+
+// Лёгкий access-лог (только в dev — в проде экономим логи).
+app.use("*", async (c, next) => {
+  const start = Date.now();
+  await next();
+  if (c.env.APP_ENV !== "production") {
+    // eslint-disable-next-line no-console
+    console.info(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        method: c.req.method,
+        path: c.req.path,
+        status: c.res.status,
+        ms: Date.now() - start,
+        user: c.get("user")?.id ?? null,
+      }),
+    );
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Route mounts
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.route("/", healthRouter); // /healthz, /readyz
+app.route("/api/llm", llmRouter);
+app.route("/api/worksheets", worksheetsRouter);
+app.route("/api/exams", examsRouter);
+app.route("/api/auth", authRouter);
+app.route("/api/users", usersRouter);
+app.route("/api/billing", billingRouter);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Error handling & 404
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.onError(errorMiddleware);
+app.notFound(notFoundHandler);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Export для wrangler / tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+export default app;
+export { app };

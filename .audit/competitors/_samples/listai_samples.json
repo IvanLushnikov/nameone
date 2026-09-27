@@ -1,0 +1,224 @@
+[
+  {
+    "id": "dfq09qpg",
+    "title": "Рабочий лист",
+    "subject": "Русский язык",
+    "grade": 5,
+    "topic": "imya-suchestvitelnoe",
+    "difficulty": "medium",
+    "tasks": [
+      {
+        "number": 1,
+        "text": "Вставьте пропущенную букву: пр_бежать, пр_града, пр_зидент.",
+        "type": "fill-blank",
+        "answer": "и, и, е",
+        "explanation": "Приставки ПРИ-/ПРЕ-: значение приближения, неполноты (прибежать ≈ приблизиться); исключения (преграда, президент).",
+        "points": 2
+      },
+      {
+        "number": 2,
+        "text": "Определите часть речи: «бегущий».",
+        "type": "multiple-choice",
+        "options": [
+          "прилагательное",
+          "причастие",
+          "деепричастие",
+          "глагол"
+        ],
+        "answer": "причастие",
+        "explanation": "Бегущий = тот, кто бежит; совмещает признаки прилагательного и глагола → причастие.",
+        "points": 2
+      },
+      {
+        "number": 3,
+        "text": "Расставьте запятые. Подчеркните причастный оборот как обособленное определение.",
+        "type": "short-answer",
+        "answer": "Солнце, освещавшее поля, поднялось выше горизонта.",
+        "explanation": "Причастный оборот, стоящий после определяемого слова, обособляется запятыми.",
+        "points": 2
+      },
+      {
+        "number": 4,
+        "text": "Задание #4 по теме «материал» — выполните по образцу.",
+        "type": "short-answer",
+        "answer": "индивидуальный ответ",
+        "points": 1
+      },
+      {
+        "number": 5,
+        "text": "Задание #5 по теме «материал» — выполните по образцу.",
+        "type": "short-answer",
+        "answer": "индивидуальный ответ",
+        "points": 1
+      },
+      {
+        "number": 6,
+        "text": "Задание #6 по теме «материал» — выполните по образцу.",
+        "type": "short-answer",
+        "answer": "индивидуальный ответ",
+        "points": 1
+      },
+      {
+        "number": 7,
+        "text": "Задание #7 по теме «материал» — выполните по образцу.",
+        "type": "short-answer",
+        "answer": "индивидуальный ответ",
+        "points": 1
+      },
+      {
+        "number": 8,
+        "text": "Задание #8 по теме «материал» — выполните по образцу.",
+        "type": "short-answer",
+        "answer": "индивидуальный ответ",
+        "points": 1
+      }
+    ],
+    "createdAt": "2026-09-26T10:22:25.018Z"
+  },
+  {
+    "id": "nrw97bqf",
+    "title": "Рабочий лист",
+    "subject": "Математика",
+    "grade": 4,
+    "topic": "delenie-mnogoznachnyh-chisel",
+    "difficulty": "medium",
+    "tasks": [
+      {
+        "number": 1,
+        "text": "Решите уравнение: 3x + 12 = 0. Запишите корень.",
+        "type": "short-answer",
+        "answer": "x = -4",
+        "explanation": "3x = -12 → x = -12 : 3 = -4",
+        "points": 2
+      },
+      {
+        "number": 2,
+        "text": "Найдите значение выражения: 2 · 5² − 18 ÷ 3.",
+        "type": "short-answer",
+        "answer": "44",
+        "explanation": "5² = 25, 2·25 = 50, 18 ÷ 3 = 6, 50 − 6 = 44",
+        "points": 2
+      },
+      {
+        "number": 3,
+        "text": "В треугольнике ABC угол A = 50°, угол B = 60°. Найдите угол C.",
+        "type": "short-answer",
+        "answer": "70°",
+        "explanation": "180° − (50° + 60°) = 70°",
+        "points": 2
+      },
+      {
+        "number": 4,
+        "text": "Задание #4 по теме «материал» — выполните по образцу.",
+        "type": "short-answer",
+        "answer": "индивидуальный ответ",
+        "points": 1
+      },
+      {
+        "number": 5,
+        "text": "Задание #5 по теме «материал» — выполните по образцу.",
+        "type": "short-answer",
+        "answer": "индивидуальный ответ",
+        "points": 1
+      },
+      {
+        "number": 6,
+        "text": "Задание #6 по теме «материал» — выполните по образцу.",
+        "type": "short-answer",
+        "answer": "индивидуальный ответ",
+        "points": 1
+      },
+      {
+        "number": 7,
+        "text": "Задание #7 по теме «материал» — выполните по образцу.",
+        "type": "short-answer",
+        "answer": "индивидуальный ответ",
+        "points": 1
+      },
+      {
+        "number": 8,
+        "text": "Задание #8 по теме «материал» — выполните по образцу.",
+        "type": "short-answer",
+        "answer": "индивидуальный ответ",
+        "points": 1
+      }
+    ],
+    "createdAt": "2026-09-26T10:22:25.019Z"
+  },
+  {
+    "id": "3yttrcqv",
+    "title": "Рабочий лист",
+    "subject": "Английский язык",
+    "grade": 5,
+    "topic": "past-simple",
+    "difficulty": "medium",
+    "tasks": [
+      {
+        "number": 1,
+        "text": "Open the brackets: If I (know) the answer, I (tell) you.",
+        "type": "fill-blank",
+        "answer": "knew / would tell",
+        "explanation": "Conditional II: If + Past Simple, would + infinitive.",
+        "points": 2
+      },
+      {
+        "number": 2,
+        "text": "Choose the right form: She ___ to school every day.",
+        "type": "multiple-choice",
+        "options": [
+          "go",
+          "goes",
+          "going",
+          "went"
+        ],
+        "answer": "goes",
+        "explanation": "Present Simple для регулярных действий; 3rd person singular → -s.",
+        "points": 2
+      },
+      {
+        "number": 3,
+        "text": "Make passive: They built a new school last year.",
+        "type": "short-answer",
+        "answer": "A new school was built last year.",
+        "explanation": "Past Simple Passive: was/were + V3.",
+        "points": 2
+      },
+      {
+        "number": 4,
+        "text": "Задание #4 по теме «материал» — выполните по образцу.",
+        "type": "short-answer",
+        "answer": "индивидуальный ответ",
+        "points": 1
+      },
+      {
+        "number": 5,
+        "text": "Задание #5 по теме «материал» — выполните по образцу.",
+        "type": "short-answer",
+        "answer": "индивидуальный ответ",
+        "points": 1
+      },
+      {
+        "number": 6,
+        "text": "Задание #6 по теме «материал» — выполните по образцу.",
+        "type": "short-answer",
+        "answer": "индивидуальный ответ",
+        "points": 1
+      },
+      {
+        "number": 7,
+        "text": "Задание #7 по теме «материал» — выполните по образцу.",
+        "type": "short-answer",
+        "answer": "индивидуальный ответ",
+        "points": 1
+      },
+      {
+        "number": 8,
+        "text": "Задание #8 по теме «материал» — выполните по образцу.",
+        "type": "short-answer",
+        "answer": "индивидуальный ответ",
+        "points": 1
+      }
+    ],
+    "createdAt": "2026-09-26T10:22:25.019Z"
+  }
+]

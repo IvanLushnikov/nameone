@@ -1,0 +1,22 @@
+# Скопируй этот файл в `.dev.vars` и заполни реальными ключами для `wrangler dev --local`.
+# В проде эти же переменные задаются через `wrangler secret put <KEY>`.
+# .dev.vars — в .gitignore, никогда не коммить.
+
+# LLM-провайдеры
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+DEEPSEEK_API_KEY=
+OPENROUTER_API_KEY=
+
+# Email (magic-link)
+RESEND_API_KEY=
+
+# Платежи (ЮKassa)
+YOOKASSA_SHOP_ID=
+YOOKASSA_SECRET_KEY=
+
+# Сессии — замени на 32-байтную hex-строку перед прод-деплоем
+JWT_SECRET=dev-only-replace-in-prod-with-32-byte-hex
+
+# Опционально: кто считается админом (для /api/admin/*)
+ADMIN_EMAIL=

@@ -1,0 +1,294 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1100" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+  <!-- Фон -->
+  <rect width="1600" height="1100" fill="#faf8f5"/>
+
+  <!-- Заголовок -->
+  <text x="40" y="40" font-size="24" font-weight="700" fill="#1c1917">РабочиеЛисты AI — Backend Architecture</text>
+  <text x="40" y="62" font-size="13" fill="#78716c">Cloudflare Workers + Hono v4 + D1 (SQLite) + R2 · TypeScript strict · 5725 LOC</text>
+
+  <!-- ========================= -->
+  <!-- LAYER 1: Client (front) -->
+  <!-- ========================= -->
+  <g>
+    <rect x="40" y="90" width="320" height="160" rx="10" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="200" y="115" font-size="14" font-weight="700" fill="#92400e" text-anchor="middle">FRONTEND</text>
+    <text x="200" y="135" font-size="11" fill="#78350f" text-anchor="middle">Next.js 14 · Static Export</text>
+    <text x="200" y="152" font-size="11" fill="#78350f" text-anchor="middle">Cloudflare Pages</text>
+    <text x="60" y="180" font-size="11" fill="#1c1917">• src/lib/client/llm.ts</text>
+    <text x="60" y="198" font-size="11" fill="#1c1917">• src/lib/llm/{config,router,index}</text>
+    <text x="60" y="216" font-size="11" fill="#1c1917">• fetch NEXT_PUBLIC_API_URL</text>
+    <text x="60" y="234" font-size="11" fill="#1c1917">• mock fallback if no backend</text>
+  </g>
+
+  <!-- Стрелка Frontend → Backend -->
+  <line x1="360" y1="170" x2="500" y2="170" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrow-orange)"/>
+  <text x="430" y="162" font-size="10" fill="#78350f" text-anchor="middle">HTTPS / JSON</text>
+
+  <!-- ========================= -->
+  <!-- LAYER 2: Worker entry + Middleware -->
+  <!-- ========================= -->
+  <g>
+    <rect x="500" y="90" width="400" height="160" rx="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="700" y="115" font-size="14" font-weight="700" fill="#1e40af" text-anchor="middle">CLOUDFLARE WORKER (src/index.ts)</text>
+    <text x="700" y="135" font-size="11" fill="#1e3a8a" text-anchor="middle">Hono App · AppEnv (Bindings + Variables)</text>
+
+    <!-- Middleware chips -->
+    <rect x="520" y="155" width="90" height="28" rx="14" fill="#bfdbfe" stroke="#2563eb"/>
+    <text x="565" y="173" font-size="10" fill="#1e40af" text-anchor="middle">CORS</text>
+
+    <rect x="620" y="155" width="90" height="28" rx="14" fill="#bfdbfe" stroke="#2563eb"/>
+    <text x="665" y="173" font-size="10" fill="#1e40af" text-anchor="middle">Auth</text>
+
+    <rect x="720" y="155" width="80" height="28" rx="14" fill="#bfdbfe" stroke="#2563eb"/>
+    <text x="760" y="173" font-size="10" fill="#1e40af" text-anchor="middle">Rate-limit</text>
+
+    <rect x="810" y="155" width="80" height="28" rx="14" fill="#bfdbfe" stroke="#2563eb"/>
+    <text x="850" y="173" font-size="10" fill="#1e40af" text-anchor="middle">Access log</text>
+
+    <rect x="520" y="195" width="370" height="22" rx="11" fill="#dbeafe"/>
+    <text x="705" y="210" font-size="10" fill="#1e3a8a" text-anchor="middle">onError → JSON { ok:false, code, details }</text>
+
+    <rect x="520" y="222" width="370" height="22" rx="11" fill="#dbeafe"/>
+    <text x="705" y="237" font-size="10" fill="#1e3a8a" text-anchor="middle">notFound → 404 JSON</text>
+  </g>
+
+  <!-- ========================= -->
+  <!-- LAYER 3: Routes -->
+  <!-- ========================= -->
+  <g>
+    <rect x="40" y="290" width="1460" height="200" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="60" y="315" font-size="14" font-weight="700" fill="#5b21b6">ROUTES (src/routes/*.ts)</text>
+
+    <!-- Route chips -->
+    <g font-size="11" fill="#1c1917">
+      <!-- worksheets -->
+      <rect x="60" y="335" width="180" height="50" rx="6" fill="#fff" stroke="#7c3aed"/>
+      <text x="68" y="355" font-weight="600">/api/worksheets</text>
+      <text x="68" y="370" font-size="10">POST /generate</text>
+      <text x="68" y="382" font-size="10">POST /validate · GET /:id</text>
+
+      <!-- exams -->
+      <rect x="250" y="335" width="180" height="50" rx="6" fill="#fff" stroke="#7c3aed"/>
+      <text x="258" y="355" font-weight="600">/api/exams</text>
+      <text x="258" y="370" font-size="10">POST /generate</text>
+      <text x="258" y="382" font-size="10">POST /check</text>
+
+      <!-- llm -->
+      <rect x="440" y="335" width="180" height="50" rx="6" fill="#fff" stroke="#7c3aed"/>
+      <text x="448" y="355" font-weight="600">/api/llm</text>
+      <text x="448" y="370" font-size="10">GET /models</text>
+      <text x="448" y="382" font-size="10">POST /embeddings</text>
+
+      <!-- auth -->
+      <rect x="630" y="335" width="180" height="50" rx="6" fill="#fff" stroke="#7c3aed"/>
+      <text x="638" y="355" font-weight="600">/api/auth</text>
+      <text x="638" y="370" font-size="10">POST /magic-link</text>
+      <text x="638" y="382" font-size="10">POST /callback · GET /me</text>
+
+      <!-- users -->
+      <rect x="820" y="335" width="200" height="50" rx="6" fill="#fff" stroke="#7c3aed"/>
+      <text x="828" y="355" font-weight="600">/api/users</text>
+      <text x="828" y="370" font-size="10">GET /me · /history · /favorites</text>
+      <text x="828" y="382" font-size="10">/templates · /subscription</text>
+
+      <!-- billing -->
+      <rect x="1030" y="335" width="220" height="50" rx="6" fill="#fff" stroke="#7c3aed"/>
+      <text x="1038" y="355" font-weight="600">/api/billing</text>
+      <text x="1038" y="370" font-size="10">POST /create · /yookassa-webhook</text>
+      <text x="1038" y="382" font-size="10">GET /subscription · /history · /cancel</text>
+
+      <!-- health -->
+      <rect x="1260" y="335" width="220" height="50" rx="6" fill="#fff" stroke="#7c3aed"/>
+      <text x="1268" y="355" font-weight="600">/healthz · /readyz</text>
+      <text x="1268" y="370" font-size="10">liveness · D1 readiness probe</text>
+      <text x="1268" y="382" font-size="10"></text>
+
+      <!-- Arrow from Worker to Routes -->
+      <line x1="700" y1="250" x2="700" y2="285" stroke="#3b82f6" stroke-width="2" marker-end="url(#arrow-blue)"/>
+    </g>
+
+    <text x="60" y="410" font-size="10" fill="#5b21b6">Каждый роут: zod validation → requireAuth (если нужно) → service → response</text>
+    <text x="60" y="425" font-size="10" fill="#5b21b6">Ошибки через ApiError → middleware → JSON { ok:false, code, error, details? }</text>
+    <text x="60" y="465" font-size="13" font-weight="700" fill="#1c1917">Контракты (DTO): GenerateWorksheetResponse · CheckExamResponse · SessionResponse · CreatePaymentResponse · ApiError</text>
+  </g>
+
+  <!-- ========================= -->
+  <!-- LAYER 4: Services -->
+  <!-- ========================= -->
+  <g>
+    <rect x="40" y="530" width="700" height="220" rx="10" fill="#d1fae5" stroke="#10b981" stroke-width="1.5"/>
+    <text x="60" y="555" font-size="14" font-weight="700" fill="#065f46">SERVICES (src/services/*.ts)</text>
+
+    <g font-size="11" fill="#1c1917">
+      <rect x="60" y="575" width="160" height="60" rx="6" fill="#fff" stroke="#10b981"/>
+      <text x="68" y="595" font-weight="600">auth.ts</text>
+      <text x="68" y="610" font-size="10">magic-link</text>
+      <text x="68" y="622" font-size="10">consume+session</text>
+      <text x="68" y="634" font-size="10">user upsert</text>
+
+      <rect x="230" y="575" width="160" height="60" rx="6" fill="#fff" stroke="#10b981"/>
+      <text x="238" y="595" font-weight="600">email.ts</text>
+      <text x="238" y="610" font-size="10">Resend wrapper</text>
+      <text x="238" y="622" font-size="10">dev-mode log</text>
+      <text x="238" y="634" font-size="10">HTML template</text>
+
+      <rect x="400" y="575" width="160" height="60" rx="6" fill="#fff" stroke="#10b981"/>
+      <text x="408" y="595" font-weight="600">billing.ts</text>
+      <text x="408" y="610" font-size="10">PRICES (590/1490)</text>
+      <text x="408" y="622" font-size="10">createPayment</text>
+      <text x="408" y="634" font-size="10">handleWebhook</text>
+
+      <rect x="570" y="575" width="150" height="60" rx="6" fill="#fff" stroke="#10b981"/>
+      <text x="578" y="595" font-weight="600">worksheet.ts</text>
+      <text x="578" y="610" font-size="10">saveWorksheet</text>
+      <text x="578" y="622" font-size="10">logEvent</text>
+      <text x="578" y="634" font-size="10">getById</text>
+
+      <rect x="60" y="650" width="660" height="40" rx="6" fill="#fff" stroke="#10b981"/>
+      <text x="68" y="670" font-weight="600">exam.ts</text>
+      <text x="68" y="685" font-size="10">checkExamAnswers (детерминированный: exact / numeric-tolerance / choice / partial) · saveExamAttempt</text>
+
+      <text x="60" y="710" font-size="10" fill="#065f46">services зависят от D1 + внешних API (OpenAI, Anthropic, Resend, ЮKassa) — не от Hono</text>
+      <text x="60" y="725" font-size="10" fill="#065f46">Логика отделена от HTTP — легко тестировать pure-функции (checkExam, PRICES, moderation)</text>
+    </g>
+  </g>
+
+  <!-- ========================= -->
+  <!-- LAYER 5: LLM -->
+  <!-- ========================= -->
+  <g>
+    <rect x="760" y="530" width="740" height="220" rx="10" fill="#fce7f3" stroke="#ec4899" stroke-width="1.5"/>
+    <text x="780" y="555" font-size="14" font-weight="700" fill="#9f1239">LLM LAYER (src/llm/*.ts)</text>
+
+    <g font-size="11" fill="#1c1917">
+      <!-- Facade -->
+      <rect x="780" y="575" width="180" height="80" rx="6" fill="#fff" stroke="#ec4899"/>
+      <text x="788" y="595" font-weight="600">index.ts (facade)</text>
+      <text x="788" y="610" font-size="10">generateWorksheet</text>
+      <text x="788" y="622" font-size="10">generateExam</text>
+      <text x="788" y="634" font-size="10">validateWorksheet</text>
+      <text x="788" y="646" font-size="10">embed · logLlmCall</text>
+
+      <!-- Router -->
+      <rect x="970" y="575" width="160" height="80" rx="6" fill="#fff" stroke="#ec4899"/>
+      <text x="978" y="595" font-weight="600">router.ts</text>
+      <text x="978" y="610" font-size="10">pickModel(task,plan)</text>
+      <text x="978" y="622" font-size="10">callWithFallback</text>
+      <text x="978" y="634" font-size="10">Luna→Sol→Opus</text>
+      <text x="978" y="646" font-size="10">DeepSeek validate</text>
+
+      <!-- Providers -->
+      <rect x="1140" y="575" width="180" height="80" rx="6" fill="#fff" stroke="#ec4899"/>
+      <text x="1148" y="595" font-weight="600">providers/</text>
+      <text x="1148" y="610" font-size="10">openai.ts (Luna/Sol)</text>
+      <text x="1148" y="622" font-size="10">anthropic.ts (Opus+cache)</text>
+      <text x="1148" y="634" font-size="10">deepseek.ts (validator)</text>
+      <text x="1148" y="646" font-size="10">base.ts (registry)</text>
+
+      <!-- Cost + Cache -->
+      <rect x="1330" y="575" width="160" height="80" rx="6" fill="#fff" stroke="#ec4899"/>
+      <text x="1338" y="595" font-weight="600">cost.ts · cache.ts</text>
+      <text x="1338" y="610" font-size="10">MODEL_COSTS</text>
+      <text x="1338" y="622" font-size="10">calcCost(tokens)</text>
+      <text x="1338" y="634" font-size="10">D1 semantic_cache</text>
+      <text x="1338" y="646" font-size="10">TTL 30d · hit_count</text>
+
+      <!-- Moderation -->
+      <rect x="780" y="670" width="180" height="50" rx="6" fill="#fff" stroke="#ec4899"/>
+      <text x="788" y="688" font-weight="600">moderation.ts</text>
+      <text x="788" y="703" font-size="10">pre-LLM guard</text>
+      <text x="788" y="715" font-size="10">injection regex</text>
+
+      <!-- Rate limit -->
+      <rect x="970" y="670" width="160" height="50" rx="6" fill="#fff" stroke="#ec4899"/>
+      <text x="978" y="688" font-weight="600">ratelimit.ts</text>
+      <text x="978" y="703" font-size="10">anon: 3/день</text>
+      <text x="978" y="715" font-size="10">free: 10 · base/plus: ∞</text>
+
+      <!-- Prompts -->
+      <rect x="1140" y="670" width="350" height="50" rx="6" fill="#fff" stroke="#ec4899"/>
+      <text x="1148" y="688" font-weight="600">prompts/</text>
+      <text x="1148" y="703" font-size="10">worksheet-gen.ts · exam-gen.ts · validate.ts</text>
+      <text x="1148" y="715" font-size="10">System prompt кэшируется Anthropic для Plus-плана</text>
+
+      <text x="780" y="735" font-size="10" fill="#9f1239">Facade: cache → rate-limit → moderation → LLM с fallback → log в llm_logs → return с meta</text>
+    </g>
+  </g>
+
+  <!-- Стрелки Services ↔ Routes -->
+  <line x1="380" y1="525" x2="380" y2="490" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
+  <line x1="1000" y1="525" x2="1000" y2="490" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
+
+  <!-- Стрелка Services → LLM (только billing не использует) -->
+  <line x1="740" y1="650" x2="780" y2="615" stroke="#ec4899" stroke-width="1.5" marker-end="url(#arrow-pink)"/>
+
+  <!-- ========================= -->
+  <!-- LAYER 6: D1 + R2 + external -->
+  <!-- ========================= -->
+  <g>
+    <rect x="40" y="800" width="1460" height="240" rx="10" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+    <text x="60" y="825" font-size="14" font-weight="700" fill="#991b1b">STORAGE &amp; EXTERNAL</text>
+
+    <!-- D1 -->
+    <rect x="60" y="845" width="700" height="170" rx="8" fill="#fff" stroke="#ef4444"/>
+    <text x="80" y="870" font-size="13" font-weight="700" fill="#1c1917">D1 (SQLite) — 12 tables</text>
+    <g font-size="10" fill="#1c1917">
+      <text x="80" y="890">users · magic_links · sessions</text>
+      <text x="80" y="905">worksheets (payload_json) · favorites · templates</text>
+      <text x="80" y="920">subscriptions · payments · llm_logs · events</text>
+      <text x="80" y="935">semantic_cache · rate_limits</text>
+      <text x="80" y="960" fill="#991b1b" font-weight="600">db/queries.ts: getUserByEmail · createUser · createSession · getSession</text>
+      <text x="80" y="975" fill="#991b1b" font-weight="600">db/userResources.ts: getRecentWorksheets · addFavorite · listFavorites · createTemplate · getActiveSubscription</text>
+      <text x="80" y="990" fill="#991b1b" font-weight="600">db/schema.sql: 196 строк SQL, индексы на часто-запрашиваемых полях</text>
+      <text x="80" y="1005" fill="#991b1b" font-weight="600">db/migrate.ts · db/seed.ts</text>
+    </g>
+
+    <!-- R2 -->
+    <rect x="780" y="845" width="200" height="80" rx="8" fill="#fff" stroke="#ef4444"/>
+    <text x="800" y="870" font-size="13" font-weight="700" fill="#1c1917">R2 (PDF storage)</text>
+    <text x="800" y="890" font-size="10">Binding: PDFS</text>
+    <text x="800" y="905" font-size="10">rabochielisty-pdfs bucket</text>
+    <text x="800" y="920" font-size="10">Готово к PDF-экспорту</text>
+
+    <!-- External -->
+    <rect x="1000" y="845" width="490" height="170" rx="8" fill="#fff" stroke="#ef4444"/>
+    <text x="1020" y="870" font-size="13" font-weight="700" fill="#1c1917">External APIs (по env-секретам)</text>
+    <g font-size="10" fill="#1c1917">
+      <text x="1020" y="895"><tspan font-weight="600">OpenAI</tspan> / OpenRouter — gpt-6-luna, gpt-6-sol, text-embedding-3-large</text>
+      <text x="1020" y="912"><tspan font-weight="600">Anthropic</tspan> — claude-opus-5-5 (Plus, prompt cache)</text>
+      <text x="1020" y="929"><tspan font-weight="600">DeepSeek</tspan> — deepseek-v4-flash (validator)</text>
+      <text x="1020" y="946"><tspan font-weight="600">DashScope</tspan> — qwen3-embedding-8b (OpenAI-compatible)</text>
+      <text x="1020" y="965"><tspan font-weight="600">Resend</tspan> — magic-link email</text>
+      <text x="1020" y="982"><tspan font-weight="600">ЮKassa</tspan> — payments + webhook (basic auth, IP allowlist)</text>
+      <text x="1020" y="1005" fill="#991b1b" font-weight="600">Без ключей — все gen-эндпоинты вернут 500 (по дизайну)</text>
+    </g>
+  </g>
+
+  <!-- Стрелки от всех слоёв вниз -->
+  <line x1="200" y1="750" x2="200" y2="800" stroke="#ef4444" stroke-width="1.5" marker-end="url(#arrow-red)"/>
+  <line x1="1100" y1="750" x2="1100" y2="800" stroke="#ef4444" stroke-width="1.5" marker-end="url(#arrow-red)"/>
+
+  <!-- Footer -->
+  <text x="40" y="1075" font-size="11" fill="#78716c">typecheck: ✓ (0 errors) · eslint: ✓ · wrangler deploy --dry-run: 2691 KiB / 537 KiB gzip · tests: 60/60 · smoke: 6/6</text>
+  <text x="40" y="1090" font-size="11" fill="#78716c">Scripts: dev.sh · deploy.sh · smoke.sh · npm test · npm run typecheck · npm run lint · npm run smoke</text>
+
+  <!-- Arrowheads -->
+  <defs>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#f59e0b"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#3b82f6"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrow-pink" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#ec4899"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#ef4444"/>
+    </marker>
+  </defs>
+</svg>
