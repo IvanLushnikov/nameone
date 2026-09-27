@@ -155,17 +155,15 @@ function ConstructorPage() {
   /** F-06: видна ли inline-панель проверки фото тетради (только worksheet). */
   const [photoCheckOpen, setPhotoCheckOpen] = React.useState(false);
   /**
-   * W1: useUsage — серверный счётчик генераций на сегодня для залогиненных.
-   * Для анонимных юзеров usage = null; UI должен fallback'иться на localStorage
-   * (`limit.ts`). После успешного `saveWorksheet({ok:true})` дёргаем
-   * `refreshUsage()` чтобы виджет обновился без перезагрузки.
+   * W1+п.2: useUsage — серверный счётчик генераций на сегодня для залогиненных.
+   * Для анонимных юзеров usage = null; UI fallback'ится на localStorage (`limit.ts`).
+   * После успешного `saveWorksheet({ok:true})` дёргаем `refreshUsage()` чтобы
+   * виджет обновился без перезагрузки.
    *
-   * `usage` сейчас доступен компоненту — будущий task может подключить
-   * override для виджета лимита, когда залогиненный юзер увидит серверный
-   * счётчик вместо localStorage. Сейчас — только refresh побочный эффект.
+   * Виджет лимита ниже использует `serverUsage` если он есть, иначе `remaining`
+   * из localStorage. Один источник правды для UI без дублирования логики.
    */
   const { usage: serverUsage, refresh: refreshUsage } = useUsage();
-  void serverUsage; // тихий no-op пока UI не подключен — refresh побочный эффект работает.
   /** F-04-B: стадии progress-UI при генерации. null = не показываем прогресс. */
   const [progressStage, setProgressStage] = React.useState<
     "selecting" | "verifying" | "formatting" | "done" | null
@@ -493,41 +491,94 @@ function ConstructorPage() {
         isFavorite: false,
       });
 
-      // W1: синхронно с localStorage addToHistory — сохраняем лист на бэк
-      // (для залогиненных юзеров). Идёт в фоне, не блокирует UI:
+      // W1+п.2+п.3: синхронно с localStorage addToHistory — сохраняем артефакт
+      // на бэк (для залогиненных юзеров). Идёт в фоне, не блокирует UI:
       //   - 401 (unauthorized) — анонимный flow, silent skip;
       //   - 400 (validation)   — не должно случаться, но если бэк
       //                          отвергнет payload, тост предупредит;
       //   - 500/network        — тост предупредит, юзер потеряет только
       //                          серверную копию (в localStorage лист уже есть).
-      // На текущий момент к бэку летят только Worksheet (mock-генератор через
-      // generateWorksheetSmart). lesson-plan/presentation/ktp пока only-local.
-      if (result.kind === "worksheet") {
-        const ws = result.payload as Worksheet;
-        void saveWorksheet({
-          subject: ws.subject as SubjectSlug,
-          grade: ws.grade,
-          topic: ws.topic,
-          title: ws.title,
-          difficulty: ws.difficulty,
-          tasks: ws.tasks,
-          type: "worksheet",
+      // Покрывает все 4 типа артефактов через discriminated union SaveWorksheetInput.
+      // На бэке zod-схема SaveBody матчит `type` и валидирует специфичные поля
+      // (tasks/stages/slides/weeks). payload_json хранит весь data, чтобы при
+      // GET /api/worksheets/:id данные совпадали с тем, что прислал фронт.
+      const saveInput: Parameters<typeof saveWorksheet>[0] = (() => {
+        if (result.kind === "worksheet") {
+          const ws = result.payload as Worksheet;
+          return {
+            type: "worksheet" as const,
+            subject: ws.subject as SubjectSlug,
+            grade: ws.grade,
+            topic: ws.topic,
+            title: ws.title,
+            difficulty: ws.difficulty,
+            tasks: ws.tasks,
+            source: "mock",
+          };
+        }
+        if (result.kind === "lesson-plan") {
+          const lp = result.payload as LessonPlan;
+          return {
+            type: "lesson-plan" as const,
+            subject: lp.subject,
+            grade: lp.grade,
+            topic: lp.topic,
+            title: lp.title,
+            difficulty, // lesson-plan: optional на бэке, передаём из стейта как есть.
+            goals: lp.goals,
+            equipment: lp.equipment,
+            stages: lp.stages,
+            homework: lp.homework,
+            fgosRef: lp.fgosRef,
+            source: "mock",
+          };
+        }
+        if (result.kind === "presentation") {
+          const p = result.payload as Presentation;
+          return {
+            type: "presentation" as const,
+            subject: p.subject,
+            grade: p.grade,
+            topic: p.topic,
+            title: p.title,
+            slideCount: p.slideCount,
+            slides: p.slides,
+            theme: p.theme,
+            source: "mock",
+          };
+        }
+        // ktp
+        const k = result.payload as Ktp;
+        return {
+          type: "ktp" as const,
+          subject: k.subject,
+          grade: k.grade,
+          // topic у КТП опционален (на бэке optional); берём из req, если есть.
+          topic: (k as { topic?: string }).topic,
+          title: k.title,
+          schoolYear: k.schoolYear,
+          totalHours: k.totalHours,
+          weeks: k.weeks,
           source: "mock",
-        }).then((r) => {
-          if (r.ok) {
-            void refreshUsage();
-          } else if (r.error === "validation" || r.error === "internal") {
-            // "network" → тост НЕ показываем (типичная ситуация: оффлайн / API
-            // URL не задан в dev — без паники, юзер видит лист локально).
-            toast({
-              tone: "info",
-              title: "Не удалось сохранить на сервере",
-              description: "Лист сохранён локально, на сервере появится после восстановления соединения",
-            });
-          }
-          // "unauthorized" — silent skip, юзер просто не залогинен.
-        });
-      }
+        };
+      })();
+
+      void saveWorksheet(saveInput).then((r) => {
+        if (r.ok) {
+          // Обновить виджет лимита: для залогиненного — счётчик с сервера,
+          // для анонимного — noop (хук сам себя не вызывает при 401).
+          void refreshUsage();
+        } else if (r.error === "validation" || r.error === "internal") {
+          // "network" → тост НЕ показываем (типичная ситуация: оффлайн / API
+          // URL не задан в dev — без паники, юзер видит лист локально).
+          toast({
+            tone: "info",
+            title: "Не удалось сохранить на сервере",
+            description: "Лист сохранён локально, на сервере появится после восстановления соединения",
+          });
+        }
+        // "unauthorized" — silent skip, юзер просто не залогинен.
+      });
 
       // F-04-B: success-burst сверху страницы (~80 частиц, ~1.2с).
       void fireConfetti();
@@ -933,13 +984,35 @@ function ConstructorPage() {
                       </div>
                       <div className="flex-1">
                         <h3 className="font-semibold text-warm-950">Лимит бесплатных генераций</h3>
+                        {/* W1+п.2: для залогиненного юзера — серверный счётчик (useUsage),
+                            для анонимного — localStorage (`limit.ts`). Один источник UI. */}
                         <p className="text-sm text-warm-600 mt-1">
-                          Осталось {remaining} из 3 на сегодня. Подписка Базовый — безлимит за 590 ₽/мес (или 490 ₽/мес при оплате за год).
+                          {(() => {
+                            if (serverUsage) {
+                              const isUnlimited = serverUsage.generationsLimit === -1;
+                              const left = isUnlimited
+                                ? Number.POSITIVE_INFINITY
+                                : Math.max(0, serverUsage.generationsLimit - serverUsage.generationsToday);
+                              if (isUnlimited) {
+                                return `Безлимит (план ${serverUsage.plan}). Сегодня уже сгенерировано: ${serverUsage.generationsToday}.`;
+                              }
+                              return `Осталось ${left} из ${serverUsage.generationsLimit} на сегодня. Подписка Базовый — безлимит за 590 ₽/мес (или 490 ₽/мес при оплате за год).`;
+                            }
+                            return `Осталось ${remaining} из 3 на сегодня. Подписка Базовый — безлимит за 590 ₽/мес (или 490 ₽/мес при оплате за год).`;
+                          })()}
                         </p>
                         <div className="mt-2 h-1.5 bg-white rounded-full overflow-hidden">
                           <div
                             className="h-full bg-brand-500 transition-all"
-                            style={{ width: `${(remaining / 3) * 100}%` }}
+                            style={{
+                              width: `${(() => {
+                                if (serverUsage) {
+                                  if (serverUsage.generationsLimit === -1) return 100;
+                                  return Math.max(0, Math.min(100, ((serverUsage.generationsLimit - serverUsage.generationsToday) / serverUsage.generationsLimit) * 100));
+                                }
+                                return Math.max(0, Math.min(100, (remaining / 3) * 100));
+                              })()}%`,
+                            }}
                           />
                         </div>
                       </div>

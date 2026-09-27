@@ -7,6 +7,10 @@
  *   T3. POST /api/worksheets/save с auth + невалидный body (zod) → 400 + details
  *   T4. POST /api/worksheets/save: generations_today атомарно инкрементится
  *       (до=0 → после=1 → после второго=2)
+ *   T5. POST /api/worksheets/save с type="lesson-plan" → 200 + payload_json.stages сохранён
+ *   T6. POST /api/worksheets/save с type="presentation" → 200 + payload_json.slides сохранён
+ *   T7. POST /api/worksheets/save с type="ktp" → 200 + payload_json.weeks сохранён
+ *   T8. POST /api/worksheets/save без `type` → 400 VALIDATION_ERROR (zod discriminated union)
  *
  * Использует `env.SELF.fetch` (через workerd-pool) — реальный HTTP-роут
  * с реальной D1.
@@ -204,6 +208,87 @@ const VALID_BODY = {
   source: "mock",
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// T5–T8: 3 новых типа артефактов (п.3 ЛК учителя) + discriminated union
+// ─────────────────────────────────────────────────────────────────────────────
+
+const LESSON_PLAN_BODY = {
+  type: "lesson-plan",
+  subject: "math",
+  grade: 7,
+  topic: "algebra",
+  title: "План урока · Линейные уравнения",
+  difficulty: "medium",
+  goals: {
+    educational: ["знать определение линейного уравнения"],
+    developmental: ["логическое мышление"],
+    nurturing: ["аккуратность"],
+  },
+  equipment: ["доска", "мел"],
+  stages: [
+    {
+      kind: "org-moment",
+      title: "Организационный момент",
+      durationMin: 2,
+      teacherActions: "Приветствует учеников, отмечает отсутствующих",
+      studentActions: "Приветствуют учителя",
+    },
+    {
+      kind: "new-topic",
+      title: "Объяснение нового материала",
+      durationMin: 20,
+      teacherActions: "Вводит понятие линейного уравнения, разбирает примеры",
+      studentActions: "Слушают, записывают в тетрадь",
+    },
+  ],
+  homework: { text: "стр. 50 №5-7", alternatives: ["стр. 52 №3"] },
+  fgosRef: "§ 7",
+  source: "mock",
+};
+
+const PRESENTATION_BODY = {
+  type: "presentation",
+  subject: "math",
+  grade: 7,
+  topic: "algebra",
+  title: "Презентация · Линейные уравнения",
+  slideCount: 5,
+  slides: [
+    { kind: "title", title: "Линейные уравнения", bullets: ["7 класс"] },
+    { kind: "definition", title: "Определение", bullets: ["ax + b = 0"] },
+    { kind: "example", title: "Пример", bullets: ["2x + 4 = 0 → x = -2"] },
+    { kind: "bullets", title: "Алгоритм решения", bullets: ["1. Перенести b", "2. Разделить на a"] },
+    { kind: "summary", title: "Итог", bullets: ["x = -b/a"] },
+  ],
+  theme: "default",
+  source: "mock",
+};
+
+const KTP_BODY = {
+  type: "ktp",
+  subject: "math",
+  grade: 7,
+  title: "КТП · Алгебра · 7 класс · 2026/2027",
+  schoolYear: "2026/2027",
+  totalHours: 68,
+  weeks: [
+    {
+      weekNum: 1,
+      entries: [
+        { num: 1, dates: "01.09-05.09", topic: "Вводный урок", kind: "lesson", hours: 1 },
+        { num: 2, dates: "01.09-05.09", topic: "Числовые выражения", kind: "lesson", hours: 1 },
+      ],
+    },
+    {
+      weekNum: 2,
+      entries: [
+        { num: 3, dates: "08.09-12.09", topic: "Контрольная работа (входная)", kind: "control", hours: 1 },
+      ],
+    },
+  ],
+  source: "mock",
+};
+
 async function postSave(
   body: unknown,
   cookieSessionToken?: string,
@@ -358,5 +443,204 @@ describe("POST /api/worksheets/save", () => {
       .bind(u.id)
       .first<{ cnt: number }>();
     expect(count?.cnt).toBe(2);
+  });
+
+  // T5 — lesson-plan: discriminated union + payload_json.stages сохранён.
+  it("T5: type='lesson-plan' → 200 + counter+1 + payload_json содержит stages[]", async () => {
+    const u = await createTestUserWithSession();
+    const before = await getGenerationsToday(u.id);
+    expect(before).toBe(0);
+
+    const res = await postSave(LESSON_PLAN_BODY, u.sessionToken);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      worksheetId: string;
+      generationsToday: number;
+      generationsLimit: number;
+    };
+    expect(body.ok).toBe(true);
+    expect(body.worksheetId).toMatch(/^ws_[0-9a-z]{12}$/);
+    expect(body.generationsToday).toBe(1);
+    expect(body.generationsLimit).toBe(3);
+
+    // Лист реально записан: type="lesson-plan", count=stages.length=2.
+    const row = await env.DB
+      .prepare("SELECT id, user_id, subject, type, count, difficulty, title FROM worksheets WHERE id = ?1")
+      .bind(body.worksheetId)
+      .first<{ id: string; user_id: string; subject: string; type: string; count: number; difficulty: string; title: string }>();
+    expect(row).not.toBeNull();
+    expect(row!.user_id).toBe(u.id);
+    expect(row!.subject).toBe("math");
+    expect(row!.type).toBe("lesson-plan");
+    expect(row!.count).toBe(2); // stages.length
+    expect(row!.difficulty).toBe("medium");
+    expect(row!.title).toBe("План урока · Линейные уравнения");
+
+    // payload_json содержит весь data включая stages.
+    const payloadRow = await env.DB
+      .prepare("SELECT payload_json FROM worksheets WHERE id = ?1")
+      .bind(body.worksheetId)
+      .first<{ payload_json: string }>();
+    const payload = JSON.parse(payloadRow!.payload_json) as {
+      type: string;
+      subject: string;
+      stages: Array<{ kind: string; title: string; durationMin: number }>;
+      homework: { text: string };
+      goals: { educational: string[] };
+    };
+    expect(payload.type).toBe("lesson-plan");
+    expect(payload.subject).toBe("math");
+    expect(Array.isArray(payload.stages)).toBe(true);
+    expect(payload.stages).toHaveLength(2);
+    expect(payload.stages[0]!.kind).toBe("org-moment");
+    expect(payload.stages[0]!.durationMin).toBe(2);
+    expect(payload.stages[1]!.kind).toBe("new-topic");
+    expect(payload.stages[1]!.durationMin).toBe(20);
+    expect(payload.homework.text).toBe("стр. 50 №5-7");
+    expect(payload.goals.educational).toContain("знать определение линейного уравнения");
+
+    // Counter инкрементился.
+    const after = await getGenerationsToday(u.id);
+    expect(after).toBe(1);
+  });
+
+  // T6 — presentation: discriminated union + payload_json.slides сохранён.
+  it("T6: type='presentation' → 200 + counter+1 + payload_json содержит slides[]", async () => {
+    const u = await createTestUserWithSession();
+
+    const res = await postSave(PRESENTATION_BODY, u.sessionToken);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      worksheetId: string;
+      generationsToday: number;
+      generationsLimit: number;
+    };
+    expect(body.ok).toBe(true);
+    expect(body.worksheetId).toMatch(/^ws_[0-9a-z]{12}$/);
+    expect(body.generationsToday).toBe(1);
+
+    const row = await env.DB
+      .prepare("SELECT id, type, count, difficulty FROM worksheets WHERE id = ?1")
+      .bind(body.worksheetId)
+      .first<{ id: string; type: string; count: number; difficulty: string }>();
+    expect(row).not.toBeNull();
+    expect(row!.type).toBe("presentation");
+    expect(row!.count).toBe(5); // slides.length
+    expect(row!.difficulty).toBe("medium"); // бэк подставил дефолт, т.к. у presentation нет difficulty
+
+    // payload_json содержит весь data включая slides + slideCount.
+    const payloadRow = await env.DB
+      .prepare("SELECT payload_json FROM worksheets WHERE id = ?1")
+      .bind(body.worksheetId)
+      .first<{ payload_json: string }>();
+    const payload = JSON.parse(payloadRow!.payload_json) as {
+      type: string;
+      slideCount: number;
+      slides: Array<{ kind: string; title: string }>;
+      theme: string;
+    };
+    expect(payload.type).toBe("presentation");
+    expect(payload.slideCount).toBe(5);
+    expect(payload.slides).toHaveLength(5);
+    expect(payload.slides[0]!.kind).toBe("title");
+    expect(payload.slides[0]!.title).toBe("Линейные уравнения");
+    expect(payload.slides[4]!.kind).toBe("summary");
+    expect(payload.theme).toBe("default");
+
+    // Counter инкрементился.
+    expect(await getGenerationsToday(u.id)).toBe(1);
+  });
+
+  // T7 — ktp: discriminated union + payload_json.weeks сохранён.
+  it("T7: type='ktp' → 200 + counter+1 + payload_json содержит weeks[]", async () => {
+    const u = await createTestUserWithSession();
+
+    const res = await postSave(KTP_BODY, u.sessionToken);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      worksheetId: string;
+      generationsToday: number;
+      generationsLimit: number;
+    };
+    expect(body.ok).toBe(true);
+    expect(body.worksheetId).toMatch(/^ws_[0-9a-z]{12}$/);
+    expect(body.generationsToday).toBe(1);
+
+    const row = await env.DB
+      .prepare("SELECT id, type, count, difficulty, title FROM worksheets WHERE id = ?1")
+      .bind(body.worksheetId)
+      .first<{ id: string; type: string; count: number; difficulty: string; title: string }>();
+    expect(row).not.toBeNull();
+    expect(row!.type).toBe("ktp");
+    expect(row!.count).toBe(2); // weeks.length
+    expect(row!.difficulty).toBe("medium"); // бэк подставил дефолт, т.к. у ktp нет difficulty
+    expect(row!.title).toBe("КТП · Алгебра · 7 класс · 2026/2027");
+
+    // payload_json содержит весь data включая weeks[] и schoolYear.
+    const payloadRow = await env.DB
+      .prepare("SELECT payload_json FROM worksheets WHERE id = ?1")
+      .bind(body.worksheetId)
+      .first<{ payload_json: string }>();
+    const payload = JSON.parse(payloadRow!.payload_json) as {
+      type: string;
+      schoolYear: string;
+      totalHours: number;
+      weeks: Array<{ weekNum: number; entries: Array<{ num: number; topic: string; kind: string; hours: 1 | 2 }> }>;
+    };
+    expect(payload.type).toBe("ktp");
+    expect(payload.schoolYear).toBe("2026/2027");
+    expect(payload.totalHours).toBe(68);
+    expect(payload.weeks).toHaveLength(2);
+    expect(payload.weeks[0]!.weekNum).toBe(1);
+    expect(payload.weeks[0]!.entries).toHaveLength(2);
+    expect(payload.weeks[0]!.entries[0]!.kind).toBe("lesson");
+    expect(payload.weeks[0]!.entries[0]!.hours).toBe(1);
+    expect(payload.weeks[1]!.entries[0]!.kind).toBe("control");
+
+    // Counter инкрементился.
+    expect(await getGenerationsToday(u.id)).toBe(1);
+  });
+
+  // T8 — discriminated union без `type` → zod 400 (не прошёл ни одну ветку).
+  it("T8: body без `type` → 400 VALIDATION_ERROR (discriminated union reject)", async () => {
+    const u = await createTestUserWithSession();
+
+    // Body без type, но с tasks[] — раньше прошёл бы как worksheet.
+    // Теперь дискриминированный union требует type явно.
+    const res = await postSave(
+      {
+        subject: "math",
+        grade: 7,
+        topic: "algebra",
+        title: "Без типа",
+        difficulty: "medium",
+        tasks: [{ number: 1, text: "x", type: "short-answer", points: 1 }],
+      },
+      u.sessionToken,
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as {
+      ok: boolean;
+      code: string;
+      details?: Array<{ path: string; message: string }>;
+    };
+    expect(body.ok).toBe(false);
+    expect(body.code).toBe("VALIDATION_ERROR");
+    expect(Array.isArray(body.details)).toBe(true);
+    // zod для discriminated union отдаёт "Invalid discriminator value" на root.
+    const hasTypeError = body.details!.some(
+      (d) => d.path === "type" || d.message.toLowerCase().includes("discriminator"),
+    );
+    expect(hasTypeError).toBe(true);
+
+    // Counter НЕ инкрементится при 400.
+    expect(await getGenerationsToday(u.id)).toBe(0);
   });
 });

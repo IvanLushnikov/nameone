@@ -1,6 +1,12 @@
 /**
  * Клиент /api/worksheets/save для ЛК учителя.
  *
+ * Поддерживает 4 типа артефактов через discriminated union по `type`:
+ *   - "worksheet"     — рабочий лист (tasks[])
+ *   - "lesson-plan"   — план урока ФГОС (stages[])
+ *   - "presentation"  — презентация (slides[], slideCount)
+ *   - "ktp"           — КТП на учебный год (weeks[])
+ *
  * Типизированный union результата:
  *   - `{ ok: true, worksheetId, generationsToday, generationsLimit }` — успех.
  *   - `{ ok: false, error: "unauthorized" }`                       — 401: юзер не залогинен,
@@ -14,39 +20,81 @@
  * параллельно с addToHistory(), в фоне (не блокирует UI).
  */
 
+import type {
+  Difficulty,
+  LessonStage,
+  Slide,
+  KtpEntry,
+} from "@/lib/types";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
-export interface SaveWorksheetInput {
-  subject: string;
-  grade: number;
-  topic: string;
-  title: string;
-  difficulty: "easy" | "medium" | "hard";
-  tasks: Array<{
-    number: number;
-    text: string;
-    type: "computation" | "multiple-choice" | "short-answer" | "essay" | "fill-blank";
-    options?: string[];
-    answer?: string;
-    explanation?: string;
-    points: number;
-    verified?: boolean | null;
-    verifiedExplanation?: string;
-  }>;
-  /** Тип артефакта — фронтовая нотация; см. src/lib/types.ts TaskType. */
-  type?:
-    | "worksheet"
-    | "test"
-    | "cards"
-    | "control"
-    | "lesson-plan"
-    | "presentation"
-    | "ktp"
-    | "oge"
-    | "ege";
-  /** Откуда пришёл контент — для будущей аналитики. */
-  source?: "mock" | "llm";
-}
+/**
+ * Входной payload для POST /api/worksheets/save.
+ * Discriminated union по `type`: каждая ветка задаёт shape, который zod-валидирует
+ * на бэке (`backend/src/routes/worksheets.ts:SaveBody`). Несовпадение формы
+ * даст 400 VALIDATION_ERROR.
+ *
+ * Difficulty обязателен только для worksheet; для lesson-plan опционален;
+ * у presentation/ktp его нет (бэк подставляет "medium" при INSERT).
+ */
+export type SaveWorksheetInput =
+  | {
+      type: "worksheet";
+      subject: string;
+      grade: number;
+      topic: string;
+      title: string;
+      difficulty: Difficulty;
+      tasks: Array<{
+        number: number;
+        text: string;
+        type: "computation" | "multiple-choice" | "short-answer" | "essay" | "fill-blank";
+        options?: string[];
+        answer?: string;
+        explanation?: string;
+        points: number;
+        verified?: boolean | null;
+        verifiedExplanation?: string;
+      }>;
+      source?: "mock" | "llm";
+    }
+  | {
+      type: "lesson-plan";
+      subject: string;
+      grade: number;
+      topic: string;
+      title: string;
+      difficulty?: Difficulty;
+      goals?: { educational: string[]; developmental: string[]; nurturing: string[] };
+      equipment?: string[];
+      stages: LessonStage[];
+      homework: { text: string; alternatives?: string[] };
+      fgosRef?: string;
+      source?: "mock" | "llm";
+    }
+  | {
+      type: "presentation";
+      subject: string;
+      grade: number;
+      topic: string;
+      title: string;
+      slideCount: 5 | 10 | 15 | 20;
+      slides: Slide[];
+      theme?: "default" | "modern" | "school" | "minimal";
+      source?: "mock" | "llm";
+    }
+  | {
+      type: "ktp";
+      subject: string;
+      grade: number;
+      topic?: string;
+      title: string;
+      schoolYear: string;
+      totalHours: number;
+      weeks: Array<{ weekNum: number; entries: KtpEntry[] }>;
+      source?: "mock" | "llm";
+    };
 
 export interface SaveWorksheetOk {
   ok: true;
@@ -63,8 +111,8 @@ export type SaveWorksheetError =
   | { ok: false; error: "internal" }; // 500 / unhandled
 
 /**
- * POST /api/worksheets/save — сохранить сгенерированный (mock или LLM) лист в БД
- * и атомарно инкрементнуть счётчик `users.generations_today`.
+ * POST /api/worksheets/save — сохранить сгенерированный (mock или LLM) артефакт
+ * в БД и атомарно инкрементнуть счётчик `users.generations_today`.
  *
  * Не бросает наружу: всегда возвращает union, вызывающий код делает
  * discriminated narrowing.

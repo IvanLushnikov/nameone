@@ -10,6 +10,9 @@
  *   6. useUsage() хук: initial loading=true, после resolve — usage/generationsToday
  *   7. useUsage() хук: при fetch fail — usage = null
  *   8. saveWorksheet: URL и body/shape соответствуют контракту
+ *   9.  saveWorksheet: lesson-plan payload → 200 (п.3 ЛК учителя)
+ *   10. saveWorksheet: ktp payload → 200 (п.3 ЛК учителя)
+ *   11. useUsage: refresh после saveWorksheet → usage обновился (п.2 ЛК учителя)
  *
  * Мок fetch'а через vi.stubGlobal — как в tests/auth-api.test.ts.
  */
@@ -401,5 +404,226 @@ describe("useUsage хук", () => {
     expect(captured!.usage).not.toBeNull();
     expect(captured!.usage!.generationsToday).toBe(99);
     expect(captured!.isLoading).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// п.2 + п.3 ЛК учителя: saveWorksheet для всех 4 типов + useUsage refresh
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("saveWorksheet — 3 новых типа артефактов (п.3 ЛК учителя)", () => {
+  it("lesson-plan payload → 200 ok + contract", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        okResponse({
+          ok: true,
+          worksheetId: "ws_lp",
+          generationsToday: 1,
+          generationsLimit: 3,
+        }),
+      ),
+    );
+
+    const r = await saveWorksheet({
+      type: "lesson-plan",
+      subject: "math",
+      grade: 7,
+      topic: "algebra",
+      title: "План урока · Алгебра",
+      difficulty: "medium",
+      goals: { educational: ["знать определения"], developmental: ["логика"], nurturing: ["аккуратность"] },
+      equipment: ["доска", "мел"],
+      stages: [
+        {
+          kind: "org-moment",
+          title: "Оргмомент",
+          durationMin: 2,
+          teacherActions: "Приветствует",
+          studentActions: "Приветствуют учителя",
+        },
+        {
+          kind: "new-topic",
+          title: "Объяснение нового",
+          durationMin: 20,
+          teacherActions: "Вводит понятие",
+          studentActions: "Слушают",
+        },
+      ],
+      homework: { text: "стр. 50 №5", alternatives: ["стр. 52 №3"] },
+      fgosRef: "§ 7",
+      source: "mock",
+    });
+
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.worksheetId).toBe("ws_lp");
+      expect(r.generationsToday).toBe(1);
+      expect(r.generationsLimit).toBe(3);
+    }
+
+    // Проверяем, что body в fetch содержит type=lesson-plan и stages[].
+    const fetchMock = vi.mocked(fetch);
+    const [, calledInit] = fetchMock.mock.calls[0]!;
+    const body = JSON.parse(calledInit!.body as string);
+    expect(body.type).toBe("lesson-plan");
+    expect(Array.isArray(body.stages)).toBe(true);
+    expect(body.stages).toHaveLength(2);
+    expect(body.stages[0].kind).toBe("org-moment");
+    expect(body.stages[1].kind).toBe("new-topic");
+    expect(body.homework.text).toBe("стр. 50 №5");
+    expect(body.fgosRef).toBe("§ 7");
+  });
+
+  it("presentation payload → 200 ok + contract", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        okResponse({
+          ok: true,
+          worksheetId: "ws_pres",
+          generationsToday: 1,
+          generationsLimit: 3,
+        }),
+      ),
+    );
+
+    const r = await saveWorksheet({
+      type: "presentation",
+      subject: "math",
+      grade: 7,
+      topic: "algebra",
+      title: "Презентация · Линейные уравнения",
+      slideCount: 5,
+      slides: [
+        { kind: "title", title: "Титул", bullets: ["7 класс"] },
+        { kind: "definition", title: "Определение" },
+        { kind: "example", title: "Пример" },
+        { kind: "bullets", title: "Алгоритм" },
+        { kind: "summary", title: "Итог" },
+      ],
+      theme: "default",
+      source: "mock",
+    });
+
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.worksheetId).toBe("ws_pres");
+    }
+
+    const fetchMock = vi.mocked(fetch);
+    const [, calledInit] = fetchMock.mock.calls[0]!;
+    const body = JSON.parse(calledInit!.body as string);
+    expect(body.type).toBe("presentation");
+    expect(body.slideCount).toBe(5);
+    expect(body.slides).toHaveLength(5);
+    expect(body.slides[0].kind).toBe("title");
+    expect(body.theme).toBe("default");
+  });
+
+  it("ktp payload → 200 ok + contract", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        okResponse({
+          ok: true,
+          worksheetId: "ws_ktp",
+          generationsToday: 1,
+          generationsLimit: 3,
+        }),
+      ),
+    );
+
+    const r = await saveWorksheet({
+      type: "ktp",
+      subject: "math",
+      grade: 7,
+      title: "КТП · Алгебра · 7 класс · 2026/2027",
+      schoolYear: "2026/2027",
+      totalHours: 68,
+      weeks: [
+        {
+          weekNum: 1,
+          entries: [
+            { num: 1, dates: "01.09-05.09", topic: "Вводный урок", kind: "lesson", hours: 1 },
+            { num: 2, dates: "01.09-05.09", topic: "Числовые выражения", kind: "lesson", hours: 1 },
+          ],
+        },
+        {
+          weekNum: 2,
+          entries: [
+            { num: 3, dates: "08.09-12.09", topic: "Контрольная (входная)", kind: "control", hours: 1 },
+          ],
+        },
+      ],
+      source: "mock",
+    });
+
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.worksheetId).toBe("ws_ktp");
+    }
+
+    const fetchMock = vi.mocked(fetch);
+    const [, calledInit] = fetchMock.mock.calls[0]!;
+    const body = JSON.parse(calledInit!.body as string);
+    expect(body.type).toBe("ktp");
+    expect(body.schoolYear).toBe("2026/2027");
+    expect(body.totalHours).toBe(68);
+    expect(Array.isArray(body.weeks)).toBe(true);
+    expect(body.weeks).toHaveLength(2);
+    expect(body.weeks[0].entries).toHaveLength(2);
+    expect(body.weeks[1].entries[0].kind).toBe("control");
+  });
+});
+
+describe("useUsage refresh после saveWorksheet (п.2 ЛК учителя)", () => {
+  it("после успешного saveWorksheet → refreshUsage() обновляет usage.generationsToday", async () => {
+    // Шаг 1: mount useUsage — usage начинает с 1 (например, после входа).
+    let fetchCallCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => {
+        fetchCallCount++;
+        // Первый запрос (mount) — generationsToday=1.
+        // Второй запрос (refresh после save) — generationsToday=2.
+        const today = fetchCallCount === 1 ? 1 : 2;
+        return okResponse({
+          ok: true,
+          generationsToday: today,
+          generationsLimit: 3,
+          generationsResetAt: null,
+          plan: "free",
+        });
+      }),
+    );
+
+    let captured: ReturnType<typeof useUsage> | undefined;
+    function Probe() {
+      captured = useUsage();
+      return null;
+    }
+
+    render(React.createElement(Probe));
+
+    // Ждём пока mount-effect отработает.
+    await waitFor(() => {
+      expect(captured!.usage).not.toBeNull();
+    });
+    expect(captured!.usage!.generationsToday).toBe(1);
+
+    // Шаг 2: имитируем успешный saveWorksheet (отдельный endpoint — мок не критичен).
+    // Главное — после save мы вызываем refreshUsage() и usage должен обновиться.
+    await act(async () => {
+      await captured!.refresh();
+    });
+
+    await waitFor(() => {
+      expect(captured!.usage!.generationsToday).toBe(2);
+    });
+    expect(captured!.usage!.generationsToday).toBe(2);
+    expect(captured!.isLoading).toBe(false);
+    // Минимум 2 fetch-запроса: mount + refresh.
+    expect(fetchCallCount).toBeGreaterThanOrEqual(2);
   });
 });

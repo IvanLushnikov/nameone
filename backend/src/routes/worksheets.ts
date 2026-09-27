@@ -4,7 +4,8 @@
  *   POST /api/worksheets/generate   — сгенерировать новый лист (LLM)
  *   POST /api/worksheets/validate   — прогнать валидатор на листе (DeepSeek)
  *   GET  /api/worksheets/:id        — прочитать сохранённый лист (для preview/share)
- *   POST /api/worksheets/save       — сохранить лист (mock или LLM) + инкремент generations_today
+ *   POST /api/worksheets/save       — сохранить артефакт (worksheet/lesson-plan/
+ *                                     presentation/ktp) + инкремент generations_today
  *
  * План (free/base/plus) передаётся:
  *  1) В теле запроса (body.plan) — приоритет
@@ -148,13 +149,26 @@ worksheetsRouter.get("/:id", async (c) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * zod-схема тела /save. Расширена сверх существующего worksheetTaskSchema:
- *   - type принимает все 9 TaskType из фронта (тесты + lesson-plan/presentation/ktp)
- *     — текущая worksheets.type это TEXT NOT NULL, бэкенд только сохраняет.
+ * zod-схема тела /save — discriminated union по `type`.
+ *
+ * Поддерживает 4 типа артефактов из ЛК учителя:
+ *   - "worksheet"     — рабочий лист (tasks[])
+ *   - "lesson-plan"   — план урока ФГОС (stages[])
+ *   - "presentation"  — презентация (slides[], slideCount)
+ *   - "ktp"           — КТП на учебный год (weeks[])
+ *
+ * Расширения сверх прошлой worksheet-схемы:
  *   - source — опциональная метка "mock" | "llm" (идёт в payload_json для аналитики).
  *   - verified/verifiedExplanation — опциональные поля per-task (F-05-B).
+ *
+ * payload_json хранит весь `data` (включая type + специфичные поля), чтобы при чтении
+ * через GET /api/worksheets/:id данные совпадали с тем, что прислал фронт.
+ *
+ * ВАЖНО: difficulty обязателен только для worksheet; для lesson-plan опционален;
+ * presentation/ktp не имеют difficulty (заменяем "medium" при INSERT).
  */
-const saveWorksheetBodySchema = z.object({
+const WorksheetBody = z.object({
+  type: z.literal("worksheet"),
   subject: z.string().min(1).max(64),
   grade: z.number().int().min(1).max(11),
   topic: z.string().min(1).max(200),
@@ -176,11 +190,102 @@ const saveWorksheetBodySchema = z.object({
     )
     .min(1)
     .max(100),
-  type: z
-    .enum(["worksheet", "test", "cards", "control", "lesson-plan", "presentation", "ktp", "oge", "ege"])
-    .optional(),
   source: z.enum(["mock", "llm"]).optional(),
 });
+
+const LessonPlanBody = z.object({
+  type: z.literal("lesson-plan"),
+  subject: z.string().min(1).max(64),
+  grade: z.number().int().min(1).max(11),
+  topic: z.string().min(1).max(200),
+  title: z.string().min(1).max(200),
+  difficulty: z.enum(["easy", "medium", "hard"]).optional(),
+  goals: z
+    .object({
+      educational: z.array(z.string()),
+      developmental: z.array(z.string()),
+      nurturing: z.array(z.string()),
+    })
+    .optional(),
+  equipment: z.array(z.string()).optional(),
+  stages: z
+    .array(
+      z.object({
+        kind: z.enum(["org-moment", "motivation", "new-topic", "practice", "reflex", "homework"]),
+        title: z.string(),
+        durationMin: z.number().int().min(1).max(45),
+        teacherActions: z.string(),
+        studentActions: z.string(),
+        materials: z.array(z.string()).optional(),
+      }),
+    )
+    .min(1),
+  homework: z.object({
+    text: z.string(),
+    alternatives: z.array(z.string()).optional(),
+  }),
+  fgosRef: z.string().optional(),
+  source: z.enum(["mock", "llm"]).optional(),
+});
+
+const PresentationBody = z.object({
+  type: z.literal("presentation"),
+  subject: z.string().min(1).max(64),
+  grade: z.number().int().min(1).max(11),
+  topic: z.string().min(1).max(200),
+  title: z.string().min(1).max(200),
+  slideCount: z.union([z.literal(5), z.literal(10), z.literal(15), z.literal(20)]),
+  slides: z
+    .array(
+      z.object({
+        kind: z.enum(["title", "bullets", "definition", "example", "summary"]),
+        title: z.string(),
+        bullets: z.array(z.string()).optional(),
+        notes: z.string().optional(),
+      }),
+    )
+    .min(1),
+  theme: z.enum(["default", "modern", "school", "minimal"]).optional(),
+  source: z.enum(["mock", "llm"]).optional(),
+});
+
+const KtpBody = z.object({
+  type: z.literal("ktp"),
+  subject: z.string().min(1).max(64),
+  grade: z.number().int().min(1).max(11),
+  topic: z.string().min(1).max(200).optional(),
+  title: z.string().min(1).max(200),
+  schoolYear: z.string().regex(/^\d{4}\/\d{4}$/),
+  totalHours: z.number().int().min(1).max(200),
+  weeks: z
+    .array(
+      z.object({
+        weekNum: z.number().int().min(1),
+        entries: z
+          .array(
+            z.object({
+              num: z.number().int().min(1),
+              dates: z.string(),
+              topic: z.string(),
+              kind: z.enum(["lesson", "control", "test", "review", "reserve", "project"]),
+              hours: z.union([z.literal(1), z.literal(2)]),
+              fgosRef: z.string().optional(),
+              uud: z.array(z.string()).optional(),
+            }),
+          )
+          .min(1),
+      }),
+    )
+    .min(1),
+  source: z.enum(["mock", "llm"]).optional(),
+});
+
+const SaveBody = z.discriminatedUnion("type", [
+  WorksheetBody,
+  LessonPlanBody,
+  PresentationBody,
+  KtpBody,
+]);
 
 worksheetsRouter.post("/save", async (c) => {
   // 1) Auth — анонимный запрос → 401.
@@ -200,38 +305,46 @@ worksheetsRouter.post("/save", async (c) => {
   }
 
   // 3) zod-валидация. При ошибке error-middleware вернёт 400 + details.
-  const body = saveWorksheetBodySchema.parse(rawBody);
+  const data = SaveBody.parse(rawBody);
 
-  // 4) Собираем payload_json (полный объект Worksheet + метаданные).
-  //
-  // payload_json хранит ВСЁ (включая source/verified/verifiedExplanation), чтобы
-  // позже при чтении через GET /api/worksheets/:id данные совпадали с тем, что
-  // мы получили с фронта. `source` — аналитика mock vs LLM для будущих фильтров.
+  // 4) Считаем `count` per-type для worksheets.count (NOT NULL колонка).
+  //    Семантика: количество «единиц контента» — задач / этапов / слайдов / недель.
+  const count =
+    data.type === "worksheet"
+      ? data.tasks.length
+      : data.type === "lesson-plan"
+        ? data.stages.length
+        : data.type === "presentation"
+          ? data.slides.length
+          : data.weeks.length;
+
+  // Difficulty — обязательное поле worksheets.difficulty (NOT NULL). У worksheet
+  // оно required, у lesson-plan optional, у presentation/ktp его нет → дефолт "medium".
+  const difficulty: "easy" | "medium" | "hard" =
+    data.type === "worksheet"
+      ? data.difficulty
+      : data.type === "lesson-plan"
+        ? (data.difficulty ?? "medium")
+        : "medium";
+
+  // 5) payload_json — ВЕСЬ data (включая type + специфичные поля), чтобы при
+  //    чтении через GET /api/worksheets/:id данные совпадали с тем, что прислал фронт.
+  //    `source` остаётся аналитикой mock vs LLM для будущих фильтров.
   const newId = makeWorksheetId();
   const now = Math.floor(Date.now() / 1000);
-  const payload = {
-    id: newId,
-    title: body.title,
-    subject: body.subject,
-    grade: body.grade,
-    topic: body.topic,
-    difficulty: body.difficulty,
-    tasks: body.tasks.map((t) => ({
-      number: t.number,
-      text: t.text,
-      type: t.type,
-      options: t.options,
-      answer: t.answer,
-      explanation: t.explanation,
-      points: t.points,
-      verified: t.verified,
-      verifiedExplanation: t.verifiedExplanation,
-    })),
-    createdAt: new Date(now * 1000).toISOString(),
-    source: body.source ?? null,
-  };
 
-  // 5) INSERT. Если упал — counter НЕ инкрементим, пробрасываем 500.
+  // 6) INSERT. Если упал — counter НЕ инкрементим, пробрасываем 500.
+  //
+  // ВАЖНО: worksheets.topic — NOT NULL. У worksheet/lesson-plan/presentation
+  // поле обязательное, у ktp — optional (на бэке zod-схема). Когда фронт
+  // шлёт ktp без topic (Ktp-тип на фронте не имеет этого поля вообще),
+  // подставляем `title` как placeholder — он содержит учебный год и тему.
+  // Полный data со всеми полями всё равно хранится в payload_json.
+  const topicForInsert: string =
+    data.type === "ktp"
+      ? (data.topic ?? data.title)
+      : data.topic;
+
   try {
     await c.env.DB
       .prepare(
@@ -242,14 +355,14 @@ worksheetsRouter.post("/save", async (c) => {
       .bind(
         newId,
         user.id,
-        body.subject as SubjectSlug,
-        body.grade,
-        body.topic,
-        body.difficulty,
-        body.type ?? "worksheet",
-        body.tasks.length,
-        body.title,
-        JSON.stringify(payload),
+        data.subject as SubjectSlug,
+        data.grade,
+        topicForInsert,
+        difficulty,
+        data.type,
+        count,
+        data.title,
+        JSON.stringify(data),
         now,
       )
       .run();
@@ -263,7 +376,7 @@ worksheetsRouter.post("/save", async (c) => {
     throw new InternalError("Failed to save worksheet");
   }
 
-  // 6) Инкремент counter-а.
+  // 7) Инкремент counter-а.
   //
   // Гарантия "no over-increment": INSERT уже прошёл до UPDATE, поэтому даже
   // если UPDATE упадёт — лист остаётся. Caller увидит 500 и может retry
@@ -281,7 +394,7 @@ worksheetsRouter.post("/save", async (c) => {
     throw new InternalError("Failed to increment daily counter");
   }
 
-  // 7) Читаем свежие значения для ответа.
+  // 8) Читаем свежие значения для ответа.
   const fresh = await getUserById(c.env.DB, user.id);
   const generationsToday = fresh?.generations_today ?? 0;
   const generationsLimit = fresh
@@ -290,7 +403,7 @@ worksheetsRouter.post("/save", async (c) => {
       : 3
     : 3;
 
-  // 8) Audit-event (легковесный console-info). Полный event-pipeline через
+  // 9) Audit-event (легковесный console-info). Полный event-pipeline через
   // POST /api/track на фронте, но бэк логирует минимальный контекст для дебага.
   // eslint-disable-next-line no-console
   console.info(
@@ -301,9 +414,9 @@ worksheetsRouter.post("/save", async (c) => {
       userId: user.id,
       ip: c.get("ip") ?? null,
       ua: c.get("userAgent") ?? null,
-      source: body.source ?? null,
-      type: body.type ?? "worksheet",
-      count: body.tasks.length,
+      source: data.source ?? null,
+      type: data.type,
+      count,
       generationsToday,
     }),
   );
