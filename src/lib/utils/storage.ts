@@ -1,11 +1,25 @@
 "use client";
 
 import type { UserHistoryItem, UserTemplate, UserProfile, Worksheet, LessonPlan, Presentation, Ktp } from "@/lib/types";
+import { PROFILE_CHANGED_EVENT } from "@/lib/events";
 
 const KEY_HISTORY = "listai.history";
 const KEY_TEMPLATES = "listai.templates";
 const KEY_PROFILE = "listai.profile";
 const KEY_FAVORITES = "listai.favorites";
+
+/**
+ * Дискриминированный union всех артефактов, которые можно класть в избранное.
+ * Q1-2027: storage исторически писал только `Worksheet`, но `saveFavorite`
+ * давно принимает все 4 типа. После фикса B-3 / B-4 контракт один — этот union.
+ *
+ * Discriminator — уникальное поле каждого типа:
+ *   - Worksheet     → `tasks: WorksheetTask[]`
+ *   - LessonPlan    → `stages: LessonStage[]`
+ *   - Presentation  → `slides: Slide[]`
+ *   - Ktp           → `weeks: { weekNum; entries }[]`
+ */
+export type FavoriteArtifact = Worksheet | LessonPlan | Presentation | Ktp;
 
 /**
  * Простое хранилище на localStorage. В production будет заменено на API.
@@ -47,11 +61,37 @@ export function removeFromHistory(id: string) {
   write(KEY_HISTORY, getHistory().filter((x) => x.id !== id));
 }
 
-export function toggleFavorite(id: string) {
+/**
+ * F-06 B-3 fix: унифицирует «избранное» между history[i].isFavorite и KEY_FAVORITES.
+ *
+ * - Если передан `item` (конструктор знает полный артефакт) → управляет обоими списками:
+ *     - если `id` уже в KEY_FAVORITES → удаляет (toggle off);
+ *     - если нет → добавляет через `saveFavorite`.
+ *   Плюс всегда флипает флаг в истории (для синхронизации UI).
+ *
+ * - Если `item` НЕ передан (например, дашборд кликнул по сердечку на карточке
+ *   истории, не имея под рукой полного артефакта) → fallback: только флаг,
+ *   как раньше. Двух независимых списков больше нет в конструкторе — там всегда
+ *   передаётся `item`. На дашборде click из history, если артефакт уже в
+ *   favorites, можно передать его через `getFavorites().find(x => x.id === id)`.
+ */
+export function toggleFavorite(id: string, item?: FavoriteArtifact) {
+  // 1. Флипаем флаг в истории (всегда — для UI синхронизации).
   const list = getHistory().map((x) =>
     x.id === id ? { ...x, isFavorite: !x.isFavorite } : x
   );
   write(KEY_HISTORY, list);
+
+  // 2. Управляем KEY_FAVORITES, если есть полный артефакт.
+  if (item) {
+    const current = getFavorites();
+    const exists = current.some((x) => x.id === id);
+    if (exists) {
+      write(KEY_FAVORITES, current.filter((x) => x.id !== id));
+    } else {
+      saveFavorite(item);
+    }
+  }
 }
 
 // ===== Шаблоны =====
@@ -83,15 +123,19 @@ export function signOut() {
   window.localStorage.removeItem(KEY_PROFILE);
   window.localStorage.removeItem(KEY_HISTORY);
   window.localStorage.removeItem(KEY_TEMPLATES);
+  // Уведомляем Header (и других подписчиков в той же вкладке), что профиль
+  // исчез — `storage` event выстреливает только cross-tab, поэтому без явного
+  // dispatchEvent UI не обновится до перезагрузки.
+  window.dispatchEvent(new Event(PROFILE_CHANGED_EVENT));
 }
 
-// ===== Сохранение листов в избранное (отдельно от истории) =====
+// ===== Сохранение артефактов в избранное (отдельно от истории) =====
 
-export function getFavorites(): Worksheet[] {
-  return read<Worksheet[]>(KEY_FAVORITES, []);
+export function getFavorites(): FavoriteArtifact[] {
+  return read<FavoriteArtifact[]>(KEY_FAVORITES, []);
 }
 
-export function saveFavorite(w: Worksheet | LessonPlan | Presentation | Ktp) {
+export function saveFavorite(w: FavoriteArtifact) {
   const list = [w, ...getFavorites().filter((x) => x.id !== w.id)].slice(0, 30);
   write(KEY_FAVORITES, list);
 }

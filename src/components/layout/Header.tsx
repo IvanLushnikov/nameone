@@ -7,6 +7,9 @@ import { Logo } from "@/components/shared/Logo";
 import { Button } from "@/components/ui/Button";
 import { Menu, X, Sparkles, GraduationCap, LayoutDashboard } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
+import { getProfile } from "@/lib/utils/storage";
+import type { UserProfile } from "@/lib/types";
+import { PROFILE_CHANGED_EVENT } from "@/lib/events";
 
 const nav = [
   { href: "/constructor", label: "Генератор", icon: Sparkles },
@@ -18,6 +21,7 @@ const nav = [
 export function Header() {
   const [open, setOpen] = React.useState(false);
   const [scrolled, setScrolled] = React.useState(false);
+  const [profile, setProfileState] = React.useState<UserProfile | null>(null);
   const pathname = usePathname();
 
   React.useEffect(() => {
@@ -30,6 +34,27 @@ export function Header() {
   React.useEffect(() => {
     setOpen(false);
   }, [pathname]);
+
+  // Перечитываем профиль при mount и при изменениях.
+  React.useEffect(() => {
+    const refresh = () => setProfileState(getProfile());
+    refresh();
+
+    // Cross-tab: выстреливает storage когда другая вкладка меняет localStorage.
+    const onStorage = (e: StorageEvent) => {
+      if (!e.key || e.key === "listai.profile") refresh();
+    };
+    window.addEventListener("storage", onStorage);
+
+    // Same-tab: CustomEvent после успешного login/logout.
+    const onProfileChanged = () => refresh();
+    window.addEventListener(PROFILE_CHANGED_EVENT, onProfileChanged);
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(PROFILE_CHANGED_EVENT, onProfileChanged);
+    };
+  }, []);
 
   return (
     <header
@@ -69,9 +94,21 @@ export function Header() {
           </nav>
 
           <div className="hidden md:flex items-center gap-2">
-            <Button as="link" href="/login" variant="ghost" size="md">
-              Войти
-            </Button>
+            {profile ? (
+              <Button
+                as="link"
+                href="/dashboard"
+                variant="ghost"
+                size="md"
+                aria-label={`Открыть кабинет: ${profile.name}`}
+              >
+                {profile.name} →
+              </Button>
+            ) : (
+              <Button as="link" href="/login" variant="ghost" size="md">
+                Войти
+              </Button>
+            )}
             <Button as="link" href="/constructor" variant="primary" size="md" leftIcon={<Sparkles className="w-4 h-4" />}>
               Создать лист
             </Button>
@@ -112,9 +149,15 @@ export function Header() {
               );
             })}
             <div className="grid grid-cols-2 gap-2 pt-2">
-              <Button as="link" href="/login" variant="secondary" size="md" fullWidth>
-                Войти
-              </Button>
+              {profile ? (
+                <Button as="link" href="/dashboard" variant="secondary" size="md" fullWidth>
+                  {profile.name}
+                </Button>
+              ) : (
+                <Button as="link" href="/login" variant="secondary" size="md" fullWidth>
+                  Войти
+                </Button>
+              )}
               <Button as="link" href="/constructor" variant="primary" size="md" fullWidth>
                 Создать лист
               </Button>

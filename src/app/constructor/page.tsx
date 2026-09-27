@@ -15,6 +15,11 @@ import { KtpPreview } from "@/components/constructor/KtpPreview";
 import { PaywallModal } from "@/components/shared/PaywallModal";
 import { ArtifactTypePicker } from "@/components/constructor/ArtifactTypePicker";
 import {
+  PresetGrid,
+  type Preset,
+  type PresetMode,
+} from "@/components/constructor/PresetGrid";
+import {
   Sparkles,
   Loader2,
   ArrowLeft,
@@ -25,6 +30,7 @@ import {
   Lock,
   RotateCcw,
   X,
+  Camera,
 } from "lucide-react";
 import { subjects, getSubject, getGrade } from "@/lib/content/subjects";
 import { getUMK } from "@/lib/content/umk";
@@ -54,11 +60,16 @@ import {
   generateKtpSmart,
 } from "@/lib/client/llm";
 import { generateWorksheetDocx, downloadBlob } from "@/lib/utils/docx";
+import { trackEvent } from "@/lib/track";
 import { generateLessonPlanDocx } from "@/lib/utils/lesson-plan-docx";
 import { generateKtpDocx } from "@/lib/utils/ktp-docx";
 import { generatePptx, pptxFilename } from "@/lib/utils/pptx";
 import { canGenerate, consume, getRemaining } from "@/lib/utils/limit";
 import { pluralizeTasks } from "@/lib/utils/cn";
+import { saveWorksheet } from "@/lib/worksheets/api";
+import { useUsage } from "@/lib/hooks/useUsage";
+import { EditChat } from "@/components/f08/EditChat";
+import { PhotoCheckPanel } from "@/components/f06/PhotoCheckPanel";
 
 /** F-04-C: режим wizard. «По теме» — текущий flow. «По номеру» — экзамен → предмет → номера → параметры. */
 type Mode = "topic" | "exam";
@@ -116,6 +127,14 @@ function ConstructorPage() {
   const [withAnswers, setWithAnswers] = React.useState(true);
   const [withExplanations, setWithExplanations] = React.useState(true);
 
+  // F-02 (Q4 2026): режим выбора параметров на шаге 1.
+  // template = сетка из 5 preset-карточек, custom = пойти к теме и настроить параметры вручную.
+  const [presetMode, setPresetMode] = React.useState<PresetMode>("template");
+  // Запоминаем выбранный preset — чтобы при возврате с шага «Тема» подсветить карточку.
+  const [selectedPresetId, setSelectedPresetId] = React.useState<string | null>(null);
+  // Тип работы в режиме «Свой вариант» — по умолчанию worksheet.
+  const [customType, setCustomType] = React.useState<TaskType>("worksheet");
+
   /** F-04-C: режим wizard. «По теме» — старый flow, «По номеру» — экзамен-флоу. */
   const [mode, setMode] = React.useState<Mode>("topic");
   /** F-04-C: какой экзамен выбран (только если mode === "exam"). */
@@ -133,6 +152,20 @@ function ConstructorPage() {
   const [ktp, setKtp] = React.useState<Ktp | null>(null);
   const [remaining, setRemaining] = React.useState<number>(3);
   const [showPaywall, setShowPaywall] = React.useState(false);
+  /** F-06: видна ли inline-панель проверки фото тетради (только worksheet). */
+  const [photoCheckOpen, setPhotoCheckOpen] = React.useState(false);
+  /**
+   * W1: useUsage — серверный счётчик генераций на сегодня для залогиненных.
+   * Для анонимных юзеров usage = null; UI должен fallback'иться на localStorage
+   * (`limit.ts`). После успешного `saveWorksheet({ok:true})` дёргаем
+   * `refreshUsage()` чтобы виджет обновился без перезагрузки.
+   *
+   * `usage` сейчас доступен компоненту — будущий task может подключить
+   * override для виджета лимита, когда залогиненный юзер увидит серверный
+   * счётчик вместо localStorage. Сейчас — только refresh побочный эффект.
+   */
+  const { usage: serverUsage, refresh: refreshUsage } = useUsage();
+  void serverUsage; // тихий no-op пока UI не подключен — refresh побочный эффект работает.
   /** F-04-B: стадии progress-UI при генерации. null = не показываем прогресс. */
   const [progressStage, setProgressStage] = React.useState<
     "selecting" | "verifying" | "formatting" | "done" | null
@@ -220,10 +253,50 @@ function ConstructorPage() {
     setLessonPlan(null);
     setPresentation(null);
     setKtp(null);
+    setPhotoCheckOpen(false);
     // F-04-C: сброс экзамен-флоу.
     setExam(null);
     setExamSubject(null);
     setExamNumbers([]);
+    // F-02: сброс выбора preset'а.
+    setSelectedPresetId(null);
+    setPresetMode("template");
+    setCustomType("worksheet");
+  };
+
+  // F-02: выбор шаблонного preset'а. Заполняем параметры и переходим на шаг «Тема».
+  // Событие `trackPresetSelected` уже пишется внутри PresetGrid.handleSelect.
+  const handleSelectPreset = (preset: Preset) => {
+    setSelectedPresetId(preset.id);
+    setPresetMode("template");
+    setCount(preset.count);
+    setDifficulty(preset.difficulty);
+    setType(preset.type);
+    if (preset.withAnswers !== undefined) setWithAnswers(preset.withAnswers);
+    if (preset.withExplanations !== undefined) setWithExplanations(preset.withExplanations);
+    // Синхронизируем customType — если юзер переключится на «Свой», тип подхватится.
+    setCustomType(preset.type);
+    // Параметры выставлены — переходим к выбору темы.
+    setStep("topic");
+  };
+
+  // F-02: режим «Свой вариант» → пропускаем заполнение параметров, тема и настройка дальше.
+  const handleSkipPresetToTopic = () => {
+    setSelectedPresetId(null);
+    setStep("topic");
+  };
+
+  // F-02: смена типа в режиме «Свой вариант» — лимит мы не держим тут, тип применится на configure.
+  const handleCustomTypeChange = (t: TaskType) => {
+    setCustomType(t);
+    setType(t);
+  };
+
+  // F-02: возврат с шага «Сценарий» к выбору предмета/класса (сбрасывает только выбор preset'а,
+  // subject/grade остаются — пользователь может поменять их через SelectStep-кнопки).
+  const handleBackFromPresets = () => {
+    setSelectedPresetId(null);
+    setPresetMode("template");
   };
 
   /** F-04-C: переключение режима wizard. Доступно на любом шаге. */
@@ -268,7 +341,31 @@ function ConstructorPage() {
     setStep("select");
   };
 
+  // view-событие: трекаем один раз на mount
+  React.useEffect(() => {
+    trackEvent("constructor_view", { mode });
+    // mode может меняться, но view считаем за visit
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // step-события: трекаем каждое изменение шага
+  const prevStep = React.useRef<Step>(step);
+  React.useEffect(() => {
+    if (prevStep.current === step) return;
+    trackEvent("constructor_step", { from: prevStep.current, to: step, mode });
+    prevStep.current = step;
+  }, [step, mode]);
+
   const generate = async () => {
+    trackEvent("constructor_generate_click", {
+      mode,
+      subject,
+      grade,
+      topic,
+      type,
+      difficulty,
+      count,
+    });
     // F-04-C: экзамен-режим — синтезируем параметры для мок-генератора.
     // Реальная генерация по номерам ОГЭ/ЕГЭ в бэкенде — будущее, не в скоупе F-04-C.
     let body: GenerationRequest;
@@ -310,6 +407,7 @@ function ConstructorPage() {
     setLessonPlan(null);
     setPresentation(null);
     setKtp(null);
+    setPhotoCheckOpen(false);
     setProgressStage("selecting");
 
     // F-04-B: анимированный progress-UI идёт параллельно реальной генерации.
@@ -395,6 +493,42 @@ function ConstructorPage() {
         isFavorite: false,
       });
 
+      // W1: синхронно с localStorage addToHistory — сохраняем лист на бэк
+      // (для залогиненных юзеров). Идёт в фоне, не блокирует UI:
+      //   - 401 (unauthorized) — анонимный flow, silent skip;
+      //   - 400 (validation)   — не должно случаться, но если бэк
+      //                          отвергнет payload, тост предупредит;
+      //   - 500/network        — тост предупредит, юзер потеряет только
+      //                          серверную копию (в localStorage лист уже есть).
+      // На текущий момент к бэку летят только Worksheet (mock-генератор через
+      // generateWorksheetSmart). lesson-plan/presentation/ktp пока only-local.
+      if (result.kind === "worksheet") {
+        const ws = result.payload as Worksheet;
+        void saveWorksheet({
+          subject: ws.subject as SubjectSlug,
+          grade: ws.grade,
+          topic: ws.topic,
+          title: ws.title,
+          difficulty: ws.difficulty,
+          tasks: ws.tasks,
+          type: "worksheet",
+          source: "mock",
+        }).then((r) => {
+          if (r.ok) {
+            void refreshUsage();
+          } else if (r.error === "validation" || r.error === "internal") {
+            // "network" → тост НЕ показываем (типичная ситуация: оффлайн / API
+            // URL не задан в dev — без паники, юзер видит лист локально).
+            toast({
+              tone: "info",
+              title: "Не удалось сохранить на сервере",
+              description: "Лист сохранён локально, на сервере появится после восстановления соединения",
+            });
+          }
+          // "unauthorized" — silent skip, юзер просто не залогинен.
+        });
+      }
+
       // F-04-B: success-burst сверху страницы (~80 частиц, ~1.2с).
       void fireConfetti();
 
@@ -471,6 +605,29 @@ function ConstructorPage() {
     toast({ tone: "success", title: "Добавлено в избранное" });
   };
 
+  /**
+   * F-08: открыть floating-панель AI-правок из тулбара.
+   * EditChat — uncontrolled-компонент со своим fixed-кнопкой в правом нижнем углу.
+   * Чтобы тулбар-кнопка могла открывать ту же панель — программно кликаем по
+   * aria-labeled кнопке EditChat. Это костыль, но без модификации компонента
+   * F-08 — единственный путь. См. задачу TZ-09.
+   */
+  const handleOpenEditChat = React.useCallback(() => {
+    if (typeof document === "undefined") return;
+    const btn = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Открыть чат с AI для правок"]',
+    );
+    btn?.click();
+  }, []);
+
+  /**
+   * F-06: переключить inline-панель проверки фото тетради.
+   * При показе — закрываем чат AI-правок, чтобы не было двух fixed-панелей.
+   */
+  const handleTogglePhotoCheck = React.useCallback(() => {
+    setPhotoCheckOpen((v) => !v);
+  }, []);
+
   return (
     <>
       <div className="container-tight py-8 sm:py-12">
@@ -490,14 +647,61 @@ function ConstructorPage() {
             />
 
             {/* ====== Topic-mode шаги (компактный 3-шаговый flow) ====== */}
-            {mode === "topic" && step === "select" && (
+            {mode === "topic" && step === "select" && (!subject || grade === null) && (
               <SelectStep
                 subject={subject}
                 grade={grade}
-                onSubject={(s) => { setSubject(s); setGrade(null); setUmk(null); setTopic(null); }}
+                onSubject={(s) => {
+                  setSubject(s);
+                  setGrade(null);
+                  setUmk(null);
+                  setTopic(null);
+                  // F-02: смена предмета сбрасывает выбор preset'а (мог быть для другого предмета).
+                  setSelectedPresetId(null);
+                  setPresetMode("template");
+                }}
                 onGrade={handleGradeChangeInline}
                 onNext={handleSelectNext}
               />
+            )}
+
+            {/* F-02: шаг выбора preset'а появляется на шаге 1 после того, как юзер выбрал и предмет, и класс.
+                Заменяет кнопку «Далее» — теперь выбор шаблона = переход на «Тема». */}
+            {mode === "topic" && step === "select" && subject && grade !== null && (
+              <Card>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-warm-950">Сценарий</h2>
+                    <p className="text-xs text-warm-500 mt-0.5">
+                      Выбраны: {getSubject(subject)?.shortTitle} · {grade} кл. Можно поменять в шаге «Что».
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      // Возврат к выбору предмета/класса.
+                      setGrade(null);
+                      setUmk(null);
+                      setTopic(null);
+                      handleBackFromPresets();
+                    }}
+                    leftIcon={<ArrowLeft className="w-3.5 h-3.5" />}
+                  >
+                    Назад
+                  </Button>
+                </div>
+                <PresetGrid
+                  grade={grade}
+                  mode={presetMode}
+                  onModeChange={setPresetMode}
+                  onSelectPreset={handleSelectPreset}
+                  onSkipToTopic={handleSkipPresetToTopic}
+                  selectedPresetId={selectedPresetId}
+                  customType={customType}
+                  onCustomTypeChange={handleCustomTypeChange}
+                />
+              </Card>
             )}
 
             {mode === "topic" && step === "topic" && subjectData && gradeData && (
@@ -583,6 +787,9 @@ function ConstructorPage() {
                 grade={mode === "topic" ? grade : (exam === "oge" ? 9 : exam === "ege" ? 11 : null)}
                 exam={mode === "exam" ? exam : null}
                 examNumbers={mode === "exam" ? examNumbers : []}
+                /** F-09: показываем превью выбранного типа, чтобы пользователь понимал,
+                    что получит после генерации. */
+                type={type}
                 onPickPopular={() => {
                   setSubject("math");
                   setGrade(5);
@@ -624,27 +831,59 @@ function ConstructorPage() {
 
               return (
                 <div className="space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3 no-print">
-                    <div>
-                      <h2 className="text-xl font-semibold text-warm-950">{title}</h2>
-                      <p className="text-sm text-warm-500 mt-0.5">{subtitle}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button variant="secondary" size="sm" leftIcon={<Heart className="w-4 h-4" />} onClick={handleSaveFavorite}>
-                        В избранное
-                      </Button>
-                      <Button variant="secondary" size="sm" leftIcon={<RotateCcw className="w-4 h-4" />} onClick={handleNewVariant} loading={generating}>
-                        Новый вариант
-                      </Button>
-                      {kind !== "presentation" && (
-                        <Button variant="primary" size="sm" leftIcon={<Download className="w-4 h-4" />} onClick={handlePrint}>
-                          PDF
+                  {/* F-09: перестроили toolbar — заголовок на всю ширину,
+                      кнопки действий под ним отдельной строкой с flex-wrap,
+                      чтобы не уезжали за экран и не давили заголовок. */}
+                  <div className="no-print">
+                    <h2 className="text-xl font-semibold text-warm-950 break-words">{title}</h2>
+                    <p className="text-sm text-warm-500 mt-0.5 break-words">{subtitle}</p>
+                  </div>
+                  <div className="no-print flex flex-wrap items-center gap-2">
+                    <Button variant="secondary" size="sm" leftIcon={<Heart className="w-4 h-4" />} onClick={handleSaveFavorite}>
+                      <span className="hidden sm:inline">В избранное</span>
+                      <span className="sm:hidden">Избранное</span>
+                    </Button>
+                    <Button variant="secondary" size="sm" leftIcon={<RotateCcw className="w-4 h-4" />} onClick={handleNewVariant} loading={generating}>
+                      <span className="hidden sm:inline">Новый вариант</span>
+                      <span className="sm:hidden">Заново</span>
+                    </Button>
+                    {kind === "worksheet" && (
+                      <>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          leftIcon={<Sparkles className="w-4 h-4" />}
+                          onClick={handleOpenEditChat}
+                          aria-label="Открыть AI-правки"
+                          data-testid="open-edit-chat"
+                        >
+                          <span className="hidden sm:inline">AI-правки</span>
+                          <span className="sm:hidden">AI</span>
                         </Button>
-                      )}
-                      <Button variant="secondary" size="sm" onClick={handleDocx}>
-                        {downloadLabel}
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          leftIcon={<Camera className="w-4 h-4" />}
+                          onClick={handleTogglePhotoCheck}
+                          aria-expanded={photoCheckOpen}
+                          aria-controls="photo-check-panel"
+                          data-testid="toggle-photo-check"
+                        >
+                          <span className="hidden sm:inline">
+                            {photoCheckOpen ? "Скрыть проверку" : "Проверить фото"}
+                          </span>
+                          <span className="sm:hidden">Фото</span>
+                        </Button>
+                      </>
+                    )}
+                    {kind !== "presentation" && (
+                      <Button variant="primary" size="sm" leftIcon={<Download className="w-4 h-4" />} onClick={handlePrint}>
+                        PDF
                       </Button>
-                    </div>
+                    )}
+                    <Button variant="secondary" size="sm" onClick={handleDocx}>
+                      {downloadLabel}
+                    </Button>
                   </div>
 
                   {kind === "worksheet" && (
@@ -652,6 +891,35 @@ function ConstructorPage() {
                       worksheet={worksheet!}
                       withAnswers={withAnswers}
                       withExplanations={withExplanations}
+                      type={type}
+                    />
+                  )}
+                  {kind === "worksheet" && photoCheckOpen && (
+                    <div id="photo-check-panel" className="no-print animate-fade-in">
+                      <PhotoCheckPanel
+                        assignmentId={`local-${worksheet!.id}`}
+                        demoTasks={worksheet!.tasks.map((t) => ({
+                          number: t.number,
+                          taskText: t.text,
+                          correctAnswer: t.answer ?? "—",
+                          maxPoints: t.points || 1,
+                        }))}
+                        onResult={(r) =>
+                          trackEvent("photo_check_done", {
+                            source: r.source,
+                            percentage: r.percentage,
+                          })
+                        }
+                      />
+                    </div>
+                  )}
+                  {kind === "worksheet" && worksheet && (
+                    <EditChat
+                      worksheet={worksheet}
+                      onApply={(next) => {
+                        setWorksheet(next);
+                        trackEvent("worksheet_edit_apply", { id: next.id });
+                      }}
                     />
                   )}
                   {kind === "lesson-plan" && <LessonPlanPreview plan={lessonPlan!} />}
@@ -953,6 +1221,16 @@ function TopicStep({
   const umkList = getUMK(subjectData.slug, gradeData.num);
   const showUmkChips = umkList.length > 1;
 
+  // F-09: реальный фильтр по УМК. Тема показывается если:
+  //   - у темы НЕТ поля umk (общая для всех УМК), или
+  //   - выбранный umk входит в список umk темы.
+  // Без активного фильтра показываем всё (на случай если UMK не выбран).
+  const filteredTopics = gradeData.topics.filter((t) => {
+    if (!umk) return true;
+    if (!t.umk || t.umk.length === 0) return true;
+    return t.umk.includes(umk);
+  });
+
   return (
     <Card>
       <div className="flex items-center justify-between mb-3">
@@ -993,7 +1271,11 @@ function TopicStep({
       )}
 
       <div className="space-y-2 max-h-[420px] overflow-y-auto -mx-2 px-2 scrollbar-hide">
-        {gradeData.topics.map((t) => (
+        {filteredTopics.length === 0 ? (
+          <div className="text-sm text-warm-500 py-6 text-center">
+            Для выбранного учебника нет тем. Попробуйте сбросить выбор УМК — кнопка «Назад».
+          </div>
+        ) : filteredTopics.map((t) => (
           <button
             key={t.slug}
             type="button"
@@ -1076,26 +1358,32 @@ function ConfigureStep({
 
   return (
     <Card>
-      {/* Заголовок: инлайн-summary + Изменить + Сначала. */}
-      <div className="flex items-center justify-between gap-2 mb-4">
-        <div className="flex-1 min-w-0">
-          <div className="text-xs uppercase tracking-wider text-warm-500 font-semibold">Параметры</div>
-          {summary ? (
-            <button
-              type="button"
-              onClick={onEditSummary}
-              className="group flex items-center gap-1.5 text-sm font-medium text-warm-950 hover:text-brand-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded"
-            >
-              <span className="truncate">{summary}</span>
-              <span className="text-xs font-normal text-brand-600 group-hover:underline shrink-0">Изменить</span>
-            </button>
-          ) : (
-            <h2 className="text-lg font-semibold text-warm-950">Параметры</h2>
-          )}
+      {/* Заголовок: инлайн-summary + Изменить + Сначала.
+          F-09: на узких экранах «Сначала» уезжает под summary, поэтому:
+          — контейнер сделан flex-col на <sm, flex-row на ≥sm
+          — summary-строка получает min-w-0 + truncate, чтобы не разъезжать вправо
+          — «Сначала» прижат к правому краю и не перекрывает «Изменить». */}
+      <div className="mb-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs uppercase tracking-wider text-warm-500 font-semibold shrink-0">Параметры</div>
+          <Button variant="ghost" size="sm" onClick={onReset} className="shrink-0 -mr-2">
+            Сначала
+          </Button>
         </div>
-        <Button variant="ghost" size="sm" onClick={onReset} className="shrink-0">
-          Сначала
-        </Button>
+        {summary ? (
+          <button
+            type="button"
+            onClick={onEditSummary}
+            className="group mt-1 flex items-center gap-1.5 text-sm font-medium text-warm-950 hover:text-brand-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded max-w-full"
+          >
+            <span className="truncate min-w-0 flex-1">{summary}</span>
+            <span className="text-xs font-normal text-brand-600 group-hover:underline shrink-0 whitespace-nowrap">
+              Изменить
+            </span>
+          </button>
+        ) : (
+          <h2 className="mt-1 text-lg font-semibold text-warm-950">Параметры</h2>
+        )}
       </div>
 
       <div className="space-y-4">
@@ -1236,6 +1524,7 @@ function EmptyPreview({
   grade,
   exam,
   examNumbers,
+  type,
   onPickPopular,
 }: {
   mode: Mode;
@@ -1243,6 +1532,8 @@ function EmptyPreview({
   grade: number | null;
   exam: ExamSlug | null;
   examNumbers: number[];
+  /** F-09: тип артефакта — используем для превью. */
+  type: TaskType;
   onPickPopular: () => void;
 }) {
   const isExam = mode === "exam";
@@ -1256,28 +1547,97 @@ function EmptyPreview({
       ? `Готовы сгенерировать ${subject.shortTitle.toLowerCase()} ${grade ?? ""} класса`
       : "Выберите предмет слева";
 
-  return (
-    <Card className="border-dashed border-warm-300 bg-gradient-to-br from-warm-50 to-white min-h-[480px] flex flex-col items-center justify-center text-center">
-      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-400 to-brand-600 grid place-items-center text-white shadow-brand mb-5">
-        <Sparkles className="w-8 h-8" />
-      </div>
-      <h2 className="text-2xl font-display font-bold text-warm-950 mb-2">
-        {headline}
-      </h2>
-      <p className="text-warm-600 max-w-md mb-6">
-        {isExam
-          ? "Завершите выбор номеров и параметров. Сгенерируем рабочий лист по выбранным заданиям ФИПИ."
-          : subject
-            ? "Завершите выбор темы и параметров, и через 30 секунд у вас будет готовый PDF."
-            : "AI создаст рабочий лист, проверит ответы сам и пришлёт готовый файл."}
-      </p>
-      {!isExam && (
-        <Button variant="primary" size="lg" onClick={onPickPopular} leftIcon={<Sparkles className="w-4 h-4" />}>
-          Попробовать: дроби, 5 класс
-        </Button>
-      )}
+  // F-09: превью выбранного типа — образец, чтобы пользователь понимал, что получит.
+  const TYPE_PREVIEW: Record<TaskType, { label: string; sample: string; desc: string }> = {
+    worksheet: {
+      label: "Рабочий лист",
+      sample: "1. Решите уравнение: 3x + 12 = 0…",
+      desc: "Классический список заданий с местом для ответов. PDF или DOCX.",
+    },
+    test: {
+      label: "Тест",
+      sample: "1. Сократите дробь 8/12.   ○ A) 1/2  ○ B) 2/3  ○ C) 4/6  ○ D) 3/4",
+      desc: "Все задания — multiple-choice, легко проверить по шифру ответов.",
+    },
+    cards: {
+      label: "Карточки",
+      sample: "Карточка 1: «Столица Франции?» → ответ: Париж",
+      desc: "Компактная сетка карточек для повторения и запоминания.",
+    },
+    control: {
+      label: "Контрольная",
+      sample: "Вариант 1 / Вариант 2 · 2 балла за задание · критерии оценки",
+      desc: "Два варианта одной работы плюс критерии оценивания.",
+    },
+    "lesson-plan": {
+      label: "План урока",
+      sample: "Этапы: 1) Оргмомент 2 мин · 2) Опрос 7 мин · 3) Новая тема 18 мин…",
+      desc: "ФГОС-конспект на 45 минут, готовый к проведению.",
+    },
+    presentation: {
+      label: "Презентация",
+      sample: "Слайд 3: «Дроби в нашей жизни» — картинка + 3 пункта",
+      desc: "5–20 слайдов в PPTX. Иллюстрации и тезисы подобраны LLM.",
+    },
+    ktp: {
+      label: "КТП",
+      sample: "Сентябрь · Тема 1 (4 ч) · Тема 2 (3 ч) · …",
+      desc: "Календарно-тематическое планирование на учебный год.",
+    },
+    oge: {
+      label: "Вариант ОГЭ",
+      sample: "Часть 1 (задания 1–19) + Часть 2 (20–25)",
+      desc: "Полный вариант ОГЭ по номерам заданий ФИПИ.",
+    },
+    ege: {
+      label: "Вариант ЕГЭ",
+      sample: "Часть 1 (задания 1–27) + Часть 2 (28–…)",
+      desc: "Полный вариант ЕГЭ по номерам заданий ФИПИ.",
+    },
+  };
+  const preview = TYPE_PREVIEW[type] ?? TYPE_PREVIEW.worksheet;
 
-      <div className="mt-10 grid grid-cols-3 gap-6 text-center w-full max-w-md">
+  return (
+    <Card className="border-dashed border-warm-300 bg-gradient-to-br from-warm-50 to-white min-h-[480px]">
+      <div className="flex flex-col items-center text-center pt-8 pb-4 px-4">
+        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-400 to-brand-600 grid place-items-center text-white shadow-brand mb-5">
+          <Sparkles className="w-8 h-8" />
+        </div>
+        <h2 className="text-2xl font-display font-bold text-warm-950 mb-2">
+          {headline}
+        </h2>
+        <p className="text-warm-600 max-w-md mb-6">
+          {isExam
+            ? "Завершите выбор номеров и параметров. Сгенерируем рабочий лист по выбранным заданиям ФИПИ."
+            : subject
+              ? "Завершите выбор темы и параметров, и через 30 секунд у вас будет готовый PDF."
+              : "AI создаст рабочий лист, проверит ответы сам и пришлёт готовый файл."}
+        </p>
+        {!isExam && (
+          <Button variant="primary" size="lg" onClick={onPickPopular} leftIcon={<Sparkles className="w-4 h-4" />}>
+            Попробовать: дроби, 5 класс
+          </Button>
+        )}
+      </div>
+
+      {/* F-09: превью выбранного типа — образец результата. */}
+      <div className="px-4 sm:px-6 pb-4">
+        <div className="text-[10px] uppercase tracking-wider text-warm-500 font-semibold mb-2">
+          Как будет выглядеть результат
+        </div>
+        <div className="rounded-xl border border-warm-200 bg-white p-4 shadow-soft">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-semibold text-warm-950">{preview.label}</div>
+            <div className="text-[10px] text-warm-500 uppercase tracking-wider">пример</div>
+          </div>
+          <div className="text-[13px] text-warm-700 leading-snug mb-2 line-clamp-3">
+            {preview.sample}
+          </div>
+          <div className="text-[11px] text-warm-500">{preview.desc}</div>
+        </div>
+      </div>
+
+      <div className="px-4 sm:px-6 pb-8 grid grid-cols-3 gap-6 text-center w-full">
         <div>
           <div className="text-2xl font-bold text-brand-600">~30 сек</div>
           <div className="text-xs text-warm-500 mt-0.5">Среднее время</div>

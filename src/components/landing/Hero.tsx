@@ -192,7 +192,7 @@ function HeroMockup() {
           </ol>
 
           <div className="mt-6 pt-3 border-t border-dashed border-warm-200 text-[10px] text-warm-400 text-center">
-            ЛистAI · Ответы и пояснения на&nbsp;отдельной странице · Подходит для&nbsp;печати на&nbsp;A4
+            РабочиеЛисты AI · Ответы и пояснения на&nbsp;отдельной странице · Подходит для&nbsp;печати на&nbsp;A4
           </div>
 
           <div className="absolute top-3 right-3 -rotate-12 px-3 py-1 rounded-full border-2 border-accent-500 text-accent-600 text-[10px] font-bold uppercase tracking-wider bg-white/80 animate-fade-in" style={{ animationDelay: "1.8s", animationFillMode: "both" }}>

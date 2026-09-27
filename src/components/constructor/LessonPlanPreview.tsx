@@ -67,7 +67,7 @@ export function LessonPlanPreview({ plan }: Props) {
               </div>
             </div>
             <div className="text-right text-xs text-warm-500 shrink-0">
-              <div>ЛистAI</div>
+              <div>РабочиеЛисты AI</div>
               <div className="mt-0.5">{formatDate(plan.createdAt)}</div>
               <div className="mt-2 inline-block px-2 py-0.5 rounded border border-brand-300 text-brand-700 text-[10px] font-semibold">
                 Конспект урока
@@ -185,7 +185,7 @@ export function LessonPlanPreview({ plan }: Props) {
 
           {/* Подвал */}
           <footer className="mt-6 pt-3 border-t border-warm-200 flex items-center justify-between text-[10px] text-warm-400">
-            <span>ЛистAI · listai.ru · план урока по ФГОС</span>
+            <span>РабочиеЛисты AI · rabochielisty.ru · план урока по ФГОС</span>
             <span>Конспект на {totalMin} мин · {plan.stages.length} шагов</span>
           </footer>
         </article>

@@ -1,55 +1,90 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
-import { Mail, ArrowRight, Check, Sparkles } from "lucide-react";
-import { setProfile } from "@/lib/utils/storage";
-import type { UserProfile } from "@/lib/types";
-import { shortId } from "@/lib/utils/cn";
+import { Mail, ArrowRight, Sparkles } from "lucide-react";
+import { trackEvent } from "@/lib/track";
+import { requestMagicLink } from "@/lib/auth/api";
 
 export default function LoginPage() {
-  const router = useRouter();
   const { toast } = useToast();
   const [email, setEmail] = React.useState("");
-  const [step, setStep] = React.useState<"email" | "sent" | "signed-in">("email");
+  const [step, setStep] = React.useState<"email" | "sent">("email");
   const [loading, setLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    trackEvent("login_view");
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.includes("@")) return;
+    const emailDomain = email.split("@")[1] ?? "unknown";
+    trackEvent("login_submit", { emailDomain });
 
     setLoading(true);
-    // Mock: имитируем отправку magic link
-    await new Promise((r) => setTimeout(r, 800));
+    trackEvent("magic_link_requested", { emailDomain });
+    const result = await requestMagicLink(email);
     setLoading(false);
-    toast({
-      title: "Ссылка отправлена",
-      description: `Проверьте ${email}`,
-      tone: "success",
-    });
-    setStep("sent");
+
+    if (result.ok) {
+      trackEvent("magic_link_sent", { emailDomain });
+      toast({
+        title: "Ссылка отправлена",
+        description: `Проверьте ${email}`,
+        tone: "success",
+      });
+      setStep("sent");
+    } else {
+      trackEvent("magic_link_failed", {
+        emailDomain,
+        reason: result.error,
+      });
+      toast({
+        title: "Не получилось отправить ссылку",
+        description: result.error,
+        tone: "error",
+      });
+      // Остаёмся на шаге email, чтобы юзер мог попробовать снова или проверить адрес.
+    }
   };
 
+  // Dev-only fallback: если бэк не подключён (локальный фронт без NEXT_PUBLIC_API_URL
+  // или NETWORK ошибка), позволяет продемонстрировать flow без реального magic link.
+  // В проде (NODE_ENV='production', деплой Cloudflare Pages) кнопка и блок не рендерится —
+  // иначе клик «Я нажал ссылку» создаст фейковый профиль в localStorage, который
+  // не ссинхронизируется с /api/users/me. Удалять полностью пока нельзя — QA-инженер
+  // и preview-окружения иногда гоняют фронт без воркера.
+  const showDevMockConfirm = process.env.NODE_ENV !== "production";
   const handleMockConfirm = () => {
-    // В production это происходит автоматически по клику в письме
-    const profile: UserProfile = {
-      id: shortId(),
-      email,
-      name: email.split("@")[0],
-      plan: "free",
-      generationsTotal: 0,
-      generationsToday: 0,
-      generationsLimit: 3,
-      createdAt: new Date().toISOString(),
-    };
-    setProfile(profile);
-    setStep("signed-in");
-    setTimeout(() => router.push("/dashboard"), 1200);
+    trackEvent("login_confirm", {
+      emailDomain: email.split("@")[1] ?? "unknown",
+      devMock: 1,
+    });
+    // inline-копия логики: не импортируем storage на верхнем уровне, чтобы прод-бандл
+    // не таскал неиспользуемый код и setProfile не дёргался без явного dev-confirm.
+    if (typeof window !== "undefined") {
+      const profile = {
+        id: Math.random().toString(36).slice(2, 10),
+        email,
+        name: email.split("@")[0],
+        plan: "free" as const,
+        generationsTotal: 0,
+        generationsToday: 0,
+        generationsLimit: 3,
+        createdAt: new Date().toISOString(),
+      };
+      try {
+        window.localStorage.setItem("listai.profile", JSON.stringify(profile));
+      } catch {
+        /* localStorage недоступен — ок */
+      }
+      window.location.assign("/dashboard");
+    }
   };
 
   return (
@@ -61,7 +96,7 @@ export default function LoginPage() {
               <div className="w-12 h-12 rounded-xl bg-brand-500 text-white grid place-items-center mx-auto mb-4 shadow-brand">
                 <Mail className="w-6 h-6" />
               </div>
-              <h1 className="text-2xl font-semibold text-warm-950">Войти в ЛистAI</h1>
+              <h1 className="text-2xl font-semibold text-warm-950">Войти в РабочиеЛисты AI</h1>
               <p className="text-sm text-warm-500 mt-1">
                 Magic link — без пароля. Откроем письмо, нажмёте кнопку — и готово.
               </p>
@@ -145,12 +180,16 @@ export default function LoginPage() {
               Не пришло? Проверьте папку «Спам» или повторите через минуту.
             </p>
 
-            <div className="mt-6 p-4 rounded-xl bg-warm-50 border border-warm-200">
-              <p className="text-xs text-warm-500 mb-2">Демо-режим: имитация клика по magic link</p>
-              <Button variant="secondary" size="md" onClick={handleMockConfirm} fullWidth>
-                Я нажал(а) ссылку в письме
-              </Button>
-            </div>
+            {showDevMockConfirm && (
+              <div className="mt-6 p-4 rounded-xl bg-warm-50 border border-warm-200">
+                <p className="text-xs text-warm-500 mb-2">
+                  Демо-режим (только в dev): имитация клика по magic link
+                </p>
+                <Button variant="secondary" size="md" onClick={handleMockConfirm} fullWidth>
+                  Я нажал(а) ссылку в письме
+                </Button>
+              </div>
+            )}
 
             <button
               type="button"
@@ -159,18 +198,6 @@ export default function LoginPage() {
             >
               ← Другой email
             </button>
-          </div>
-        )}
-
-        {step === "signed-in" && (
-          <div className="text-center">
-            <div className="w-12 h-12 rounded-xl bg-emerald-500 text-white grid place-items-center mx-auto mb-4">
-              <Check className="w-6 h-6" />
-            </div>
-            <h2 className="text-xl font-semibold text-warm-950">Готово!</h2>
-            <p className="text-sm text-warm-600 mt-2">
-              Входим в личный кабинет…
-            </p>
           </div>
         )}
       </Card>

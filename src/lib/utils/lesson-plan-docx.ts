@@ -296,7 +296,7 @@ export async function generateLessonPlanDocx(plan: LessonPlan): Promise<Blob> {
     new Paragraph({
       children: [
         new TextRun({
-          text: "ЛистAI · listai.ru · план урока по ФГОС",
+          text: "РабочиеЛисты AI · rabochielisty.ru · план урока по ФГОС",
           size: 18,
           color: "999999",
         }),
@@ -307,7 +307,7 @@ export async function generateLessonPlanDocx(plan: LessonPlan): Promise<Blob> {
   );
 
   const doc = new Document({
-    creator: "ЛистAI",
+    creator: "РабочиеЛисты AI",
     title: `План урока · ${topicTitle}`,
     description: `${plan.subject} · ${plan.grade} класс`,
     sections: [
@@ -325,7 +325,7 @@ export async function generateLessonPlanDocx(plan: LessonPlan): Promise<Blob> {
                 alignment: AlignmentType.RIGHT,
                 children: [
                   new TextRun({
-                    text: "ЛистAI · listai.ru",
+                    text: "РабочиеЛисты AI · rabochielisty.ru",
                     size: 16,
                     color: "BBBBBB",
                   }),

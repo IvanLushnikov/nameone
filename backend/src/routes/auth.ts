@@ -8,7 +8,7 @@
  *
  * Безопасность:
  *   * magic-link никогда не раскрывает, существует ли email
- *   * cookie — HttpOnly + Secure + SameSite=Lax, 30 дней
+ *   * cookie — HttpOnly + Secure + SameSite=None (см. комментарий в /callback), 30 дней
  *   * session-токен — наноид 32 символа (см. lib/shortid.ts)
  */
 
@@ -56,11 +56,19 @@ authRouter.post("/callback", async (c) => {
   const result = await consumeMagicLinkAndCreateSession(c.env.DB, token);
   if (!result) throw new UnauthorizedError("Invalid or expired magic link");
 
-  // Set HttpOnly Secure cookie
+  // Set HttpOnly Secure cookie.
+  //
+  // SameSite=None: фронт на listai-prototype.pages.dev (и в перспективе rabochielisty.ru),
+  // бэк на *.workers.dev — разные origin'ы. С SameSite=Lax браузер НЕ отдаёт cookie
+  // при cross-origin fetch (XHR/fetch из фронта на бэк). SameSite=None + Secure —
+  // единственный вариант, который работает на разных доменах.
+  //
+  // Когда переедем на один eTLD+1 (например rabochielisty.ru apex + api.rabochielisty.ru),
+  // можно вернуть SameSite=Lax — это безопаснее (CSRF mitigation).
   setCookie(c, "session", result.sessionToken, {
     httpOnly: true,
     secure: true,
-    sameSite: "Lax",
+    sameSite: "None",
     maxAge: 30 * 24 * 60 * 60, // 30 дней
     path: "/",
   });

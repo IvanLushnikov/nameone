@@ -40,7 +40,7 @@ export function KtpPreview({ ktp }: Props) {
               </div>
             </div>
             <div className="text-right text-xs text-warm-500 shrink-0">
-              <div>ЛистAI</div>
+              <div>РабочиеЛисты AI</div>
               <div className="mt-0.5">{formatDate(ktp.createdAt)}</div>
               <div className="mt-2 inline-block px-2 py-0.5 rounded border border-brand-300 text-brand-700 text-[10px] font-semibold">
                 {totalLessons} уроков
@@ -123,7 +123,7 @@ export function KtpPreview({ ktp }: Props) {
 
           {/* Подвал */}
           <footer className="mt-8 pt-4 border-t border-warm-200 flex items-center justify-between text-[10px] text-warm-400">
-            <span>ЛистAI · listai.ru · КТП-демо</span>
+            <span>РабочиеЛисты AI · rabochielisty.ru · КТП-демо</span>
             <span>
               Всего: {ktp.totalHours} ч · {ktp.weeks.length} недель · {totalLessons} уроков
             </span>

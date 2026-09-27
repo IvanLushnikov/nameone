@@ -79,7 +79,7 @@ export function Footer() {
         </div>
 
         <div className="mt-10 pt-6 border-t border-warm-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-warm-500">
-          <p>© 2026 ЛистAI. Все права защищены. Сделано с ❤ для учителей и родителей.</p>
+          <p>© 2026 РабочиеЛисты AI. Все права защищены. Сделано с ❤ для учителей и родителей.</p>
           <p>Работает на AI · Cloudflare Pages</p>
         </div>
       </div>

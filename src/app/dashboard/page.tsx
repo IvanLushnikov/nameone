@@ -17,10 +17,10 @@ import {
   removeFavorite,
   removeTemplate,
   signOut,
+  type FavoriteArtifact,
 } from "@/lib/utils/storage";
 import type {
   UserHistoryItem,
-  Worksheet,
   UserTemplate,
   UserProfile,
   SubjectSlug,
@@ -38,20 +38,27 @@ import {
 } from "lucide-react";
 import { timeAgo } from "@/lib/utils/cn";
 import { getSubject } from "@/lib/content/subjects";
+import { trackEvent } from "@/lib/track";
 
 export default function DashboardPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [history, setHistory] = React.useState<UserHistoryItem[]>([]);
-  const [favorites, setFavorites] = React.useState<Worksheet[]>([]);
+  const [favorites, setFavorites] = React.useState<FavoriteArtifact[]>([]);
   const [templates, setTemplates] = React.useState<UserTemplate[]>([]);
   const [profile, setProfile] = React.useState<UserProfile | null>(null);
 
   React.useEffect(() => {
-    setHistory(getHistory());
+    const h = getHistory();
+    setHistory(h);
     setFavorites(getFavorites());
     setTemplates(getTemplates());
     setProfile(getProfile());
+    trackEvent("dashboard_view", {
+      historyCount: h.length,
+      favoritesCount: getFavorites().length,
+      templatesCount: getTemplates().length,
+    });
   }, []);
 
   const refresh = () => {
@@ -67,7 +74,11 @@ export default function DashboardPage() {
   };
 
   const handleToggleFav = (id: string) => {
-    toggleFavorite(id);
+    // F-06 B-3: если артефакт уже лежит в KEY_FAVORITES, передаём его —
+    // toggleFavorite синхронизирует и флаг, и сам список. Если нет
+    // (юзер кликнул на «несохранённой» карточке) — fallback на флаг.
+    const existing = getFavorites().find((x) => x.id === id);
+    toggleFavorite(id, existing);
     refresh();
   };
 
@@ -84,6 +95,7 @@ export default function DashboardPage() {
   };
 
   const handleUseTemplate = (t: UserTemplate) => {
+    trackEvent("dashboard_use_template", { subject: t.subject, grade: t.grade });
     // Переход в конструктор с предзаполненными параметрами
     const params = new URLSearchParams({
       subject: t.subject,
@@ -164,11 +176,11 @@ export default function DashboardPage() {
             />
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-              {favorites.map((w) => (
+              {favorites.map((artifact) => (
                 <FavoriteCard
-                  key={w.id}
-                  worksheet={w}
-                  onRemove={() => handleRemoveFavorite(w.id)}
+                  key={artifact.id}
+                  artifact={artifact}
+                  onRemove={() => handleRemoveFavorite(artifact.id)}
                 />
               ))}
             </div>
@@ -245,7 +257,7 @@ function StatsRow({
   templates,
 }: {
   history: UserHistoryItem[];
-  favorites: Worksheet[];
+  favorites: FavoriteArtifact[];
   templates: UserTemplate[];
 }) {
   const items = [
@@ -330,7 +342,7 @@ function HistoryCard({
         <div className="mt-3 flex items-center gap-1.5">
           <Button
             as="link"
-            href={`/preview/${item.id}`}
+            href={`/preview?id=${encodeURIComponent(item.id)}`}
             variant="secondary"
             size="sm"
             fullWidth
@@ -354,12 +366,16 @@ function HistoryCard({
 // =============== Favorite card ===============
 
 function FavoriteCard({
-  worksheet,
+  artifact,
   onRemove,
 }: {
-  worksheet: Worksheet;
+  artifact: FavoriteArtifact;
   onRemove: () => void;
 }) {
+  // F-06 B-4: карточка рендерится для всех 4 типов артефактов,
+  // показываем релевантные метаданные (заголовок + короткое summary).
+  const summary = describeArtifact(artifact);
+
   return (
     <Card hover className="h-full flex flex-col">
       <div className="flex items-start justify-between gap-2 mb-3">
@@ -373,27 +389,60 @@ function FavoriteCard({
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
-      <h3 className="font-semibold text-warm-950">{worksheet.title}</h3>
+      <h3 className="font-semibold text-warm-950">{artifact.title}</h3>
       <p className="text-sm text-warm-500 mt-0.5">
-        {worksheet.subject} · {worksheet.grade} класс · {worksheet.tasks.length} заданий
+        {artifact.subject} · {artifact.grade} класс · {summary.line}
       </p>
       <div className="mt-3 text-xs text-warm-600 line-clamp-2">
-        {worksheet.tasks[0]?.text}
+        {summary.preview}
       </div>
       <div className="mt-auto pt-4">
         <Button
           as="link"
-          href={`/preview/${worksheet.id}`}
+          href={`/preview?id=${encodeURIComponent(artifact.id)}`}
           variant="secondary"
           size="sm"
           rightIcon={<ArrowRight className="w-3.5 h-3.5" />}
           fullWidth
         >
-          Открыть лист
+          Открыть
         </Button>
       </div>
     </Card>
   );
+}
+
+/**
+ * Возвращает «{count, line}» и короткий текст-превью для дашбордной карточки.
+ * Безопасно работает с любым из 4 типов артефактов (discriminated union).
+ */
+function describeArtifact(a: FavoriteArtifact): { line: string; preview: string } {
+  if ("tasks" in a) {
+    return {
+      line: `${a.tasks.length} заданий`,
+      preview: a.tasks[0]?.text ?? "",
+    };
+  }
+  if ("stages" in a) {
+    return {
+      line: `${a.stages.length} шагов · ${a.stages.reduce((s, st) => s + st.durationMin, 0)} мин`,
+      preview: a.stages[0]?.title ?? "",
+    };
+  }
+  if ("slides" in a) {
+    return {
+      line: `${a.slides.length} слайдов`,
+      preview: a.slides[0]?.title ?? "",
+    };
+  }
+  if ("weeks" in a) {
+    const totalLessons = a.weeks.reduce((acc, w) => acc + w.entries.length, 0);
+    return {
+      line: `${a.totalHours} ч · ${a.weeks.length} недель · ${totalLessons} уроков`,
+      preview: a.weeks[0]?.entries[0]?.topic ?? "",
+    };
+  }
+  return { line: "", preview: "" };
 }
 
 // =============== Template card ===============

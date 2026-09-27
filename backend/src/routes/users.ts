@@ -2,6 +2,7 @@
  * /api/users/* — личный кабинет: профиль, история, избранное, шаблоны, подписка.
  *
  *   GET  /api/users/me             — текущий пользователь (полные поля из БД)
+ *   GET  /api/users/usage          — счётчик генераций для UI (light payload)
  *   GET  /api/users/history        — последние worksheets пользователя
  *   GET  /api/users/favorites      — избранные листы
  *   POST /api/users/favorites      — добавить в избранное
@@ -157,6 +158,37 @@ usersRouter.get("/subscription", async (c) => {
   const sub = await getActiveSubscription(c.env.DB, auth.id);
   if (!sub) return c.json({ ok: true, subscription: null });
   return c.json({ ok: true, subscription: sub });
+});
+
+/**
+ * Light-payload endpoint для UI счётчика "осталось N генераций сегодня".
+ *
+ * В отличие от /me (который возвращает полный профиль) — здесь только то,
+ * что нужно фронту для рендера лимита. Удобно дёргать часто (на каждый
+ * action после генерации) без переплаты за JSON-байты.
+ *
+ * generationsLimit:
+ *   -1 — безлимитный (base/plus планы)
+ *   3  — free plan (default)
+ *
+ * generationsResetAt:
+ *   null если daily counter ни разу не инициализировался (новый user).
+ *   ISO-строка если уже выставлялся через resetUserDailyGenerations().
+ */
+usersRouter.get("/usage", async (c) => {
+  const auth = userOr401(c);
+  const user = await getUserById(c.env.DB, auth.id);
+  if (!user) throw new NotFoundError("User not found");
+  return c.json({
+    ok: true,
+    generationsToday: user.generations_today,
+    generationsLimit: user.plan === "plus" || user.plan === "base" ? -1 : 3,
+    generationsResetAt:
+      user.generations_reset_at != null
+        ? new Date(user.generations_reset_at * 1000).toISOString()
+        : null,
+    plan: user.plan,
+  });
 });
 
 // Suppress lint — incrementUserGenerations не используется пока, оставлен для будущего
