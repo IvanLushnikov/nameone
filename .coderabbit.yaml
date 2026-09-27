@@ -1,0 +1,74 @@
+# CodeRabbit AI — https://coderabbit.ai
+# Public repo: github.com/IvanLushnikov/nameone
+# Docs: https://docs.coderabbit.ai
+
+language: ru-RU
+tone_instructions: "Пиши комментарии на русском. Тон — спокойный, по делу. Не повторяй то, что уже сказал. Не делай комплиментов."
+
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+  high_level_summary: true
+  review_status: true
+  commit_messages: false
+  suggested_labels: true
+  auto_apply_labels: false
+  suggested_reviewers: true
+  poem: false
+  assess_linked_issues: true
+  related_prs: true
+  sequence_diagrams: false
+
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/out/**"
+    - "!**/.next/**"
+    - "!**/dist/**"
+    - "!**/coverage/**"
+    - "!**/*.lock"
+    - "!**/*.svg"
+
+  path_instructions:
+    - path: "src/lib/llm/**"
+      instructions: |
+        Это LLM-слой генератора рабочих листов. Проверяй:
+        - корректность Zod-схем (svg-spec.ts и других)
+        - обработку ошибок парсинга LLM-ответов (не должно быть silent try/except: pass)
+        - дефолты для опциональных полей
+        - типы возврата должны быть discriminated unions где это уместно
+    - path: "src/lib/mock/**"
+      instructions: |
+        Mock-генератор. Здесь живут фикстуры и фолбэки. Проверяй, что моки реалистичны (реальные темы/классы) и не расходятся с типами в src/lib/types.ts.
+    - path: "src/components/**"
+      instructions: |
+        React-компоненты. Проверяй:
+        - a11y (alt, aria-label, focus, keyboard nav)
+        - loading/empty/error states
+        - не использовать dangerouslySetInnerHTML без санитизации (кроме проверенных SvgChart.tsx)
+    - path: "**/*.{ts,tsx}"
+      instructions: |
+        Стек: TypeScript strict, Next.js 14, React 18. Проект на output: "export" — никаких API routes, никаких server actions, никаких dynamic = "force-dynamic".
+    - path: "**/*.test.ts"
+      instructions: |
+        Тесты на vitest. Проверяй, что тесты проверяют поведение, а не только компиляцию. Моки LLM — через src/lib/mock.
+
+  tools:
+    eslint:
+      enabled: true
+    vitest:
+      enabled: true
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  learnings:
+    scope: local
+  issues:
+    scope: local
+
+# Уровни шума: чем ниже, тем больше сигнала
+review_detail_level: medium
+
+# Только эти файлы/папки реально меняются при разработке
+# (документация в docs/ — обновляется редко, ревью не нужно)
