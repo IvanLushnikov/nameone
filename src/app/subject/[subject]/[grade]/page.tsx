@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { FgosBadge } from "@/components/ui/FgosBadge";
 import { Sparkles, ArrowRight } from "lucide-react";
 import { getSubject, subjects } from "@/lib/content/subjects";
 import type { Grade, Topic } from "@/lib/types";
@@ -99,11 +100,8 @@ export default function GradeHubPage({ params }: Props) {
                     </h3>
                     <ArrowRight className="w-4 h-4 text-warm-400 group-hover:text-brand-500 transition-colors shrink-0 mt-0.5" />
                   </div>
-                  {t.fgosRef && (
-                    <Badge tone="neutral" className="mb-2">
-                      ФГОС {t.fgosRef}
-                    </Badge>
-                  )}
+                  {/* P0-01: компактная ФГОС-плашка на листинге (null-рендер если fgosRef нет) */}
+                  <FgosBadge fgosRef={t.fgosRef} size="sm" className="mb-2" />
                   <p className="text-xs text-warm-600 line-clamp-2 font-mono">
                     {t.examples[0]?.text}
                   </p>

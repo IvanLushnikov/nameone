@@ -2,11 +2,13 @@
 # В проде эти же переменные задаются через `wrangler secret put <KEY>`.
 # .dev.vars — в .gitignore, никогда не коммить.
 
-# LLM-провайдеры
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-DEEPSEEK_API_KEY=
-OPENROUTER_API_KEY=
+# LLM — единственный провайдер для РабочиеЛисты AI.
+# Polza.ai — российский агрегатор, один ключ покрывает все модели
+# (openai/gpt-6-luna, anthropic/claude-opus-5.5, deepseek/deepseek-v4-flash,
+#  qwen/qwen3-embedding-8b, openai/text-embedding-3-large).
+# Юрлицам РФ: оплата ₽/безнал/счёт, ФЗ-152 на части провайдеров.
+# Ключ берётся в личном кабинете polza.ai → API.
+POLZA_API_KEY=
 
 # Email (magic-link)
 RESEND_API_KEY=

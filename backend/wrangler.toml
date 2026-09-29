@@ -31,7 +31,7 @@ FRONTEND_URL = "http://localhost:3000"
 [[d1_databases]]
 binding = "DB"
 database_name = "rabochielisty"
-database_id = "PLACEHOLDER_WILL_BE_FILLED_ON_DEPLOY"
+database_id = "fb8cc87f-4b51-4994-8d26-af366b448ebe"
 migrations_dir = "src/db"
 
 [[r2_buckets]]
@@ -47,13 +47,13 @@ compatibility_flags = ["nodejs_compat"]
 
 [env.production.vars]
 APP_ENV = "production"
-APP_BASE_URL = "https://rabochielisty-api.workers.dev"
-FRONTEND_URL = "https://rabochielisty.ru"
+APP_BASE_URL = "https://rabochielisty-api.ivanlusnikov159.workers.dev"
+FRONTEND_URL = "https://listai-prototype.pages.dev,https://www.listai-prototype.pages.dev"
 
 [[env.production.d1_databases]]
 binding = "DB"
 database_name = "rabochielisty"
-database_id = "PLACEHOLDER_WILL_BE_FILLED_ON_DEPLOY"
+database_id = "fb8cc87f-4b51-4994-8d26-af366b448ebe"
 migrations_dir = "src/db"
 
 [[env.production.r2_buckets]]

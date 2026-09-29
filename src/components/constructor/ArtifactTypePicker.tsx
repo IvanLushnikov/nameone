@@ -65,8 +65,7 @@ export function ArtifactTypePicker({ value, onChange, hasPlus }: ArtifactTypePic
       {rows.map((rowIdx) => (
         <div
           key={rowIdx}
-          className="grid gap-1 p-1 bg-warm-100 rounded-xl"
-          style={{ gridTemplateColumns: `repeat(${ARTIFACT_TYPE_OPTIONS.filter((o) => o.row === rowIdx).length}, minmax(0, 1fr))` }}
+          className="flex flex-wrap gap-1 p-1 bg-warm-100 rounded-xl"
         >
           {ARTIFACT_TYPE_OPTIONS.filter((o) => o.row === rowIdx).map((opt) => {
             const disabled = opt.plusOnly && !hasPlus;
@@ -82,7 +81,7 @@ export function ArtifactTypePicker({ value, onChange, hasPlus }: ArtifactTypePic
                 disabled={disabled}
                 onClick={() => !disabled && onChange(opt.id)}
                 title={disabled ? `Доступно в тарифе «Плюс» (${opt.hint})` : opt.hint}
-                className={`group flex items-center justify-center gap-1.5 h-10 px-2 rounded-lg text-[13px] font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
+                className={`group flex items-center justify-center gap-1.5 h-10 px-3 rounded-lg text-[13px] font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 whitespace-nowrap ${
                   selected
                     ? "bg-white text-warm-950 shadow-soft"
                     : disabled
@@ -91,7 +90,7 @@ export function ArtifactTypePicker({ value, onChange, hasPlus }: ArtifactTypePic
                 }`}
               >
                 <Icon className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">{opt.label}</span>
+                <span>{opt.label}</span>
                 {opt.plusOnly && (
                   <span
                     className={`text-[9px] uppercase tracking-wider font-bold px-1 rounded ${

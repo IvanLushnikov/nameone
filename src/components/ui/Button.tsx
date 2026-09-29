@@ -95,7 +95,7 @@ export function Button(props: ButtonProps) {
   if (props.as === "link") {
     const linkRest = rest as Omit<ButtonAsLink, "as">;
     return (
-      <Link {...linkRest} className={classes}>
+      <Link href={linkRest.href} className={classes}>
         {content}
       </Link>
     );

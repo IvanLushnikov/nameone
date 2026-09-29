@@ -4,6 +4,7 @@ import * as React from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Check, Sparkles, Lock } from "lucide-react";
+import { trackEvent } from "@/lib/track";
 
 interface Props {
   open: boolean;
@@ -46,7 +47,20 @@ const plans = [
   },
 ];
 
-export function PaywallModal({ open, onClose }: Props) {
+export function PaywallModal({ open, onClose, remaining }: Props) {
+  // Трекаем только переход `false -> true` (не повторно при каждом ререндере).
+  const prevOpen = React.useRef(false);
+  React.useEffect(() => {
+    if (open && !prevOpen.current) {
+      trackEvent("paywall_open", { remaining });
+    }
+    prevOpen.current = open;
+  }, [open, remaining]);
+
+  const handlePlanClick = (planId: string) => () => {
+    trackEvent("paywall_plan_click", { planId });
+  };
+
   return (
     <Modal
       open={open}
@@ -101,10 +115,21 @@ export function PaywallModal({ open, onClose }: Props) {
       </div>
 
       <div className="space-y-2.5">
-        <Button variant="primary" size="lg" fullWidth leftIcon={<Sparkles className="w-4 h-4" />}>
+        <Button
+          variant="primary"
+          size="lg"
+          fullWidth
+          leftIcon={<Sparkles className="w-4 h-4" />}
+          onClick={handlePlanClick("base")}
+        >
           Оформить Базовый · 590 ₽/мес
         </Button>
-        <Button variant="accent" size="lg" fullWidth>
+        <Button
+          variant="accent"
+          size="lg"
+          fullWidth
+          onClick={handlePlanClick("plus")}
+        >
           Оформить Плюс · 1 490 ₽/мес
         </Button>
         <Button variant="ghost" size="md" fullWidth onClick={onClose}>

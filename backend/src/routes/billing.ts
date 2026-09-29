@@ -49,7 +49,13 @@ async function requireUser(c: Context<AppEnv>) {
   const user = await getUserById(c.env.DB, session.user_id);
   if (!user) throw new UnauthorizedError("User not found");
 
-  c.set("user", { id: user.id, email: user.email, name: user.name, plan: user.plan });
+  c.set("user", {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    plan: user.plan,
+    isAdmin: user.is_admin === 1,
+  });
   return user;
 }
 

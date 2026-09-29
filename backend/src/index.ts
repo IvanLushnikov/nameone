@@ -29,6 +29,12 @@ import { examsRouter } from "./routes/exams";
 import { authRouter } from "./routes/auth";
 import { usersRouter } from "./routes/users";
 import { billingRouter } from "./routes/billing";
+import { adminRouter } from "./routes/admin";
+import { trackRouter } from "./routes/track";
+import { accountRouter } from "./routes/account";
+import { f06Router } from "./routes/f06";
+import { f07Router } from "./routes/f07";
+import { f08Router } from "./routes/f08";
 
 const app = new Hono<AppEnv>();
 
@@ -67,10 +73,16 @@ app.use("*", async (c, next) => {
 app.route("/", healthRouter); // /healthz, /readyz
 app.route("/api/llm", llmRouter);
 app.route("/api/worksheets", worksheetsRouter);
+app.route("/api/worksheets", f08Router); // F-08: POST /:id/edit
 app.route("/api/exams", examsRouter);
 app.route("/api/auth", authRouter);
 app.route("/api/users", usersRouter);
 app.route("/api/billing", billingRouter);
+app.route("/api/account", accountRouter); // ЛК + magic-link
+app.route("/api/assignments", f06Router); // F-06: POST /:id/photo-check
+app.route("/api/assignments", f07Router); // F-07: CRUD + public + responses
+app.route("/api", trackRouter);  // POST /api/track — публичный
+app.route("/api/admin", adminRouter);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Error handling & 404

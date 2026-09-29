@@ -392,6 +392,10 @@ function ConstructorPage() {
         count,
         withAnswers,
         withExplanations,
+        // TZ-08: пробрасываем УМК в метаданные для мок-генератора
+        // (будущая передача в LLM-prompt в backend). Используем существующее
+        // поле `meta` чтобы не расширять контракт GenerationRequest.
+        ...(umk ? { meta: { umk } } : {}),
       };
     }
 
@@ -955,7 +959,7 @@ function ConstructorPage() {
                           correctAnswer: t.answer ?? "—",
                           maxPoints: t.points || 1,
                         }))}
-                        onResult={(r) =>
+                        onResult={(r: { source?: string; percentage?: number }) =>
                           trackEvent("photo_check_done", {
                             source: r.source,
                             percentage: r.percentage,
@@ -967,7 +971,7 @@ function ConstructorPage() {
                   {kind === "worksheet" && worksheet && (
                     <EditChat
                       worksheet={worksheet}
-                      onApply={(next) => {
+                      onApply={(next: import("@/lib/types").Worksheet) => {
                         setWorksheet(next);
                         trackEvent("worksheet_edit_apply", { id: next.id });
                       }}

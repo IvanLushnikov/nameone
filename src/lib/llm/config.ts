@@ -8,6 +8,9 @@
  *
  * ВАЖНО: на фронте секретов быть не должно. Здесь читаются ТОЛЬКО NEXT_PUBLIC_* (без секретов).
  * Реальные ключи — на бэке через wrangler secrets.
+ *
+ * С 2026-09-27 primary провайдер — polza.ai (юрлица РФ, ФЗ-152, ₽).
+ * Цены в MODELS — тарифы polza, конвертация RUB→USD по курсу ~85 ₽/$.
  */
 
 export const ENV_KEYS = {
@@ -15,12 +18,13 @@ export const ENV_KEYS = {
   anthropic: 'NEXT_PUBLIC_ANTHROPIC_PROVIDER', // на бэке ANTHROPIC_API_KEY
   deepseek: 'NEXT_PUBLIC_DEEPSEEK_PROVIDER', // на бэке DEEPSEEK_API_KEY
   dashscope: 'NEXT_PUBLIC_DASHSCOPE_PROVIDER', // на бэке DASHSCOPE_API_KEY
+  polza: 'NEXT_PUBLIC_POLZA_PROVIDER', // на бэке POLZA_API_KEY
 } as const;
 
 export interface ModelInfo {
   id: string;
   role: 'generator' | 'boost' | 'premium' | 'validator' | 'embeddings' | 'image';
-  provider: 'openai' | 'anthropic' | 'deepseek' | 'dashscope' | 'replicate' | 'inception';
+  provider: 'openai' | 'anthropic' | 'deepseek' | 'dashscope' | 'polza' | 'replicate' | 'inception';
   inputPricePer1M: number;
   outputPricePer1M: number;
   contextWindow: number;
@@ -31,56 +35,56 @@ export const MODELS: ModelInfo[] = [
   {
     id: 'gpt-6-luna',
     role: 'generator',
-    provider: 'openai',
-    inputPricePer1M: 0.10,
-    outputPricePer1M: 0.50,
+    provider: 'polza',
+    inputPricePer1M: 0.07, // polza: 5.91 ₽/1M ≈ $0.07
+    outputPricePer1M: 0.35, // 29.53 ₽/1M ≈ $0.35
     contextWindow: 128_000,
-    description: 'Базовый генератор рабочих листов (95% запросов).',
+    description: 'Базовый генератор рабочих листов (95% запросов). Polza: openai/gpt-6-luna.',
   },
   {
     id: 'gpt-6-sol',
     role: 'boost',
-    provider: 'openai',
-    inputPricePer1M: 2.0,
-    outputPricePer1M: 10.0,
+    provider: 'polza',
+    inputPricePer1M: 1.39, // 118 ₽/1M ≈ $1.39
+    outputPricePer1M: 6.95, // 590 ₽/1M ≈ $6.95
     contextWindow: 128_000,
-    description: 'Boost: тяжёлые темы, низкая уверенность Luna.',
+    description: 'Boost: тяжёлые темы, низкая уверенность Luna. Polza: openai/gpt-6-sol.',
   },
   {
     id: 'claude-opus-5-5',
     role: 'premium',
-    provider: 'anthropic',
-    inputPricePer1M: 4.0,
-    outputPricePer1M: 20.0,
+    provider: 'polza',
+    inputPricePer1M: 5.56, // 472 ₽/1M ≈ $5.56
+    outputPricePer1M: 27.8, // 2362 ₽/1M ≈ $27.80
     contextWindow: 200_000,
-    description: 'Премиум (Plus): ЕГЭ/ОГЭ, 10-11 класс. С prompt cache.',
+    description: 'Премиум (Plus): ЕГЭ/ОГЭ, 10-11 класс. С prompt cache. Polza: anthropic/claude-opus-5.5.',
   },
   {
     id: 'deepseek-v4-flash',
     role: 'validator',
-    provider: 'deepseek',
+    provider: 'polza',
     inputPricePer1M: 0.14,
     outputPricePer1M: 0.28,
     contextWindow: 64_000,
-    description: 'Валидатор: дубли, корректность ответов, ФГОС.',
+    description: 'Валидатор: дубли, корректность ответов, ФГОС. Polza: deepseek/deepseek-chat (нет точной v4-flash).',
   },
   {
     id: 'qwen3-embedding-8b',
     role: 'embeddings',
-    provider: 'dashscope',
+    provider: 'polza',
     inputPricePer1M: 0.0,
     outputPricePer1M: 0.0,
     contextWindow: 8192,
-    description: 'Эмбеддинги для семантического кэша и поиска.',
+    description: 'Эмбеддинги для семантического кэша и поиска. (TODO: проверить точное имя на polza).',
   },
   {
     id: 'text-embedding-3-large',
     role: 'embeddings',
-    provider: 'openai',
+    provider: 'polza',
     inputPricePer1M: 0.13,
     outputPricePer1M: 0.0,
     contextWindow: 8192,
-    description: 'Fallback embeddings (OpenAI).',
+    description: 'Fallback embeddings. Polza: openai/text-embedding-3-large.',
   },
 ];
 
@@ -95,8 +99,10 @@ export const MODELS: ModelInfo[] = [
 export function availableModels(): string[] {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
   if (!apiUrl) {
-    // Demo: вернём только то, что фронт "знает" через NEXT_PUBLIC_* (без секретов)
+    // Demo: вернём только то, что фронт "знает" через NEXT_PUBLIC_* (без секретов).
+    // Polza — primary, проверяем его в первую очередь.
     const any =
+      !!process.env[ENV_KEYS.polza] ||
       !!process.env[ENV_KEYS.openai] ||
       !!process.env[ENV_KEYS.anthropic] ||
       !!process.env[ENV_KEYS.deepseek] ||

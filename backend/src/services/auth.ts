@@ -24,7 +24,38 @@ import { sendMagicLinkEmail } from "./email";
 export const MAGIC_LINK_TTL_SECONDS = 15 * 60; // 15 минут
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 дней
 
-export const emailSchema = z.string().email().max(254).transform((s) => s.toLowerCase().trim());
+// zod-цепочка: сначала trim+lowercase (preprocess), потом email-валидация.
+// Раньше было `.email().transform(trim)`, но trim тогда срабатывал ПОСЛЕ
+// валидации — пробелы вокруг email'а отшивались как invalid email.
+// На реальных UI пользователь легко вставляет email с пробелами из буфера обмена.
+export const emailSchema = z.preprocess(
+  (v) => (typeof v === "string" ? v.trim().toLowerCase() : v),
+  z.string().email().max(254),
+);
+
+/**
+ * Разобрать ADMIN_EMAILS и ADMIN_EMAIL из env в Set email-ов.
+ *
+ * Используется для bootstrap: при первой регистрации пользователя, чей email
+ * попал в этот список, ему выставляется is_admin=1. Дальше флаг живёт в БД
+ * и может меняться через админку.
+ *
+ * Формат ADMIN_EMAILS — comma-separated (пробелы вокруг запятых игнорируются).
+ * ADMIN_EMAIL — legacy single, оставлен для обратной совместимости.
+ */
+export function parseAdminEmails(env: Env): Set<string> {
+  const set = new Set<string>();
+  if (env.ADMIN_EMAILS) {
+    for (const raw of env.ADMIN_EMAILS.split(",")) {
+      const trimmed = raw.trim().toLowerCase();
+      if (trimmed) set.add(trimmed);
+    }
+  }
+  if (env.ADMIN_EMAIL) {
+    set.add(env.ADMIN_EMAIL.trim().toLowerCase());
+  }
+  return set;
+}
 
 export interface RequestMagicLinkResult {
   ok: true;
@@ -57,7 +88,15 @@ export async function requestMagicLink(
   let createdHere = false;
   if (!user) {
     const id = userId();
-    await createUser(db, { id, email, name: deriveName(email), plan: "free" });
+    const adminEmails = parseAdminEmails(env);
+    const isAdmin = adminEmails.has(email);
+    await createUser(db, {
+      id,
+      email,
+      name: deriveName(email),
+      plan: "free",
+      isAdmin,
+    });
     createdHere = true;
     user = await getUserByEmail(db, email);
   }

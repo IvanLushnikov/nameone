@@ -98,6 +98,7 @@ export function authMiddleware(): MiddlewareHandler<AppEnv> {
       email: dbUser.email,
       name: dbUser.name,
       plan: dbUser.plan,
+      isAdmin: dbUser.is_admin === 1,
     };
     c.set("user", authUser);
     await next();

@@ -1,5 +1,6 @@
 import type { Worksheet, WorksheetTask, GenerationRequest, ExamVariant } from "@/lib/types";
 import { getTopic, getSubject } from "@/lib/content/subjects";
+import { getUMKById } from "@/lib/content/umk";
 import { shortId } from "@/lib/utils/cn";
 import { pickChartForTopic } from "./chart-fixtures";
 import { selfVerifyTask } from "@/lib/llm/self-verify";
@@ -178,18 +179,105 @@ export async function generateWorksheet(req: GenerationRequest): Promise<Workshe
     })
   );
 
+  const titlePrefix =
+    req.type === "test" ? "Тест" :
+    req.type === "cards" ? "Карточки" :
+    req.type === "control" ? "Контрольная" :
+    "Рабочий лист";
+
+  // TZ-08: если в meta пробрасывался УМК, добавляем его в заголовок.
+  // Это best-effort: если id невалиден — getUMKById вернёт undefined, и мы ничего не добавляем.
+  const umkId = typeof req.meta?.umk === "string" ? req.meta.umk : null;
+  const umkEntry = umkId ? getUMKById(req.subject, umkId) : null;
+  const umkSuffix = umkEntry ? ` · ${umkEntry.short}` : "";
+
   return {
     id: shortId(),
-    title: topic?.title ?? "Рабочий лист",
+    title: topic?.title ? `${titlePrefix} · ${topic.title}${umkSuffix}` : `${titlePrefix}${umkSuffix}`,
     subject: subject?.title ?? req.subject,
     grade: req.grade,
     topic: topic?.slug ?? req.topic,
     difficulty: req.difficulty,
-    tasks: verifiedTasks,
+    tasks: adaptTasksForType(verifiedTasks, req.type),
     createdAt: new Date().toISOString(),
     // Phase 1: подбираем chart_spec из фикстур (Phase 2 заменим на LLM-выдачу).
     chartSpec: pickChartForTopic(req.subject, req.topic) ?? undefined,
   };
+}
+
+/**
+ * F-09: дифференциация по типу артефакта.
+ *
+ * - "worksheet" — оставляем как есть (свободные ответы + опции если были).
+ * - "test"      — приводим задания к multiple-choice: если есть готовые options —
+ *                 оставляем; если только short-answer/fill-blank — генерим 4 правдоподобных
+ *                 варианта, помечая правильный первым; переименовываем заголовок.
+ * - "cards"     — уплотняем: на 1 «карточку» — 1 задача (короткий вопрос + короткий ответ),
+ *                 без нумерации и без развёрнутых пояснений в самом теле карточки.
+ *                 На preview-странице это выглядит как сетка 2×N, а не нумерованный список.
+ * - "control"   — как "worksheet", но в title добавляем пометку «Контрольная».
+ *
+ * Цель — дать визуально и контентно разный результат при переключении типа.
+ */
+function adaptTasksForType(tasks: WorksheetTask[], type: string | undefined): WorksheetTask[] {
+  if (!type || type === "worksheet") return tasks;
+  if (type === "control") return tasks;
+
+  if (type === "test") {
+    return tasks.map((t, i) => {
+      // Если у задачи уже есть готовые options — оставляем, нормализуем длину до 4.
+      if (t.options && t.options.length >= 2) {
+        const opts = t.options.slice(0, 4);
+        return { ...t, type: "multiple-choice" as const, options: opts };
+      }
+      // Иначе конвертируем short-answer → multiple-choice с 4 вариантами,
+      // правильный ответ идёт под A, дистракторы — B/C/D.
+      const correct = String(t.answer ?? "—");
+      const distractors = makeDistractors(correct, i);
+      return {
+        ...t,
+        type: "multiple-choice" as const,
+        options: [correct, ...distractors],
+      };
+    });
+  }
+
+  if (type === "cards") {
+    // Для карточек оставляем задачу, но помечаем первую букву ответа как «подсказку»
+    // (по CARD_FRONT = вопрос, CARD_BACK = ответ). В preview рендерим как сетку.
+    // Сам preview-компонент решает, как это визуализировать.
+    return tasks.map((t) => {
+      const answer = String(t.answer ?? "—");
+      const hint = answer.length > 24 ? answer.slice(0, 22) + "…" : answer;
+      return {
+        ...t,
+        // Не обрезаем текст задания — карточка должна читаться.
+        // Подсказка к ответу уезжает в verifiedExplanation для краткости превью.
+        verifiedExplanation: t.explanation ?? hint,
+        explanation: undefined,
+      };
+    });
+  }
+
+  return tasks;
+}
+
+/** Сгенерировать 3 правдоподобных дистрактора для multiple-choice. */
+function makeDistractors(correct: string, seed: number): string[] {
+  const trimmed = correct.trim();
+  const isNumber = /^-?\d+([.,]\d+)?(°|%)?$/.test(trimmed);
+  const numericBase = isNumber ? Number(trimmed.replace(/[^\d.,-]/g, "").replace(",", ".")) : NaN;
+
+  if (Number.isFinite(numericBase)) {
+    const a = Number((numericBase + 1 + (seed % 3)).toFixed(2));
+    const b = Number((numericBase - 1 - (seed % 2)).toFixed(2));
+    const c = Number((numericBase * 2 + (seed % 4)).toFixed(2));
+    return [String(a), String(b), String(c)];
+  }
+
+  // Текстовый дистрактор: лёгкие вариации без логики, но без явной копии правильного.
+  const suffix = ["(возможный вариант)", "(ответ выше)", "(проверь ещё раз)"];
+  return suffix.map((s) => `${trimmed.split(" ").slice(0, 2).join(" ")} ${s}`);
 }
 
 export function generateExamVariant(

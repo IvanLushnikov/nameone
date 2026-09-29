@@ -3,8 +3,8 @@
 # Deploy:    npm run deploy
 # Dev local: npm run dev   (wrangler dev)
 #
-# Secrets (НЕ коммитить, ставить через `wrangler secret put OPENROUTER_API_KEY`):
-#   OPENROUTER_API_KEY  — единый ключ для всех моделей через OpenRouter
+# Secrets (НЕ коммитить, ставить через `wrangler secret put POLZA_API_KEY`):
+#   POLZA_API_KEY  — единый ключ для всех моделей через polza.ai
 #
 # Var-плейсхолдеры заданы здесь. Реальные ключи идут через `secret put`.
 
@@ -18,8 +18,12 @@ WORKER_NAME = "listai-self-verify"
 APP_ENV = "development"
 # MVP: разрешаем все origin (для локала). В проде сужаем через ALLOWED_ORIGINS.
 ALLOWED_ORIGINS = "*"
-# Модель для MVP — дешёвая и быстрая. Поменять на gpt-6-luna после получения ключа.
-OPENROUTER_MODEL = "openai/gpt-4o-mini"
+# Модель для self-verify: DeepSeek V4 Flash через polza.ai — дешёвый валидатор.
+# (если не задать через [env.production], код возьмёт DEFAULT_POLZA_MODEL из src/index.ts)
+POLZA_MODEL = "deepseek/deepseek-v4-flash"
+# Fallback если primary упал (network/HTTP/empty): GPT-6 Luna — самый дешёвый.
+# (если не задать, код возьмёт DEFAULT_POLZA_FALLBACK_MODEL из src/index.ts)
+POLZA_FALLBACK_MODEL = "openai/gpt-6-luna"
 
 # Продакшн-окружение: суженные CORS, тот же воркер.
 [env.production]
@@ -31,4 +35,5 @@ compatibility_date = "2024-09-23"
 WORKER_NAME = "listai-self-verify"
 APP_ENV = "production"
 ALLOWED_ORIGINS = "https://listai-prototype.pages.dev,https://www.listai-prototype.pages.dev"
-OPENROUTER_MODEL = "openai/gpt-4o-mini"
+POLZA_MODEL = "deepseek/deepseek-v4-flash"
+POLZA_FALLBACK_MODEL = "openai/gpt-6-luna"

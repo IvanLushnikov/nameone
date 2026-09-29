@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
   generations_total   INTEGER NOT NULL DEFAULT 0,
   generations_today   INTEGER NOT NULL DEFAULT 0,
   generations_reset_at INTEGER,
+  is_admin            INTEGER NOT NULL DEFAULT 0,
   created_at          INTEGER NOT NULL,
   updated_at          INTEGER NOT NULL,
   stripe_customer_id  TEXT,
@@ -194,3 +195,34 @@ CREATE TABLE IF NOT EXISTS rate_limits (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Admin: model routing + audit log (для /api/admin/*)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS model_routing (
+  task             TEXT NOT NULL,             -- worksheet-gen | exam-gen | validate | embed | image-gen
+  plan             TEXT NOT NULL,             -- free | base | plus | '*' (для задач без плана, embed/validate)
+  primary_model    TEXT NOT NULL,             -- model id из MODEL_CATALOG (env-side)
+  primary_provider TEXT NOT NULL,             -- 'polza' | 'openai' | 'anthropic' | ...
+  fallback_json    TEXT NOT NULL DEFAULT '[]',-- JSON-массив {provider, model} для callWithFallback
+  enabled          INTEGER NOT NULL DEFAULT 1,
+  updated_at       INTEGER NOT NULL,
+  updated_by       TEXT,                      -- user_id админа, кто поменял
+  PRIMARY KEY (task, plan)
+);
+
+CREATE INDEX IF NOT EXISTS idx_model_routing_enabled ON model_routing(enabled);
+
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+  id          TEXT PRIMARY KEY,
+  actor_id    TEXT,                           -- user_id админа (может быть NULL если не залогинен)
+  action      TEXT NOT NULL,                  -- 'routing.update' | 'user.toggle_admin' | ...
+  target_type TEXT,                           -- 'model_routing' | 'user' | ...
+  target_id   TEXT,                           -- PK или описание
+  payload_json TEXT,                          -- детали изменения
+  created_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_audit_actor_created ON admin_audit_log(actor_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_action_created ON admin_audit_log(action, created_at);

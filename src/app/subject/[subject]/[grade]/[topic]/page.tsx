@@ -4,11 +4,11 @@ import type { Metadata } from "next";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { FgosBadge } from "@/components/ui/FgosBadge";
 import {
   Sparkles,
   ArrowRight,
   Check,
-  CheckCircle2,
   Lightbulb,
   FileText,
   GraduationCap,
@@ -69,8 +69,36 @@ export default function TopicPage({ params }: Props) {
 
   const otherTopics = grade.topics.filter((t: Topic) => t.slug !== topic.slug);
 
+  // P0-01: SEO — пробрасываем раздел ФГОС в JSON-LD для поисковиков.
+  // Только если у темы указан `fgosRef`, иначе плашку не рендерим и в JSON-LD не пишем.
+  const jsonLd: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "LearningResource",
+    name: `Рабочий лист по теме «${topic.title}»`,
+    description: `Готовые рабочие листы и тесты по теме «${topic.title}» для ${grade.num} класса по ${subject.title.toLowerCase()}.`,
+    inLanguage: "ru-RU",
+    educationalLevel: `${grade.num} класс`,
+    about: { "@type": "Thing", name: subject.title },
+  };
+  if (topic.fgosRef) {
+    jsonLd.educationalAlignment = {
+      "@type": "AlignmentObject",
+      alignmentType: "educationalFramework",
+      targetName: topic.fgosRef,
+      educationalFramework: "ФГОС 2021",
+    };
+  }
+
   return (
     <>
+      {/* JSON-LD: передаём раздел ФГОС в поисковики (P0-01) */}
+      {topic.fgosRef && (
+        <script
+          type="application/ld+json"
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      )}
       {/* Hero */}
       <section className="relative bg-gradient-to-b from-warm-50 to-white pt-8 sm:pt-12 pb-10">
         <div className="absolute inset-0 -z-10 bg-grid opacity-50" />
@@ -102,16 +130,8 @@ export default function TopicPage({ params }: Props) {
                   {subject.emoji} {subject.shortTitle}
                 </Badge>
                 <Badge tone="neutral">{grade.num} класс</Badge>
-                {topic.fgosRef && (
-                  <Badge tone="warm">
-                    <span className="text-warm-500">Раздел программы:</span>
-                    <span className="ml-1">{topic.fgosRef}</span>
-                  </Badge>
-                )}
-                <Badge tone="brand" className="bg-brand-50 text-brand-700 ring-brand-200">
-                  <CheckCircle2 className="w-3 h-3" />
-                  Соответствует ФГОС&nbsp;2021
-                </Badge>
+                {/* P0-01: ФГОС-плашка; null-рендер при отсутствии fgosRef */}
+                <FgosBadge fgosRef={topic.fgosRef} />
               </div>
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold tracking-tight text-balance">
                 Рабочий лист по теме «{topic.title}»

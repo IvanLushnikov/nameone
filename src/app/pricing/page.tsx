@@ -2,6 +2,7 @@ import { PricingTeaser } from "@/components/landing/PricingTeaser";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Check, X, GraduationCap, Building2 } from "lucide-react";
+import { PageTracker } from "@/components/shared/PageTracker";
 
 const comparison = [
   {
@@ -340,6 +341,8 @@ export default function PricingPage() {
           </div>
         </div>
       </section>
+
+      <PageTracker eventName="pricing_view" />
     </>
   );
 }

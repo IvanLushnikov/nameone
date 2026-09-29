@@ -11,6 +11,10 @@
  *   task=validate                           → primary DeepSeek V4 Flash, no fallback
  *   task=embed                               → primary Qwen3, fallback OpenAI
  *
+ * С 2026-09-27 — polza.ai единственный провайдер для РабочиеЛисты AI.
+ * Один POLZA_API_KEY покрывает все модели. Без ключа → primary = null
+ * (routes должны fallback на mock или вернуть ошибку).
+ *
  * `callWithFallback` — обёртка: пробует primary, на ошибке — fallbacks.
  * На полном падении бросает InternalError.
  */
@@ -20,7 +24,14 @@ import { InternalError } from "../lib/errors";
 import { logLlmEvent } from "./log";
 import { isProviderEnabled } from "./config";
 import { getProvider } from "./providers/base";
-import type { LLMRequest, LLMResponse, ProviderPick, RoutingDecision, GenerationKind, Plan } from "./types";
+import type {
+  LLMRequest,
+  LLMResponse,
+  ProviderPick,
+  RoutingDecision,
+  GenerationKind,
+  Plan,
+} from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Routing matrix
@@ -28,55 +39,56 @@ import type { LLMRequest, LLMResponse, ProviderPick, RoutingDecision, Generation
 
 /**
  * Возвращает primary + fallbacks для заданной задачи и тарифа.
- * Если подходящий провайдер не сконфигурирован в env — primary = null
- * (вызывающий код должен fallback'нуть на mock или бросить ошибку).
+ *
+ * Polza = единственный провайдер. Если POLZA_API_KEY нет — primary = null
+ * и routes должен fallback'нуть на mock или вернуть 503.
+ *
+ * Fallback chain внутри одного провайдера (Luna → Sol, Qwen3 → OpenAI)
+ * срабатывает ТОЛЬКО если polza вернул ошибку на primary (см. callWithFallback).
  */
 export function pickModel(task: GenerationKind, plan: Plan, env: Env): RoutingDecision {
+  if (!isProviderEnabled(env, "polza")) {
+    // Polza не сконфигурирован — routes должен fallback на mock.
+    return { primary: null, fallbacks: [], generation: "primary" };
+  }
+
   switch (task) {
     case "worksheet-gen":
-    case "exam-gen":
+    case "exam-gen": {
       if (plan === "plus") {
         // Plus → Opus 5.5 с prompt cache. Нет fallback (Opus — premium, не хотим деградировать).
         return {
-          primary: isProviderEnabled(env, "anthropic")
-            ? { provider: "anthropic", model: "claude-opus-5-5" }
-            : null,
+          primary: { provider: "polza", model: "claude-opus-5-5" },
           fallbacks: [],
           generation: "premium",
         };
       }
-      // Free/Base → Luna primary, Sol fallback.
+      // Free/Base → Luna primary, Sol fallback (оба на polza).
       return {
-        primary: isProviderEnabled(env, "openai")
-          ? { provider: "openai", model: "gpt-6-luna" }
-          : null,
-        fallbacks: isProviderEnabled(env, "openai")
-          ? [{ provider: "openai", model: "gpt-6-sol" }]
-          : [],
+        primary: { provider: "polza", model: "gpt-6-luna" },
+        fallbacks: [{ provider: "polza", model: "gpt-6-sol" }],
         generation: "primary",
       };
+    }
 
-    case "validate":
+    case "validate": {
       return {
-        primary: isProviderEnabled(env, "deepseek")
-          ? { provider: "deepseek", model: "deepseek-v4-flash" }
-          : null,
+        primary: { provider: "polza", model: "deepseek-v4-flash" },
         fallbacks: [],
         generation: "primary",
       };
+    }
 
-    case "embed":
+    case "embed": {
+      // text-embedding-3-large — primary (точно есть на polza, проверено).
+      // qwen3-embedding-8b — fallback (мультиязычный, для русских текстов;
+      // точное имя на polza не подтверждено, может зависнуть если 404 не возвращается).
       return {
-        primary: isProviderEnabled(env, "dashscope")
-          ? { provider: "dashscope", model: "qwen3-embedding-8b" }
-          : isProviderEnabled(env, "openai")
-            ? { provider: "openai", model: "text-embedding-3-large" }
-            : null,
-        fallbacks: isProviderEnabled(env, "openai")
-          ? [{ provider: "openai", model: "text-embedding-3-large" }]
-          : [],
+        primary: { provider: "polza", model: "text-embedding-3-large" },
+        fallbacks: [{ provider: "polza", model: "qwen3-embedding-8b" }],
         generation: "primary",
       };
+    }
 
     case "image-gen":
       // Заглушка на старте — нет провайдера. Вызывающий должен вернуть null.
@@ -103,7 +115,7 @@ export interface CallResult {
  *  1) Попробовать primary.
  *  2) На ошибке — каждый fallback по очереди.
  *  3) Если primary и все fallbacks упали — бросить InternalError.
- *  4) Если primary == null (нет ключа) — пробуем первый fallback.
+ *  4) Если primary == null (нет ключа polza) — бросить InternalError.
  */
 export async function callWithFallback(
   req: LLMRequest,
@@ -115,7 +127,9 @@ export async function callWithFallback(
   allPicks.push(...decision.fallbacks);
 
   if (allPicks.length === 0) {
-    throw new InternalError("LLM: no providers configured (set API keys in env)");
+    throw new InternalError(
+      "LLM: POLZA_API_KEY not configured (set it in wrangler secret put or .dev.vars)",
+    );
   }
 
   let lastError: unknown = null;
@@ -123,7 +137,7 @@ export async function callWithFallback(
     const pick = allPicks[i]!;
     const isLast = i === allPicks.length - 1;
     try {
-      const provider = getProvider(pick.provider as "openai" | "anthropic" | "deepseek", env);
+      const provider = getProvider(pick.provider as "polza", env);
       const response = await provider.complete(req, env);
       const generation: "primary" | "boost" | "premium" =
         i === 0

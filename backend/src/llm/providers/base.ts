@@ -13,8 +13,13 @@ import type { Provider } from "../types";
 import { getOpenAIProvider } from "./openai";
 import { getAnthropicProvider } from "./anthropic";
 import { getDeepSeekProvider } from "./deepseek";
+import { getPolzaProvider } from "./polza";
 
-export type KnownProviderId = "openai" | "anthropic" | "deepseek";
+/**
+ * ID провайдеров, у которых есть своя реализация complete().
+ * OpenRouter проксируется через OpenAI-провайдер, DashScope — через прямой fetch в embed().
+ */
+export type KnownProviderId = "openai" | "anthropic" | "deepseek" | "polza";
 
 /**
  * Получить провайдера по ID.
@@ -34,8 +39,11 @@ export function getProvider(
       return getAnthropicProvider(env);
     case "deepseek":
       return getDeepSeekProvider(env);
+    case "polza":
+      return getPolzaProvider(env);
     default: {
-      // Exhaustiveness check.
+      // Exhaustiveness check — если добавим новый KnownProviderId без case,
+      // компилятор укажет на ошибку здесь.
       const _exhaustive: never = provider;
       throw new InternalError(`Unknown provider: ${String(_exhaustive)}`);
     }

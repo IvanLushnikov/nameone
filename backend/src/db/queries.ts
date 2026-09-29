@@ -25,6 +25,7 @@ export interface UserRow {
   generations_total: number;
   generations_today: number;
   generations_reset_at: number | null;
+  is_admin: number;
   created_at: number;
   updated_at: number;
   stripe_customer_id: string | null;
@@ -54,7 +55,7 @@ export async function getUserById(db: D1Database, id: string): Promise<UserRow |
   const row = await db
     .prepare(
       `SELECT id, email, name, plan, generations_total, generations_today,
-              generations_reset_at, created_at, updated_at,
+              generations_reset_at, is_admin, created_at, updated_at,
               stripe_customer_id, yookassa_customer_id
        FROM users WHERE id = ?1`,
     )
@@ -67,7 +68,7 @@ export async function getUserByEmail(db: D1Database, email: string): Promise<Use
   const row = await db
     .prepare(
       `SELECT id, email, name, plan, generations_total, generations_today,
-              generations_reset_at, created_at, updated_at,
+              generations_reset_at, is_admin, created_at, updated_at,
               stripe_customer_id, yookassa_customer_id
        FROM users WHERE email = ?1`,
     )
@@ -83,21 +84,35 @@ export async function createUser(
     email: string;
     name?: string | null;
     plan?: "free" | "base" | "plus";
+    isAdmin?: boolean;
   },
 ): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
   await db
     .prepare(
-      `INSERT INTO users (id, email, name, plan, generations_total, generations_today, created_at, updated_at)
-       VALUES (?1, ?2, ?3, ?4, 0, 0, ?5, ?5)`,
+      `INSERT INTO users (id, email, name, plan, generations_total, generations_today, is_admin, created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?4, 0, 0, ?5, ?6, ?6)`,
     )
     .bind(
       params.id,
       params.email.toLowerCase(),
       params.name ?? null,
       params.plan ?? "free",
+      params.isAdmin ? 1 : 0,
       now,
     )
+    .run();
+}
+
+export async function setUserAdmin(
+  db: D1Database,
+  id: string,
+  isAdmin: boolean,
+): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  await db
+    .prepare(`UPDATE users SET is_admin = ?1, updated_at = ?2 WHERE id = ?3`)
+    .bind(isAdmin ? 1 : 0, now, id)
     .run();
 }
 

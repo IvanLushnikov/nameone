@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { subjects } from "@/lib/content/subjects";
 import { EXAM_SUBJECTS } from "@/lib/content/exam-taxonomy";
+import { WEEKLY_TOPICS } from "@/lib/content/weekly-topics";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const base = process.env.NEXT_PUBLIC_SITE_URL ?? "https://listai.ru";
@@ -80,6 +81,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     })),
   );
 
+  // TZ-09: «Тема недели» — поыточный сезонный трафик
+  const themePages: MetadataRoute.Sitemap = WEEKLY_TOPICS.map((t) => ({
+    url: `${base}/theme/${t.seoSlug}/`,
+    priority: 0.7,
+    changeFrequency: "weekly" as const,
+  }));
+
   return [
     ...staticPages,
     ...subjectPages,
@@ -87,5 +95,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ...artifactTopicPages,
     ...ktpPages,
     ...examPages,
+    ...themePages,
   ];
 }

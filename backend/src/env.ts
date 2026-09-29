@@ -30,11 +30,17 @@ export interface Env {
   DEEPSEEK_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
   DASHSCOPE_API_KEY?: string;
+  POLZA_API_KEY?: string;
+  /** Override primary модели для F-08 chat-edit (apiName из MODEL_CATALOG, например "anthropic/claude-opus-5.5"). */
+  POLZA_LLM_MODEL?: string;
   RESEND_API_KEY?: string;
   YOOKASSA_SHOP_ID?: string;
   YOOKASSA_SECRET_KEY?: string;
   JWT_SECRET: string;
+  /** Single-admin legacy var. Если задан — эквивалентно ADMIN_EMAILS=<email>. */
   ADMIN_EMAIL?: string;
+  /** Comma-separated emails, которые становятся is_admin=1 при первой регистрации. */
+  ADMIN_EMAILS?: string;
 }
 
 /**

@@ -253,6 +253,7 @@ export interface AuthUser {
   email: string;
   name: string | null;
   plan: "free" | "base" | "plus";
+  isAdmin: boolean;
 }
 
 export interface AppVariables {
@@ -292,4 +293,192 @@ export interface ApiError {
 export interface ApiOk<T> {
   ok: true;
   data: T;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin DTO (/api/admin/*)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Этап LLM-генерации (task в llm_logs). */
+export type AdminGenerationTask = "worksheet-gen" | "exam-gen" | "validate" | "embed" | "image-gen";
+
+/** Текущая конфигурация раскладки моделей. Одна запись = (task, plan). */
+export interface ModelRoutingEntry {
+  task: AdminGenerationTask;
+  plan: string; // "free" | "base" | "plus" | "*"
+  primaryProvider: string;
+  primaryModel: string;
+  fallback: Array<{ provider: string; model: string }>;
+  enabled: boolean;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+export interface AdminMeResponse {
+  ok: true;
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    isAdmin: boolean;
+  };
+}
+
+/** Базовый фильтр для всех /stats/* endpoints. */
+export interface AdminPeriodQuery {
+  /** Время начала периода (unix seconds). Если null — последние 7 дней. */
+  fromSec?: number;
+  /** Время конца периода (unix seconds). Если null — сейчас. */
+  toSec?: number;
+}
+
+/** Общие цифры за период. */
+export interface AdminStatsSummary {
+  period: { fromSec: number; toSec: number };
+  users: {
+    total: number;
+    newInPeriod: number;
+    paidActive: number; // plan != "free" и subscription status = active
+  };
+  generations: {
+    worksheetsTotal: number;
+    worksheetsInPeriod: number;
+    examsInPeriod: number;
+  };
+  llm: {
+    callsTotal: number;
+    callsInPeriod: number;
+    successRate: number; // 0..1
+    cacheHitRate: number; // 0..1
+    fallbackRate: number; // 0..1
+  };
+  costs: {
+    usdTotalAllTime: number;
+    usdInPeriod: number;
+    usdThisMonth: number;
+    topModelUsd: { model: string; costUsd: number } | null;
+  };
+  events: {
+    totalInPeriod: number;
+    topNames: Array<{ name: string; count: number }>;
+  };
+}
+
+export interface AdminTrafficPoint {
+  /** YYYY-MM-DD (UTC). */
+  date: string;
+  count: number;
+}
+
+export interface AdminTrafficResponse {
+  period: { fromSec: number; toSec: number };
+  byDay: AdminTrafficPoint[];
+  byName: Array<{ name: string; count: number }>;
+  /** Конверсия воронки landing → constructor → generate → paywall. */
+  funnel: {
+    landings: number;
+    constructorStarted: number;
+    generated: number;
+    paywallOpened: number;
+    paid: number;
+  };
+}
+
+export interface AdminContentStatsResponse {
+  worksheets: {
+    total: number;
+    bySubject: Array<{ subject: string; count: number }>;
+    byGrade: Array<{ grade: number; count: number }>;
+    byType: Array<{ type: string; count: number }>;
+    topTopics: Array<{ subject: string; grade: number; topic: string; count: number }>;
+  };
+  exams: {
+    total: number;
+    byExam: Array<{ exam: "oge" | "ege"; count: number }>;
+    bySubject: Array<{ subject: string; count: number }>;
+  };
+}
+
+export interface AdminLlmStatsResponse {
+  period: { fromSec: number; toSec: number };
+  byModel: Array<{
+    model: string;
+    provider: string;
+    calls: number;
+    costUsd: number;
+    avgLatencyMs: number;
+    p95LatencyMs: number;
+    successRate: number;
+    cacheHitRate: number;
+    fallbackRate: number;
+  }>;
+  byTask: Array<{
+    task: AdminGenerationTask;
+    calls: number;
+    costUsd: number;
+  }>;
+  byPlan: Array<{
+    plan: string;
+    calls: number;
+    costUsd: number;
+  }>;
+  totalCostUsd: number;
+}
+
+export interface AdminCostsResponse {
+  period: { fromSec: number; toSec: number };
+  byDay: Array<{ date: string; costUsd: number; calls: number }>;
+  byModel: Array<{ model: string; costUsd: number; calls: number }>;
+  byTask: Array<{ task: AdminGenerationTask; costUsd: number; calls: number }>;
+  topUsers: Array<{ userId: string | null; email: string | null; costUsd: number; calls: number }>;
+}
+
+export interface AdminUserRow {
+  id: string;
+  email: string;
+  name: string | null;
+  plan: "free" | "base" | "plus";
+  generationsTotal: number;
+  createdAt: string;
+  isAdmin: boolean;
+}
+
+export interface AdminUsersResponse {
+  total: number;
+  users: AdminUserRow[];
+}
+
+export interface AdminEventsResponse {
+  events: Array<{
+    id: string;
+    userId: string | null;
+    name: string;
+    data: unknown;
+    createdAt: string;
+  }>;
+}
+
+export interface UpdateModelRoutingRequest {
+  entries: Array<{
+    task: AdminGenerationTask;
+    plan: string;
+    primaryProvider: string;
+    primaryModel: string;
+    fallback: Array<{ provider: string; model: string }>;
+    enabled: boolean;
+  }>;
+}
+
+export interface UpdateModelRoutingResponse {
+  ok: true;
+  updated: number;
+}
+
+export interface TrackEventRequest {
+  /** Имя события, например "landing_cta_click", "constructor_step", "paywall_open". */
+  name: string;
+  /** Опциональные данные — без персональных данных и secrets. */
+  data?: Record<string, unknown>;
+  /** Анонимный ID с device (если пользователь не залогинен). */
+  anonId?: string;
 }

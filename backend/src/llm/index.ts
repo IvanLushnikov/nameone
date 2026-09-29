@@ -32,7 +32,7 @@ import { lookupCache, makeCacheKey, saveCache } from "./cache";
 import { buildWorksheetPrompt } from "./prompts/worksheet-gen";
 import { buildExamPrompt } from "./prompts/exam-gen";
 import { buildValidatePrompt } from "./prompts/validate";
-import { callOpenAIEmbedding } from "./providers/openai";
+import { callPolzaEmbedding } from "./providers/polza";
 import { isProviderEnabled } from "./config";
 import type { GenerationRequest, Worksheet, ExamVariant, SubjectSlug, GenerateWorksheetMeta } from "../types";
 
@@ -356,7 +356,7 @@ export async function validateWorksheet(
 export interface EmbedArgs {
   texts: string[];
   /** Какую модель embeddings использовать. Если не задано — берётся из routing. */
-  preferredProvider?: "dashscope" | "openai";
+  preferredModel?: "qwen3-embedding-8b" | "text-embedding-3-large";
 }
 
 export interface EmbedResult {
@@ -368,42 +368,21 @@ export interface EmbedResult {
 /**
  * Получить embeddings для списка текстов.
  *
- * Приоритет провайдеров:
- *  1) DashScope (Qwen3-embedding-8b) — если ключ есть и не overridden
- *  2) OpenAI (text-embedding-3-large) — fallback
+ * Polza — единственный провайдер. По умолчанию — text-embedding-3-large
+ * (точно есть на polza, проверено). Fallback внутри router → qwen3-embedding-8b
+ * (мультиязычный, для русских текстов; точное имя на polza не подтверждено).
  *
- * DashScope OpenAI-compatible API — реализуем через тот же client, но
- * в текущей версии мы используем только OpenAI/OpenRouter-путь (text-embedding-3-large).
- * Если есть только DASHSCOPE_API_KEY, делаем прямой fetch.
+ * Если POLZA_API_KEY не задан — бросаем InternalError. routes должен fallback на mock.
  */
 export async function embed(args: EmbedArgs, env: Env): Promise<EmbedResult> {
-  const preferred = args.preferredProvider ?? (isProviderEnabled(env, "dashscope") ? "dashscope" : "openai");
-
-  if (preferred === "dashscope" && isProviderEnabled(env, "dashscope")) {
-    // DashScope OpenAI-compatible endpoint
-    const res = await fetch("https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${env.DASHSCOPE_API_KEY}`,
-      },
-      body: JSON.stringify({ model: "qwen3-embedding-8b", input: args.texts }),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new InternalError(`DashScope embeddings failed: ${res.status} ${text.slice(0, 200)}`);
-    }
-    const data = (await res.json()) as { data: Array<{ embedding: number[]; index: number }>; usage?: { prompt_tokens: number } };
-    const vectors = data.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
-    return { vectors, model: "qwen3-embedding-8b", costUsd: 0 };
+  if (!isProviderEnabled(env, "polza")) {
+    throw new InternalError(
+      "Embeddings: POLZA_API_KEY not configured (set it in wrangler secret put or .dev.vars)",
+    );
   }
-
-  // Fallback — OpenAI / OpenRouter
-  if (!isProviderEnabled(env, "openai")) {
-    throw new InternalError("Embeddings: no provider configured (set DASHSCOPE_API_KEY or OPENAI_API_KEY)");
-  }
-  const { vectors, costUsd } = await callOpenAIEmbedding(args.texts, "text-embedding-3-large", env);
-  return { vectors, model: "text-embedding-3-large", costUsd };
+  const model = args.preferredModel ?? "text-embedding-3-large";
+  const { vectors, costUsd } = await callPolzaEmbedding(args.texts, model, env);
+  return { vectors, model, costUsd };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
