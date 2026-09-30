@@ -105,7 +105,17 @@ export function Header() {
                 {profile.name} →
               </Button>
             ) : (
-              <Button as="link" href="/login" variant="ghost" size="md">
+              <Button
+                as="link"
+                href="/login"
+                variant="ghost"
+                size="md"
+                aria-current={pathname === "/login" ? "page" : undefined}
+                className={cn(
+                  pathname === "/login" &&
+                    "bg-brand-50 text-brand-800 hover:bg-brand-50 hover:text-brand-800"
+                )}
+              >
                 Войти
               </Button>
             )}
@@ -156,7 +166,18 @@ export function Header() {
                   {profile.name}
                 </Button>
               ) : (
-                <Button as="link" href="/login" variant="secondary" size="md" fullWidth>
+                <Button
+                  as="link"
+                  href="/login"
+                  variant="secondary"
+                  size="md"
+                  fullWidth
+                  aria-current={pathname === "/login" ? "page" : undefined}
+                  className={cn(
+                    pathname === "/login" &&
+                      "bg-brand-500 text-white border-brand-500 hover:bg-brand-600 hover:border-brand-600"
+                  )}
+                >
                   Войти
                 </Button>
               )}

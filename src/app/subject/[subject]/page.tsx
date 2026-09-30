@@ -14,11 +14,43 @@ export function generateStaticParams() {
   return subjects.map((s) => ({ subject: s.slug }));
 }
 
+// TZ-6 (QA-аудит 2026-09-30): склоняем название предмета в предложный падеж
+// для SEO-заголовка и H1 — «по математике», а не «по математика».
+// Сокращения (ОБЖ) и непереводимые названия — fallback на именительный.
+const SUBJECT_PREPOSITIONAL: Record<string, string> = {
+  math: "математике",
+  algebra: "алгебре",
+  geometry: "геометрии",
+  russian: "русскому языку",
+  literature: "литературе",
+  english: "английскому языку",
+  informatics: "информатике",
+  physics: "физике",
+  chemistry: "химии",
+  biology: "биологии",
+  geography: "географии",
+  history: "истории",
+  social: "обществознанию",
+  okruzhaet: "окружающему миру",
+  german: "немецкому языку",
+  obzh: "ОБЖ",
+  technology: "технологии",
+  finance: "финансовой грамотности",
+  music: "музыке",
+  art: "изобразительному искусству",
+  pe: "физической культуре",
+};
+
+function prepositionalTitle(slug: string, fallback: string): string {
+  return SUBJECT_PREPOSITIONAL[slug] ?? fallback.toLowerCase();
+}
+
 export function generateMetadata({ params }: Props): Metadata {
   const subject = getSubject(params.subject);
   if (!subject) return { title: "Предмет не найден" };
-  const title = `Рабочие листы по ${subject.title.toLowerCase()} — 1-${subject.grades[subject.grades.length - 1].num} класс`;
-  const description = `AI-генератор рабочих листов и тестов по ${subject.title.toLowerCase()}. ${subject.grades.length} классов, ${subject.grades.reduce((s: number, g: Grade) => s + g.topics.length, 0)} тем. PDF с ответами за 30 секунд.`;
+  const subj = prepositionalTitle(subject.slug, subject.title);
+  const title = `Рабочие листы по ${subj} — 1-${subject.grades[subject.grades.length - 1].num} класс`;
+  const description = `AI-генератор рабочих листов и тестов по ${subj}. ${subject.grades.length} классов, ${subject.grades.reduce((s: number, g: Grade) => s + g.topics.length, 0)} тем. PDF с ответами за 30 секунд.`;
   const base = "https://rabochielisty.ru";
   const canonicalUrl = `${base}/subject/${subject.slug}`;
   return {
@@ -85,7 +117,7 @@ export default function SubjectHubPage({ params }: Props) {
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-display font-bold tracking-tight text-balance">
               Рабочие листы по{" "}
               <span className={`bg-gradient-to-br ${colorMap[subject.color]} bg-clip-text text-transparent`}>
-                {subject.title.toLowerCase()}
+                {prepositionalTitle(subject.slug, subject.title)}
               </span>
             </h1>
             <p className="mt-5 text-lg text-warm-600 text-pretty max-w-2xl">
@@ -99,7 +131,7 @@ export default function SubjectHubPage({ params }: Props) {
                 size="lg"
                 leftIcon={<Sparkles className="w-4 h-4" />}
               >
-                Создать лист по {subject.shortTitle.toLowerCase()}
+                Создать лист по {prepositionalTitle(subject.slug, subject.shortTitle)}
               </Button>
               <Button as="link" href="/pricing" variant="secondary" size="lg">
                 Тарифы
