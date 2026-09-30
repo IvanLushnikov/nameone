@@ -149,19 +149,8 @@ const renderCell = (v: string) => {
 export default function PricingPage() {
   return (
     <>
-      <div className="container-tight pt-12 sm:pt-16 pb-8 text-center">
-        <p className="text-sm font-semibold uppercase tracking-wider text-brand-600 mb-3">
-          Тарифы
-        </p>
-        {/* TZ-1: text-warm-950 добавлен явно для гарантии контраста. */}
-        <h1 className="text-4xl sm:text-5xl font-display font-bold tracking-tight text-warm-950">
-          Простая экономика
-        </h1>
-        <p className="mt-4 text-lg text-warm-600 max-w-2xl mx-auto">
-          500 ₽/мес или 375 ₽/мес при оплате за год. Без скрытых платежей. Отмена в 1 клик. Возврат за 7 дней.
-        </p>
-      </div>
-
+      {/* TZ-2: убран дубль-hero «Простая экономика» — PricingTeaser ниже уже имеет
+          свой eyebrow «Тарифы» + h2 «Начните бесплатно…» + описание + переключатель Помесячно/За год. */}
       <PricingTeaser />
 
       {/* Comparison table */}
