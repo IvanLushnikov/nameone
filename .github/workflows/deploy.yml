@@ -42,3 +42,33 @@ jobs:
         # а не в preview (по умолчанию wrangler создаёт preview даже для Direct Upload, и custom
         # domain не активируется). Без --branch → preview. С --branch=main + production_branch=main → production.
         run: npx --yes wrangler pages deploy out --project-name=listai-prototype --commit-dirty=true --branch=main
+
+  # 2026-09-30: бэкенд (Cloudflare Worker rabochielisty-api) жил отдельно от Pages
+  # и не деплоился из CI — правки в backend/ попадали на прод только вручную
+  # (TZ-13: language-guard не доехал до API). Теперь бэкенд деплоится тут же.
+  deploy-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: build-and-deploy
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22  # wrangler требует Node >=22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci --no-audit --no-fund
+
+      - name: Deploy API Worker
+        working-directory: backend
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 9fe2955fcf08aecf91754823a7aae0aa
+        run: npx --yes wrangler deploy
