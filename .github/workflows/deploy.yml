@@ -38,4 +38,7 @@ jobs:
           # CLOUDFLARE_ACCOUNT_ID — публичный ID аккаунта (см. .env.example), не секрет.
           CLOUDFLARE_ACCOUNT_ID: 9fe2955fcf08aecf91754823a7aae0aa
           CF_PAGES_PROJECT: listai-prototype
-        run: npx --yes wrangler pages deploy out --project-name=listai-prototype --commit-dirty=true
+        # 2026-09-30: --branch=main делает deploy в production-environment (production_branch='main'),
+        # а не в preview (по умолчанию wrangler создаёт preview даже для Direct Upload, и custom
+        # domain не активируется). Без --branch → preview. С --branch=main + production_branch=main → production.
+        run: npx --yes wrangler pages deploy out --project-name=listai-prototype --commit-dirty=true --branch=main
