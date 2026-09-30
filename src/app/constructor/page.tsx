@@ -17,6 +17,7 @@ import { ArtifactTypePicker } from "@/components/constructor/ArtifactTypePicker"
 import { TypePreviewThumb } from "@/components/constructor/TypePreviewThumb";
 import {
   PresetGrid,
+  PRESETS,
   type Preset,
   type PresetMode,
 } from "@/components/constructor/PresetGrid";
