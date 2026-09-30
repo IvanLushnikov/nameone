@@ -297,6 +297,27 @@ function ConstructorPage() {
     setPresetMode("template");
   };
 
+  /**
+   * TZ-4 (QA-аудит 2026-09-30): смена таба типа артефакта в ConfigureStep.
+   *
+   * Раньше тернарник на стр. 866-867 выбирал `kind` по принципу «первый не-нуль», поэтому
+   * сгенерированный worksheet висел в preview даже после клика на «Презентация» /
+   * «План урока» / «КТП» — таб переключался, а превью не реагировало.
+   *
+   * Решение — при user-initiated смене типа сбрасывать закэшированные артефакты,
+   * чтобы `kind`-логика ниже нашла нужный preview, а пользователь увидел placeholder
+   * с `TYPE_PREVIEW[type]`. Сброс через явный callback (а не useEffect на [type]) —
+   * чтобы не триггериться при initial mount / preset / reset, где preview и так null.
+   */
+  const handleArtifactTypeChange = React.useCallback((next: TaskType) => {
+    setType(next);
+    setWorksheet(null);
+    setLessonPlan(null);
+    setPresentation(null);
+    setKtp(null);
+    setPhotoCheckOpen(false);
+  }, []);
+
   /** F-04-C: переключение режима wizard. Доступно на любом шаге. */
   const handleModeChange = (next: Mode) => {
     if (next === mode) return;
@@ -802,7 +823,7 @@ function ConstructorPage() {
             {step === "configure" && (
               <ConfigureStep
                 type={type}
-                setType={setType}
+                onArtifactTypeChange={handleArtifactTypeChange}
                 difficulty={difficulty}
                 setDifficulty={setDifficulty}
                 count={count}
@@ -1397,7 +1418,7 @@ function TopicStep({
  */
 function ConfigureStep({
   type,
-  setType,
+  onArtifactTypeChange,
   difficulty,
   setDifficulty,
   count,
@@ -1415,7 +1436,8 @@ function ConfigureStep({
   onReset,
 }: {
   type: TaskType;
-  setType: (t: TaskType) => void;
+  /** TZ-4: колбэк, который одновременно меняет тип И сбрасывает закэшированные артефакты. */
+  onArtifactTypeChange: (t: TaskType) => void;
   difficulty: Difficulty;
   setDifficulty: (d: Difficulty) => void;
   count: number;
@@ -1470,7 +1492,7 @@ function ConfigureStep({
         {/* Q1-2027: сегментер типа артефакта — 7 опций в 2 ряда (3 быстрых + 4 тяжёлых). */}
         <div>
           <label className="text-xs font-medium text-warm-500 uppercase tracking-wider mb-1.5 block">Тип</label>
-          <ArtifactTypePicker value={type} onChange={setType} hasPlus={hasPlus} />
+          <ArtifactTypePicker value={type} onChange={onArtifactTypeChange} hasPlus={hasPlus} />
         </div>
 
         {/* Сложность: 3 пилюли без описаний. */}

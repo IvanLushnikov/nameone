@@ -9,6 +9,7 @@ import {
   Presentation as PresentationIcon,
   Calendar,
   ClipboardCheck,
+  Lock,
   type LucideIcon,
 } from "lucide-react";
 import type { TaskType } from "@/lib/types";
@@ -78,14 +79,24 @@ export function ArtifactTypePicker({ value, onChange, hasPlus }: ArtifactTypePic
                 role="radio"
                 aria-checked={selected}
                 aria-disabled={disabled}
-                disabled={disabled}
-                onClick={() => !disabled && onChange(opt.id)}
-                title={disabled ? `Доступно в тарифе «Плюс» (${opt.hint})` : opt.hint}
+                // TZ-5: НЕ ставим HTML `disabled`, иначе браузер глохнет onClick и мы
+                // не сможем перенаправить на /pricing/. Состояние "заблокировано" держим
+                // через aria-disabled + CSS (opacity-60, cursor-not-allowed) + логику onClick.
+                onClick={() => {
+                  // TZ-5 (QA-аудит 2026-09-30): для plusOnly без подписки Плюс — перенаправляем
+                  // на /pricing/, чтобы юзер получил понятную обратную связь, а не клик в пустоту.
+                  if (disabled) {
+                    window.location.href = "/pricing/";
+                    return;
+                  }
+                  onChange(opt.id);
+                }}
+                title={disabled ? `Доступно в тарифе «Плюс» — откроем тарифы (${opt.hint})` : opt.hint}
                 className={`group flex items-center justify-center gap-1.5 h-10 px-3 rounded-lg text-[13px] font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 whitespace-nowrap ${
                   selected
                     ? "bg-white text-warm-950 shadow-soft"
                     : disabled
-                      ? "text-warm-400 cursor-not-allowed"
+                      ? "text-warm-400 opacity-60 cursor-not-allowed hover:bg-warm-50"
                       : "text-warm-600 hover:text-warm-900"
                 }`}
               >
@@ -94,9 +105,16 @@ export function ArtifactTypePicker({ value, onChange, hasPlus }: ArtifactTypePic
                 {opt.plusOnly && (
                   <span
                     className={`text-[9px] uppercase tracking-wider font-bold px-1 rounded ${
-                      selected ? "bg-accent-100 text-accent-700" : "bg-warm-200 text-warm-500"
+                      disabled
+                        // TZ-5: яркий оранжевый badge с иконкой замка для заблокированных опций —
+                        // чтобы было ясно видно «премиум» без необходимости читать текст.
+                        ? "bg-accent-500 text-white inline-flex items-center gap-0.5"
+                        : selected
+                          ? "bg-accent-100 text-accent-700"
+                          : "bg-warm-200 text-warm-500"
                     }`}
                   >
+                    {disabled && <Lock className="w-2 h-2" />}
                     +
                   </span>
                 )}
