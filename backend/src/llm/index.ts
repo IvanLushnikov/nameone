@@ -32,6 +32,7 @@ import { lookupCache, makeCacheKey, saveCache } from "./cache";
 import { buildWorksheetPrompt } from "./prompts/worksheet-gen";
 import { buildExamPrompt } from "./prompts/exam-gen";
 import { buildValidatePrompt } from "./prompts/validate";
+import { checkContentLanguage, collectExamTexts } from "./language-guard";
 import { callPolzaEmbedding } from "./providers/polza";
 import { isProviderEnabled } from "./config";
 import type { GenerationRequest, Worksheet, ExamVariant, SubjectSlug, GenerateWorksheetMeta } from "../types";
@@ -195,6 +196,27 @@ export interface GenerateExamArgs {
   ip: string;
 }
 
+/**
+ * TZ-13: безопасный fallback, когда LLM дважды вернул контент на иностранном
+ * языке для не-языкового предмета. Лучше пустой вариант с честным сообщением,
+ * чем задание не по тому предмету (учитель теряет доверие к продукту).
+ */
+function emptyVariant(
+  exam: "oge" | "ege",
+  subject: SubjectSlug,
+  variantNumber: number,
+): ExamVariant {
+  return {
+    id: `exam_${Date.now().toString(36)}`,
+    exam,
+    subject,
+    variantNumber,
+    title: `${exam === "oge" ? "ОГЭ" : "ЕГЭ"} · ${subject} · Вариант ${variantNumber}`,
+    duration: 235,
+    problems: [],
+  };
+}
+
 export async function generateExam(
   args: GenerateExamArgs,
   env: Env,
@@ -239,6 +261,79 @@ export async function generateExam(
     };
   } catch {
     throw new InternalError("LLM returned invalid JSON for exam");
+  }
+
+  // TZ-13: LLM может отдать задания на иностранном языке для не-языкового предмета
+  // (напр. «Open the brackets: She (read) a book now.» для физики). Промпт уже
+  // содержит language-constraint, но он не гарантирован — нужен детерминированный guard.
+  // Одна регенерация с явным указанием языка, потом fallback на mock.
+  const langCheck = checkContentLanguage(
+    collectExamTexts(variant.problems as unknown as Array<Record<string, unknown>>),
+    subject,
+  );
+  if (!langCheck.ok) {
+    console.warn(
+      `[exam-gen] language guard tripped: subject=${subject} cyrillic=${(langCheck.cyrillicRatio * 100).toFixed(0)}% latinWords=${langCheck.latinWordCount} — regenerating with strict language instruction`,
+    );
+
+    const { system: strictSystem, user: strictUser } = buildExamPrompt({
+      exam,
+      subject,
+      variantNumber,
+    });
+    const retry = await callWithFallback(
+      {
+        model: decision.primary?.model ?? "gpt-6-luna",
+        messages: [
+          { role: "system", content: strictSystem },
+          {
+            role: "user",
+            content:
+              strictUser +
+              "\n\nВНИМАНИЕ: предыдущая попытка вернула задания на иностранном языке. " +
+              "Это ошибка. Перегенерируй вариант — ВСЕ задания строго на русском языке " +
+              "(если предмет не английский/немецкий).",
+          },
+        ],
+        responseFormat: "json",
+        temperature: 0.5,
+        maxTokens: 6000,
+        cacheSystemPrompt: false,
+      },
+      decision,
+      env,
+    ).catch(() => null);
+
+    if (retry) {
+      try {
+        const parsed = JSON.parse(retry.response.content) as ExamVariant;
+        const retryVariant: ExamVariant = {
+          ...variant,
+          title: parsed.title ?? variant.title,
+          duration: parsed.duration ?? variant.duration,
+          problems: Array.isArray(parsed.problems) ? parsed.problems : variant.problems,
+        };
+        const retryCheck = checkContentLanguage(
+          collectExamTexts(
+            retryVariant.problems as unknown as Array<Record<string, unknown>>,
+          ),
+          subject,
+        );
+        if (retryCheck.ok) {
+          variant = retryVariant;
+        } else {
+          // Вторая попытка тоже не помогла — не отдаём мусор, уходим в mock.
+          console.error(
+            `[exam-gen] language guard failed twice for subject=${subject}; falling back to mock`,
+          );
+          variant = emptyVariant(exam, subject, variantNumber);
+        }
+      } catch {
+        variant = emptyVariant(exam, subject, variantNumber);
+      }
+    } else {
+      variant = emptyVariant(exam, subject, variantNumber);
+    }
   }
 
   const meta: GenerateWorksheetMeta = {

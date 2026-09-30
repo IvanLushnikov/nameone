@@ -14,6 +14,7 @@ import { PresentationPreview } from "@/components/constructor/PresentationPrevie
 import { KtpPreview } from "@/components/constructor/KtpPreview";
 import { PaywallModal } from "@/components/shared/PaywallModal";
 import { ArtifactTypePicker } from "@/components/constructor/ArtifactTypePicker";
+import { TypePreviewThumb } from "@/components/constructor/TypePreviewThumb";
 import {
   PresetGrid,
   type Preset,
@@ -146,6 +147,11 @@ function ConstructorPage() {
 
   const [generating, setGenerating] = React.useState(false);
   const [worksheet, setWorksheet] = React.useState<Worksheet | null>(null);
+  /** TZ-12: название выбранного шаблонного пресета — для подписи в ConfigureStep. */
+  const selectedPresetTitle = React.useMemo(
+    () => (selectedPresetId ? PRESETS.find((p) => p.id === selectedPresetId)?.title ?? null : null),
+    [selectedPresetId],
+  );
   /** Q1-2027: state для новых типов артефактов. */
   const [lessonPlan, setLessonPlan] = React.useState<LessonPlan | null>(null);
   const [presentation, setPresentation] = React.useState<Presentation | null>(null);
@@ -849,6 +855,8 @@ function ConstructorPage() {
                 }}
                 onGenerate={generate}
                 onReset={reset}
+                selectedPresetId={selectedPresetId}
+                selectedPresetTitle={selectedPresetTitle}
               />
             )}
           </div>
@@ -1456,7 +1464,17 @@ function ConfigureStep({
   onEditSummary: () => void;
   onGenerate: () => void;
   onReset: () => void;
+  /**
+   * TZ-12: id выбранного шаблонного пресета (Шаг 1 «Сценарий»).
+   * Если пресет выбран — тип артефакта уже задан им, и повторно спрашивать
+   * «Лист / Тест / Карточки» на Шаге 3 не нужно (юзер: «вроде же ранее выбирали?»).
+   */
+  selectedPresetId: string | null;
+  /** Название выбранного пресета — для подписи «Тип выбран шаблоном: …». */
+  selectedPresetTitle: string | null;
 }) {
+
+  const typeFixedByPreset = Boolean(selectedPresetId);
 
   return (
     <Card>
@@ -1489,10 +1507,27 @@ function ConfigureStep({
       </div>
 
       <div className="space-y-4">
-        {/* Q1-2027: сегментер типа артефакта — 7 опций в 2 ряда (3 быстрых + 4 тяжёлых). */}
+        {/* Q1-2027: сегментер типа артефакта — 7 опций в 2 ряда (3 быстрых + 4 тяжёлых).
+            TZ-12: если тип уже задан шаблоном на Шаге 1, не спрашиваем повторно —
+            вместо сегментера показываем строку «Тип выбран шаблоном» + ссылку «Сменить». */}
         <div>
           <label className="text-xs font-medium text-warm-500 uppercase tracking-wider mb-1.5 block">Тип</label>
-          <ArtifactTypePicker value={type} onChange={onArtifactTypeChange} hasPlus={hasPlus} />
+          {typeFixedByPreset ? (
+            <div className="flex items-center justify-between gap-2 rounded-xl border border-warm-200 bg-warm-50 px-3 h-11">
+              <span className="text-sm text-warm-700 truncate min-w-0">
+                Выбран шаблоном: <span className="font-medium text-warm-950">{selectedPresetTitle}</span>
+              </span>
+              <button
+                type="button"
+                onClick={onEditSummary}
+                className="text-xs font-medium text-brand-600 hover:underline shrink-0 whitespace-nowrap"
+              >
+                Изменить
+              </button>
+            </div>
+          ) : (
+            <ArtifactTypePicker value={type} onChange={onArtifactTypeChange} hasPlus={hasPlus} />
+          )}
         </div>
 
         {/* Сложность: 3 пилюли без описаний. */}
@@ -1722,20 +1757,20 @@ function EmptyPreview({
         )}
       </div>
 
-      {/* F-09: превью выбранного типа — образец результата. */}
+      {/* F-09: превью выбранного типа — образец результата.
+          TZ-12: вместо строки текста — визуальная миниатюра формата (квадратики,
+          радио-кружки, сетка слайдов и т.п.), чтобы юзер сразу видел результат. */}
       <div className="px-4 sm:px-6 pb-4">
         <div className="text-[10px] uppercase tracking-wider text-warm-500 font-semibold mb-2">
           Как будет выглядеть результат
         </div>
         <div className="rounded-xl border border-warm-200 bg-white p-4 shadow-soft">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-3">
             <div className="text-xs font-semibold text-warm-950">{preview.label}</div>
             <div className="text-[10px] text-warm-500 uppercase tracking-wider">пример</div>
           </div>
-          <div className="text-[13px] text-warm-700 leading-snug mb-2 line-clamp-3">
-            {preview.sample}
-          </div>
-          <div className="text-[11px] text-warm-500">{preview.desc}</div>
+          <TypePreviewThumb type={type} />
+          <div className="text-[11px] text-warm-500 mt-3">{preview.desc}</div>
         </div>
       </div>
 
