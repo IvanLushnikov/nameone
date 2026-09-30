@@ -1443,6 +1443,8 @@ function ConfigureStep({
   onEditSummary,
   onGenerate,
   onReset,
+  selectedPresetId,
+  selectedPresetTitle,
 }: {
   type: TaskType;
   /** TZ-4: колбэк, который одновременно меняет тип И сбрасывает закэшированные артефакты. */
