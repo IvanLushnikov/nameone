@@ -4881,7 +4881,7 @@ export const subjects: Subject[] = [
   },
   {
     slug: "art",
-    title: "ИЗО (Искусство)",
+    title: "Изобразительное искусство",
     shortTitle: "ИЗО",
     emoji: "🎨",
     color: "accent",
@@ -4890,7 +4890,7 @@ export const subjects: Subject[] = [
   },
   {
     slug: "pe",
-    title: "Физкультура",
+    title: "Физическая культура",
     shortTitle: "Физ-ра",
     emoji: "⚽",
     color: "info",

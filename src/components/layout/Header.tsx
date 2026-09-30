@@ -42,7 +42,7 @@ export function Header() {
 
     // Cross-tab: выстреливает storage когда другая вкладка меняет localStorage.
     const onStorage = (e: StorageEvent) => {
-      if (!e.key || e.key === "listai.profile") refresh();
+      if (!e.key || e.key === "rabochielisty.profile") refresh();
     };
     window.addEventListener("storage", onStorage);
 
@@ -109,9 +109,11 @@ export function Header() {
                 Войти
               </Button>
             )}
-            <Button as="link" href="/constructor" variant="primary" size="md" leftIcon={<Sparkles className="w-4 h-4" />}>
-              Создать лист
-            </Button>
+            {!pathname.startsWith("/constructor") && (
+              <Button as="link" href="/constructor" variant="primary" size="md" leftIcon={<Sparkles className="w-4 h-4" />}>
+                Создать лист
+              </Button>
+            )}
           </div>
 
           <button

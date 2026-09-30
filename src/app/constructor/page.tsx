@@ -1000,9 +1000,9 @@ function ConstructorPage() {
                               if (isUnlimited) {
                                 return `Безлимит (план ${serverUsage.plan}). Сегодня уже сгенерировано: ${serverUsage.generationsToday}.`;
                               }
-                              return `Осталось ${left} из ${serverUsage.generationsLimit} на сегодня. Подписка Базовый — безлимит за 590 ₽/мес (или 490 ₽/мес при оплате за год).`;
+                              return `Осталось ${left} из ${serverUsage.generationsLimit} на сегодня. Подписка Базовый — безлимит за 500 ₽/мес (или 375 ₽/мес при оплате за год).`;
                             }
-                            return `Осталось ${remaining} из 3 на сегодня. Подписка Базовый — безлимит за 590 ₽/мес (или 490 ₽/мес при оплате за год).`;
+                            return `Осталось ${remaining} из 3 на сегодня. Подписка Базовый — безлимит за 500 ₽/мес (или 375 ₽/мес при оплате за год).`;
                           })()}
                         </p>
                         <div className="mt-2 h-1.5 bg-white rounded-full overflow-hidden">
@@ -1257,7 +1257,10 @@ function SelectStep({
       </div>
 
       {/* CTA: «Далее» доступен только когда оба выбраны. Sticky снизу. */}
-      <div className="mt-1.5 pt-1.5 border-t border-warm-100 flex items-center justify-end sticky bottom-0 bg-white/85 backdrop-blur -mx-5 px-5 -mb-5 pb-3 rounded-b-2xl">
+      <div className="mt-1.5 pt-1.5 border-t border-warm-100 flex items-center justify-end gap-3 sticky bottom-0 bg-white/85 backdrop-blur -mx-5 px-5 -mb-5 pb-3 rounded-b-2xl">
+        {!(subject && grade !== null) && (
+          <span className="mr-auto text-xs text-warm-500">Выберите предмет и класс</span>
+        )}
         <Button
           variant="primary"
           size="sm"
@@ -1552,7 +1555,7 @@ function ConfigureStep({
               ? "Лимит исчерпан — оформить подписку"
               : generating
                 ? "Генерируем…"
-                : "Сгенерировать"}
+                : "Создать рабочий лист"}
           </Button>
           <p className="text-xs text-warm-500 text-center mt-2">
             Готовый PDF за ~30 сек. Без регистрации.
