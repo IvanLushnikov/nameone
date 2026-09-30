@@ -21,7 +21,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20  # Next 14.2 + Node 23 локально зависает на этой машине; на 20 стабильно
+          node-version: 22  # Wrangler требует Node ≥22 (был 20 — CI падал на deploy). Локально Next 14.2 + Node 23 виснет на M2 Air → собираем в CI.
           cache: npm
 
       - name: Install
