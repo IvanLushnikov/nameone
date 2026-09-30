@@ -116,14 +116,16 @@ export function PricingTeaser() {
               type="button"
               onClick={() => setPeriod("year")}
               className={cn(
-                "px-4 sm:px-5 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-1.5",
+                // TZ-9: pr-4 (правее) + pl-5 — бейдж «−25%» не должен вылезать за pill.
+                "pl-5 pr-4 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-2",
                 period === "year"
                   ? "bg-white text-warm-950 shadow-soft"
                   : "text-warm-600 hover:text-warm-900"
               )}
             >
               За год
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">
+              {/* TZ-9: бейдж с whitespace-nowrap и более крупным px-2, чтобы не обрезался. */}
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-bold whitespace-nowrap">
                 −25%
               </span>
             </button>

@@ -29,7 +29,11 @@ export function Hero() {
             Бета · 3 бесплатно без регистрации
           </Badge>
 
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-display font-bold tracking-tight text-balance animate-fade-in">
+          {/* TZ-1: убран animate-fade-in — он оставлял H1 на opacity:0 при первом кадре
+              keyframe (fill-mode:none), и заголовок мерцал бледно-серым.
+              text-warm-950 добавлен явно (хотя он и так в base layer @apply для h1),
+              чтобы перебить любые потенциальные override'ы. */}
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-display font-bold tracking-tight text-balance text-warm-950">
             Не&nbsp;тратьте вечер на&nbsp;рабочий&nbsp;лист.
             <br />
             <span className="relative inline-block mt-2">

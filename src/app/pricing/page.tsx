@@ -153,7 +153,8 @@ export default function PricingPage() {
         <p className="text-sm font-semibold uppercase tracking-wider text-brand-600 mb-3">
           Тарифы
         </p>
-        <h1 className="text-4xl sm:text-5xl font-display font-bold tracking-tight">
+        {/* TZ-1: text-warm-950 добавлен явно для гарантии контраста. */}
+        <h1 className="text-4xl sm:text-5xl font-display font-bold tracking-tight text-warm-950">
           Простая экономика
         </h1>
         <p className="mt-4 text-lg text-warm-600 max-w-2xl mx-auto">
