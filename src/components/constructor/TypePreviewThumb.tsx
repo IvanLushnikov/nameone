@@ -9,6 +9,8 @@
  * Чистый presentational: никаких данных, только разметка + CSS.
  */
 
+import type { TaskType } from "@/lib/types";
+
 interface TypePreviewThumbProps {
   type: TaskType;
 }
