@@ -134,7 +134,7 @@
 ## §6. Срочные действия (на ближайшую неделю)
 
 1. **Регаем `rabochielisty.ru`** (~600 ₽/год на reg.ru / regery). DNS: CNAME → Pages-проект.
-2. **Массовая замена** `listai.ru` → `rabochielisty.ru` в коде: `next.config.mjs`, `sitemap.ts`, `JSON-LD canonical`, README.
+2. **Массовая замена** `listai-prototype.pages.dev` → `rabochielisty.ru` в коде: `next.config.mjs`, `sitemap.ts`, `JSON-LD canonical`, README. (Замена `listai.ru` → `rabochielisty.ru` уже выполнена в рамках этой ревизии — см. git diff.)
 3. **Деплой на прод-домен**: `npm run build && wrangler pages deploy out`. Проверить sitemap.xml и robots.txt.
 4. **Яндекс.Вебмастер + Google Search Console**: добавить домен, отправить sitemap.
 5. **Обновить брендинг в лендинге**: Hero, Features, Comparison — убрать «ЛистAI», везде «РабочиеЛисты AI».

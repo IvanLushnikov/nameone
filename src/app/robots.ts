@@ -5,6 +5,6 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       { userAgent: "*", allow: "/", disallow: ["/api/", "/dashboard", "/preview/"] },
     ],
-    sitemap: `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://listai.ru"}/sitemap.xml`,
+    sitemap: `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://rabochielisty.ru"}/sitemap.xml`,
   };
 }

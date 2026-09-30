@@ -17,9 +17,39 @@ export function generateStaticParams() {
 export function generateMetadata({ params }: Props): Metadata {
   const subject = getSubject(params.subject);
   if (!subject) return { title: "Предмет не найден" };
+  const title = `Рабочие листы по ${subject.title.toLowerCase()} — 1-${subject.grades[subject.grades.length - 1].num} класс`;
+  const description = `AI-генератор рабочих листов и тестов по ${subject.title.toLowerCase()}. ${subject.grades.length} классов, ${subject.grades.reduce((s: number, g: Grade) => s + g.topics.length, 0)} тем. PDF с ответами за 30 секунд.`;
+  const base = "https://rabochielisty.ru";
+  const canonicalUrl = `${base}/subject/${subject.slug}`;
   return {
-    title: `Рабочие листы по ${subject.title.toLowerCase()} — 1-${subject.grades[subject.grades.length - 1].num} класс`,
-    description: `AI-генератор рабочих листов и тестов по ${subject.title.toLowerCase()}. ${subject.grades.length} классов, ${subject.grades.reduce((s: number, g: Grade) => s + g.topics.length, 0)} тем. PDF с ответами за 30 секунд.`,
+    title,
+    description,
+    alternates: { canonical: canonicalUrl },
+    openGraph: {
+      type: "article",
+      title,
+      description,
+      url: canonicalUrl,
+      siteName: "РабочиеЛисты AI",
+      locale: "ru_RU",
+      // TZ-10 §5.4 / §9.6: og:image — статичный PNG (TZ-10 Этап 3, вариант B).
+      // Edge route оставлен для будущей миграции, но static-export не работает с Edge runtime.
+      images: [
+        {
+          url: `${base}/og/${subject.slug}.png`,
+          width: 1200,
+          height: 630,
+          alt: `${subject.title} — рабочие листы по ФГОС`,
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      // TZ-10 §5.4: Twitter image для соцсетей.
+      images: [`${base}/og/${subject.slug}.png`],
+    },
   };
 }
 

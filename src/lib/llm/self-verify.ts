@@ -12,7 +12,8 @@
  *
  * URL Worker-а: NEXT_PUBLIC_WORKER_URL
  *   - dev: http://localhost:8787 (по умолчанию, через `wrangler dev`)
- *   - prod: https://listai-self-verify.<account>.workers.dev (Subtask #3 deploy)
+ *   - prod: https://rabochielisty-self-verify.<account>.workers.dev (Subtask #3 deploy)
+ *   // TODO: после ребренда — переименовать сам Workers-проект на CF (сейчас имя `listai-self-verify`), обновить NEXT_PUBLIC_WORKER_URL и проверить деплой.
  *
  * Timeout 35 сек: Worker-у выделено 30 сек (CPU-time на Free plan),
  * +5 сек на сеть, JSON-парсинг, маршалинг. При превышении — graceful fallback.

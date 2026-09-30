@@ -8,9 +8,9 @@ const comparison = [
   {
     feature: "Цена",
     free: "0 ₽",
-    base: "590 ₽/мес · 5 900 ₽/год",
-    plus: "1 490 ₽/мес · 11 900 ₽/год",
-    school: "3 990 ₽/класс",
+    base: "500 ₽/мес · 4 500 ₽/год",
+    plus: "1 500 ₽/мес · 12 000 ₽/год",
+    school: "3 000 ₽/класс",
   },
   {
     feature: "Генерации в сутки",
@@ -21,10 +21,10 @@ const comparison = [
   },
   {
     feature: "Предметы",
-    free: "3 предмета",
-    base: "Все 6+",
-    plus: "Все 6+",
-    school: "Все 6+",
+    free: "Все 21+",
+    base: "Все 21+",
+    plus: "Все 21+",
+    school: "Все 21+",
   },
   {
     feature: "Классы",
@@ -157,7 +157,7 @@ export default function PricingPage() {
           Простая экономика
         </h1>
         <p className="mt-4 text-lg text-warm-600 max-w-2xl mx-auto">
-          590 ₽/мес или 490 ₽/мес при оплате за год. Без скрытых платежей. Отмена в 1 клик. Возврат за 7 дней.
+          500 ₽/мес или 375 ₽/мес при оплате за год. Без скрытых платежей. Отмена в 1 клик. Возврат за 7 дней.
         </p>
       </div>
 
@@ -217,15 +217,15 @@ export default function PricingPage() {
         <div className="container-tight">
           <div className="grid lg:grid-cols-2 gap-8 items-center">
             <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold mb-4">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-warm-200 text-warm-700 text-xs font-semibold mb-4">
                 <Building2 className="w-3.5 h-3.5" />
-                B2B · для школ и учителей
+                Скоро · запуск Q1 2027
               </div>
               <h2 className="text-3xl sm:text-4xl font-display font-bold tracking-tight mb-4">
-                Подписка для школы и класса
+                Скоро: тариф «Школа» для классов
               </h2>
               <p className="text-warm-600 mb-6">
-                Учитель получает админку с отчётами по успеваемости класса. Ученики — личные кабинеты с историей. Интеграция со школьной LMS.
+                Учитель получит админку с отчётами по успеваемости класса. Ученики — личные кабинеты с историей. Интеграция со школьной LMS. Ориентир цены — 3 000 ₽/мес за класс.
               </p>
 
               <ul className="space-y-2 mb-6">
@@ -246,22 +246,21 @@ export default function PricingPage() {
               </ul>
 
               <div className="flex flex-wrap items-baseline gap-2 mb-6">
-                <span className="text-3xl font-bold text-warm-950 whitespace-nowrap">3 990 ₽</span>
+                <span className="text-3xl font-bold text-warm-950 whitespace-nowrap">3 000 ₽</span>
                 <span className="text-warm-500 whitespace-nowrap">/мес за класс</span>
-                <span className="text-sm text-warm-500">(от 25 учеников)</span>
+                <span className="text-sm text-warm-500">(ориентир)</span>
               </div>
               <p className="text-xs text-warm-500 mb-4">
-                От 5 классов — 4 500 ₽/класс. От 10 классов — 4 000 ₽/класс.
-                Годовая предоплата — скидка 15%.
+                Финальные условия и скидки за объём уточним ближе к запуску.
               </p>
 
-              <Button variant="primary" size="lg" leftIcon={<GraduationCap className="w-4 h-4" />}>
-                Запросить демо для школы
+              <Button variant="primary" size="lg" disabled leftIcon={<GraduationCap className="w-4 h-4" />}>
+                Скоро · запуск Q1 2027
               </Button>
             </div>
 
             <Card className="bg-gradient-to-br from-blue-50 to-white border-blue-100">
-              <h3 className="font-semibold text-warm-950 mb-3">Готовые сценарии</h3>
+              <h3 className="font-semibold text-warm-950 mb-3">Сценарии — превью</h3>
               <div className="space-y-2.5">
                 {[
                   { title: "Контрольная на 2 варианта за 5 минут", desc: "Учитель физики делает 2 PDF и шифр ответов." },
@@ -302,7 +301,7 @@ export default function PricingPage() {
               },
               {
                 q: "Есть ли скидки для годовых подписок?",
-                a: "Да. Базовый: 5 900 ₽/год (490 ₽/мес — на 17% дешевле). Плюс: 11 900 ₽/год (990 ₽/мес — на 33% дешевле). Оплата за год — без автоматических списаний, продление по желанию.",
+                a: "Да. Базовый: 4 500 ₽/год (375 ₽/мес — на 25% дешевле). Плюс: 12 000 ₽/год (1 000 ₽/мес — на 33% дешевле). Оплата за год — без автоматических списаний, продление по желанию.",
               },
               {
                 q: "А если AI ошибётся в задании — деньги вернут?",

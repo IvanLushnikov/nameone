@@ -156,7 +156,7 @@ function HeroMockup() {
           <span className="w-3 h-3 rounded-full bg-emerald-400" />
         </div>
         <div className="flex-1 mx-4 h-7 rounded-md bg-warm-50 grid place-items-center text-xs text-warm-400 font-mono">
-          listai.ru/constructor/matematika/5-klass/drobi-obyknovennye
+          rabochielisty.ru/constructor/matematika/5-klass/drobi-obyknovennye
         </div>
       </div>
 
@@ -271,7 +271,7 @@ function HeroMockup() {
                   size="sm"
                   className="flex-1 motion-safe:hover:scale-[1.02] motion-safe:active:scale-95"
                   leftIcon={<Play className="w-3 h-3" />}
-                  aria-label="Сгенерировать новый вариант"
+                  aria-label="Новый вариант рабочего листа"
                 >
                   {pendingHref === REGEN_HREF ? "Открываю..." : "Новый вариант"}
                 </Button>

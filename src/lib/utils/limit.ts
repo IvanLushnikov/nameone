@@ -6,7 +6,7 @@
  * надёжно между статикой и edge — localStorage проще и прозрачнее.
  */
 
-const KEY = "listai_gens_v1";
+const KEY = "rabochielisty_gens_v1";
 const LIMIT = 3;
 
 interface Counter {

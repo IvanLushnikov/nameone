@@ -224,8 +224,8 @@ function ProfileHeader({
 }) {
   const planBadge = {
     free: { tone: "neutral" as const, label: "Бесплатный план" },
-    base: { tone: "brand" as const, label: "Базовый · 590 ₽/мес" },
-    plus: { tone: "accent" as const, label: "Плюс · 1 490 ₽/мес" },
+    base: { tone: "brand" as const, label: "Базовый · 500 ₽/мес" },
+    plus: { tone: "accent" as const, label: "Плюс · 1 500 ₽/мес" },
   }[profile.plan];
 
   return (

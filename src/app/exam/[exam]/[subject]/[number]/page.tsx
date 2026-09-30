@@ -200,7 +200,7 @@ export default function ExamNumberPage({ params }: Props) {
                   size="lg"
                   leftIcon={<Sparkles className="w-4 h-4" />}
                 >
-                  Сгенерировать лист по этому номеру
+                  Создать лист по этому номеру
                 </Button>
                 <Button
                   as="link"

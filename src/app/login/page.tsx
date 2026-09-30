@@ -53,40 +53,6 @@ export default function LoginPage() {
     }
   };
 
-  // Dev-only fallback: если бэк не подключён (локальный фронт без NEXT_PUBLIC_API_URL
-  // или NETWORK ошибка), позволяет продемонстрировать flow без реального magic link.
-  // В проде (NODE_ENV='production', деплой Cloudflare Pages) кнопка и блок не рендерится —
-  // иначе клик «Я нажал ссылку» создаст фейковый профиль в localStorage, который
-  // не ссинхронизируется с /api/users/me. Удалять полностью пока нельзя — QA-инженер
-  // и preview-окружения иногда гоняют фронт без воркера.
-  const showDevMockConfirm = process.env.NODE_ENV !== "production";
-  const handleMockConfirm = () => {
-    trackEvent("login_confirm", {
-      emailDomain: email.split("@")[1] ?? "unknown",
-      devMock: 1,
-    });
-    // inline-копия логики: не импортируем storage на верхнем уровне, чтобы прод-бандл
-    // не таскал неиспользуемый код и setProfile не дёргался без явного dev-confirm.
-    if (typeof window !== "undefined") {
-      const profile = {
-        id: Math.random().toString(36).slice(2, 10),
-        email,
-        name: email.split("@")[0],
-        plan: "free" as const,
-        generationsTotal: 0,
-        generationsToday: 0,
-        generationsLimit: 3,
-        createdAt: new Date().toISOString(),
-      };
-      try {
-        window.localStorage.setItem("listai.profile", JSON.stringify(profile));
-      } catch {
-        /* localStorage недоступен — ок */
-      }
-      window.location.assign("/dashboard");
-    }
-  };
-
   return (
     <div className="container-tight py-12 sm:py-20 max-w-md mx-auto">
       <Card>
@@ -179,17 +145,6 @@ export default function LoginPage() {
             <p className="text-xs text-warm-500 mt-4">
               Не пришло? Проверьте папку «Спам» или повторите через минуту.
             </p>
-
-            {showDevMockConfirm && (
-              <div className="mt-6 p-4 rounded-xl bg-warm-50 border border-warm-200">
-                <p className="text-xs text-warm-500 mb-2">
-                  Демо-режим (только в dev): имитация клика по magic link
-                </p>
-                <Button variant="secondary" size="md" onClick={handleMockConfirm} fullWidth>
-                  Я нажал(а) ссылку в письме
-                </Button>
-              </div>
-            )}
 
             <button
               type="button"

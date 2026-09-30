@@ -46,7 +46,7 @@ export function Logo({
       </div>
       {showText && (
         <span className={cn("font-display font-bold tracking-tight text-warm-950", textClass)}>
-          Лист<span className="text-brand-500">AI</span>
+          РабочиеЛисты <span className="text-brand-500">AI</span>
         </span>
       )}
     </div>

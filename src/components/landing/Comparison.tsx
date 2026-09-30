@@ -11,11 +11,11 @@ const GENERIC_ROW = [
   "Платные подписки, реклама, часы на форматирование",
 ];
 
-const LISTAI_ROW = [
-  "Таксономия по ФГОС 1-11 класс",
+const OUR_ROW = [
+  "Таксономия по ФГОС 2021, 1–11 класс",
   "PDF в формате A4 с ответами и пояснениями",
   "Каждый ответ проверяется автоматически",
-  "Работает в РФ без VPN, от 490 ₽/мес",
+  "Без VPN, оплата в ₽, от 500 ₽/мес",
   "Планы уроков, презентации, КТП — в одном сервисе",
 ];
 
@@ -128,7 +128,7 @@ export function Comparison() {
             </div>
 
             <ul className="space-y-2.5">
-              {LISTAI_ROW.map((t) => (
+              {OUR_ROW.map((t) => (
                 <li key={t} className="flex items-start gap-2 text-sm text-warm-700">
                   <Check className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
                   {t}

@@ -45,6 +45,13 @@ export function generateMetadata({ params }: Props): Metadata {
   const title = `${topic.title} — рабочие листы · ${subject.shortTitle} ${grade.num} класс`;
   const description = `Скачайте готовые рабочие листы и тесты по теме «${topic.title}» для ${grade.num} класса по ${subject.title.toLowerCase()}. ${topic.examples.length} заданий-образцов с ответами. Сгенерируйте свой вариант за 30 секунд.`;
 
+  // TZ-10 §5.1 / §9.7: canonical + og:type=article + publishedTime/modifiedTime.
+  // В таксономии (Topic) нет полей createdAt/updatedAt — ставим текущую дату;
+  // когда поле появится, заменить на topic.createdAt/topic.updatedAt.
+  const base = "https://rabochielisty.ru";
+  const canonicalUrl = `${base}/subject/${subject.slug}/${grade.num}/${topic.slug}`;
+  const now = new Date();
+
   return {
     title,
     description,
@@ -57,8 +64,45 @@ export function generateMetadata({ params }: Props): Metadata {
       "карточки",
       "тест",
     ],
+    alternates: {
+      canonical: canonicalUrl,
+    },
+    openGraph: {
+      type: "article",
+      title,
+      description,
+      url: canonicalUrl,
+      siteName: "РабочиеЛисты AI",
+      locale: "ru_RU",
+      publishedTime: now.toISOString(),
+      modifiedTime: now.toISOString(),
+      authors: ["Команда РабочиеЛисты AI"],
+      // TZ-10 §5.4 / §9.6: og:image — статичный PNG.
+// Per-topic PNG не генерим (660+ тем × N = тысячи файлов) — fallback на
+// уровне предмета. Edge route `src/app/og/[...slug]/route.tsx` остаётся
+// для будущей миграции, но в `output: "export"` Edge runtime не запускается.
+      images: [
+        {
+          url: `${base}/og/${subject.slug}.png`,
+          width: 1200,
+          height: 630,
+          alt: `${topic.title} — рабочие листы`,
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      // TZ-10 §5.4: Twitter image (Card Validator не любит og:image без дубля на Twitter).
+      images: [`${base}/og/${subject.slug}.png`],
+    },
   };
 }
+
+// TZ-10 §6.1: Related topics — откатил, блокирует билд (таймауты static generation).
+// Компонент RelatedTopics.tsx оставлен, JSON-LD компоненты Breadcrumb/FaqBlock —
+// оставлены. Подключим в отдельной сессии с профилированием.
 
 export default function TopicPage({ params }: Props) {
   const subject = getSubject(params.subject);
@@ -68,6 +112,7 @@ export default function TopicPage({ params }: Props) {
   if (!subject || !grade || !topic) return notFound();
 
   const otherTopics = grade.topics.filter((t: Topic) => t.slug !== topic.slug);
+
 
   // P0-01: SEO — пробрасываем раздел ФГОС в JSON-LD для поисковиков.
   // Только если у темы указан `fgosRef`, иначе плашку не рендерим и в JSON-LD не пишем.
@@ -103,24 +148,15 @@ export default function TopicPage({ params }: Props) {
       <section className="relative bg-gradient-to-b from-warm-50 to-white pt-8 sm:pt-12 pb-10">
         <div className="absolute inset-0 -z-10 bg-grid opacity-50" />
         <div className="container-tight">
-          {/* Breadcrumbs */}
-          <nav className="flex flex-wrap items-center gap-2 mb-5 text-sm">
-            <Link href="/" className="text-warm-500 hover:text-warm-900">
-              Главная
-            </Link>
-            <span className="text-warm-300">/</span>
-            <Link href={`/subject/${subject.slug}`} className="text-warm-500 hover:text-warm-900">
-              {subject.title}
-            </Link>
-            <span className="text-warm-300">/</span>
-            <Link
-              href={`/subject/${subject.slug}/${grade.num}`}
-              className="text-warm-500 hover:text-warm-900"
-            >
-              {grade.num} класс
-            </Link>
-            <span className="text-warm-300">/</span>
-            <span className="text-warm-700">{topic.title}</span>
+          {/* TZ-10 §9.4: BreadcrumbList JSON-LD откатил вместе с компонентом — таймауты static generation. Подключим позже. */}
+          <nav aria-label="breadcrumb" className="mb-5 flex flex-wrap items-center text-sm text-warm-600">
+            <Link href="/" className="hover:text-warm-900">Главная</Link>
+            <span aria-hidden className="mx-1">›</span>
+            <Link href={`/subject/${subject.slug}`} className="hover:text-warm-900">{subject.title}</Link>
+            <span aria-hidden className="mx-1">›</span>
+            <Link href={`/subject/${subject.slug}/${grade.num}`} className="hover:text-warm-900">{grade.num} класс</Link>
+            <span aria-hidden className="mx-1">›</span>
+            <span aria-current="page" className="text-warm-700 font-medium">{topic.title}</span>
           </nav>
 
           <div className="grid lg:grid-cols-[1fr_400px] gap-8 items-start">
@@ -148,7 +184,7 @@ export default function TopicPage({ params }: Props) {
                   size="lg"
                   leftIcon={<Sparkles className="w-4 h-4" />}
                 >
-                  Сгенерировать свой вариант
+                  Создать свой вариант
                 </Button>
                 <Button
                   as="link"
@@ -353,6 +389,9 @@ export default function TopicPage({ params }: Props) {
           </Card>
         </div>
       </section>
+
+      {/* TZ-10 §6.2 / §9.5: FAQPage JSON-LD откатил вместе с FaqBlock — таймауты static generation. Подключим позже. */}
+      {/* TZ-10 §6.1 / §9.12: Related topics откатил — таймауты static generation. */}
     </>
   );
 }

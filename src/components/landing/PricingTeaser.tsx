@@ -42,11 +42,11 @@ const plans = [
     href: "/pricing",
     highlight: true,
     accent: "from-brand-400 via-brand-500 to-brand-600",
-    month: { price: "590 ₽", sub: "в месяц", saving: null },
+    month: { price: "500 ₽", sub: "в месяц", saving: null },
     year: {
-      price: "490 ₽",
+      price: "375 ₽",
       sub: "в месяц при оплате за год",
-      saving: "5 900 ₽ за год",
+      saving: "4 500 ₽ за год — экономия 1 500 ₽",
     },
   },
   {
@@ -66,11 +66,11 @@ const plans = [
     href: "/pricing",
     highlight: false,
     accent: "from-accent-400 to-accent-600",
-    month: { price: "1 490 ₽", sub: "в месяц", saving: null },
+    month: { price: "1 500 ₽", sub: "в месяц", saving: null },
     year: {
-      price: "990 ₽",
+      price: "1 000 ₽",
       sub: "в месяц при оплате за год",
-      saving: "11 900 ₽ за год",
+      saving: "12 000 ₽ за год — экономия 6 000 ₽",
     },
   },
 ];
@@ -124,7 +124,7 @@ export function PricingTeaser() {
             >
               За год
               <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">
-                −17%
+                −25%
               </span>
             </button>
           </div>
@@ -222,7 +222,7 @@ function PricingCard({
           </div>
           {pricing.saving && (
             <p className="mt-1.5 text-xs font-medium text-emerald-700">
-              {pricing.saving} — экономия 1 080 ₽
+              {pricing.saving}
             </p>
           )}
           <p className="mt-2 text-sm text-warm-600">{plan.description}</p>

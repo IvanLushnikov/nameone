@@ -3,10 +3,10 @@
 import type { UserHistoryItem, UserTemplate, UserProfile, Worksheet, LessonPlan, Presentation, Ktp } from "@/lib/types";
 import { PROFILE_CHANGED_EVENT } from "@/lib/events";
 
-const KEY_HISTORY = "listai.history";
-const KEY_TEMPLATES = "listai.templates";
-const KEY_PROFILE = "listai.profile";
-const KEY_FAVORITES = "listai.favorites";
+const KEY_HISTORY = "rabochielisty.history";
+const KEY_TEMPLATES = "rabochielisty.templates";
+const KEY_PROFILE = "rabochielisty.profile";
+const KEY_FAVORITES = "rabochielisty.favorites";
 
 /**
  * Дискриминированный union всех артефактов, которые можно класть в избранное.
@@ -150,7 +150,7 @@ export function isFavorited(id: string): boolean {
 
 // ===== Аналитика событий =====
 
-const KEY_EVENTS = "listai.events";
+const KEY_EVENTS = "rabochielisty.events";
 
 export interface AnalyticsEvent {
   name: string;

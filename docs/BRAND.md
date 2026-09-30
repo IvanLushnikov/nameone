@@ -41,7 +41,7 @@
 
 1. Зарегать `rabochielisty.ru` на reg.ru / regery (≈600 ₽/год).
 2. Настроить DNS: CNAME `rabochielisty.ru` → `listai-prototype.pages.dev` (или переименовать Pages-проект).
-3. Массовая замена по чек-листу в `README.md` → раздел «Как переименовать после выбора бренда».
+3. Массовая замена по чек-листу в `README.md` → раздел «Как переключить с listai-prototype на rabochielisty.ru».
 4. Ребилд + редеплой: `npm run build && wrangler pages deploy out`.
 5. Проверить sitemap.xml + robots.txt на новом домене.
 6. Добавить в Яндекс.Вебмастер после деплоя.

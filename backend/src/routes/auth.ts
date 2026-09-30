@@ -58,7 +58,8 @@ authRouter.post("/callback", async (c) => {
 
   // Set HttpOnly Secure cookie.
   //
-  // SameSite=None: фронт на listai-prototype.pages.dev (и в перспективе rabochielisty.ru),
+  // SameSite=None: фронт на listai-prototype.pages.dev (Pages preview, рабочее название
+  // до выбора бренда — см. docs/BRAND.md) и в перспективе на rabochielisty.ru (прод-домен),
   // бэк на *.workers.dev — разные origin'ы. С SameSite=Lax браузер НЕ отдаёт cookie
   // при cross-origin fetch (XHR/fetch из фронта на бэк). SameSite=None + Secure —
   // единственный вариант, который работает на разных доменах.

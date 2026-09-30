@@ -90,7 +90,11 @@ async function hit(
   );
   const id = shortId();
   const result = await stmt
-    .bind(id, key, nowSec, nowSec, windowSec, nowSec, windowSec)
+    // SQL имеет 5 placeholders (?1..?5) — лишние 6-й/7-й args раньше тихо
+    // игнорировались D1, но после апдейта workerd стали валиться на .bind() →
+    // 500 на каждый запрос через rateLimitMiddleware (включая /api/auth/magic-link).
+    // Передаём ровно 5 значений: id, key, nowSec (VALUES), nowSec (CASE ?4), windowSec (CASE ?5).
+    .bind(id, key, nowSec, nowSec, windowSec)
     .first<RateLimitHit>();
   if (!result) {
     // Теоретически не должно случаться на D1 — но пусть будет явный error.

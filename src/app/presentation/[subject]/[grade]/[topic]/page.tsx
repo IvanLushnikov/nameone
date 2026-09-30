@@ -132,7 +132,7 @@ export default function PresentationTopicPage({ params }: Props) {
                   size="lg"
                   leftIcon={<Sparkles className="w-4 h-4" />}
                 >
-                  Сгенерировать презентацию →
+                  Создать презентацию →
                 </Button>
                 <Button
                   as="link"
@@ -327,7 +327,7 @@ export default function PresentationTopicPage({ params }: Props) {
                 size="xl"
                 leftIcon={<Sparkles className="w-5 h-5" />}
               >
-                Сгенерировать презентацию
+                Создать презентацию
               </Button>
               <Button
                 as="link"

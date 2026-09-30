@@ -28,9 +28,42 @@ export function generateMetadata({ params }: Props): Metadata {
   const grade = subject.grades.find((g: Grade) => g.num === gradeNum);
   if (!grade) return { title: "Класс не найден" };
 
+  const title = `Рабочие листы по ${subject.title.toLowerCase()} ${gradeNum} класс — ${grade.topics.length} тем`;
+  const description = `Рабочие листы, тесты и карточки по ${subject.title.toLowerCase()} для ${gradeNum} класса. ${grade.topics.length} тем по ФГОС. PDF с ответами за 30 секунд. Бесплатно 3 листа в сутки.`;
+  const base = "https://rabochielisty.ru";
+  const canonicalUrl = `${base}/subject/${subject.slug}/${gradeNum}`;
+
   return {
-    title: `Рабочие листы по ${subject.title.toLowerCase()} ${gradeNum} класс — ${grade.topics.length} тем`,
-    description: `Рабочие листы, тесты и карточки по ${subject.title.toLowerCase()} для ${gradeNum} класса. ${grade.topics.length} тем по ФГОС. PDF с ответами за 30 секунд. Бесплатно 3 листа в сутки.`,
+    title,
+    description,
+    alternates: { canonical: canonicalUrl },
+    openGraph: {
+      type: "article",
+      title,
+      description,
+      url: canonicalUrl,
+      siteName: "РабочиеЛисты AI",
+      locale: "ru_RU",
+      // TZ-10 §5.4 / §9.6: og:image — статичный PNG.
+// Per-grade PNG не генерим (×11 ×20 = 220 файлов) — fallback на уровне
+// предмета. Edge route `src/app/og/[...slug]/route.tsx` остаётся для будущей
+// миграции, но в `output: "export"` Edge runtime не запускается.
+      images: [
+        {
+          url: `${base}/og/${subject.slug}.png`,
+          width: 1200,
+          height: 630,
+          alt: `${subject.title}, ${gradeNum} класс — рабочие листы`,
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      // TZ-10 §5.4: Twitter image.
+      images: [`${base}/og/${subject.slug}.png`],
+    },
   };
 }
 

@@ -159,7 +159,7 @@ export default function OgeHubPage() {
           className="inline-flex items-center gap-1.5 text-sm text-warm-500 hover:text-warm-900"
         >
           <Lock className="w-3.5 h-3.5" />
-          Доступно на тарифе Плюс · 1 490 ₽/мес
+          Доступно на тарифе Плюс · 1 500 ₽/мес
         </Link>
       </div>
     </div>

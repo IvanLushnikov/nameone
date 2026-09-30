@@ -127,7 +127,7 @@ export default function KtpGradePage({ params }: Props) {
                   size="lg"
                   leftIcon={<Sparkles className="w-4 h-4" />}
                 >
-                  Сгенерировать КТП →
+                  Создать КТП →
                 </Button>
                 <Button
                   as="link"
@@ -316,7 +316,7 @@ export default function KtpGradePage({ params }: Props) {
                 size="xl"
                 leftIcon={<Sparkles className="w-5 h-5" />}
               >
-                Сгенерировать КТП
+                Создать КТП
               </Button>
               <Button
                 as="link"

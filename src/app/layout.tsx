@@ -4,6 +4,7 @@ import "./globals.css";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Toaster } from "@/components/ui/Toast";
+import { YandexMetrika } from "@/components/analytics/YandexMetrika";
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -13,11 +14,12 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "РабочиеЛисты AI — рабочие листы и тесты по ФГОС за 30 секунд",
+    // TZ-10 §5.1 / §9.3: сократили с 60 до 52 символов (был впритык к лимиту SERP).
+    default: "РабочиеЛисты AI — рабочие листы по ФГОС за 30 секунд",
     template: "%s · РабочиеЛисты AI",
   },
   description:
-    "AI-генератор рабочих листов, тестов и карточек под российскую школьную программу. Готовый PDF с заданиями и ответами за 30 секунд. Без регистрации — 3 бесплатно.",
+    "Рабочие листы по любому предмету 1-11 класс за 30 секунд. PDF с ответами по ФГОС 2021 (1-9), ФГОС СОО с 01.09.2027 (10-11). Без регистрации — 3 бесплатно.",
   keywords: [
     "рабочий лист",
     "карточки по математике",
@@ -26,7 +28,7 @@ export const metadata: Metadata = {
     "тренажёр",
     "подготовка к ОГЭ",
     "вариант ЕГЭ",
-    "ИИ для учителя",
+    "ФГОС 2021",
     "репетитор",
   ],
   authors: [{ name: "РабочиеЛисты AI" }],
@@ -36,14 +38,14 @@ export const metadata: Metadata = {
     locale: "ru_RU",
     title: "РабочиеЛисты AI — рабочие листы по ФГОС за 30 секунд",
     description:
-      "AI-генератор рабочих листов и тестов для школы. Готовый PDF с заданиями и ответами.",
+      "Рабочие листы по любому предмету 1-11 класс за 30 секунд. PDF с ответами по ФГОС 2021.",
     siteName: "РабочиеЛисты AI",
   },
   twitter: {
     card: "summary_large_image",
     title: "РабочиеЛисты AI — рабочие листы по ФГОС за 30 секунд",
     description:
-      "AI-генератор рабочих листов и тестов для школы.",
+      "Рабочие листы по любому предмету 1-11 класс за 30 секунд. PDF с ответами по ФГОС 2021.",
   },
   robots: {
     index: true,
@@ -72,6 +74,8 @@ export default function RootLayout({
           <Footer />
         </div>
         <Toaster />
+        {/* TZ-10 §8.1 / §9.1: Яндекс.Метрика временно отключена для билда — next/script в static export вызывает таймауты. TODO: включить после миграции на Cloudflare SSR / OpenNext, либо использовать inline <script> вместо next/script. */}
+        {/* <YandexMetrika counterId={process.env.NEXT_PUBLIC_YM_ID ?? ""} /> */}
       </body>
     </html>
   );

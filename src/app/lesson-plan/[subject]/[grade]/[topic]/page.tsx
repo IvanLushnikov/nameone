@@ -132,7 +132,7 @@ export default function LessonPlanTopicPage({ params }: Props) {
                   size="lg"
                   leftIcon={<Sparkles className="w-4 h-4" />}
                 >
-                  Сгенерировать план урока →
+                  Создать план урока →
                 </Button>
                 <Button
                   as="link"
@@ -328,7 +328,7 @@ export default function LessonPlanTopicPage({ params }: Props) {
                 size="xl"
                 leftIcon={<Sparkles className="w-5 h-5" />}
               >
-                Сгенерировать план урока
+                Создать план урока
               </Button>
               <Button
                 as="link"

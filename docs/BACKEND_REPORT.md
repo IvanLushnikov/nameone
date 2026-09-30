@@ -262,7 +262,7 @@ ESLINT_USE_FLAT_CONFIG=false npm run lint  # → 0 errors
 
 3. **LLM-фасад:** единый `src/llm/index.ts` с `generateWorksheet(args, env, db)` — внутри: moderation → rate-limit → cache lookup → pickModel → callWithFallback → save cache → log → return. Никаких реальных HTTP-вызовов в unit-тестах (нужны env-ключи).
 
-4. **Auth:** magic link через Resend. Без паролей. Cookie HttpOnly+Secure+SameSite=None, 30 дней — фронт на listai-prototype.pages.dev, бэк на rabochielisty-api.workers.dev (разные origin'ы, Lax не отдаёт cookie). При переезде на один eTLD+1 (rabochielisty.ru apex + api.rabochielisty.ru) — вернуть SameSite=Lax. CSRF — пока полагаемся на SameSite (для prod — добавить double-submit token).
+4. **Auth:** magic link через Resend. Без паролей. Cookie HttpOnly+Secure+SameSite=None, 30 дней — фронт на listai-prototype.pages.dev (Pages-имя до переезда на прод-домен rabochielisty.ru — см. docs/BRAND.md), бэк на rabochielisty-api.workers.dev (разные origin'ы, Lax не отдаёт cookie). При переезде на один eTLD+1 (rabochielisty.ru apex + api.rabochielisty.ru) — вернуть SameSite=Lax. CSRF — пока полагаемся на SameSite (для prod — добавить double-submit token).
 
 5. **Billing:** ЮKassa webhook. Без HMAC-подписи (ЮKassa их не поддерживает по умолчанию) — IP allowlist на стороне ЮKassa. В TODO — добавить HMAC через кастомный shared secret.
 
@@ -294,6 +294,6 @@ ESLINT_USE_FLAT_CONFIG=false npm run lint  # → 0 errors
 4. **`npm run db:migrate:prod`**
 5. **`./scripts/deploy.sh`** → получить `*.workers.dev` URL
 6. На фронте — `NEXT_PUBLIC_API_URL=https://rabochielisty-api.xxx.workers.dev` в `.env`
-7. Передеплой фронта: `wrangler pages deploy out --project-name=listai-prototype`
+7. Передеплой фронта: `wrangler pages deploy out --project-name=listai-prototype` (Pages-имя до переезда на прод-домен `rabochielisty.ru`)
 
 После этого — реальные генерации (Luna) и валидации (DeepSeek) на проде.

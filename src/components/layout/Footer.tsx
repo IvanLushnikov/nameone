@@ -44,14 +44,14 @@ export function Footer() {
             </p>
             <div className="mt-5 flex gap-2">
               <a
-                href="mailto:hello@listai.ru"
+                href="mailto:hello@rabochielisty.ru"
                 className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-white border border-warm-200 text-warm-700 hover:bg-warm-50 text-sm"
               >
                 <Mail className="w-4 h-4" />
-                hello@listai.ru
+                hello@rabochielisty.ru
               </a>
               <a
-                href="https://t.me/listai"
+                href="https://t.me/rabochielisty"
                 className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-white border border-warm-200 text-warm-700 hover:bg-warm-50 text-sm"
                 target="_blank"
                 rel="noopener noreferrer"

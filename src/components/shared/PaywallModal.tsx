@@ -16,10 +16,10 @@ const plans = [
   {
     id: "base",
     name: "Базовый",
-    price: "590",
-    priceYear: "490",
+    price: "500",
+    priceYear: "375",
     period: "₽/мес",
-    periodYear: "₽/мес · за год 5 900 ₽",
+    periodYear: "₽/мес · за год 4 500 ₽",
     description: "Для репетиторов и родителей",
     features: [
       "Безлимитные генерации",
@@ -32,10 +32,10 @@ const plans = [
   {
     id: "plus",
     name: "Плюс",
-    price: "1 490",
-    priceYear: "990",
+    price: "1 500",
+    priceYear: "1 000",
     period: "₽/мес",
-    periodYear: "₽/мес · за год 11 900 ₽",
+    periodYear: "₽/мес · за год 12 000 ₽",
     description: "Подготовка к ОГЭ/ЕГЭ",
     features: [
       "Всё из Базового",
@@ -122,7 +122,7 @@ export function PaywallModal({ open, onClose, remaining }: Props) {
           leftIcon={<Sparkles className="w-4 h-4" />}
           onClick={handlePlanClick("base")}
         >
-          Оформить Базовый · 590 ₽/мес
+          Оформить Базовый · 500 ₽/мес
         </Button>
         <Button
           variant="accent"
@@ -130,7 +130,7 @@ export function PaywallModal({ open, onClose, remaining }: Props) {
           fullWidth
           onClick={handlePlanClick("plus")}
         >
-          Оформить Плюс · 1 490 ₽/мес
+          Оформить Плюс · 1 500 ₽/мес
         </Button>
         <Button variant="ghost" size="md" fullWidth onClick={onClose}>
           Вернуться в генератор
