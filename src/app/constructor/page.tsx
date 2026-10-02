@@ -14,6 +14,7 @@ import { PresentationPreview } from "@/components/constructor/PresentationPrevie
 import { KtpPreview } from "@/components/constructor/KtpPreview";
 import { CardsPreview } from "@/components/constructor/CardsPreview";
 import { MaterialsPreview } from "@/components/constructor/MaterialsPreview";
+import { LessonBundlePreview } from "@/components/constructor/LessonBundlePreview";
 import { PaywallModal } from "@/components/shared/PaywallModal";
 import { ArtifactTypePicker } from "@/components/constructor/ArtifactTypePicker";
 import { ArtifactTypePreview } from "@/components/constructor/ArtifactTypePreview";
@@ -57,6 +58,7 @@ import type {
   Ktp,
   CardSet,
   MaterialBundle,
+  LessonBundle,
   Subject as SubjectType,
   Grade as GradeType,
 } from "@/lib/types";
@@ -68,6 +70,7 @@ import {
   generateKtpSmart,
   generateCardsSmart,
   generateMaterialsSmart,
+  generateBundleSmart,
 } from "@/lib/client/llm";
 import { generateWorksheetDocx, downloadBlob } from "@/lib/utils/docx";
 import { trackEvent } from "@/lib/track";
@@ -75,6 +78,7 @@ import { generateLessonPlanDocx } from "@/lib/utils/lesson-plan-docx";
 import { generateCardsDocx } from "@/lib/utils/cards-docx";
 import { printCards } from "@/lib/utils/cards-print";
 import { generateMaterialsZip, materialsZipFilename } from "@/lib/utils/materials-zip";
+import { generateBundleZip, bundleZipFilename, bundleReadyCount } from "@/lib/utils/bundle-zip";
 import { generateKtpDocx } from "@/lib/utils/ktp-docx";
 import { generatePptx, pptxFilename } from "@/lib/utils/pptx";
 import { canGenerate, consume, getRemaining, refund } from "@/lib/utils/limit";
@@ -186,13 +190,12 @@ const DEEP_LINK_TYPES = [
  * пока нет, и UI показывает placeholder, а не чужой результат.
  */
 /**
- * Типы без генератора (TZ-16 Этапы 4–7). Попасть в них можно только по
- * deep-link вида `?type=lesson-bundle`: в пикере их пока нет.
+ * Типы без генератора (TZ-16 Этапы 6–7). Попасть в них можно только по
+ * deep-link вида `?type=interactive`: в пикере их пока нет.
  * Нужен, чтобы `generate()` отвечал честным «скоро будет», а не сообщением
  * «не получилось, попробуйте ещё раз», в котором повтор бессмысленен.
  */
 const NOT_YET_IMPLEMENTED_TYPES: ReadonlySet<TaskType> = new Set<TaskType>([
-  "lesson-bundle",
   "interactive",
   "image",
 ]);
@@ -203,6 +206,8 @@ function resultKindForType(type: TaskType): ResultKind | null {
       return "cards";
     case "materials":
       return "materials";
+    case "lesson-bundle":
+      return "lesson-bundle";
     case "worksheet":
     case "test":
     case "control":
@@ -215,8 +220,7 @@ function resultKindForType(type: TaskType): ResultKind | null {
       return "presentation";
     case "ktp":
       return "ktp";
-    // TZ-16 Этапы 4–7: мок/превью/экспорт появятся позже.
-    case "lesson-bundle":
+    // TZ-16 Этапы 6–7: мок/превью/экспорт появятся позже.
     case "interactive":
     case "image":
       return null;
@@ -230,7 +234,8 @@ type ResultKind =
   | "presentation"
   | "ktp"
   | "cards"
-  | "materials";
+  | "materials"
+  | "lesson-bundle";
 
 /**
  * F-04-B: success-конфетти после удачной генерации.
@@ -270,7 +275,8 @@ type ArtifactKind =
   | "presentation"
   | "ktp"
   | "cards"
-  | "materials";
+  | "materials"
+  | "lesson-bundle";
 
 /**
  * З1: определяем тип артефакта из его содержимого.
@@ -292,6 +298,11 @@ function artifactKindOf(artifact: UserHistoryItem["artifact"]): ArtifactKind | n
   // а у материалов — только `files`, так что коллизий нет.
   if (Array.isArray(a.cards)) return "cards";
   if (Array.isArray(a.files)) return "materials";
+  // TZ-16 §3.4: у пакета «урок целиком» обязательное поле `failed`
+  // (список неудачных слотов) — оно есть даже при полном успехе, поэтому
+  // Array.isArray, а не проверка на непустоту. Проверка идёт последней:
+  // LessonBundle не содержит tasks/stages/slides/weeks/cards/files.
+  if (Array.isArray(a.failed)) return "lesson-bundle";
   return null;
 }
 
@@ -301,6 +312,7 @@ function historyTypeToKind(type: UserHistoryItem["type"]): ArtifactKind | null {
   // TZ-16: cards и materials — самостоятельные артефакты, а не рабочий лист.
   if (type === "cards") return "cards";
   if (type === "materials") return "materials";
+  if (type === "lesson-bundle") return "lesson-bundle";
   // worksheet / test / control / oge / ege → это рабочий лист.
   return "worksheet";
 }
@@ -344,6 +356,8 @@ function ConstructorPage() {
   // TZ-16 §3.1–3.2: карточки и комплект материалов — отдельные артефакты.
   const [cardSet, setCardSet] = React.useState<CardSet | null>(null);
   const [materialBundle, setMaterialBundle] = React.useState<MaterialBundle | null>(null);
+  // TZ-16 §3.4: «Урок целиком» — комплект из 4 артефактов, заполняется частично.
+  const [lessonBundle, setLessonBundle] = React.useState<LessonBundle | null>(null);
   /**
    * Правда о последнем материале: он пришёл из LLM или это типовая заготовка.
    *
@@ -475,6 +489,9 @@ function ConstructorPage() {
       case "materials":
         setMaterialBundle(candidate.artifact as MaterialBundle);
         break;
+      case "lesson-bundle":
+        setLessonBundle(candidate.artifact as LessonBundle);
+        break;
     }
 
     // Восстанавливаем и контекст подбора, чтобы «Новый вариант» и правки
@@ -502,6 +519,12 @@ function ConstructorPage() {
   // Init: подтянуть query params из SEO-страниц тем + лимит
   React.useEffect(() => {
     setRemaining(getRemaining());
+
+    // F-06.1: deep-link `?photo=1` — точка входа из ЛК и с лендинга.
+    // Раскрывает секцию проверки сразу, как только появится лист. Сама панель
+    // рендерится только для `kind === "worksheet"`, поэтому флаг безопасен и
+    // до генерации: лишнего ничего не будет на экране.
+    if (searchParams.get("photo") === "1") setPhotoCheckOpen(true);
 
     // F-04-C: deep-link для режима «По номеру ОГЭ/ЕГЭ».
     // Имеет приоритет над topic-флоу, т.к. `?exam=` — это маркер экзамен-режима.
@@ -584,6 +607,7 @@ function ConstructorPage() {
     setKtp(null);
     setCardSet(null);
     setMaterialBundle(null);
+    setLessonBundle(null);
     setPhotoCheckOpen(false);
     // F-04-C: сброс экзамен-флоу.
     setExam(null);
@@ -650,6 +674,7 @@ function ConstructorPage() {
     setKtp(null);
     setCardSet(null);
     setMaterialBundle(null);
+    setLessonBundle(null);
     setPhotoCheckOpen(false);
   }, []);
 
@@ -668,6 +693,7 @@ function ConstructorPage() {
     setKtp(null);
     setCardSet(null);
     setMaterialBundle(null);
+    setLessonBundle(null);
     if (next === "exam") {
       setStep("exam-select");
     } else {
@@ -713,16 +739,16 @@ function ConstructorPage() {
   }, [step, mode]);
 
   const generate = async () => {
-    // TZ-16 Этапы 4–7: типы объявлены в TaskType и входят в DEEP_LINK_TYPES,
+    // TZ-16 Этапы 6–7: типы объявлены в TaskType и входят в DEEP_LINK_TYPES,
     // но генераторов для них ещё нет. Без этой проверки учитель, пришедший по
-    // ссылке `?type=lesson-bundle`, доходил до кнопки «Создать» и получал
+    // ссылке `?type=interactive`, доходил до кнопки «Создать» и получал
     // «Не получилось, попробуйте ещё раз» — а повтор не помог бы никогда.
     // Показываем честное «скоро», ничего не списав с квоты.
     if (NOT_YET_IMPLEMENTED_TYPES.has(type)) {
       toast({
         tone: "info",
         title: "Этот формат ещё в работе",
-        description: "Пока доступны рабочий лист, план урока, презентация, КТП, карточки и комплект материалов",
+        description: "Пока доступны рабочий лист, тест, контрольная, карточки, план урока, презентация, КТП, материалы и урок целиком",
       });
       return;
     }
@@ -771,7 +797,21 @@ function ConstructorPage() {
       };
     }
 
-    if (!canGenerate()) {
+    /**
+     * Бесплатный лимит проверяем только у бесплатного тарифа.
+     *
+     * Раньше здесь стояло голое `canGenerate()` — то есть локальный счётчик из
+     * localStorage ограничивал ВСЕХ, включая платящих. Учитель на «Базовом»
+     * или «Плюсе» упирался в «Лимит бесплатных генераций» на четвёртом листе
+     * в тот же день и на другой вкладке, хотя его тариф к localStorage отношения
+     * не имеет: лимиты платных считает бэк.
+     *
+     * Для анонимов (serverUsage === null) поведение прежнее — 3 бесплатные
+     * генерации. Решение об оплате принимает бэк (402 → paywall), поэтому
+     * клиентский чек — только против недопустимой генерации у бесплатного.
+     */
+    const isPaid = serverUsage?.plan === "base" || serverUsage?.plan === "plus";
+    if (!isPaid && !canGenerate()) {
       setShowPaywall(true);
       return;
     }
@@ -784,6 +824,7 @@ function ConstructorPage() {
     setKtp(null);
     setCardSet(null);
     setMaterialBundle(null);
+    setLessonBundle(null);
     setPhotoCheckOpen(false);
     setProgressStage("selecting");
 
@@ -838,6 +879,13 @@ function ConstructorPage() {
             const r = await generateMaterialsSmart(body);
             return { kind: "materials" as const, payload: r.data, isDemo: r.isDemo };
           }
+          // TZ-16 §3.4: «урок целиком» — 4 слота. Оркестрация ПАРАЛЛЕЛЬНА
+          // (Promise.allSettled внутри generateBundleSmart → мок): при отказе
+          // одного слота остальные три не теряются, отказ уходит в `failed`.
+          case "lesson-bundle": {
+            const r = await generateBundleSmart(body);
+            return { kind: "lesson-bundle" as const, payload: r.data, isDemo: r.isDemo };
+          }
           // Лист с разной перепаковкой заданий.
           case "worksheet":
           case "test":
@@ -847,12 +895,11 @@ function ConstructorPage() {
             const r = await generateWorksheetSmart(body);
             return { kind: "worksheet" as const, payload: r.worksheet, isDemo: r.isDemo };
           }
-          // TZ-16 Этапы 4–7: типы объявлены в TaskType и видны в пикере,
+          // TZ-16 Этапы 6–7: типы объявлены в TaskType и видны в пикере,
           // но генераторов для них ещё нет. Явная ошибка вместо тихой подмены.
-          case "lesson-bundle":
           case "interactive":
           case "image":
-            throw new Error(`[generate] тип "${type}" ещё не реализован (TZ-16, Этапы 4–7)`);
+            throw new Error(`[generate] тип "${type}" ещё не реализован (TZ-16, Этапы 6–7)`);
           default: {
             // Exhaustiveness: если в TaskType добавят новый тип и забудут case
             // выше, `type` здесь перестанет быть `never` и сборка упадёт.
@@ -943,6 +990,19 @@ function ConstructorPage() {
           historyType = "materials";
           histSubject = mb.subject;
           histGrade = mb.grade;
+          break;
+        }
+        // TZ-16 §3.4: у LessonBundle — свои subject/grade. Комплект может быть
+        // неполным (часть слотов в `failed`) — это не ошибка генерации,
+        // поэтому провала тут не делаем: превью само покажет статусы слотов.
+        case "lesson-bundle": {
+          const lb = result.payload as LessonBundle;
+          setLessonBundle(lb);
+          artifactTitle = lb.title;
+          artifactId = lb.id;
+          historyType = "lesson-bundle";
+          histSubject = lb.subject;
+          histGrade = lb.grade;
           break;
         }
         default: {
@@ -1059,7 +1119,7 @@ function ConstructorPage() {
             // восстанавливается после перезагрузки.
             // Серверное сохранение для этих типов придёт вместе с их
             // LLM-эндпоинтами (`/api/cards`, `/api/materials`).
-            if (result.kind === "cards" || result.kind === "materials") {
+            if (result.kind === "cards" || result.kind === "materials" || result.kind === "lesson-bundle") {
               return null;
             }
             // Exhaustiveness: новый `kind` без ветки сохранения = ошибка компиляции.
@@ -1191,6 +1251,32 @@ function ConstructorPage() {
         tone: "success",
         title: "ZIP скачан",
         description: `${materialBundle.files.length} ${pluralizeFiles(materialBundle.files.length)} в архиве`,
+      });
+      return;
+    }
+    // TZ-16 §3.4: «урок целиком» — один ZIP со всеми готовыми слотами.
+    // Частичный комплект скачивается как есть: сколько собралось, столько
+    // файлов в архиве, без заглушек на месте отказавших слотов.
+    if (type === "lesson-bundle" && lessonBundle) {
+      const ready = bundleReadyCount(lessonBundle);
+      if (ready === 0) {
+        toast({
+          tone: "error",
+          title: "Скачивать нечего",
+          description: "Ни один файл не собрался — попробуйте ещё раз",
+        });
+        return;
+      }
+      const blob = await generateBundleZip(lessonBundle);
+      const filename = bundleZipFilename(lessonBundle);
+      downloadBlob(blob, filename);
+      toast({
+        tone: "success",
+        title: "ZIP скачан",
+        description:
+          lessonBundle.failed.length === 0
+            ? `${ready} ${pluralizeFiles(ready)} в архиве`
+            : `${ready} из 4 ${pluralizeFiles(ready)} · остальные не собрались`,
       });
       return;
     }
@@ -1444,6 +1530,7 @@ function ConstructorPage() {
                 : kind === "presentation" ? presentation
                 : kind === "cards" ? cardSet
                 : kind === "materials" ? materialBundle
+                : kind === "lesson-bundle" ? lessonBundle
                 : ktp,
               );
               if (!kind || !hasArtifact) return null;
@@ -1454,6 +1541,7 @@ function ConstructorPage() {
                 kind === "presentation" ? presentation!.title :
                 kind === "cards" ? cardSet!.title :
                 kind === "materials" ? materialBundle!.title :
+                kind === "lesson-bundle" ? lessonBundle!.title :
                 ktp!.title;
 
               const subtitle =
@@ -1467,12 +1555,17 @@ function ConstructorPage() {
                         ? `Карточки · ${cardSet!.cards.length} шт. · для повторения`
                         : kind === "materials"
                           ? `Материалы · ${materialBundle!.files.length} ${pluralizeFiles(materialBundle!.files.length)} · комплект`
-                          : `КТП · ${ktp!.schoolYear} · ${ktp!.totalHours} ч`;
+                          : kind === "lesson-bundle"
+                            ? `Урок целиком · ${bundleReadyCount(lessonBundle!)} из 4 · ${lessonBundle!.failed.length === 0 ? "всё готово" : "частично"}`
+                            : `КТП · ${ktp!.schoolYear} · ${ktp!.totalHours} ч`;
 
-              // TZ-16 §3.2: материалы отдаются архивом, а не одним документом —
-              // подпись кнопки должна соответствовать формату файла.
+              // TZ-16 §3.2/§3.4: материалы и «урок целиком» отдаются архивом,
+              // а не одним документом — подпись кнопки должна соответствовать
+              // формату файла.
               const downloadLabel =
-                kind === "presentation" ? "PPTX" : kind === "materials" ? "ZIP" : "DOCX";
+                kind === "presentation" ? "PPTX"
+                : kind === "materials" || kind === "lesson-bundle" ? "ZIP"
+                : "DOCX";
 
               // З4: экспорт по типу устройства.
               //   - Тач (iPad/планшет/телефон): главная кнопка «Сохранить в PDF»,
@@ -1481,7 +1574,10 @@ function ConstructorPage() {
               //   - Десктоп: PDF первой кнопкой + «Скачать DOCX» для редактирования.
               // Для презентации печать бессмысленна (слайды), поэтому там, как и
               // раньше, остаётся только скачивание PPTX — на любом устройстве.
-              const isDocxArtifact = kind !== "presentation";
+              // TZ-16 §3.4: пакет из 4 артефактов в PDF не превращается —
+              // печатать нечего, полезен только ZIP. Поэтому «урок целиком»
+              // ведёт себя как презентация: одна кнопка скачивания, без PDF.
+              const isDocxArtifact = kind !== "presentation" && kind !== "lesson-bundle";
               const showPdfButton = isDocxArtifact;
               const showDownloadButton = isDocxArtifact ? !isTouch : true;
 
@@ -1665,6 +1761,9 @@ function ConstructorPage() {
                   {kind === "ktp" && <KtpPreview ktp={ktp!} />}
                   {kind === "cards" && <CardsPreview set={cardSet!} />}
                   {kind === "materials" && <MaterialsPreview bundle={materialBundle!} />}
+                  {/* TZ-16 §3.4: 4 слота со статусом. Комплект может быть неполным — */}
+                  {/* превью показывает, что именно не собралось и почему.          */}
+                  {kind === "lesson-bundle" && <LessonBundlePreview bundle={lessonBundle!} />}
 
                   <Card className="no-print bg-gradient-to-br from-brand-50 to-white border-brand-200">
                     <div className="flex items-start gap-3">

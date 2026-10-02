@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { useInView } from "@/hooks/useInView";
 import {
@@ -10,6 +11,7 @@ import {
   SmartphoneIllustration,
   SparklesIllustration,
 } from "@/components/shared/Illustrations";
+import { ArrowRight } from "lucide-react";
 
 const features = [
   {
@@ -30,7 +32,7 @@ const features = [
     Illustration: FileCheckIllustration,
     title: "Подходит для ФГОС",
     description:
-      "Таксономия по ФГОС 2021 для 1–9 классов и спецификациям ФИПИ 2026 для 9 и 11 классов. Задания под уровень ученика.",
+      "Таксономия: ФГОС 2021 для 1–9, ФГОС СОО с 01.09.2027 для 10–11. Задания под уровень ученика.",
     accent: "from-warm-400 to-warm-600",
   },
   {
@@ -58,7 +60,7 @@ const features = [
     Illustration: TimerIllustration,
     title: "План урока по ФГОС за минуту",
     description:
-      "Конспект на 45 минут: цели, шаги, домашка. Готовый к проверке завуча.",
+      "Конспект на 45 минут: цели, ход урока, домашнее задание. Готово для проверки методистом и администрацией школы.",
     accent: "from-accent-400 to-accent-600",
   },
   {
@@ -74,6 +76,14 @@ const features = [
     description:
       "Календарно-тематическое планирование 1–11 класс. Готовая таблица для администрации.",
     accent: "from-brand-400 to-brand-600",
+  },
+  {
+    Illustration: FileCheckIllustration,
+    title: "Проверка работ по фото",
+    description:
+      "Снимаете тетрадь — получаете балл, оценку и разбор по заданиям. Если что-то вызывает вопросы, составляем 3–5 вопросов, чтобы задать их вслух и разобраться вместе с учеником.",
+    accent: "from-accent-400 to-accent-600",
+    href: "/constructor?photo=1",
   },
 ];
 
@@ -91,7 +101,7 @@ export function Features() {
             Точно по&nbsp;программе. Быстро. Без&nbsp;ошибок в&nbsp;ответах.
           </h2>
           <p className="mt-4 text-lg text-warm-600">
-            Девять вещей, которые отличают РабочиеЛисты AI от&nbsp;шаблонов и&nbsp;ручной&nbsp;работы.
+            Десять вещей, которые отличают РабочиеЛисты AI от&nbsp;шаблонов и&nbsp;ручной&nbsp;работы.
           </p>
         </div>
 
@@ -114,7 +124,7 @@ function FeatureCard({
   index: number;
   inView: boolean;
 }) {
-  const { Illustration, title, description, accent } = feature;
+  const { Illustration, title, description, accent, href } = feature;
   return (
     <Card
       hover
@@ -136,6 +146,20 @@ function FeatureCard({
         </div>
         <h3 className="text-lg font-semibold text-warm-950 mb-2 transition-colors group-hover:text-brand-700">{title}</h3>
         <p className="text-sm text-warm-600 leading-relaxed">{description}</p>
+        {/* Точка входа: карточки без href остаются обычными, с href — ссылкой
+          на весь блок. Подпись внизу нужна, чтобы было видно, что блок ведёт
+          дальше, а не просто раскрывается. */}
+        {href && (
+          <span className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-brand-600 group-hover:text-brand-700">
+            Попробовать
+            <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+          </span>
+        )}
+        {href && (
+          <Link href={href} className="absolute inset-0" aria-label={title}>
+            <span className="sr-only">{title}</span>
+          </Link>
+        )}
       </div>
     </Card>
   );
