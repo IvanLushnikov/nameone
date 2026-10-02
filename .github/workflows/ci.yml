@@ -1,0 +1,92 @@
+name: CI
+
+# Проверки на pull_request — здесь они блокирующие.
+#
+# Почему не в deploy.yml: деплой идёт по push в main, и блокирующий
+# typecheck там останавливал бы выкатку целиком, включая случаи, когда
+# в main уже едет незавершённая работа. На PR ожидание другое —
+# починить и приравнять. Поэтому гейт стоит здесь, а деплой только
+# предупреждает.
+#
+# КОГДА ВЕРНУТЬ В DEPLOY.YML: когда main станет зелёным по typecheck и
+# тестам, перенеси шаги обратно в build-and-deploy и убери `|| echo`.
+# Сейчас (2 октября 2026) репозиторий содержит незавершённую работу,
+# поэтому возврат сразу сделает релиз недоступен.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (typecheck + lint + test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # Без `--environment node` ЗДЕСЬ — и это не опечатка.
+      # Фронт использует jsdom по умолчанию (vitest.config.ts), и 17 тестов
+      # рендерят React-компоненты: с node-окружением они падают все разом
+      # (проверено: 168 упавших против 17 без флага).
+      # Ускорение setup'а (120 с → 1 с) даёт только бэкенд-джоб ниже.
+      - name: Test
+        run: npx vitest run
+
+  backend:
+    name: Backend (typecheck + lint + test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Lint добавлен 02.10.2026. Бэкенд — отдельный npm-проект со своим
+      # eslint (v9 + legacy-конфиг), поэтому флаг ESLINT_USE_FLAT_CONFIG
+      # живёт в самом npm-скрипте `lint`, а не здесь.
+      - name: Lint
+        run: npm run lint
+
+      # Тесты гоняются БЕЗ --environment node: бэкенд работает на
+      # @cloudflare/vitest-pool-workers (workerd + реальные биндинги D1/R2),
+      # и подмена окружения сломала бы D1. Медленный setup из jsdom — проблема
+      # только корневого конфига, здесь её нет.
+      - name: Test
+        run: npx vitest run

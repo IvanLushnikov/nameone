@@ -26,7 +26,6 @@ import { getBaseUrl } from "../config";
 import { logLlmEvent } from "../log";
 import type { Env } from "../../env";
 import type { LLMResponse, Provider } from "../types";
-import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
 interface PolzaProviderState {
   baseUrl: string;
@@ -59,10 +58,14 @@ export function getPolzaProvider(env: Env): Provider {
   return {
     id: "polza",
     name: "Polza.ai (OpenAI-compat)",
-    async complete(args, _env, opts): Promise<LLMResponse> {
+    async complete(args, _env, _opts): Promise<LLMResponse> {
       void _env;
       const body: Record<string, unknown> = {
         model: args.model,
+        // TZ-11 §4.4: content может быть строкой (все существующие задачи) или
+        // массивом content-part с картинкой (photo-check). Провайдер polza
+        // OpenAI-совместимый, поэтому массив уходит без преобразований —
+        // ровно в том формате, который ждёт /chat/completions.
         messages: args.messages.map((m) => ({ role: m.role, content: m.content })),
         max_tokens: args.maxTokens ?? 4096,
         temperature: args.temperature ?? 0.7,
