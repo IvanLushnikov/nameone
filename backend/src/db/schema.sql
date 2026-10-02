@@ -304,6 +304,11 @@ CREATE TABLE IF NOT EXISTS forms (
   -- Кто и как проверяет: auto — детерминированно, llm — с подсказкой ИИ,
   -- manual — только учитель. Определяется по составу заданий при создании.
   check_mode     TEXT NOT NULL DEFAULT 'auto',
+  -- TZ-12 §5.4: ответы учеников (ПДн ребёнка) хранятся 90 дней и удаляются
+  -- крон-заданием purgeExpiredForms. САМА форма при этом остаётся в кабинете
+  -- со статусом «ответы удалены», а не исчезает — учитель не должен терять
+  -- список своих выданных листов из-за retention-политики.
+  responses_purged INTEGER NOT NULL DEFAULT 0,
   created_at     INTEGER NOT NULL,
   updated_at     INTEGER NOT NULL
 );

@@ -41,6 +41,7 @@ import { f07Router } from "./routes/f07";
 import { f08Router } from "./routes/f08";
 import { publicFormsRouter } from "./routes/publicForms";
 import { purgeExpiredPhotos } from "./jobs/purgeExpiredPhotos";
+import { purgeExpiredForms } from "./jobs/purgeExpiredForms";
 import { interactivesRouter } from "./routes/interactives";
 import { publicInteractivesRouter } from "./routes/interactives-public";
 
@@ -131,6 +132,7 @@ app.notFound(notFoundHandler);
 app.fire = ((event: ScheduledEvent, env: AppEnv["Bindings"], ctx: ExecutionContext) => {
   ctx.waitUntil(
     (async () => {
+      // 1) Фото тетрадей — ПДн, 7 дней (TZ-11 §5.2).
       try {
         const result = await purgeExpiredPhotos(env.DB, env.PDFS);
         console.info("[cron] purgeExpiredPhotos", JSON.stringify(result));
@@ -138,6 +140,15 @@ app.fire = ((event: ScheduledEvent, env: AppEnv["Bindings"], ctx: ExecutionConte
         // Cron-ошибка не должна ронять воркер: логируем, следующий прогон
         // заберёт просроченное (batch ограничен, `delete_at` не сгорает).
         console.error("[cron] purgeExpiredPhotos failed", e);
+      }
+
+      // 2) Ответы учеников в онлайн-формах — ПДн, 90 дней (TZ-12 §5.4).
+      //    САМИ формы не удаляются: учитель должен видеть список выданного.
+      try {
+        const result = await purgeExpiredForms(env.DB);
+        console.info("[cron] purgeExpiredForms", JSON.stringify(result));
+      } catch (e) {
+        console.error("[cron] purgeExpiredForms failed", e);
       }
     })(),
   );
