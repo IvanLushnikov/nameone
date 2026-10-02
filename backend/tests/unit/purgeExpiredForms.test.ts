@@ -132,8 +132,8 @@ describe("purgeExpiredForms (TZ-12 §5.4, retention ПДн)", () => {
     expect(result.responsesDeleted).toBe(12);
     expect(result.answersDeleted).toBe(47);
     expect(result.failed).toBe(0);
-    expect(state[0].responses).toBe(0);
-    expect(state[0].answers).toBe(0);
+    expect(state[0]!.responses).toBe(0);
+    expect(state[0]!.answers).toBe(0);
   });
 
   it("САМУ форму не удаляет — она остаётся в кабинете учителя", async () => {
@@ -153,8 +153,8 @@ describe("purgeExpiredForms (TZ-12 §5.4, retention ПДн)", () => {
 
     // Строка формы на месте — ищем её среди state, а не среди удалённых.
     expect(state).toHaveLength(1);
-    expect(state[0].id).toBe("frm_old");
-    expect(state[0].responses_purged).toBe(1);
+    expect(state[0]!.id).toBe("frm_old");
+    expect(state[0]!.responses_purged).toBe(1);
   });
 
   it("не трогает форму со свежими отправками", async () => {
@@ -174,8 +174,8 @@ describe("purgeExpiredForms (TZ-12 §5.4, retention ПДн)", () => {
 
     expect(result.scanned).toBe(0);
     expect(result.formsFlagged).toBe(0);
-    expect(state[0].responses).toBe(30);
-    expect(state[0].responses_purged).toBe(0);
+    expect(state[0]!.responses).toBe(30);
+    expect(state[0]!.responses_purged).toBe(0);
     // Ни одного DELETE не ушло — форма даже не выбиралась.
     expect(calls.some((c) => c.sql.startsWith("DELETE"))).toBe(false);
   });
@@ -240,8 +240,8 @@ describe("purgeExpiredForms (TZ-12 §5.4, retention ПДн)", () => {
     expect(result.failed).toBe(1);
     expect(result.formsFlagged).toBe(1);
     // Сбойная форма НЕ помечена очищенной → следующий прогон её подберёт.
-    expect(state[0].responses_purged).toBe(0);
-    expect(state[1].responses_purged).toBe(1);
+    expect(state[0]!.responses_purged).toBe(0);
+    expect(state[1]!.responses_purged).toBe(1);
   });
 
   it("ставит флаг ПОСЛЕ удаления данных, а не до", async () => {

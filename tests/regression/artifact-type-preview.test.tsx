@@ -35,12 +35,10 @@ describe("ArtifactTypePreview (TZ-12)", () => {
   });
 
   it("falls back to worksheet for unknown type", () => {
-    // TS не позволит нам передать invalid type, но в runtime-safe смысле —
-    // проверим, что компонент терпим к undefined/null через type assertion.
-    const { container } = render(
-      // @ts-expect-error проверяем runtime fallback
-      <ArtifactTypePreview type={"unknown" as TaskType} />
-    );
+    // TS не позволит нам передать invalid type, поэтому идём через assertion
+    // и проверяем runtime-поведение: компонент должен быть терпим к строке,
+    // которой нет в TaskType, и отрендерить превью рабочего листа.
+    const { container } = render(<ArtifactTypePreview type={"unknown" as TaskType} />);
     const svg = container.querySelector("svg");
     expect(svg).not.toBeNull();
     // При неизвестном типе рендерится worksheet preview — у него есть rects с #E7E5E0
