@@ -1,0 +1,7 @@
+# Cloudflare Pages — редиректы для переименованных слагов.
+# Два слага физики содержали кириллические буквы (ispарение-kipeniye,
+# reakтивnoe-dvizhenie) — URL выглядели нормально, но были битыми.
+# Старые адреса отдаём 301, чтобы не потерять уже отобранные поисковиком.
+# См. docs/tz/10-taxonomy-completeness.md.
+/subject/physics/8/ispарение-kipeniye  /subject/physics/8/isparenie-kipenie  301
+/subject/physics/9/reakтивnoe-dvizhenie  /subject/physics/9/reaktivnoe-dvizhenie  301
