@@ -22,11 +22,14 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** Компоненты и страницы, где пользователь видит деньги. */
+/**
+ * Компоненты и страницы, где пользователь видит деньги.
+ * FAQ.tsx вынесен отсюда в INDIRECT_PRICE_SURFACES — цены приходят к нему
+ * через landing-seo.ts (см. комментарий там).
+ */
 const PRICE_SURFACES = [
   "src/app/pricing/page.tsx",
   "src/components/landing/PricingTeaser.tsx",
-  "src/components/landing/FAQ.tsx",
   "src/app/dashboard/page.tsx",
   "src/components/shared/PaywallModal.tsx",
 ];
@@ -36,6 +39,23 @@ const EXTRA_PRICE_SURFACES = [
   "src/app/oge/page.tsx",
   "src/app/legal/[slug]/page.tsx",
 ];
+
+/**
+ * Компоненты, которые берут цены НЕ напрямую, а через `landing-seo.ts`.
+ *
+ * ТАК СТАЛО: 02.10.2026 массив вопросов лендинга вынесли из client-компонента
+ * `FAQ.tsx` в `src/lib/content/landing-seo.ts`. Причина практическая: главной
+ * нужно собирать FAQPage-JSON-LD на сервере, а нельзя сериализовать данные из
+ * модуля с "use client". Побочный эффект — `FAQ.tsx` перестал импортировать
+ * plans.ts напрямую: цены теперь приходят к нему готовыми строками.
+ *
+ * Инвариант проверки прежний: цены FAQ обязаны приходить из plans.ts, просто
+ * теперь по цепочке `FAQ.tsx → landing-seo.ts → plans.ts`. Поэтому для таких
+ * файлов мы требуем импорт промежуточного модуля, а сам промежуточный модуль
+ * добавляем в список тех, кто обязан импортировать plans.ts напрямую.
+ */
+const INDIRECT_PRICE_SURFACES = ["src/components/landing/FAQ.tsx"];
+const INDIRECT_PRICE_SOURCE = "src/lib/content/landing-seo.ts";
 
 /** Старые цены из ранних версий продукта — их быть не должно нигде. */
 const RETIRED_PRICES = [
@@ -50,7 +70,12 @@ function read(file: string): string {
   return readFileSync(join(process.cwd(), file), "utf8");
 }
 
-const ALL_SURFACES = [...PRICE_SURFACES, ...EXTRA_PRICE_SURFACES];
+const ALL_SURFACES = [
+  ...PRICE_SURFACES,
+  ...EXTRA_PRICE_SURFACES,
+  ...INDIRECT_PRICE_SURFACES,
+  INDIRECT_PRICE_SOURCE,
+];
 
 describe("цены приходят из plans.ts", () => {
   it.each(PRICE_SURFACES)("%s импортирует единый источник цен", (file) => {
@@ -61,6 +86,20 @@ describe("цены приходят из plans.ts", () => {
   it.each(EXTRA_PRICE_SURFACES)("%s тоже читает цены из plans.ts", (file) => {
     const src = read(file);
     expect(src).toMatch(/from\s+["']@\/lib\/content\/plans["']/);
+  });
+
+  it.each(INDIRECT_PRICE_SURFACES)(
+    "%s берёт цены из landing-seo.ts, а не собирает сам",
+    (file) => {
+      const src = read(file);
+      expect(src).toMatch(/from\s+["']@\/lib\/content\/landing-seo["']/);
+    },
+  );
+
+  it("landing-seo.ts — тот самый посредник, и он читает цены из plans.ts", () => {
+    // Если цепочка оборвётся здесь, цены в FAQ и в разметке главной
+    // разойдутся с plans.ts тихо, без падения тестов.
+    expect(read(INDIRECT_PRICE_SOURCE)).toMatch(/from\s+["']\.\/plans["']/);
   });
 });
 
