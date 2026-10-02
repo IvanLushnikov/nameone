@@ -47,9 +47,63 @@ import { publicInteractivesRouter } from "./routes/interactives-public";
 
 const app = new Hono<AppEnv>();
 
+/**
+ * Самопроверка конфигурации при первом обращении.
+ *
+ * Зачем: 2 октября 2026 аудит обнаружил, что на проде не заданы
+ * RESEND_API_KEY и ключи ЮKassa. Ни код, ни git об этом не говорят — узнать
+ * можно было только через API Cloudflare. При этом отсутствие почты ломало
+ * вход, а отсутствие ЮKassa молча уводило оплату в симуляцию.
+ *
+ * Теперь об этом узнаётся сразу при деплое, из логов, а не по жалобам
+ * пользователей. Проверка выполняется один раз на инстанс: секреты при
+ * деплое меняются вместе с новым инстансом, так что перепроверять нечего.
+ *
+ * ВАЖНО: здесь только ИМЕНА отсутствующих переменных. Значения не читаются
+ * и никуда не пишутся — в лог попадает ровно столько, сколько нужно, чтобы
+ * понять, что чинить.
+ */
+let configChecked = false;
+
+function checkProductionConfig(env: AppEnv["Bindings"]): void {
+  if (configChecked || env.APP_ENV !== "production") return;
+  configChecked = true;
+
+  const required: Array<[string, unknown]> = [
+    ["JWT_SECRET", env.JWT_SECRET],
+    ["POLZA_API_KEY", env.POLZA_API_KEY],
+    ["RESEND_API_KEY", env.RESEND_API_KEY],
+    ["YOOKASSA_SHOP_ID", env.YOOKASSA_SHOP_ID],
+    ["YOOKASSA_SECRET_KEY", env.YOOKASSA_SECRET_KEY],
+  ];
+  const missing = required.filter(([, value]) => !value).map(([name]) => name);
+
+  if (missing.length === 0) {
+    // eslint-disable-next-line no-console
+    console.info("[config] все обязательные секреты на месте");
+    return;
+  }
+
+  // eslint-disable-next-line no-console
+  console.error(
+    `[config] КРИТИЧНО: в production не заданы секреты: ${missing.join(", ")}. ` +
+      `Последствия по каждому: RESEND_API_KEY — вход по ссылке не работает; ` +
+      `YOOKASSA_* — приём платежей отключён; JWT_SECRET — сессии не проверяются; ` +
+      `POLZA_API_KEY — генерация не работает. ` +
+      `Задать: npx wrangler secret put <ИМЯ> --name rabochielisty-api`,
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Global middleware
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Самопроверка до всего остального: если секретов нет, об этом надо узнать
+// из лога, а не из 500-го ответа конкретному пользователю.
+app.use("*", async (c, next) => {
+  checkProductionConfig(c.env);
+  await next();
+});
 
 app.use("*", corsMiddleware());
 

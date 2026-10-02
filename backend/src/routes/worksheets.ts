@@ -5,39 +5,98 @@
  *   POST /api/worksheets/validate   — прогнать валидатор на листе (DeepSeek)
  *   GET  /api/worksheets/:id        — прочитать сохранённый лист (для preview/share)
  *   POST /api/worksheets/save       — сохранить артефакт (worksheet/lesson-plan/
- *                                     presentation/ktp) + инкремент generations_today
+ *                                     presentation/ktp) + запись в биллинг
  *
- * План (free/base/plus) передаётся:
- *  1) В теле запроса (body.plan) — приоритет
- *  2) Из сессии пользователя (users.plan) — если не указан в теле
- *  3) Free по умолчанию
+ * Тариф берётся ИСКЛЮЧИТЕЛЬНО из сессии (users.plan). Клиент присылает
+ * `plan` в теле запроса, но значение игнорируется: раньше оно имело приоритет
+ * над сессией, и любой мог открыть devtools и получить «Плюс» — вместе с
+ * premium-моделью LLM и снятым лимитом.
  */
 
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { Env } from "../env";
 import { generateWorksheet, validateWorksheet } from "../llm";
-import { saveWorksheet, logWorksheetEvent, getWorksheetById } from "../services/worksheet";
-import { NotFoundError, BadRequestError, UnauthorizedError, InternalError } from "../lib/errors";
+import { saveWorksheet, logWorksheetEvent, getWorksheetById, getWorksheetOwnerId } from "../services/worksheet";
+import {
+  NotFoundError,
+  BadRequestError,
+  UnauthorizedError,
+  InternalError,
+  ForbiddenError,
+  PaymentRequiredError,
+} from "../lib/errors";
 import type { AppEnv, GenerateWorksheetRequest, Worksheet, SubjectSlug } from "../types";
 import { moderateGenerationRequest } from "../llm/moderation";
 import { shortId, worksheetId as makeWorksheetId } from "../lib/shortid";
 import { requireAuth } from "../middleware/auth";
 import { getUserById, incrementUserGenerations } from "../db/queries";
+import { taskForArtifact, PLUS_ONLY_TASKS } from "../llm/router";
+import { guardGeneration, consumeGenerationQuota } from "../llm/ratelimit";
+import { rateLimitMiddleware } from "../middleware/ratelimit";
+import type { CfObject } from "../lib/antifraud";
+import type { UsagePlan } from "../services/usage";
+
+/**
+ * Данные Cloudflare о клиенте: страна, устройство, браузер, ОС, ASN.
+ *
+ * Ложатся в отпечаток при расчёте антифрод-сигналов. Считать это на своей
+ * стороне смысла нет — Cloudflare уже всё посчитал. В локальной разработке
+ * объекта нет, и fingerprintHash подставит прочерки.
+ */
+function readCf(c: Context<AppEnv>): CfObject | undefined {
+  return (c.req.raw as Request & { cf?: CfObject }).cf;
+}
 
 // Env imported for Hono<AppEnv> type inference compatibility.
 void ({} as Env);
 
 const worksheetsRouter = new Hono<AppEnv>();
 
-async function resolvePlan(
-  c: Context<AppEnv>,
-  bodyPlan: unknown,
-): Promise<"free" | "base" | "plus"> {
-  if (bodyPlan === "plus" || bodyPlan === "base" || bodyPlan === "free") return bodyPlan;
-  const user = c.get("user");
-  if (user?.plan) return user.plan;
-  return "free";
+/**
+ * Тариф берётся ТОЛЬКО из сессии.
+ *
+ * Раньше здесь было `bodyPlan ?? user.plan` — то есть клиент мог прислать
+ * `{ plan: "plus" }` в теле запроса и получить права платного тарифа: и
+ * premium-модель, и лимит, и всё остальное, что на тарифе «Плюс» отличается.
+ * Это не косметика: `plan` определял модель LLM, то есть стоимость обслуживания.
+ * Правило простое — план живёт на сервере, клиент про него только уведомлён.
+ */
+function resolvePlan(c: Context<AppEnv>): "free" | "base" | "plus" {
+  return c.get("user")?.plan ?? "free";
+}
+
+/**
+ * Ученикам генерация не выдаётся (тариф «Школа», Q1 2027).
+ *
+ * Проверка живёт здесь, а не в тарифе: роль — свойство человека, а не пакета
+ * услуг. Ученик, которому завёл кабинет завуч, получает доступ к своим
+ * материалам и к сдаче работ, но не к генератору.
+ */
+function assertCanGenerate(c: Context<AppEnv>): void {
+  if (c.get("user")?.role === "student") {
+    throw new ForbiddenError("Ученикам генерация материалов недоступна", {
+      code: "GENERATION_FORBIDDEN",
+    });
+  }
+}
+
+/**
+ * Проверка, что тариф включает этот тип артефакта.
+ *
+ * Право на премиум-типы (ОГЭ/ЕГЭ, КТП, презентации) — единственное, где тариф
+ * вообще влияет на генерацию. Сама модель от тарифа не зависит (см. router.ts),
+ * поэтому «Базовый» получает честный 402 с предложением апгрейда, а не
+ * тихую генерацию на дешёвой модели.
+ */
+function assertTaskAllowed(c: Context<AppEnv>, artifactType: string | undefined): void {
+  const task = taskForArtifact(artifactType);
+  if (!PLUS_ONLY_TASKS.has(task)) return;
+  if (resolvePlan(c) === "plus") return;
+  throw new PaymentRequiredError(
+    "Этот тип материала входит в тариф «Плюс»",
+    { code: "UPGRADE_REQUIRED", task },
+  );
 }
 
 async function resolveUserId(
@@ -48,10 +107,25 @@ async function resolveUserId(
   return null;
 }
 
+/**
+ * Жёсткий предел на частоту проверки работ.
+ *
+ * Внутри `validateWorksheet` уже есть квота по тарифу, но она общая с
+ * генерацией: учитель, который нагенерировал 20 листов, не сможет проверить
+ * их все. Нормальное использование — несколько проверок подряд, а не сотни.
+ * 30 в час на IP с запасом перекрывает работу над черновиком и не даёт
+ * превратить ручку в способ выжечь бюджет.
+ */
+const validateLimit = rateLimitMiddleware({
+  limit: 30,
+  windowSec: 3600,
+  bucket: "worksheet-validate",
+});
+
 worksheetsRouter.post("/generate", async (c) => {
-  let body: GenerateWorksheetRequest & { plan?: "free" | "base" | "plus" };
+  let body: GenerateWorksheetRequest;
   try {
-    body = (await c.req.json()) as GenerateWorksheetRequest & { plan?: "free" | "base" | "plus" };
+    body = (await c.req.json()) as GenerateWorksheetRequest;
   } catch {
     throw new BadRequestError("Invalid JSON body");
   }
@@ -62,9 +136,25 @@ worksheetsRouter.post("/generate", async (c) => {
   const mod = moderateGenerationRequest({ subject: body.request.subject, topic: body.request.topic });
   if (!mod.ok) throw new BadRequestError(`Invalid input: ${mod.reason}`);
 
-  const plan = await resolvePlan(c, body.plan);
+  assertCanGenerate(c);
+  assertTaskAllowed(c, body.request.type);
+
+  const plan = resolvePlan(c);
   const userId = await resolveUserId(c);
   const ip = c.get("ip") ?? "0.0.0.0";
+
+  // Антифрод + бесплатная квота. Капча при необходимости приходит как
+  // заголовок cf-turnstile-response (её выдал фронт по 409 от прошлой попытки).
+  const guard = await guardGeneration({
+    db: c.env.DB,
+    userId,
+    plan,
+    ip,
+    userAgent: c.get("userAgent") ?? "",
+    cf: readCf(c),
+    salt: c.env.FINGERPRINT_SALT ?? "dev-fingerprint-salt",
+    challengePassed: Boolean(c.req.header("cf-turnstile-response")),
+  });
 
   // Гарантируем, что у worksheet есть id (для будущего save)
   if (!body.request || typeof body.request !== "object") {
@@ -93,14 +183,23 @@ worksheetsRouter.post("/generate", async (c) => {
   await saveWorksheet(c.env.DB, { userId, worksheet });
   await logWorksheetEvent(c.env.DB, { userId, worksheet, meta: result.meta });
 
+  // Бесплатную квоту списываем ПОСЛЕ успеха: упавший вызов провайдера не должен
+  // съедать учителю генерацию.
+  await consumeGenerationQuota(c.env.DB, {
+    userId,
+    plan: plan as UsagePlan,
+    fingerprint: guard.fingerprint,
+  });
+
   return c.json({
     ok: true,
     worksheet,
     meta: result.meta,
+    usage: result.usage,
   });
 });
 
-worksheetsRouter.post("/validate", async (c) => {
+worksheetsRouter.post("/validate", validateLimit, async (c) => {
   let body: { worksheet: Worksheet; context: { subject: string; grade: number; topic: string } };
   try {
     body = (await c.req.json()) as typeof body;
@@ -109,7 +208,19 @@ worksheetsRouter.post("/validate", async (c) => {
   }
   if (!body.worksheet || !body.context) throw new BadRequestError("Missing worksheet or context");
 
-  const result = await validateWorksheet({ worksheet: body.worksheet, context: body.context }, c.env, c.env.DB);
+  const result = await validateWorksheet(
+    {
+      worksheet: body.worksheet,
+      context: body.context,
+      // Квоту берём из сессии, не из тела запроса — по той же причине,
+      // что и в /generate: `plan` в теле подделывается тривиально.
+      plan: resolvePlan(c),
+      userId: await resolveUserId(c),
+      ip: c.get("ip") ?? "0.0.0.0",
+    },
+    c.env,
+    c.env.DB,
+  );
   return c.json({
     ok: true,
     score: result.score,
@@ -118,8 +229,36 @@ worksheetsRouter.post("/validate", async (c) => {
   });
 });
 
+/**
+ * Чтение листа по id.
+ *
+ * Раньше ручка отдавала содержимое любому, кто знает id, — без проверки
+ * владельца. Идентификаторы случайные (12 символов), поэтому подобрать их
+ * перебором нельзя, но ссылка может утечь через историю браузера, мессенджер
+ * или заголовок Referer у получателя. Смысл проверки не в недобрых намерениях,
+ * а в том, что содержимое сохранённой работы — это персональные данные
+ * ученика, и их не должно быть видно по ссылке.
+ *
+ * Анонимные листы (user_id IS NULL) — это демо-генерация без входа, там
+ * персональных данных нет, поэтому они остаются доступными по id.
+ *
+ * Отвечаем 404, а не 403: иначе по коду ответа можно перебором проверить,
+ * какие id вообще существуют.
+ */
 worksheetsRouter.get("/:id", async (c) => {
   const id = c.req.param("id");
+
+  const ownerId = await getWorksheetOwnerId(c.env.DB, id);
+  if (ownerId === undefined) throw new NotFoundError("Worksheet not found");
+
+  if (ownerId !== null) {
+    const user = c.get("user");
+    // Админ — это отдельный флаг, а не роль: роль в системе только teacher/student.
+    const isOwner = user?.id === ownerId;
+    const isAdmin = user?.isAdmin === true;
+    if (!isOwner && !isAdmin) throw new NotFoundError("Worksheet not found");
+  }
+
   const ws = await getWorksheetById(c.env.DB, id);
   if (!ws) throw new NotFoundError("Worksheet not found");
   return c.json({ ok: true, worksheet: ws });

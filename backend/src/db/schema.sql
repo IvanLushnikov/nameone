@@ -426,6 +426,34 @@ CREATE TABLE IF NOT EXISTS photo_check_items (
 
 CREATE INDEX IF NOT EXISTS idx_photo_check_items_check ON photo_check_items(check_id);
 
+-- Вопросы для беседы с учеником (F-06.1 / TZ-17 §5.5).
+--
+-- Отдельная таблица, а НЕ колонка в photo_check_items: вопросы перегенерируются
+-- («Другие вопросы»), и колонка перезаписала бы историю, а история нужна —
+-- учитель возвращается к вопросам, которые не сработали.
+--
+-- Картинка сюда не попадает и в модель не уходит: вопросы строятся по тексту
+-- распознанного ответа, который уже лежит в photo_check_items.student_answer.
+-- Поэтому фича работает и после удаления фото (retention 7 дней).
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS photo_check_interview_questions (
+  id               TEXT PRIMARY KEY,             -- pciq_<12>
+  check_id         TEXT NOT NULL REFERENCES photo_checks(id) ON DELETE CASCADE,
+  user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  task_number      INTEGER NOT NULL,
+  task_text        TEXT,
+  question         TEXT NOT NULL,                -- вопрос ученику, без правильного ответа
+  verdict_snapshot TEXT NOT NULL,                -- verdict на момент генерации (correct|incorrect|unclear)
+  generation       INTEGER NOT NULL DEFAULT 1,   -- 1, 2, 3… после «Другие вопросы»
+  superseded       INTEGER NOT NULL DEFAULT 0,   -- 1 = набор заменён более поздним, учителю не показываем
+  model            TEXT,
+  created_at       INTEGER NOT NULL
+);
+
+-- Отдаём учителю последнюю не-superseded генерацию по проверке.
+CREATE INDEX IF NOT EXISTS idx_photo_check_iq ON photo_check_interview_questions(check_id, superseded);
+
 -- Счётчик месячной квоты — отдельная таблица, а НЕ колонка в users:
 -- миграция у нас = повторный прогон всего schema.sql, а ALTER TABLE ADD COLUMN
 -- в SQLite не идемпотентен (ТЗ §4.1, решение В-5).

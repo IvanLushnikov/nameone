@@ -12,26 +12,69 @@ import type { D1Database } from "@cloudflare/workers-types";
 import type { Env } from "../env";
 import { shortId } from "../lib/shortid";
 import { updateUserPlan } from "../db/queries";
-import { InternalError } from "../lib/errors";
+import { InternalError, BadRequestError } from "../lib/errors";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Прайсинг (в копейках). 12 × monthly со скидкой за годовую оплату.
+// Прайсинг (в копейках)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type PaidPlan = "base" | "plus";
-export type Period = "monthly" | "yearly";
+/**
+ * Тарифы, за которые можно заплатить.
+ *
+ * `school` добавлен вместе с ценой (3 000 ₽/мес за класс), хотя продажа
+ * ещё не открыта — `comingSoon: "Q1 2027"` во фронте. Тип опережает кнопку,
+ * чтобы при включении тарифа не пришлось трогать ни бэк, ни миграции.
+ * `createPayment` отдаёт 400, пока school не разрешён (см. `SELLABLE_PLANS`).
+ */
+export type PaidPlan = "base" | "plus" | "school";
+
+/** Тарифы, по которым платёж создаётся прямо сейчас. */
+export const SELLABLE_PLANS: ReadonlySet<PaidPlan> = new Set<PaidPlan>(["base", "plus"]);
+/**
+ * Период оплаты.
+ *
+ * `academicYear` — НЕ календарный год. Это 9 месяцев подряд от даты оплаты:
+ * оплатив 15 октября, учитель получает доступ до 15 июля. Так же считает
+ * фронт (`ACADEMIC_YEAR_MONTHS = 9` в `src/lib/content/plans.ts`), и это же
+ * решение владельца продукта: «учебный год как по РФ-календарю у учителей»,
+ * летом платить не нужно.
+ *
+ * Раньше здесь был `yearly` = 365 дней и цены 5 880/11 880 ₽ — фронт при этом
+ * показывал 3 800/11 000 ₽ за 9 месяцев. Расхождение в 55% и 8% уходило бы
+ * в счёт плательщика при первом же реальном платеже.
+ */
+export type Period = "monthly" | "academicYear";
+
+/** Длительность учебного года в месяцах. Держим в паре с фронтовой константой. */
+export const ACADEMIC_YEAR_MONTHS = 9;
 
 /**
  * Канон тарифов — единый источник правды для backend (создание платежа, валидация).
- * Синхронизирован с front PaywallModal.tsx: base 590/490, plus 1490/990.
+ *
+ * ЧИСЛА ВЗЯТЫ ИЗ ФРОНТА И НЕ МЕНЯЮТСЯ: src/lib/content/plans.ts →
+ * base 500 ₽/мес · 3 800 ₽ за учебный год, plus 1 500 ₽/мес · 11 000 ₽ за год,
+ * school 3 000 ₽/мес за класс (тариф запускается в Q1 2027, цену уже зафиксировали).
+ *
+ * Бэк — отдельный npm-проект и не видит файлы фронта, поэтому импортировать
+ * plans.ts здесь нельзя. Расхождение закрыто тестом
+ * tests/integration/plans-price-sources.test.ts (в КОРНЕ репозитория): он
+ * читает plans.ts и этот файл с диска и сравнивает суммы.
+ * Важно: бэкенд этот тест не запускает — у него свой vitest
+ * (`backend/vitest.config.ts`, include = `tests/**` относительно backend/).
+ * Тест гоняет ФРОНТОВЫЙ прогон, см. ci.yml → job frontend.
  */
 export const PRICES = {
-  base: { monthly: 590_00, yearly: 490_00 * 12 },
-  plus: { monthly: 1490_00, yearly: 990_00 * 12 },
+  base: { monthly: 500_00, academicYear: 3_800_00 },
+  plus: { monthly: 1_500_00, academicYear: 11_000_00 },
+  school: { monthly: 3_000_00, academicYear: null },
 } as const;
 
 export function getPriceKopecks(plan: PaidPlan, period: Period): number {
-  return PRICES[plan][period];
+  const price = PRICES[plan][period];
+  if (price == null) {
+    throw new InternalError(`Тариф ${plan} не продаётся на период ${period}`);
+  }
+  return price;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,9 +154,79 @@ function basicAuthHeader(shopId: string, secretKey: string): string {
   return "Basic " + btoa(`${shopId}:${secretKey}`);
 }
 
-/** Сколько секунд прибавить к starts_at для расчёта ends_at. */
+/**
+ * Сколько секунд прибавить к starts_at для расчёта ends_at.
+ *
+ * Помесячно — календарный месяц (30 дней): точность до суток тут ни на что
+ * не влияет. Учебный год — 9 средних месяцев (30,44 дня) = 274 дня, и это
+ * обязано быть 9 МЕСЯЦЕВ, а не 365 дней. При 365 днях учитель, оплативший
+ * 3 800 ₽ «за учебный год», получал доступ на 12 месяцев, включая все
+ * каникулы, — то есть платил за треть лишнего года.
+ */
 function periodDurationSeconds(period: Period): number {
-  return period === "yearly" ? 365 * 86400 : 30 * 86400;
+  return period === "academicYear"
+    ? Math.round(ACADEMIC_YEAR_MONTHS * 30.44) * 86400
+    : 30 * 86400;
+}
+
+/**
+ * Первый origin из FRONTEND_URL.
+ *
+ * В проде FRONTEND_URL — список через запятую (чтобы CORS принимал и
+ * listai-prototype.pages.dev, и rabochielisty.ru). Вставлять этот список
+ * целиком в ссылку нельзя: получится нерабочий URL вида
+ * «https://a.ru,https://b.ru/auth/callback?token=…». Поэтому для ссылок,
+ * которые видит человек, используется отдельная переменная APP_PUBLIC_URL,
+ * а этот helper — только как запасной вариант для старых конфигураций.
+ */
+function firstFrontendOrigin(env: Env): string {
+  return (env.FRONTEND_URL ?? "").split(",")[0]?.trim().replace(/\/+$/, "") ?? "";
+}
+
+/**
+ * Совпадает ли сумма из уведомления с канонической ценой тарифа.
+ *
+ * ЮKassa присылает сумму строкой («500.00») — переводим в копейки и сравниваем
+ * с прайсом. Валюта обязана быть RUB: платёж в другой валюте — это не наш прайс.
+ */
+function amountMatches(
+  amount: { value: string; currency: string } | undefined,
+  expectedKopecks: number,
+): boolean {
+  if (!amount) return false;
+  if (amount.currency !== "RUB") return false;
+  const got = Math.round(Number(amount.value) * 100);
+  return Number.isFinite(got) && got === expectedKopecks;
+}
+
+/**
+ * Живая сверка статуса платежа в API ЮKassa.
+ *
+ * Три состояния, а не два, — это осознанно:
+ *   * "succeeded" — подтверждено, можно активировать подписку;
+ *   * "denied"    — API ответил, но оплату не подтверждает → отказ;
+ *   * "unknown"   — сеть/5xx/невалидный ответ. Отказать нельзя: это отправит
+ *                   ЮKassa в ретраи и может сорвать реальную оплату. Возвращаем
+ *                   "unknown" и поднимаем alert — безопасность обеспечивают
+ *                   проверки по нашей БД и по сумме, которые к этому моменту
+ *                   уже пройдены.
+ */
+async function fetchPaymentStatus(
+  ykId: string,
+  env: Env,
+): Promise<"succeeded" | "denied" | "unknown"> {
+  try {
+    const response = await fetch(`${YOOKASSA_API}/${encodeURIComponent(ykId)}`, {
+      headers: {
+        Authorization: basicAuthHeader(env.YOOKASSA_SHOP_ID!, env.YOOKASSA_SECRET_KEY!),
+      },
+    });
+    if (!response.ok) return "unknown";
+    const data = (await response.json()) as { status?: string; paid?: boolean };
+    return data.status === "succeeded" && data.paid !== false ? "succeeded" : "denied";
+  } catch {
+    return "unknown";
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -131,9 +244,17 @@ export async function createPayment(
   params: CreatePaymentParams,
 ): Promise<CreatePaymentResult> {
   const { userId, plan, period, returnUrl } = params;
+  // Тариф «Школа» имеет цену, но ещё не продаётся (Q1 2027). Ловим здесь,
+  // чтобы фронтовая кнопка не смогла создать платёж по нераскрытой цене.
+  if (!SELLABLE_PLANS.has(plan)) {
+    throw new BadRequestError(`Тариф «${plan}» пока недоступен для оплаты`, {
+      plan,
+      sellable: [...SELLABLE_PLANS],
+    });
+  }
   const amountKopecks = getPriceKopecks(plan, period);
   const amountFormatted = (amountKopecks / 100).toFixed(2);
-  const description = `РабочиеЛисты AI · ${plan} · ${period}`;
+  const description = `РабочиеЛисты AI · ${plan} · ${period === "academicYear" ? "учебный год" : "месяц"}`;
   const paymentId = generatePaymentId();
   const now = Math.floor(Date.now() / 1000);
 
@@ -141,15 +262,37 @@ export async function createPayment(
   const secretKey = env.YOOKASSA_SECRET_KEY;
   const isDevMode = !shopId || !secretKey;
 
+  // ── Почему в проде без ключей нельзя «просто включить демо-оплату» ────────
+  // В dev-режиме yookassa_payment_id равен нашему paymentId, а этот id
+  // возвращается клиенту. Значит, клиент знает идентификатор платежа, который
+  // мы ему сами выдали, и может дослать поддельное `payment.succeeded`.
+  // Обработчик вебхука не может этому помешать: он проверяет каноническую
+  // запись в нашей БД — и она настоящая, потому что её создал он сам.
+  // Настоящей проверки не будет: сверять с API ЮKassa нечем, ключей нет.
+  // Итог: без ключей в проде подписку можно получить бесплатно.
+  //
+  // Поэтому симулятор оплаты в production — это не «недонастроенный удобный
+  // режим», а способ выдать бесплатный доступ. Отказываем.
+  if (isDevMode && env.APP_ENV === "production") {
+    // eslint-disable-next-line no-console
+    console.error(
+      "[billing] Отказ: в production не заданы YOOKASSA_SHOP_ID / YOOKASSA_SECRET_KEY. " +
+        "Демо-оплата в проде отключена намеренно: без сверки с API ЮKassa подтвердить " +
+        "платёж нечем, и подписку можно было бы активировать подделкой вебхука. " +
+        "Задайте ключи: wrangler secret put YOOKASSA_SHOP_ID / YOOKASSA_SECRET_KEY",
+    );
+    throw new InternalError("Приём платежей не настроен");
+  }
+
   if (isDevMode) {
-    const confirmationUrl = `${env.FRONTEND_URL}/pricing?demo_payment=${paymentId}`;
+    const confirmationUrl = `${env.APP_PUBLIC_URL ?? firstFrontendOrigin(env)}/pricing?demo_payment=${paymentId}`;
     await db
       .prepare(
         `INSERT INTO payments
-           (id, user_id, plan, amount_rub, yookassa_payment_id, status, confirmation_url, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7)`,
+           (id, user_id, plan, period, amount_rub, yookassa_payment_id, status, confirmation_url, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', ?7, ?8)`,
       )
-      .bind(paymentId, userId, plan, amountKopecks, paymentId, confirmationUrl, now)
+      .bind(paymentId, userId, plan, period, amountKopecks, paymentId, confirmationUrl, now)
       .run();
     // eslint-disable-next-line no-console
     console.info(
@@ -207,10 +350,10 @@ export async function createPayment(
   await db
     .prepare(
       `INSERT INTO payments
-         (id, user_id, plan, amount_rub, yookassa_payment_id, status, confirmation_url, created_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+         (id, user_id, plan, period, amount_rub, yookassa_payment_id, status, confirmation_url, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
     )
-    .bind(paymentId, userId, plan, amountKopecks, yk.id, yk.status, yk.confirmation.confirmation_url, now)
+    .bind(paymentId, userId, plan, period, amountKopecks, yk.id, yk.status, yk.confirmation.confirmation_url, now)
     .run();
 
   return {
@@ -229,17 +372,30 @@ export async function createPayment(
 /**
  * Обработать webhook от ЮKassa.
  *
- * TODO(security): ЮKassa по умолчанию НЕ подписывает webhooks. В проде:
- *   1) Включить IP allowlist в ЛК ЮKassa (HTTP-уведомления → Список IP).
- *   2) Опционально добавить HMAC через заголовок (ЮKassa поддерживает кастомный
- *      shared secret — настроить в личном кабинете и верифицировать здесь).
+ * ── Безопасность ────────────────────────────────────────────────────────────
+ * Раньше обработчик доверял телу запроса: `body.object.metadata.plan` имел
+ * приоритет над нашей базой, а подлинность отправителя никак не проверялась.
+ * Итог: любой, кто знает идентификатор платежа, мог отправить поддельное
+ * `payment.succeeded` с `metadata.plan = "plus"` и получить подписку бесплатно.
  *
- * Сейчас доверяем payload'у (server-to-server + IP allowlist на стороне ЮKassa
- * достаточно для маленького продукта).
+ * Теперь правила жёсткие:
+ *   1. План и период берутся ТОЛЬКО из нашей строки `payments`. Поля из тела
+ *      запроса игнорируются полностью.
+ *   2. Сумма из уведомления сверяется с канонической ценой из PRICES.
+ *      Не совпала — подписка не активируется.
+ *   3. Повторное уведомление по уже обработанному платежу игнорируется.
+ *      Это закрывает replay: «заплатил раз, отменил, отправил уведомление заново».
+ *   4. Если заданы ключи ЮKassa — дополнительно сверяем статус платежа живым
+ *      запросом в API. Это defense in depth: главную защиту дают пункты 1-3,
+ *      поэтому при недоступности сети мы не теряем оплату, а логируем alert.
+ *
+ * ЮKassa не подписывает уведомления, поэтому «подлинность» здесь = совпадение
+ * с нашей канонической записью + сверка в API. IP-allowlist в личном кабинете
+ * ЮKassa остаётся полезным дополнительным слоем.
  */
 export async function handleWebhook(
   db: D1Database,
-  _env: Env,
+  env: Env,
   body: YooKassaWebhookPayload,
 ): Promise<{ handled: boolean }> {
   if (!body || body.type !== "notification" || !body.event || !body.object) {
@@ -253,32 +409,89 @@ export async function handleWebhook(
   const now = Math.floor(Date.now() / 1000);
 
   if (event === "payment.succeeded") {
-    // 1. Обновить сам платёж
+    // ── Шаг 1. Наша каноническая запись о платеже ────────────────────────────
+    // Читаем ДО любых записей. Если платежа у нас нет — значит уведомление
+    // либо поддельное, либо про оплату, созданную не в этом приложении.
+    const payment = await db
+      .prepare(`SELECT user_id, plan, period, amount_rub, status FROM payments WHERE yookassa_payment_id = ?1`)
+      .bind(ykId)
+      .first<{
+        user_id: string | null;
+        plan: PaidPlan;
+        period: Period | null;
+        amount_rub: number;
+        status: string;
+      }>();
+
+    if (!payment || !payment.user_id) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[billing] REJECTED: уведомление о платеже без записи в БД yk_id=${ykId}. ` +
+          `Похоже на подделку либо на оплату вне нашего приложения. Подписка НЕ активирована.`,
+      );
+      return { handled: false };
+    }
+
+    // ── Шаг 2. Идемпотентность (защита от replay) ────────────────────────────
+    if (payment.status === "succeeded" || payment.status === "refunded") {
+      // eslint-disable-next-line no-console
+      console.info(`[billing] webhook: платёж ${ykId} уже в статусе ${payment.status} — повтор пропущен`);
+      return { handled: true };
+    }
+
+    // ── Шаг 3. Сверка суммы с каноническим прайсом ───────────────────────────
+    const plan: PaidPlan = payment.plan;
+    const period: Period = payment.period ?? "monthly";
+    const expectedKopecks = getPriceKopecks(plan, period);
+
+    if (payment.amount_rub !== expectedKopecks) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[billing] REJECTED: у суммы платежа и прайса расхождение yk_id=${ykId} ` +
+          `(в БД ${payment.amount_rub} коп, прайс ${expectedKopecks} коп)`,
+      );
+      return { handled: false };
+    }
+
+    if (!amountMatches(body.object.amount, expectedKopecks)) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[billing] REJECTED: сумма в уведомлении не совпадает с ценой тарифа ` +
+          `yk_id=${ykId} got=${JSON.stringify(body.object.amount ?? null)} expected=${expectedKopecks}`,
+      );
+      return { handled: false };
+    }
+
+    // ── Шаг 4. Живая сверка в API ЮKassa (defense in depth) ──────────────────
+    if (env.YOOKASSA_SHOP_ID && env.YOOKASSA_SECRET_KEY) {
+      const live = await fetchPaymentStatus(ykId, env);
+      if (live === "denied") {
+        // API ответил и сказал, что платёж не succeeded.
+        // eslint-disable-next-line no-console
+        console.error(`[billing] REJECTED: API ЮKassa не подтвердило оплату yk_id=${ykId}`);
+        return { handled: false };
+      }
+      if (live === "unknown") {
+        // Сеть/5xx — не отказываем в оплате (пункты 1-3 уже отработали),
+        // но поднимаем alert: возможно, ключи протухли.
+        // eslint-disable-next-line no-console
+        console.error(
+          `[billing] ALERT: не удалось сверить платёж с API ЮKassa yk_id=${ykId}. ` +
+            `Активация прошла по данным БД и сумме из уведомления. Проверьте ключи и доступность API.`,
+        );
+      }
+    }
+
+    // ── Шаг 5. Всё сошлось — фиксируем оплату и активируем подписку ──────────
     await db
       .prepare(`UPDATE payments SET status = 'succeeded', completed_at = ?1 WHERE yookassa_payment_id = ?2`)
       .bind(now, ykId)
       .run();
 
-    // 2. Найти пользователя (через нашу запись о платеже — yookassa_payment_id UNIQUE)
-    const payment = await db
-      .prepare(`SELECT user_id, plan FROM payments WHERE yookassa_payment_id = ?1`)
-      .bind(ykId)
-      .first<{ user_id: string | null; plan: PaidPlan }>();
-
-    if (!payment || !payment.user_id) {
-      // eslint-disable-next-line no-console
-      console.warn(`[billing] webhook succeeded: payment yookassa_id=${ykId} not found in DB`);
-      return { handled: true };
-    }
-
     const userId = payment.user_id;
-    // Prefer metadata из webhook (фронт мог поменять план к моменту оплаты),
-    // fallback — plan из БД (который фронт прислал в /create).
-    const plan = body.object.metadata?.plan ?? payment.plan;
-    const period: Period = body.object.metadata?.period ?? "monthly";
     const endsAt = now + periodDurationSeconds(period);
 
-    // 3. Отменить предыдущие активные подписки этого юзера (новая подписка перебивает)
+    // Отменить предыдущие активные подписки этого юзера (новая подписка перебивает)
     await db
       .prepare(
         `UPDATE subscriptions SET status = 'canceled', updated_at = ?1
@@ -287,7 +500,7 @@ export async function handleWebhook(
       .bind(now, userId)
       .run();
 
-    // 4. Создать новую активную подписку
+    // Создать новую активную подписку
     const subId = `sub_${shortId()}`;
     await db
       .prepare(
@@ -300,6 +513,17 @@ export async function handleWebhook(
       .run();
 
     // 5. Обновить users.plan (cache column — реальный источник правды это subscriptions)
+    //
+    // users.plan пока хранит только free/base/plus. `school` сюда попасть не
+    // может: createPayment отклоняет его через SELLABLE_PLANS. Проверка
+    // продублирована здесь, потому что строка приходит из метаданных
+    // webhook'а, а не из нашего кода — то есть извне.
+    if (plan === "school") {
+      throw new InternalError(
+        "Webhook: тариф «school» не продаётся, но пришёл успешный платёж по нему — разберись вручную",
+        { userId, plan, yookassaPaymentId: ykId },
+      );
+    }
     await updateUserPlan(db, userId, plan);
 
     // eslint-disable-next-line no-console
