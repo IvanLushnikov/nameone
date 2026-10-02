@@ -52,16 +52,18 @@ export function TabsTrigger({
   value,
   children,
   className,
+  ...props
 }: {
   value: string;
   children: React.ReactNode;
   className?: string;
-}) {
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const ctx = React.useContext(TabsContext);
   if (!ctx) throw new Error("TabsTrigger must be inside Tabs");
   const active = ctx.value === value;
   return (
     <button
+      {...props}
       type="button"
       role="tab"
       aria-selected={active}
