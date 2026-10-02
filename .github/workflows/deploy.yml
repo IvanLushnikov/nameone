@@ -77,7 +77,21 @@ jobs:
   # Бэкенд (Cloudflare Worker rabochielisty-api) жил отдельно от Pages и
   # не деплоился из CI — правки в backend/ попадали на прод только вручную.
   # Теперь бэкенд деплоится тут же, после успешной сборки фронта.
+  #
+  # ВРЕМЕННО ТОЛЬКО ВРУЧНУЮ (workflow_dispatch), не на каждый push.
+  # Причина: у воркера не заданы RESEND_API_KEY и ключи ЮKassa, поэтому
+  # при переходе на [env.production.vars] вход и оплата начнут отдавать отказ
+  # — ALLOW_DEV_MAGIC_URL и ALLOW_DEMO_PAYMENTS там выключены осознанно.
+  # Заливать боевой бэк, пока секретов нет, нельзя: это хуже нынешнего
+  # состояния (сейчас вход работает через dev-режим, пусть и с дырой).
+  #
+  # Как включить автодеплой обратно: после того как
+  #   npx wrangler secret put RESEND_API_KEY   --env production
+  #   npx wrangler secret put YOOKASSA_SHOP_ID --env production
+  #   npx wrangler secret put YOOKASSA_SECRET_KEY --env production
+  # удалить условие `if:` ниже. Джобы проверок при этом продолжат работать.
   deploy-backend:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: build-and-deploy
