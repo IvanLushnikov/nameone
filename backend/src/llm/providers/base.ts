@@ -22,6 +22,24 @@ import { getPolzaProvider } from "./polza";
 export type KnownProviderId = "openai" | "anthropic" | "deepseek" | "polza";
 
 /**
+ * Есть ли у провайдера своя реализация `complete()`.
+ *
+ * `ProviderId` (llm/types.ts) шире `KnownProviderId`: в нём есть openrouter
+ * и dashscope, которые не имеют адаптера с complete() — openrouter
+ * проксируется через openai-адаптер, dashscope используется только в embed().
+ * Роутинг (router.ts) должен уметь отличить «подключён, но не callable»
+ * от настоящей ошибки конфигурации.
+ */
+export function hasCompleteImpl(provider: string): provider is KnownProviderId {
+  return (
+    provider === "openai" ||
+    provider === "anthropic" ||
+    provider === "deepseek" ||
+    provider === "polza"
+  );
+}
+
+/**
  * Получить провайдера по ID.
  *
  * Lazy singleton: внутри вызывает getXProvider(env) у соответствующего модуля.
