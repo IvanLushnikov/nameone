@@ -32,6 +32,7 @@ import { lookupCache, makeCacheKey, saveCache } from "./cache";
 import { buildWorksheetPrompt } from "./prompts/worksheet-gen";
 import { buildExamPrompt } from "./prompts/exam-gen";
 import { buildValidatePrompt } from "./prompts/validate";
+import { findLanguageViolation } from "./validation/language-guard";
 import { callPolzaEmbedding } from "./providers/polza";
 import { isProviderEnabled } from "./config";
 import type { GenerationRequest, Worksheet, ExamVariant, SubjectSlug, GenerateWorksheetMeta } from "../types";
@@ -209,36 +210,59 @@ export async function generateExam(
   const decision = pickModel("exam-gen", plan, env);
   const { system, user } = buildExamPrompt({ exam, subject, variantNumber });
 
-  const result = await callWithFallback(
-    {
-      model: decision.primary?.model ?? "gpt-6-luna",
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-      responseFormat: "json",
-      temperature: 0.7,
-      maxTokens: 6000,
-      cacheSystemPrompt: plan === "plus",
-    },
-    decision,
-    env,
-  );
+  // TZ-13: language-guard с retry. До 2 ретраев, если LLM выдал не на том языке.
+  // Каждый retry — новый вызов с тем же промптом. Если guard всё ещё нарушен —
+  // принимаем последний результат как есть (лучше странный текст, чем 500).
+  const MAX_LANG_RETRIES = 2;
+  let result: Awaited<ReturnType<typeof callWithFallback>> | null = null;
+  let variant: ExamVariant | null = null;
+  let lastViolation: string | null = null;
 
-  let variant: ExamVariant;
-  try {
-    const parsed = JSON.parse(result.response.content) as ExamVariant;
-    variant = {
-      id: parsed.id ?? `exam_${Date.now().toString(36)}`,
-      exam,
+  for (let attempt = 0; attempt <= MAX_LANG_RETRIES; attempt++) {
+    result = await callWithFallback(
+      {
+        model: decision.primary?.model ?? "gpt-6-luna",
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        responseFormat: "json",
+        temperature: 0.7,
+        maxTokens: 6000,
+        cacheSystemPrompt: plan === "plus",
+      },
+      decision,
+      env,
+    );
+
+    try {
+      const parsed = JSON.parse(result.response.content) as ExamVariant;
+      variant = {
+        id: parsed.id ?? `exam_${Date.now().toString(36)}`,
+        exam,
+        subject,
+        variantNumber,
+        title: parsed.title ?? `${exam === "oge" ? "ОГЭ" : "ЕГЭ"} · ${subject} · Вариант ${variantNumber}`,
+        duration: parsed.duration ?? (exam === "oge" ? 235 : 235),
+        problems: Array.isArray(parsed.problems) ? parsed.problems : [],
+      };
+    } catch {
+      throw new InternalError("LLM returned invalid JSON for exam");
+    }
+
+    lastViolation = findLanguageViolation(variant, subject);
+    if (!lastViolation) break;
+
+    logLlmEvent("warn", "generateExam: language_guard violation, retrying", {
+      attempt: attempt + 1,
+      maxAttempts: MAX_LANG_RETRIES + 1,
       subject,
-      variantNumber,
-      title: parsed.title ?? `${exam === "oge" ? "ОГЭ" : "ЕГЭ"} · ${subject} · Вариант ${variantNumber}`,
-      duration: parsed.duration ?? (exam === "oge" ? 235 : 235),
-      problems: Array.isArray(parsed.problems) ? parsed.problems : [],
-    };
-  } catch {
-    throw new InternalError("LLM returned invalid JSON for exam");
+      violation: lastViolation,
+    });
+  }
+
+  if (!variant || !result) {
+    throw new InternalError("LLM: generateExam failed (no result)");
   }
 
   const meta: GenerateWorksheetMeta = {
@@ -381,7 +405,9 @@ export async function embed(args: EmbedArgs, env: Env): Promise<EmbedResult> {
     );
   }
   const model = args.preferredModel ?? "text-embedding-3-large";
-  const { vectors, costUsd } = await callPolzaEmbedding(args.texts, model, env);
+  // callPolzaEmbedding принимает один объект-аргумент { env, model, input }.
+  // Раньше здесь передавались три позиционных аргумента — не компилировалось.
+  const { vectors, costUsd } = await callPolzaEmbedding({ env, model, input: args.texts });
   return { vectors, model, costUsd };
 }
 

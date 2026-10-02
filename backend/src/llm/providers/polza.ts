@@ -22,6 +22,7 @@
 
 import { InternalError } from "../../lib/errors";
 import { calcCost } from "../cost";
+import { getBaseUrl } from "../config";
 import { logLlmEvent } from "../log";
 import type { Env } from "../../env";
 import type { LLMResponse, Provider } from "../types";
@@ -44,7 +45,10 @@ function getState(env: Env): PolzaProviderState {
   if (!apiKey) {
     throw new InternalError("POLZA_API_KEY не задан — polza-провайдер недоступен");
   }
-  const baseUrl = env.POLZA_BASE_URL ?? "https://polza.ai/api/v1";
+  // baseUrl берём через getBaseUrl(env, "polza"): в типе Env есть только
+  // POLZA_API_KEY, поля POLZA_BASE_URL не существует. Раньше здесь стояло
+  // env.POLZA_BASE_URL — файл не компилировался.
+  const baseUrl = getBaseUrl(env, "polza");
   cached = { baseUrl, apiKey };
   return cached;
 }
@@ -54,20 +58,16 @@ export function getPolzaProvider(env: Env): Provider {
 
   return {
     id: "polza",
-    async complete(args: {
-      model: string;
-      messages: ChatCompletionMessageParam[];
-      maxTokens: number;
-      temperature?: number;
-      jsonMode?: boolean;
-    }): Promise<LLMResponse> {
+    name: "Polza.ai (OpenAI-compat)",
+    async complete(args, _env, opts): Promise<LLMResponse> {
+      void _env;
       const body: Record<string, unknown> = {
         model: args.model,
-        messages: args.messages,
-        max_tokens: args.maxTokens,
+        messages: args.messages.map((m) => ({ role: m.role, content: m.content })),
+        max_tokens: args.maxTokens ?? 4096,
+        temperature: args.temperature ?? 0.7,
       };
-      if (args.temperature !== undefined) body.temperature = args.temperature;
-      if (args.jsonMode) body.response_format = { type: "json_object" };
+      if (args.responseFormat === "json") body.response_format = { type: "json_object" };
 
       const start = Date.now();
       let res: Response;
@@ -82,11 +82,9 @@ export function getPolzaProvider(env: Env): Provider {
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        logLlmEvent({
-          env,
+        logLlmEvent("error", "polza network error", {
           provider: "polza",
           model: args.model,
-          status: "network_error",
           error: msg,
           latencyMs: Date.now() - start,
         });
@@ -95,12 +93,10 @@ export function getPolzaProvider(env: Env): Provider {
 
       if (!res.ok) {
         const text = await res.text().catch(() => "");
-        logLlmEvent({
-          env,
+        logLlmEvent("error", `polza HTTP ${res.status}`, {
           provider: "polza",
           model: args.model,
-          status: "http_error",
-          error: `HTTP ${res.status}: ${text.slice(0, 200)}`,
+          error: text.slice(0, 200),
           latencyMs: Date.now() - start,
         });
         throw new InternalError(`polza HTTP ${res.status}: ${text.slice(0, 200)}`);
@@ -108,33 +104,47 @@ export function getPolzaProvider(env: Env): Provider {
 
       const data = (await res.json()) as {
         choices?: Array<{ message?: { content?: string } }>;
-        usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+        usage?: {
+          prompt_tokens?: number;
+          completion_tokens?: number;
+          total_tokens?: number;
+          prompt_tokens_details?: { cached_tokens?: number };
+        };
         model?: string;
       };
       const content = data.choices?.[0]?.message?.content ?? "";
-      const usage = {
-        input: data.usage?.prompt_tokens ?? 0,
-        output: data.usage?.completion_tokens ?? 0,
-        total: data.usage?.total_tokens ?? 0,
-      };
-      const costUsd = calcCost("polza", args.model, usage.input, usage.output);
+      const tokensIn = data.usage?.prompt_tokens ?? 0;
+      const tokensOut = data.usage?.completion_tokens ?? 0;
+      const cachedTokens = data.usage?.prompt_tokens_details?.cached_tokens ?? 0;
+      const latencyMs = Date.now() - start;
 
-      logLlmEvent({
-        env,
+      // Ключевой момент: тариф берём по ID модели из MODEL_CATALOG, а не по
+      // имени провайдера. Раньше здесь было calcCost("polza", model, ...) —
+      // первый аргумент попадал в параметр `model`, MODEL_COSTS["polza"]
+      // не существует, и ВСЕ вызовы polza тарифицировались как 0 USD.
+      // Подробности: docs/tz/11-photo-check.md §2.5 (расхождение №2).
+      const costUsd = calcCost(args.model, tokensIn, tokensOut);
+
+      logLlmEvent("info", "polza.complete ok", {
         provider: "polza",
         model: data.model ?? args.model,
-        status: "ok",
-        inputTokens: usage.input,
-        outputTokens: usage.output,
+        inputTokens: tokensIn,
+        outputTokens: tokensOut,
         costUsd,
-        latencyMs: Date.now() - start,
+        latencyMs,
       });
+
+      if (!content) {
+        throw new InternalError("polza вернул пустой content");
+      }
 
       return {
         content,
-        model: data.model ?? args.model,
-        usage,
+        tokensIn,
+        tokensOut,
         costUsd,
+        latencyMs,
+        cached: cachedTokens > 0,
         raw: data,
       };
     },
@@ -165,12 +175,10 @@ export async function callPolzaEmbedding(args: {
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    logLlmEvent({
-      env: args.env,
+    logLlmEvent("error", `polza embed HTTP ${res.status}`, {
       provider: "polza",
       model: args.model,
-      status: "http_error",
-      error: `embed HTTP ${res.status}: ${text.slice(0, 200)}`,
+      error: text.slice(0, 200),
       latencyMs: Date.now() - start,
     });
     throw new InternalError(`polza embed HTTP ${res.status}: ${text.slice(0, 200)}`);
@@ -183,7 +191,10 @@ export async function callPolzaEmbedding(args: {
   };
   const vectors = (data.data ?? []).map((d) => d.embedding);
   const totalTokens = data.usage?.prompt_tokens ?? data.usage?.total_tokens ?? 0;
-  const costUsd = calcCost("polza", args.model, totalTokens, 0);
+  // Раньше было calcCost("polza", args.model, totalTokens, 0) — 4 аргумента
+  // против сигнатуры (model, tokensIn, tokensOut, opts). "polza" уезжал в
+  // параметр model, MODEL_COSTS["polza"] не существует → 0 USD.
+  const costUsd = calcCost(args.model, totalTokens, 0);
 
   return { vectors, model: data.model ?? args.model, costUsd };
 }
