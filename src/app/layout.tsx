@@ -87,8 +87,11 @@ export default function RootLayout({
             <Footer />
           </div>
         </Toaster>
-        {/* TZ-10 §8.1 / §9.1: Яндекс.Метрика временно отключена для билда — next/script в static export вызывает таймауты. TODO: включить после миграции на Cloudflare SSR / OpenNext, либо использовать inline <script> вместо next/script. */}
-        {/* <YandexMetrika counterId={process.env.NEXT_PUBLIC_YM_ID ?? ""} /> */}
+        {/* TZ-10 §8.1 / §9.1: Яндекс.Метрика, счётчик 113327591.
+            Раньше был отключён из-за next/script при статическом экспорте;
+            теперь это обычный инлайновый <script> (см. YandexMetrika.tsx),
+            который попадает в HTML на этапе сборки. */}
+        <YandexMetrika />
       </body>
     </html>
   );
