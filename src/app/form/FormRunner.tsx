@@ -199,6 +199,12 @@ export function FormRunner() {
           </p>
           <Input
             label="Код урока"
+            // text-base (16px), а не унаследованные 14px из Input: на iOS Safari
+            // фокус на поле меньше 16px зумит страницу, и после закрытия клавиатуры
+            // остаётся увеличенный масштаб. Ровно та же причина, по которой
+            // TaskInput.tsx не использует text-sm на полях заданий — согласованно
+            // с теми полями, чтобы ученик не ловил зум то на имени, то на ответе.
+            className="text-base"
             value={code}
             onChange={(e) => {
               setCode(e.target.value);
@@ -230,6 +236,7 @@ export function FormRunner() {
           </p>
           <Input
             label="Как тебя зовут?"
+            className="text-base"
             value={name}
             onChange={(e) => {
               setName(e.target.value);
@@ -269,7 +276,7 @@ export function FormRunner() {
               onChange={(v) => handleSetAnswer(task.number, v)}
             />
             {task.points > 0 && (
-              <p className="mt-2 text-xs text-warm-400">{task.points} балл.</p>
+              <p className="mt-2 text-xs text-[color:var(--text-muted)]">{task.points} балл.</p>
             )}
           </Card>
         ))}
