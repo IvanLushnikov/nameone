@@ -1,0 +1,30 @@
+-- Миграция 0002: payments.period
+--
+-- Нумерация продолжает 0001_interactives_expands_at (src/db/migrations/),
+-- чтобы нельзя было спутать два разных «0001».
+--
+-- Зачем: обработчик вебхука ЮKassa больше не берёт период из тела запроса
+-- (это позволяло подделать уведомление и получить годовую подписку «plus»
+-- за месячную оплату). Теперь канонический период хранится рядом с планом
+-- в нашей собственной записи о платеже.
+--
+-- Значения периода соответствуют billing.ts: Period = "monthly" | "academicYear".
+-- CHECK-ограничение здесь НЕ ставим: ALTER TABLE ADD COLUMN с CHECK не
+-- поддерживается всеми версиями SQLite, а значение и так приходит из
+-- zod-схемы createPaymentRequestSchema.
+--
+-- ВАЖНО: файл лежит ВНЕ migrations_dir (src/db) намеренно. В src/db лежит
+-- schema.sql, который wrangler тоже считает миграцией; миграция с ALTER
+-- TABLE, отсортированная раньше него, упала бы на чистой базе с
+-- «no such table: payments».
+--
+-- Применение (прод):
+--   cd backend
+--   npx wrangler d1 execute rabochielisty --remote --file=scripts/migrations/0002_payments_period.sql
+--
+-- Применение (локально):
+--   npx wrangler d1 execute rabochielisty --local  --file=scripts/migrations/0002_payments_period.sql
+--
+-- Идемпотентна: повторный запуск безопасен.
+
+ALTER TABLE payments ADD COLUMN period TEXT NOT NULL DEFAULT 'monthly';
