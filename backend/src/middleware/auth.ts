@@ -16,7 +16,7 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import type { AppEnv, AuthUser } from "../types";
-import { getSession, getUserById } from "../db/queries";
+import { getSession, getUserById, getUserRole } from "../db/queries";
 import { UnauthorizedError } from "../lib/errors";
 
 /**
@@ -99,6 +99,10 @@ export function authMiddleware(): MiddlewareHandler<AppEnv> {
       name: dbUser.name,
       plan: dbUser.plan,
       isAdmin: dbUser.is_admin === 1,
+      // Роли в users нет: она лежит в user_roles (миграция = повторный прогон
+      // schema.sql, а ALTER не идемпотентен). Нет строки = teacher, то есть
+      // поведение для всех существующих пользователей прежнее.
+      role: await getUserRole(c.env.DB, dbUser.id),
     };
     c.set("user", authUser);
     await next();

@@ -156,6 +156,17 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
   actor_id TEXT, action TEXT NOT NULL, target_type TEXT, target_id TEXT,
   payload_json TEXT, created_at INTEGER NOT NULL
 );
+
+-- 2026-10-02: роли (teacher/student). Живёт отдельной таблицей, а не колонкой в
+-- users: миграция это повторный прогон schema.sql, а ALTER TABLE ADD COLUMN
+-- в SQLite не идемпотентен. Нет строки = teacher, то есть поведение прежнее.
+CREATE TABLE IF NOT EXISTS user_roles (
+  user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  role       TEXT NOT NULL DEFAULT 'teacher',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 `;
 
 // ─────────────────────────────────────────────────────────────────────────────

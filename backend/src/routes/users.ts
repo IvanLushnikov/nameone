@@ -17,11 +17,25 @@
 
 import { Hono } from "hono";
 import { z } from "zod";
+import type { D1Database } from "@cloudflare/workers-types";
 import type { AppEnv } from "../types";
 import { requireAuth as _requireAuth } from "../middleware/auth";
 void _requireAuth;
 import { UnauthorizedError, BadRequestError, NotFoundError } from "../lib/errors";
 import { getUserById, incrementUserGenerations } from "../db/queries";
+import {
+  getUsageStatus,
+  checkFreeQuota,
+  tokensToWorksheets,
+  FREE_TOTAL_GENERATIONS,
+} from "../services/usage";
+import {
+  fingerprintHash,
+  recordVisit,
+  decideFraud,
+  generationsInLastHour,
+  type CfObject,
+} from "../lib/antifraud";
 import {
   addFavorite,
   createTemplate,
@@ -35,6 +49,36 @@ import {
 import type { Worksheet, UserTemplate } from "../types";
 
 const usersRouter = new Hono<AppEnv>();
+
+/**
+ * Требуется ли капча — БЕЗ блокировки.
+ *
+ * Отдельная мягкая проверка для /usage: она ничего не бросает и ничего не
+ * меняет, а только отвечает фронту «показать виджет заранее», чтобы генерация
+ * не упиралась в 409 TURNSTILE_REQUIRED на середине. Сам 409 ставит
+ * `guardGeneration` на пути генерации.
+ */
+async function evaluateChallenge(
+  db: D1Database,
+  input: {
+    userId: string | null;
+    ip: string;
+    userAgent: string;
+    cf?: CfObject;
+    salt: string;
+  },
+): Promise<{ requiresChallenge: boolean; reason: string }> {
+  // Секрета Turnstile нет → капчу нечем проверять. Лучше не просить её вовсе,
+  // чем отрезать учителя из-за ненастроенного стороннего сервиса.
+  const fingerprint = await fingerprintHash(
+    { ip: input.ip, userAgent: input.userAgent, cf: input.cf },
+    input.salt,
+  );
+  const signals = await recordVisit(db, fingerprint, input.userId, input.cf);
+  const burst = await generationsInLastHour(db, fingerprint);
+  const verdict = decideFraud(signals, { cf: input.cf, burstGenerationsInHour: burst });
+  return { requiresChallenge: verdict.decision === "challenge", reason: verdict.reason };
+}
 
 // Helper — throws Unauthorized если нет user
 function userOr401(c: import("hono").Context<AppEnv>) {
@@ -161,33 +205,76 @@ usersRouter.get("/subscription", async (c) => {
 });
 
 /**
- * Light-payload endpoint для UI счётчика "осталось N генераций сегодня".
+ * Light-payload endpoint для UI счётчика потребления.
  *
  * В отличие от /me (который возвращает полный профиль) — здесь только то,
- * что нужно фронту для рендера лимита. Удобно дёргать часто (на каждый
+ * что нужно фронту для рендера остатка. Удобно дёргать часто (на каждый
  * action после генерации) без переплаты за JSON-байты.
  *
- * generationsLimit:
- *   -1 — безлимитный (base/plus планы)
- *   3  — free plan (default)
+ * ЧТО ЗДЕСЬ И ЧЕГО НЕТ.
+ *   norm / weightedTokensUsed / over — норма тарифа в ВЗВЕШЕННЫХ ТОКЕНАХ
+ *     (services/usage.ts). `over: true` означает «норма превышена», но НЕ
+ *     «генерация заблокирована»: порог мягкий, UI на этом флаге показывает
+ *     предложение докупить, а не отказ.
+ *   generationsLimit — остаток бесплатной квоты (3 генерации всего).
+ *     null у платных тарифов, потому что там квота не в штуках.
+ *   requiresChallenge — попросить ли невидимый Turnstile. Фронт грузит виджет
+ *     ТОЛЬКО в этом случае, так что обычный пользователь не грузит ни одного
+ *     стороннего скрипта.
  *
- * generationsResetAt:
- *   null если daily counter ни разу не инициализировался (новый user).
- *   ISO-строка если уже выставлялся через resetUserDailyGenerations().
+ * Старые поля (generationsToday, generationsResetAt) сохранены: их читает
+ * текущий UI, и выкидывать их без нужды — значит сломать профиль раньше,
+ * чем фронт переедет на новую схему.
  */
 usersRouter.get("/usage", async (c) => {
   const auth = userOr401(c);
   const user = await getUserById(c.env.DB, auth.id);
   if (!user) throw new NotFoundError("User not found");
+
+  const plan = user.plan as "free" | "base" | "plus";
+  const status = await getUsageStatus(c.env.DB, user.id, plan);
+
+  // Бесплатная квота — в штуках генераций, а не в токенах.
+  let freeRemaining: number | null = null;
+  if (plan === "free") {
+    const quota = await checkFreeQuota(c.env.DB, user.id);
+    freeRemaining = quota.remaining;
+  }
+
+  // Требуется ли капча: считаем отпечаток, смотрим сигналы. Проверка здесь
+  // ничего не блокирует — она лишь заранее говорит фронту, показать ли виджет,
+  // чтобы генерация не упиралась в 409 на середине.
+  const verdict = await evaluateChallenge(c.env.DB, {
+    userId: user.id,
+    ip: c.get("ip") ?? "0.0.0.0",
+    userAgent: c.get("userAgent") ?? "",
+    cf: (c.req.raw as Request & { cf?: CfObject }).cf,
+    salt: c.env.FINGERPRINT_SALT ?? "dev-fingerprint-salt",
+  });
+
   return c.json({
     ok: true,
+    // ── новое: норма в токенах ──
+    plan,
+    norm: status.norm,
+    weightedTokensUsed: status.used,
+    over: status.over,
+    remaining: status.remaining,
+    periodEndsAt: status.window.windowEndsAt
+      ? new Date(status.window.windowEndsAt * 1000).toISOString()
+      : null,
+    // Сколько это в понятных учителю листах. Токены сами по себе абстрактны,
+    // а «≈ 80 листов» читается сразу — см. риск 1 в docs/04-pricing-economics-v2.md.
+    worksheetsEquivalent: tokensToWorksheets(status.used),
+    freeRemaining,
+    requiresChallenge: verdict.requiresChallenge,
+    // ── старое, оставлено для совместимости текущего UI ──
     generationsToday: user.generations_today,
-    generationsLimit: user.plan === "plus" || user.plan === "base" ? -1 : 3,
+    generationsLimit: plan === "free" ? FREE_TOTAL_GENERATIONS : -1,
     generationsResetAt:
       user.generations_reset_at != null
         ? new Date(user.generations_reset_at * 1000).toISOString()
         : null,
-    plan: user.plan,
   });
 });
 

@@ -37,6 +37,7 @@ import {
   ArrowRight,
   Calendar,
   Send,
+  Camera,
 } from "lucide-react";
 import { timeAgo } from "@/lib/utils/cn";
 import { PLANS, priceShort } from "@/lib/content/plans";
@@ -161,6 +162,32 @@ export default function DashboardPage() {
       <div className="mt-6">
         <UsageCard usage={usage} loading={usageLoading} />
       </div>
+
+      {/* F-06.1: точка входа в проверку домашки из ЛК.
+          Ведёт в конструктор с `?photo=1` — секция проверки раскрывается сразу.
+          Отдельная карточка, а не ещё одна кнопка в шапке: у учителя два разных
+          намерения — «создать лист» и «проверить, что ученик сделал сам». */}
+      <Card className="mt-4 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-start gap-4 min-w-0">
+            <div className="w-11 h-11 rounded-xl bg-accent-50 flex items-center justify-center shrink-0">
+              <Camera className="w-5 h-5 text-accent-600" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-semibold text-warm-950">
+                Проверить домашку и задать вопросы
+              </h2>
+              <p className="text-sm text-warm-600 mt-1">
+                Сфотографируйте тетрадь — будет балл и оценка. Если что-то
+                вызывает вопросы, составьте 3–5 вопросов для беседы с учеником.
+              </p>
+            </div>
+          </div>
+          <Button as="link" href="/constructor?photo=1" variant="secondary" size="md">
+            Проверить фото
+          </Button>
+        </div>
+      </Card>
 
       <Tabs value={tab} onValueChange={setTab} className="mt-10">
         <TabsList>

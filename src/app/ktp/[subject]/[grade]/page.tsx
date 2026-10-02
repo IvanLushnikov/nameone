@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { plural } from "@/lib/utils/cn";
 import {
   Sparkles,
   ArrowRight,
@@ -41,7 +42,8 @@ export function generateMetadata({ params }: Props): Metadata {
   const grade = getGrade(params.subject, Number(params.grade));
   if (!subject || !grade) return { title: "Класс не найден" };
 
-  const title = `КТП по ${subject.title} · ${grade.num} класс · ${SCHOOL_YEAR} · РабочиеЛисты AI`;
+  // Бренд в конце не дописываем — его добавляет template в корневом layout.
+  const title = `КТП по ${subject.title} · ${grade.num} класс · ${SCHOOL_YEAR}`;
   const description = `Календарно-тематическое планирование для ${grade.num} класса по предмету «${subject.title}» на ${SCHOOL_YEAR} учебный год по ФГОС. Скачивайте готовый DOCX с merged cells — все темы курса, контрольные и тесты.`;
 
   return {
@@ -165,7 +167,7 @@ export default function KtpGradePage({ params }: Props) {
               <ul className="space-y-2 text-sm text-warm-700">
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
-                  <span>Все темы курса ({grade.topics.length} базовых тем)</span>
+                  <span>Все темы курса ({grade.topics.length} {plural(grade.topics.length, "базовая тема", "базовые темы", "базовых тем")})</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
@@ -204,7 +206,7 @@ export default function KtpGradePage({ params }: Props) {
               {
                 icon: ListChecks,
                 title: "Все темы курса",
-                text: `${grade.topics.length} базовых тем курса + резерв на повторение и проектную работу.`,
+                text: `${grade.topics.length} ${plural(grade.topics.length, "базовая тема", "базовые темы", "базовых тем")} курса + резерв на повторение и проектную работу.`,
               },
               {
                 icon: Target,
@@ -258,7 +260,7 @@ export default function KtpGradePage({ params }: Props) {
           </div>
           {grade.topics.length > 9 && (
             <p className="mt-4 text-sm text-warm-500">
-              И ещё {grade.topics.length - 9} тем — полный список попадёт в КТП.
+              И ещё {grade.topics.length - 9} {plural(grade.topics.length - 9, "тема", "темы", "тем")} — полный список попадёт в КТП.
             </p>
           )}
         </div>
@@ -286,7 +288,7 @@ export default function KtpGradePage({ params }: Props) {
               },
               {
                 q: "Сколько стоит генерация КТП?",
-                a: "Бесплатно — 3 генерации в сутки. На тарифе Plus — без ограничений.",
+                a: "Бесплатно — 3 генерации. На тарифе Плюс КТП входит в объём тарифа.",
               },
             ].map((f) => (
               <Card key={f.q}>

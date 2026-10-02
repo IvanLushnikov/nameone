@@ -22,6 +22,15 @@ export interface Env {
   // vars
   APP_ENV: string;
   APP_BASE_URL: string;
+  /**
+   * Публичный origin фронта ОДНИМ значением — для ссылок, которые видит человек
+   * (magic-link на вход, возврат с оплаты, dev-ссылка демо-платежа).
+   *
+   * Отдельная переменная нужна потому, что FRONTEND_URL в проде — список через
+   * запятую ради CORS. Вставлять список в ссылку нельзя: получается нерабочий
+   * URL вида «https://a.ru,https://b.ru/auth/callback?token=…».
+   */
+  APP_PUBLIC_URL?: string;
   FRONTEND_URL: string;
 
   // secrets (все опциональны — наличие проверяется в нужных роутах)
@@ -37,6 +46,22 @@ export interface Env {
   YOOKASSA_SHOP_ID?: string;
   YOOKASSA_SECRET_KEY?: string;
   JWT_SECRET: string;
+  /**
+   * Соль для отпечатка посетителя (SHA-256(ip + UA + cf.* + соль)).
+   *
+   * Обязательна для продакшена: без неё хэш от IP подбирается перебором
+   * за секунды, и таблица отпечатков сама становится справочником по IP.
+   * Ставится тем же `wrangler secret put`, что и остальные секреты.
+   */
+  FINGERPRINT_SALT?: string;
+  /**
+   * Cloudflare Turnstile (server secret). Sitekey живёт во фронте как
+   * NEXT_PUBLIC_TURNSTILE_SITE_KEY и вшивается при билде (статический экспорт).
+   *
+   * Если секрета нет — антифрод работает в режиме «никогда не просим капчу»:
+   * так лучше, чем отрезать учителя из-за ненастроенного стороннего сервиса.
+   */
+  TURNSTILE_SECRET_KEY?: string;
   /** Single-admin legacy var. Если задан — эквивалентно ADMIN_EMAILS=<email>. */
   ADMIN_EMAIL?: string;
   /** Comma-separated emails, которые становятся is_admin=1 при первой регистрации. */

@@ -73,6 +73,23 @@ export class RateLimitError extends ApiError {
   }
 }
 
+/**
+ * 409: от посетителя с признаками фрода требуется капча.
+ *
+ * Отдельный код, а не 403, потому что это НЕ запрет. Пользователь ничего не
+ * нарушил — сервер просто хочет убедиться, что перед ним человек. Правильное
+ * поведение фронта: показать невидимый Turnstile и повторить тот же запрос.
+ *
+ * Единственный 4xx на пути генерации, который означает «попробуй позже» —
+ * RateLimitError на бесплатной квоте. Норма платного тарифа не блокирует.
+ */
+export class ChallengeRequiredError extends ApiError {
+  constructor(message = "Требуется подтверждение", details?: unknown) {
+    super(409, "TURNSTILE_REQUIRED", message, details);
+    this.name = "ChallengeRequiredError";
+  }
+}
+
 export class InternalError extends ApiError {
   constructor(message = "Internal Server Error", details?: unknown) {
     super(500, "INTERNAL", message, details);

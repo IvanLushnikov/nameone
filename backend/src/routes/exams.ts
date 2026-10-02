@@ -1,15 +1,18 @@
 /**
  * /api/exams/* — генерация вариантов ОГЭ/ЕГЭ + проверка ответов.
  *
- *   POST /api/exams/generate — сгенерировать вариант (Plus-план: Opus 5.5)
+ *   POST /api/exams/generate — сгенерировать вариант (Sonnet 5.5 по тарифу «Плюс»)
  *   POST /api/exams/check    — проверить ответы пользователя (детерминированный чек)
+ *
+ * Тариф — только из сессии: клиентский `plan` в теле запроса игнорируется
+ * (он определял модель LLM, то есть стоимость обслуживания).
  */
 
 import { Hono } from "hono";
 import { z } from "zod";
 import { generateExam } from "../llm";
 import { checkExamAnswers, saveExamAttempt } from "../services/exam";
-import { BadRequestError } from "../lib/errors";
+import { BadRequestError, ForbiddenError, PaymentRequiredError } from "../lib/errors";
 import type { AppEnv, SubjectSlug, CheckExamRequest } from "../types";
 
 const examsRouter = new Hono<AppEnv>();
@@ -21,14 +24,29 @@ const generateSchema = z.object({
 });
 
 examsRouter.post("/generate", async (c) => {
-  let body: z.infer<typeof generateSchema> & { plan?: "free" | "base" | "plus" };
+  let body: z.infer<typeof generateSchema>;
   try {
     body = generateSchema.parse({ ...((await c.req.json()) as object) });
   } catch (e) {
     throw new BadRequestError("Invalid body", { zodError: String(e).slice(0, 200) });
   }
 
-  const plan = body.plan ?? c.get("user")?.plan ?? "free";
+  // Ученик решает выданное, но не генерирует (тариф «Школа», Q1 2027).
+  if (c.get("user")?.role === "student") {
+    throw new ForbiddenError("Ученикам генерация материалов недоступна", {
+      code: "GENERATION_FORBIDDEN",
+    });
+  }
+
+  // Варианты ОГЭ/ЕГЭ — премиум-тип, входят только в «Плюс» (см. PLUS_ONLY_TASKS).
+  const plan = c.get("user")?.plan ?? "free";
+  if (plan !== "plus") {
+    throw new PaymentRequiredError("Варианты ОГЭ/ЕГЭ входят в тариф «Плюс»", {
+      code: "UPGRADE_REQUIRED",
+      task: "exam-gen",
+    });
+  }
+
   const userId = c.get("user")?.id ?? null;
   const ip = c.get("ip") ?? "0.0.0.0";
 

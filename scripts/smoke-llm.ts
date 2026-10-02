@@ -57,7 +57,7 @@ async function checkGeneration(plan: "free" | "plus"): Promise<{ worksheet?: unk
     return {};
   }
   try {
-    const r = await generateWorksheet({ request: REQUEST, plan, bypassCache: true });
+    const r = await generateWorksheet({ request: REQUEST, bypassCache: true });
     if (!r.worksheet.tasks.length) {
       record({ name, outcome: "fail", error: "пустой tasks[]" });
       return {};

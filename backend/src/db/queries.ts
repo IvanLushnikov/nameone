@@ -128,6 +128,60 @@ export async function updateUserPlan(
     .run();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Роль (teacher / student)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Роль пользователя. Нет строки в user_roles = teacher.
+ *
+ * Ученики появятся с тарифом «Школа» (Q1 2027); требование «ученик не
+ * генерирует» зафиксировано уже сейчас, чтобы оно не потерялось между
+ * сессиями. Значение по умолчанию осознанно «учитель»: у всех, кто зарегистрирован
+ * сейчас, роль именно такая, и добавление строки в user_roles не требуется.
+ */
+export async function getUserRole(
+  db: D1Database,
+  userId: string,
+): Promise<"teacher" | "student"> {
+  try {
+    const row = await db
+      .prepare(`SELECT role FROM user_roles WHERE user_id = ?1`)
+      .bind(userId)
+      .first<{ role: string }>();
+    return row?.role === "student" ? "student" : "teacher";
+  } catch (e) {
+    // Таблицы может не быть, если миграции не прогнаны (или в тестовой
+    // фикстуре схема собрана вручную). Раньше здесь бросался D1_ERROR,
+    // и auth middleware падал с 500 на КАЖДЫЙ авторизованный запрос —
+    // то есть отсутствие вспомогательной таблицы роняло весь API.
+    // Роль по умолчанию и так teacher (см. докстринг выше), поэтому
+    // отсутствие таблицы трактуем так же и логируем: это сигнал, что
+    // schema.sql не применён, а не повод отдавать 500 пользователю.
+    console.warn(
+      `[db] getUserRole: user_roles недоступна (${e instanceof Error ? e.message : String(e)}), ` +
+        `роль трактуется как teacher`,
+    );
+    return "teacher";
+  }
+}
+
+export async function setUserRole(
+  db: D1Database,
+  userId: string,
+  role: "teacher" | "student",
+): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  await db
+    .prepare(
+      `INSERT INTO user_roles (user_id, role, created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?3)
+       ON CONFLICT(user_id) DO UPDATE SET role = ?2, updated_at = ?3`,
+    )
+    .bind(userId, role, now)
+    .run();
+}
+
 export async function incrementUserGenerations(db: D1Database, id: string): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
   await db

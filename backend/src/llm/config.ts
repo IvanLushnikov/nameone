@@ -74,6 +74,23 @@ export interface ModelSpec {
   provider: ProviderId;
   /** API name, который провайдер ждёт в запросе. */
   apiName: string;
+  /**
+   * Принимает ли модель изображения (`image_url` в content-part).
+   *
+   * TZ-11 §5.1 (В-1) закрыт решением продакта: распознаём фото тетради через
+   * `gpt-6-luna` — по прайсу polza модель мультимодальная. Поле нужно, чтобы
+   * роутер не отдал photo-check модели без картинки и чтобы смена модели на
+   * финальную была правкой одной строки в MODEL_CATALOG.
+   */
+  vision?: boolean;
+  /**
+   * Модель эмбеддингов (не генерирует текст).
+   *
+   * У таких моделей `outputPer1M` = 0 — выходных токенов у эмбеддинга нет.
+   * Флаг нужен, чтобы валидация MODEL_COSTS и любые проверки «модель что-то
+   * генерирует» не принимали нулевую цену выхода за ошибку конфигурации.
+   */
+  embedding?: boolean;
 }
 
 /**
@@ -88,8 +105,22 @@ export interface ModelSpec {
  * Все модели ниже проверены в каталоге polza.ai (актуально на 2026-09-27).
  */
 export const MODEL_CATALOG: Record<string, ModelSpec> = {
-  "gpt-6-luna": { id: "gpt-6-luna", provider: "polza", apiName: "openai/gpt-6-luna" },
-  "gpt-6-sol": { id: "gpt-6-sol", provider: "polza", apiName: "openai/gpt-6-sol" },
+  // gpt-6-luna — рабочая модель и для генерации, и для распознавания фото (TZ-11).
+  // `vision: true` — единственный переключатель для смены модели распознавания.
+  "gpt-6-luna": { id: "gpt-6-luna", provider: "polza", apiName: "openai/gpt-6-luna", vision: true },
+  // Fallback на случай, если Luna временно отдаёт 5xx. Управляем нами
+  // (text-lora/RU-экспертиза), цена заметно выше — включается только по факту ошибки.
+  "gpt-6-sol": { id: "gpt-6-sol", provider: "polza", apiName: "openai/gpt-6-sol", vision: true },
+  // Claude Sonnet 5.5 — рабочая модель для сложных задач (ОГЭ/ЕГЭ, КТП).
+  //
+  // ПОЧЕМУ НЕ OPUS (решение 2026-10-02, docs/04-pricing-economics-v2.md §3):
+  // на polza Sonnet 5.5 стоит РОВНО 0,5× цены Opus по обеим позициям при
+  // одинаковом prompt caching (233,72/1 168,58 ₽ против 467,43/2 337,16 ₽,
+  // проверено на polza.ai/models/anthropic/claude-sonnet-5.5 2026-10-02).
+  // Для генерации учебных материалов разница в качестве не окупает
+  // двукратную разницу в цене. Opus остаётся в каталоге и включается
+  // только явным решением — дефолтный потолок лестницы fallback (router.ts).
+  "claude-sonnet-5-5": { id: "claude-sonnet-5-5", provider: "polza", apiName: "anthropic/claude-sonnet-5.5" },
   "claude-opus-5-5": { id: "claude-opus-5-5", provider: "polza", apiName: "anthropic/claude-opus-5.5" },
   // polza/deepseek/deepseek-v4-flash — есть на polza, V4 Flash (284B total / 13B activated MoE).
   "deepseek-v4-flash": {
@@ -104,12 +135,14 @@ export const MODEL_CATALOG: Record<string, ModelSpec> = {
     id: "qwen3-embedding-8b",
     provider: "polza",
     apiName: "qwen/qwen3-embedding-8b",
+    embedding: true,
   },
   // OpenAI text-embedding-3-large — точное имя на polza проверено.
   "text-embedding-3-large": {
     id: "text-embedding-3-large",
     provider: "polza",
     apiName: "openai/text-embedding-3-large",
+    embedding: true,
   },
 };
 
@@ -122,6 +155,17 @@ export function availableModels(env: Env): string[] {
     }
   }
   return result;
+}
+
+/**
+ * Модель принимает изображения (`image_url` в content-part).
+ *
+ * Роутер спрашивает это перед тем, как отдать photo-check задачу модели:
+ * лучше явный `primary: null` и 503, чем молчаливый текстовый вызов,
+ * который вернёт «не могу разобрать фото» как обычный текст.
+ */
+export function isVisionModel(modelId: string): boolean {
+  return MODEL_CATALOG[modelId]?.vision === true;
 }
 
 /**
@@ -152,6 +196,13 @@ export interface ModelCost {
   inputPer1M: number;
   /** $ за 1M output tokens. */
   outputPer1M: number;
+  /**
+   * $ за 1M image-токенов, если провайдер тарифицирует картинку ОТДЕЛЬНО от
+   * текстового ввода. Если не задано — картинка тарифицируется по inputPer1M
+   * (для gpt-6-luna на polza именно так: колонка «Изображение вход» в прайсе —
+   * прочерк, см. MODEL_COSTS ниже).
+   */
+  imageInputPer1M?: number;
   /** $ за 1M cache-read tokens (Anthropic prompt cache). */
   cacheReadPer1M?: number;
   /** $ за 1M cache-write tokens (Anthropic prompt cache, обычно = input). */
@@ -178,9 +229,20 @@ export interface ModelCost {
  */
 export const MODEL_COSTS: Record<string, ModelCost> = {
   // openai/gpt-6-luna: 5.91 ₽ / 29.53 ₽ за 1M → $0.07 / $0.35
+  // Мультимодальная (TZ-11 §5.1): колонка «Изображение вход, 1M» в прайсе polza
+  // — прочерк, т.е. картинка тарифицируется по обычному входному тарифу.
+  // Поэтому imageInputPer1M НЕ задаём: calcCost сам возьмёт inputPer1M.
   "gpt-6-luna": { inputPer1M: 0.07, outputPer1M: 0.35 },
   // openai/gpt-6-sol: 118.13 ₽ / 590.66 ₽ → $1.39 / $6.95
   "gpt-6-sol": { inputPer1M: 1.39, outputPer1M: 6.95 },
+  // anthropic/claude-sonnet-5.5: 233,72 ₽ / 1 168,58 ₽ за 1M; cache_read 23,372 ₽
+  // Ровно половина Opus по обеим позициям. Кэш записи у Anthropic = 1,25 × input.
+  "claude-sonnet-5-5": {
+    inputPer1M: 2.75,
+    outputPer1M: 13.75,
+    cacheReadPer1M: 0.275,
+    cacheWritePer1M: 3.4375,
+  },
   // anthropic/claude-opus-5.5: 472.53 ₽ / 2362.64 ₽ за 1M; cache_read 23.63 ₽
   "claude-opus-5-5": {
     inputPer1M: 5.56,
@@ -195,3 +257,66 @@ export const MODEL_COSTS: Record<string, ModelCost> = {
   // openai/text-embedding-3-large: уточнить точную цену polza; пока берём как у прямого OpenAI
   "text-embedding-3-large": { inputPer1M: 0.13, outputPer1M: 0.0 },
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Взвешенные токены — единица потребления, которую вид��т учитель
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Умеет ли модель prompt caching (Anthropic-семейство через polza).
+ *
+ * Кэш включается по СВОЙСТВУ МОДЕЛИ, а не по тарифу. Раньше флаг ставился как
+ * `plan === "plus"` — то есть кэш получал только платящий пользователь, и
+ * даже если бы роутер отдал Sonnet учителю с «Базового», system prompt
+ * каждый раз уходил бы в полную стоимость. Кэширование тут бесплатное по
+ * смыслу (мы платим за cache-read вместо полного input), поэтому включается
+ * везде, где модель его держит.
+ */
+export function supportsPromptCache(modelId: string): boolean {
+  return MODEL_COSTS[modelId]?.cacheReadPer1M != null;
+}
+
+/**
+ * Эталонная модель для тарификации потребления.
+ *
+ * С 2026-10-02 это gpt-6-luna. Все нормы тарифов считаются в «взвешенных
+ * токенах» — токенах Luna-эквивалента:
+ *
+ *     weightedTokens = tokensOut × (outputPer1M(модель) / outputPer1M(Luna))
+ *
+ * ЗАЧЕМ ЭТО НУЖНО. Разные артефакты на разных моделях стоят по-разному:
+ * лист на Luna — 0,06 ₽, вариант ОГЭ на Sonnet — 7,70 ₽, КТП на Sonnet — 9,45 ₽.
+ * Считать «штуки артефактов» нельзя (тогда дорогой артефакт съедает норму
+ * бесплатно), а считать «сырые токены» тоже нельзя (тогда 1 токен на Luna и
+ * 1 токен на Sonnet считаются одинаково, а стоят в 40 раз разного).
+ * Взвешенный токен решает ровно эту задачу: счёт совпадает с себестоимостью
+ * до копейки, но остаётся одной линейной единицей.
+ *
+ * Базовый тариф = 1,44 млн, Плюс = 16 млн взвешенных токенов в месяц.
+ * Выбранные значения и их экономика — docs/04-pricing-economics-v2.md §7.1.
+ */
+export const REFERENCE_MODEL_ID = "gpt-6-luna";
+
+/**
+ * Вес модели = во сколько раз её выход дороже выхода эталонной Luna.
+ * Luna 1 · Sol 19,9 · Sonnet 39,3 · Opus 79,4 (округляется до 1/2/40/80 в UI).
+ *
+ * Модели, которых нет в MODEL_COSTS (например, кастомный override из env),
+ * получают вес 1 — иначе норму нельзя было бы посчитать вовсе, и это
+ * безопасно: недобор нормы заметнее, чем скрытый перерасход.
+ */
+export function modelWeight(modelId: string): number {
+  const cost = MODEL_COSTS[modelId];
+  const ref = MODEL_COSTS[REFERENCE_MODEL_ID];
+  if (!cost || !ref || ref.outputPer1M <= 0) return 1;
+  return cost.outputPer1M / ref.outputPer1M;
+}
+
+/**
+ * Перевести out-токены провайдера во взвешенные токены тарифа.
+ * Input-токены не учитываются: на всех моделях они дешевле выхода в 3-5 раз
+ * и почти не влияют на итог (для Luna 1 800 in ≈ 250 выходных по цене).
+ */
+export function weightedTokens(modelId: string, tokensOut: number): number {
+  return Math.round(tokensOut * modelWeight(modelId));
+}

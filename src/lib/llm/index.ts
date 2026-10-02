@@ -10,7 +10,9 @@
  */
 
 import type { Worksheet, GenerationRequest, ExamVariant, LessonPlan, Presentation, Ktp } from '@/lib/types';
-import { generateWorksheet as mockWorksheet, generateExamVariant as mockExam } from '@/lib/mock/generator';
+// Мёртвый импорт `generateExamVariant as mockExam` удалён 02.10.2026: нигде
+// не использовался, а слой был вне tsc — поэтому незаметно пролежал.
+import { generateWorksheet as mockWorksheet } from '@/lib/mock/generator';
 import { generateLessonPlan as mockLessonPlan } from '@/lib/mock/lesson-plan';
 import { generatePresentation as mockPresentation } from '@/lib/mock/presentation';
 import { generateKtp as mockKtp } from '@/lib/mock/ktp';
@@ -26,22 +28,44 @@ export interface GenMeta {
   generation: 'primary' | 'boost' | 'premium' | 'cached' | 'fallback-mock';
 }
 
+/**
+ * Состояние нормы тарифа после генерации.
+ *
+ * Зеркалит `UsageStatus` в backend/src/services/usage.ts. `over: true` означает
+ * «норма превышена», но генерация выполнена — порог мягкий, UI на этом флаге
+ * показывает предложение докупить, а не отказ.
+ */
+export interface UsageMeta {
+  used: number;
+  norm: number | null;
+  over: boolean;
+  remaining: number | null;
+  worksheetsEquivalent: number;
+}
+
 export interface GenerateWorksheetArgs {
   request: GenerationRequest;
-  plan: 'free' | 'base' | 'plus';
+  /**
+   * Тариф сюда больше НЕ передаётся. Бэк берёт его из сессии: клиентский
+   * `plan` раньше имел приоритет над сессией, и любой мог подделать «plus»,
+   * получив и premium-модель, и снятый лимит.
+   */
   bypassCache?: boolean;
+  /** Токен невидимого Turnstile, если бэк раньше ответил 409 TURNSTILE_REQUIRED. */
+  turnstileToken?: string;
 }
 
 export interface GenerateWorksheetResult {
   worksheet: Worksheet;
   meta: GenMeta;
+  usage?: UsageMeta;
 }
 
 /** Q1-2027: артефакты — общий шаблон аргументов/результатов для новых типов. */
 export interface GenerateArtifactArgs {
   request: GenerationRequest;
-  plan: 'free' | 'base' | 'plus';
   bypassCache?: boolean;
+  turnstileToken?: string;
 }
 export interface GenerateLessonPlanResult { lessonPlan: LessonPlan; meta: GenMeta; }
 export interface GeneratePresentationResult { presentation: Presentation; meta: GenMeta; }
@@ -82,26 +106,99 @@ export interface GenerateImageResult {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-async function postJson<T>(path: string, body: unknown): Promise<T | null> {
+/**
+ * Ошибка API, дошедшая до клиента.
+ *
+ * `code` — тот самый код из тела ответа бэка: RATE_LIMIT (бесплатная квота
+ * исчерпана), TURNSTILE_REQUIRED (нужна капча), UPGRADE_REQUIRED, GENERATION_FORBIDDEN.
+ * Различать их важно: раньше любой не-200 молча превращался в мок-генерацию,
+ * и учитель, у которого кончились бесплатные листы, получал «бесплатный»
+ * результат, который на самом деле ничего не генерировал.
+ */
+export class ApiClientError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+
+  constructor(status: number, code: string | null, message: string) {
+    super(message);
+    this.name = "ApiClientError";
+    this.status = status;
+    this.code = code;
+  }
+
+  /** Квота исчерпана — показываем PaywallModal. */
+  get isQuotaExceeded(): boolean {
+    return this.status === 429 && this.code === "RATE_LIMIT";
+  }
+
+  /** Нужна капча антифрода — грузим виджет и повторяем. */
+  get isChallengeRequired(): boolean {
+    return this.status === 409 && this.code === "TURNSTILE_REQUIRED";
+  }
+
+  /** Премиум-тип не входит в тариф. */
+  get isUpgradeRequired(): boolean {
+    return this.status === 402 && this.code === "UPGRADE_REQUIRED";
+  }
+
+  /** Ученикам генерация недоступна. */
+  get isGenerationForbidden(): boolean {
+    return this.status === 403 && this.code === "GENERATION_FORBIDDEN";
+  }
+}
+
+async function postJson<T>(
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<T | null> {
   if (!API_URL) return null;
   const res = await fetch(`${API_URL}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
   });
-  if (!res.ok) return null;
-  return (await res.json().catch(() => null)) as T | null;
+  if (res.ok) return (await res.json().catch(() => null)) as T | null;
+
+  // 4xx — это ответ на наш запрос (квота, капча, тариф), а не поломка бэка.
+  // Молча подставлять тут мок нельзя.
+  if (res.status >= 400 && res.status < 500) {
+    const payload = (await res.json().catch(() => null)) as
+      | { error?: string; code?: string }
+      | null;
+    throw new ApiClientError(
+      res.status,
+      payload?.code ?? null,
+      payload?.error ?? `HTTP ${res.status}`,
+    );
+  }
+  return null;
 }
 
-export async function generateWorksheet({ request, plan, bypassCache }: GenerateWorksheetArgs): Promise<GenerateWorksheetResult> {
+export async function generateWorksheet({
+  request,
+  bypassCache,
+  turnstileToken,
+}: GenerateWorksheetArgs): Promise<GenerateWorksheetResult> {
   const start = Date.now();
-  const data = await postJson<{ worksheet: Worksheet; meta: GenMeta }>('/api/worksheets/generate', { request, plan, bypassCache });
+  const data = await postJson<{ worksheet: Worksheet; meta: GenMeta; usage?: UsageMeta }>(
+    '/api/worksheets/generate',
+    { request, bypassCache },
+    turnstileToken ? { 'cf-turnstile-response': turnstileToken } : {},
+  );
   if (data?.worksheet) {
-    return { worksheet: data.worksheet, meta: { ...data.meta, latencyMs: Date.now() - start } };
+    return {
+      worksheet: data.worksheet,
+      meta: { ...data.meta, latencyMs: Date.now() - start },
+      usage: data.usage,
+    };
   }
   // fallback: mock
+  // await обязателен: generateWorksheet из mock/generator асинхронный. Без него
+  // в поле `worksheet` уезжал Promise, и UI получал объект-обещание вместо листа.
+  // Ошибку не показывало — ровно потому, что src/lib/llm был исключён из tsc.
   return {
-    worksheet: mockWorksheet(request),
+    worksheet: await mockWorksheet(request),
     meta: {
       model: 'mock-fallback',
       provider: 'local',
@@ -147,9 +244,11 @@ export async function generateImage(args: GenerateImageArgs): Promise<GenerateIm
 }
 
 /** Q1-2027: генерирует план урока (ФГОС-конспект на 45 мин). fallback → mock. */
-export async function generateLessonPlan({ request, plan, bypassCache }: GenerateArtifactArgs): Promise<GenerateLessonPlanResult> {
+export async function generateLessonPlan({ request, bypassCache, turnstileToken }: GenerateArtifactArgs): Promise<GenerateLessonPlanResult> {
   const start = Date.now();
-  const data = await postJson<{ lessonPlan: LessonPlan; meta: GenMeta }>('/api/lesson-plans/generate', { request, plan, bypassCache });
+  const data = await postJson<{ lessonPlan: LessonPlan; meta: GenMeta }>('/api/lesson-plans/generate',
+    { request, bypassCache },
+    turnstileToken ? { 'cf-turnstile-response': turnstileToken } : {});
   if (data?.lessonPlan) {
     return { lessonPlan: data.lessonPlan, meta: { ...data.meta, latencyMs: Date.now() - start } };
   }
@@ -158,9 +257,11 @@ export async function generateLessonPlan({ request, plan, bypassCache }: Generat
 }
 
 /** Q1-2027: генерирует презентацию (PPTX, 5–20 слайдов). fallback → mock. */
-export async function generatePresentationArtifact({ request, plan, bypassCache }: GenerateArtifactArgs): Promise<GeneratePresentationResult> {
+export async function generatePresentationArtifact({ request, bypassCache, turnstileToken }: GenerateArtifactArgs): Promise<GeneratePresentationResult> {
   const start = Date.now();
-  const data = await postJson<{ presentation: Presentation; meta: GenMeta }>('/api/presentations/generate', { request, plan, bypassCache });
+  const data = await postJson<{ presentation: Presentation; meta: GenMeta }>('/api/presentations/generate',
+    { request, bypassCache },
+    turnstileToken ? { 'cf-turnstile-response': turnstileToken } : {});
   if (data?.presentation) {
     return { presentation: data.presentation, meta: { ...data.meta, latencyMs: Date.now() - start } };
   }
@@ -169,9 +270,11 @@ export async function generatePresentationArtifact({ request, plan, bypassCache 
 }
 
 /** Q1-2027: генерирует КТП (календарно-тематическое планирование на год). fallback → mock. */
-export async function generateKtpArtifact({ request, plan, bypassCache }: GenerateArtifactArgs): Promise<GenerateKtpResult> {
+export async function generateKtpArtifact({ request, bypassCache, turnstileToken }: GenerateArtifactArgs): Promise<GenerateKtpResult> {
   const start = Date.now();
-  const data = await postJson<{ ktp: Ktp; meta: GenMeta }>('/api/ktp/generate', { request, plan, bypassCache });
+  const data = await postJson<{ ktp: Ktp; meta: GenMeta }>('/api/ktp/generate',
+    { request, bypassCache },
+    turnstileToken ? { 'cf-turnstile-response': turnstileToken } : {});
   if (data?.ktp) {
     return { ktp: data.ktp, meta: { ...data.meta, latencyMs: Date.now() - start } };
   }

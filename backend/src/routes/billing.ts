@@ -26,7 +26,7 @@ import {
   getPaymentHistory,
   type YooKassaWebhookPayload,
 } from "../services/billing";
-import { getSession, getUserById } from "../db/queries";
+import { getSession, getUserById, getUserRole } from "../db/queries";
 import { BadRequestError, UnauthorizedError } from "../lib/errors";
 import type { AppEnv, CreatePaymentResponse } from "../types";
 
@@ -55,6 +55,7 @@ async function requireUser(c: Context<AppEnv>) {
     name: user.name,
     plan: user.plan,
     isAdmin: user.is_admin === 1,
+    role: await getUserRole(c.env.DB, user.id),
   });
   return user;
 }
