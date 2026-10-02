@@ -6,6 +6,7 @@ import { subjects } from "@/lib/content/subjects";
 import type { Subject as SubjectType, Grade as GradeType } from "@/lib/types";
 // GradeType retained for totalTopics aggregation
 import { useInView } from "@/hooks/useInView";
+import { plural } from "@/lib/utils/cn";
 import {
   MathIllustration,
   RussianIllustration,
@@ -107,7 +108,7 @@ export function Subjects() {
               Предметы
             </p>
             <h2 className="text-3xl sm:text-4xl font-display font-bold tracking-tight">
-              {totalCount}&nbsp;предметов · {totalTopics}+&nbsp;тем
+              {totalCount}&nbsp;{plural(totalCount, "предмет", "предмета", "предметов")} · {totalTopics}+&nbsp;{plural(totalTopics, "тема", "темы", "тем")}
             </h2>
             <p className="mt-3 text-warm-600 max-w-2xl">
               От&nbsp;окружающего мира в&nbsp;1&nbsp;классе до&nbsp;ЕГЭ по&nbsp;обществознанию. Таксономия по&nbsp;ФГОС, генерация под&nbsp;уровень ученика.
@@ -122,7 +123,13 @@ export function Subjects() {
           </Link>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 auto-rows-[180px]">
+        {/* auto-rows, а не фиксированная высота: строки Grid всегда одинаковые
+            внутри себя, поэтому карточки в ряду равны. Фиксированные 180px были
+            ниже контента карточки с описанием — overflow-hidden срезал текст
+            посреди предложения без многоточия. minmax(180px, auto) даёт строку
+            «не меньше 180px, но по контенту»: обрезки невозможны ни на одной
+            ширине, а пустая полоса не появляется. */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 auto-rows-[minmax(180px,auto)]">
           {bentoConfig.map((cfg, i) => {
             const subject = subjects.find((s) => s.slug === cfg.slug);
             if (!subject) return null;
@@ -171,14 +178,19 @@ function SubjectBentoCard({
   const totalTopics = subject.grades.reduce((sum: number, g: GradeType) => sum + g.topics.length, 0);
   const firstTopic = subject.grades[0]?.topics[0];
 
+  // md:min-h-[372px] больше не нужен: высоту ряда задаёт auto-rows, а фиксированный
+  // min-h только конфликтовал с ней (и был рассчитан на старые 180px).
   const sizeClasses = {
-    lg: "md:col-span-2 md:row-span-2 min-h-[180px] md:min-h-[372px]",
+    lg: "md:col-span-2 md:row-span-2 min-h-[180px]",
     md: "md:col-span-2",
     sm: "",
   }[size];
 
-  const iconSizes = {
-    lg: "w-24 h-24",
+  // Рамка иллюстрации. У крупной карточки (2×2) она не фиксированная, а
+  // квадрат по ширине контейнера (до 280px): свободную высоту карточки забирает
+  // сама иллюстрация, а не пустое место под ней. SVG с viewBox центрируется сам.
+  const iconBox = {
+    lg: "w-full max-w-[280px] aspect-square mx-auto",
     md: "w-16 h-16",
     sm: "w-12 h-12",
   }[size];
@@ -221,7 +233,11 @@ function SubjectBentoCard({
       )}
 
       <div className="relative p-4 sm:p-5 h-full flex flex-col">
-        <div className={`${iconSizes} mb-3 ring-1 ${ringColors[subject.color]} rounded-2xl bg-warm-50 grid place-items-center transition-transform duration-300 ease-out group-hover:scale-110 group-hover:rotate-12`}>
+        {/* Крупная карточка занимает 2×2, а контента в ней меньше — пустоту внизу
+            закрывает разросшаяся иллюстрация (см. iconBox выше). */}
+        <div
+          className={`${iconBox} mb-3 shrink-0 ring-1 ${ringColors[subject.color]} rounded-2xl bg-warm-50 grid place-items-center transition-transform duration-300 ease-out group-hover:scale-110 group-hover:rotate-12`}
+        >
           {Illustration ? <Illustration className="w-full h-full" /> : null}
         </div>
 
@@ -242,7 +258,7 @@ function SubjectBentoCard({
           </span>
           <span className="inline-flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-accent-500 motion-safe:group-hover:animate-pulse" />
-            {totalTopics} тем
+            {totalTopics} {plural(totalTopics, "тема", "темы", "тем")}
           </span>
         </div>
 

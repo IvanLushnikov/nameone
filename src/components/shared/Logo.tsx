@@ -45,8 +45,13 @@ export function Logo({
         <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-accent-500 border-2 border-white" />
       </div>
       {showText && (
-        <span className={cn("font-display font-bold tracking-tight text-warm-950", textClass)}>
-          РабочиеЛисты <span className="text-brand-500">AI</span>
+        // Неразрывный тонкий пробел (U+2009) между «РабочиеЛисты» и «AI»:
+        // обычный пробел + tracking-tight на жирном шрифте визуально склеивали
+        // слова, и бренд читался как «Рабочиелисты AI». tracking-tight снят —
+        // из-за него же пропадал интервал.
+        <span className={cn("font-display font-bold text-warm-950", textClass)}>
+          РабочиеЛисты{"\u2009"}
+          <span className="text-brand-500">AI</span>
         </span>
       )}
     </div>

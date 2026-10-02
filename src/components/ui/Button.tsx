@@ -27,7 +27,9 @@ const variantClasses: Record<ButtonVariant, string> = {
 const sizeClasses: Record<ButtonSize, string> = {
   sm: "h-9 px-3 text-sm rounded-lg gap-1.5",
   md: "h-11 px-5 text-sm rounded-xl gap-2",
-  lg: "h-13 px-6 text-base rounded-xl gap-2",
+  // h-12, а не h-13: шага 13 в шкале Tailwind не было, класс молча выбрасывался
+  // и кнопка теряла высоту. Лестница размеров: 36 / 44 / 48 / 64 (sm/md/lg/xl).
+  lg: "h-12 px-6 text-base rounded-xl gap-2",
   xl: "h-16 px-8 text-lg rounded-2xl gap-3",
 };
 

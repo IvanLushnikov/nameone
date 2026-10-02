@@ -6,7 +6,10 @@ export function CTA() {
     <section className="py-20 sm:py-28">
       <div className="container-tight">
         <div className="relative overflow-hidden rounded-3xl px-6 sm:px-12 py-14 sm:py-20 text-center text-white shadow-soft-lg">
-          {/* Animated gradient bg */}
+          {/* Анимированный градиент. Компонент остаётся серверным: хук
+           * useReducedMotion здесь не нужен, а CSS-правило
+           * `[style*="shimmer"] { animation: none !important }` внутри
+           * @media (prefers-reduced-motion: reduce) гасит анимацию и без JS. */}
           <div
             className="absolute inset-0 bg-gradient-to-br from-brand-400 via-brand-600 to-accent-500"
             style={{ backgroundSize: "200% 200%", animation: "shimmer 8s linear infinite" }}
@@ -14,21 +17,6 @@ export function CTA() {
           <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-white/10 blur-3xl animate-bounce-subtle" />
           <div className="absolute -bottom-20 -left-20 w-72 h-72 rounded-full bg-accent-400/30 blur-3xl animate-bounce-subtle" style={{ animationDelay: "1s" }} />
           <div className="absolute inset-0 bg-noise opacity-30" />
-
-          {/* Floating elements */}
-          <div className="absolute top-8 left-8 hidden md:block animate-bounce-subtle" style={{ animationDelay: "0.3s" }}>
-            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/20">
-              <div className="text-xs font-bold">5 класс</div>
-            </div>
-          </div>
-          <div className="absolute top-12 right-12 hidden md:block animate-bounce-subtle" style={{ animationDelay: "1s" }}>
-            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/20 flex items-center gap-2">
-              <div className="w-6 h-6 rounded-full bg-white grid place-items-center text-brand-600">
-                <Sparkles className="w-3.5 h-3.5" />
-              </div>
-              <div className="text-xs font-bold">8 сек</div>
-            </div>
-          </div>
 
           <div className="relative">
             <Sparkles className="w-12 h-12 mx-auto mb-5 text-accent-100" />

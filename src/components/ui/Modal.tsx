@@ -32,8 +32,14 @@ export function Modal({
   size = "md",
   className,
 }: ModalProps) {
+  // Элемент, который открыл модалку: фокус возвращаем на него при закрытии,
+  // иначе после Esc/клика по фону фокус падает в body и клавиатура «теряется».
+  const triggerRef = React.useRef<HTMLElement | null>(null);
+
   React.useEffect(() => {
     if (!open) return;
+    triggerRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
@@ -42,6 +48,9 @@ export function Modal({
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
+      // isConnected — модалка могла закрыться вместе с размонтированием
+      // родителя; тогда фокус возвращать уже некуда.
+      if (triggerRef.current?.isConnected) triggerRef.current.focus();
     };
   }, [open, onClose]);
 
@@ -67,7 +76,8 @@ export function Modal({
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-3 right-3 z-10 w-9 h-9 inline-flex items-center justify-center rounded-full text-warm-500 hover:bg-warm-100 hover:text-warm-700 transition-colors"
+          // 40px на мобиле и 44px на десктопе — минимум для пальца (было 36px).
+          className="absolute top-3 right-3 z-10 w-10 h-10 sm:w-11 sm:h-11 inline-flex items-center justify-center rounded-full text-warm-500 hover:bg-warm-100 hover:text-warm-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-brand-500"
           aria-label="Закрыть"
         >
           <X className="w-4 h-4" />

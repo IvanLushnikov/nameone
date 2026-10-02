@@ -51,7 +51,7 @@ const tones: Record<ToastTone, { icon: React.ReactNode; bar: string; iconColor: 
   },
 };
 
-export function Toaster() {
+export function Toaster({ children }: { children?: React.ReactNode }) {
   const [items, setItems] = React.useState<Toast[]>([]);
 
   const toast = React.useCallback((t: Omit<Toast, "id">) => {
@@ -66,6 +66,12 @@ export function Toaster() {
 
   return (
     <ToastContext.Provider value={{ toast }}>
+      {/* `children` обязателен: Provider живёт здесь, поэтому всё, что
+          вызывает `useToast()`, должно быть ВНУТРИ Toaster. Раньше Toaster
+          стоял соседом с <main>, и ни одна страница не попадала в контекст —
+          `useToast()` всегда уходил в console.warn, то есть тосты не
+          показывались вообще. */}
+      {children}
       <div className="fixed bottom-4 right-4 left-4 sm:left-auto sm:max-w-sm z-[60] flex flex-col gap-2 pointer-events-none">
         {items.map((t) => {
           const tone = tones[t.tone];
