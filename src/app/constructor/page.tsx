@@ -352,6 +352,11 @@ function ConstructorPage() {
 
   const [generating, setGenerating] = React.useState(false);
   const [worksheet, setWorksheet] = React.useState<Worksheet | null>(null);
+  /** TZ-12: название выбранного шаблонного пресета — для подписи в ConfigureStep. */
+  const selectedPresetTitle = React.useMemo(
+    () => (selectedPresetId ? PRESETS.find((p) => p.id === selectedPresetId)?.title ?? null : null),
+    [selectedPresetId],
+  );
   /** Q1-2027: state для новых типов артефактов. */
   const [lessonPlan, setLessonPlan] = React.useState<LessonPlan | null>(null);
   const [presentation, setPresentation] = React.useState<Presentation | null>(null);
@@ -1500,6 +1505,8 @@ function ConstructorPage() {
                 }}
                 onGenerate={generate}
                 onReset={reset}
+                selectedPresetId={selectedPresetId}
+                selectedPresetTitle={selectedPresetTitle}
               />
             )}
           </div>
@@ -2310,6 +2317,9 @@ function ConfigureStep({
    * типа скрывается (показывается chip «задано шаблоном» + «Изменить»). */
   presetLocked,
   onClearPresetLock,
+  /** Название выбранного пресета — для подписи в ConfigureStep. */
+  selectedPresetId,
+  selectedPresetTitle,
 }: {
   type: TaskType;
   /** TZ-4: колбэк, который одновременно меняет тип И сбрасывает закэшированные артефакты. */
@@ -2338,6 +2348,14 @@ function ConfigureStep({
   /** TZ-12: «Изменить» в chip-блоке presetLocked — сбрасывает preset-блокировку,
    * юзер возвращается к свободному выбору типа. */
   onClearPresetLock: () => void;
+  /**
+   * TZ-12: id выбранного шаблонного пресета (Шаг 1 «Сценарий»).
+   * Если пресет выбран — тип артефакта уже задан им, и повторно спрашивать
+   * «Лист / Тест / Карточки» на Шаге 3 не нужно (юзер: «вроде же ранее выбирали?»).
+   */
+  selectedPresetId: string | null;
+  /** Название выбранного пресета — для подписи «Тип выбран шаблоном: …». */
+  selectedPresetTitle: string | null;
 }) {
   // TZ-12: блокировка активна, когда preset выбран И его тип совпадает с current.
   const isPresetLocked = presetLocked !== null && presetLocked.type === type;
@@ -2363,6 +2381,8 @@ function ConfigureStep({
       case "image": return "Картинка";
     }
   })();
+
+  const typeFixedByPreset = Boolean(selectedPresetId);
 
   return (
     <Card>
@@ -2666,7 +2686,9 @@ function EmptyPreview({
       </div>
 
       {/* F-09: превью выбранного типа — образец результата.
-       * TZ-12: sample заменён на мини-SVG в <ArtifactTypePreview/>. */}
+         * TZ-12: вместо строки текста — визуальная миниатюра формата (квадратики,
+         * радио-кружки, сетка слайдов и т.п.), чтобы юзер сразу видел результат.
+         * Компонент покрыт tests/regression/artifact-type-preview.test.tsx. */}
       <div className="px-4 sm:px-6 pb-4">
         <div className="text-[10px] uppercase tracking-wider text-warm-500 font-semibold mb-2">
           Как будет выглядеть результат
