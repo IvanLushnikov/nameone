@@ -142,7 +142,7 @@ export function ArtifactTypePicker({ value, onChange, hasPlus }: ArtifactTypePic
                 selected
                   ? "bg-white text-warm-950 shadow-soft"
                   : disabled
-                    ? "text-warm-400 opacity-60 cursor-not-allowed hover:bg-warm-50"
+                    ? "text-[color:var(--text-muted)] opacity-60 cursor-not-allowed hover:bg-warm-50"
                     : "text-warm-600 hover:text-warm-900"
               }`}
             >
@@ -185,7 +185,7 @@ export function ArtifactTypePicker({ value, onChange, hasPlus }: ArtifactTypePic
                   />
                 </button>
               ) : (
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-warm-400">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[color:var(--text-muted)]">
                   {group.label}
                 </span>
               )}

@@ -1,5 +1,6 @@
 import type { Worksheet, WorksheetTask, TaskType } from "@/lib/types";
 import { formatDate } from "@/lib/utils/cn";
+import { SITE_HOST } from "@/lib/site";
 import { SvgChart } from "./SvgChart";
 import { VerifiedBadge } from "./VerifiedBadge";
 import { WorksheetScale } from "./WorksheetScale";
@@ -182,7 +183,7 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
                         <div className="mt-3 border-b border-dashed border-warm-300 h-7" />
                       )}
                     </div>
-                    <div className="text-[10px] text-warm-400 mt-1 shrink-0">
+                    <div className="text-[10px] text-[color:var(--text-muted)] mt-1 shrink-0">
                       {task.points} б.
                     </div>
                   </li>
@@ -191,8 +192,8 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
             )}
 
             {/* Подвал */}
-            <footer className="mt-10 pt-4 border-t border-warm-200 flex items-center justify-between text-[10px] text-warm-400">
-              <span>РабочиеЛисты AI · rabochielisty.ru</span>
+            <footer className="mt-10 pt-4 border-t border-warm-200 flex items-center justify-between text-[10px] text-[color:var(--text-muted)]">
+              <span>РабочиеЛисты AI · {SITE_HOST}</span>
               <span>Стр. 1 из {withAnswers ? 2 : 1}</span>
             </footer>
           </article>
@@ -237,15 +238,15 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
                           </div>
                         )}
                       </div>
-                      <div className="text-[10px] text-warm-400 mt-1 shrink-0">
+                      <div className="text-[10px] text-[color:var(--text-muted)] mt-1 shrink-0">
                         {task.points} б.
                       </div>
                     </li>
                   ))}
                 </ol>
 
-                <footer className="mt-10 pt-4 border-t border-warm-200 flex items-center justify-between text-[10px] text-warm-400">
-                  <span>РабочиеЛисты AI · rabochielisty.ru</span>
+                <footer className="mt-10 pt-4 border-t border-warm-200 flex items-center justify-between text-[10px] text-[color:var(--text-muted)]">
+                  <span>РабочиеЛисты AI · {SITE_HOST}</span>
                   <span>Стр. 2 из 2 · только для учителя</span>
                 </footer>
               </article>

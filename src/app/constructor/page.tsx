@@ -12,6 +12,9 @@ import { WorksheetPreview } from "@/components/constructor/WorksheetPreview";
 import { LessonPlanPreview } from "@/components/constructor/LessonPlanPreview";
 import { PresentationPreview } from "@/components/constructor/PresentationPreview";
 import { KtpPreview } from "@/components/constructor/KtpPreview";
+import { InteractiveCreatePanel } from "@/components/interactives/InteractiveCreatePanel";
+import { isInteractiveFormat } from "@/lib/interactives/formats";
+import type { InteractiveFormat } from "@/lib/interactives/types";
 import { CardsPreview } from "@/components/constructor/CardsPreview";
 import { MaterialsPreview } from "@/components/constructor/MaterialsPreview";
 import { LessonBundlePreview } from "@/components/constructor/LessonBundlePreview";
@@ -383,6 +386,9 @@ function ConstructorPage() {
    * `tasks[]` напрямую (этот же путь работает для листов до логина).
    */
   const [savedWorksheetId, setSavedWorksheetId] = React.useState<string | null>(null);
+  // TZ-13: формат игры, выбранный в блоке «Оживить урок» (?interactiveFormat=).
+  // null = учитель в конструкторе не про интерактив, обычный флоу листа.
+  const [interactiveFormat, setInteractiveFormat] = React.useState<InteractiveFormat | null>(null);
   /**
    * TZ-12: залогинен ли учитель — для кнопки «Выдать классу».
    * Сначала `false`, потом синхронизируем в effect: `getProfile()` читает
@@ -525,6 +531,18 @@ function ConstructorPage() {
     // рендерится только для `kind === "worksheet"`, поэтому флаг безопасен и
     // до генерации: лишнего ничего не будет на экране.
     if (searchParams.get("photo") === "1") setPhotoCheckOpen(true);
+
+    // TZ-13 §4.9: приход из блока «Оживить урок» на экране листа.
+    // Раньше параметр отправлялся, но здесь не читался — учитель выбирал
+    // формат и попадал в обычную форму листа, то есть выбор молча терялся.
+    // Панель создания игры рендерится в блоке ниже и использует серверный
+    // `savedWorksheetId`: ранклеру нужен id листа В БАЗЕ, а не клиентский.
+    const formatParam = searchParams.get("interactiveFormat");
+    if (formatParam && isInteractiveFormat(formatParam)) {
+      setInteractiveFormat(formatParam);
+      setType("interactive");
+      setStep("configure");
+    }
 
     // F-04-C: deep-link для режима «По номеру ОГЭ/ЕГЭ».
     // Имеет приоритет над topic-флоу, т.к. `?exam=` — это маркер экзамен-режима.
@@ -1819,6 +1837,26 @@ function ConstructorPage() {
       </div>
 
       <PaywallModal open={showPaywall} onClose={() => setShowPaywall(false)} remaining={remaining} />
+
+      {/* TZ-13 §4.9, шаги 3–8: панель создания игры. Показываем только когда
+          учитель пришёл именно за интерактивом (блок «Оживить урок» на листе
+          или `?interactiveFormat=` в URL) — в обычном флоу листа её быть не
+          должно, это лишний блок перед teacher-only зоной.
+
+          `worksheetId` — серверный id листа: ранклер берёт задания из
+          `payload_json`, а клиентский id из localStorage бэку неизвестен. */}
+      {interactiveFormat && mode === "topic" && (
+        <div className="container-tight pb-8 no-print">
+          <InteractiveCreatePanel
+            worksheetId={savedWorksheetId}
+            format={interactiveFormat}
+            title={worksheet?.title ?? "Лист"}
+            subject={subject ?? (worksheet ? String(worksheet.subject) : "")}
+            grade={worksheet?.grade ?? grade ?? 0}
+            itemCount={count}
+          />
+        </div>
+      )}
 
       {/* TZ-12: «Выдать классу» доступна только для рабочего листа — у плана
           урока, презентации и КТП нет заданий, которые ученик решал бы в браузере.

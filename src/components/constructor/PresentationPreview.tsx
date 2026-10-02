@@ -110,7 +110,7 @@ function SlideThumbnail({ slide, index, total }: ThumbProps) {
       )}
 
       {/* Номер слайда */}
-      <span className="absolute top-2 right-2 text-[10px] text-warm-400 font-mono">
+      <span className="absolute top-2 right-2 text-[10px] text-[color:var(--text-muted)] font-mono">
         {index + 1} / {total}
       </span>
 
@@ -126,7 +126,7 @@ function SlideThumbnail({ slide, index, total }: ThumbProps) {
 
         {/* Тип-kind ниже заголовка (мелко) */}
         {!isTitle && (
-          <div className="mt-0.5 text-[10px] uppercase tracking-wider text-warm-400 font-semibold">
+          <div className="mt-0.5 text-[10px] uppercase tracking-wider text-[color:var(--text-muted)] font-semibold">
             {kindLabel(slide.kind)}
           </div>
         )}
@@ -150,7 +150,7 @@ function SlideThumbnail({ slide, index, total }: ThumbProps) {
             </li>
           ))}
           {(slide.bullets?.length ?? 0) > (isTitle ? 2 : 4) && (
-            <li className="text-[10px] text-warm-400 italic">…ещё {slide.bullets!.length - (isTitle ? 2 : 4)} пункт(а)</li>
+            <li className="text-[10px] text-[color:var(--text-muted)] italic">…ещё {slide.bullets!.length - (isTitle ? 2 : 4)} пункт(а)</li>
           )}
         </ul>
       </div>
