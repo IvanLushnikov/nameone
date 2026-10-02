@@ -185,6 +185,18 @@ const DEEP_LINK_TYPES = [
  * со своими превью. Типы из Этапов 4–7 отдают `null`: артефакта для них
  * пока нет, и UI показывает placeholder, а не чужой результат.
  */
+/**
+ * Типы без генератора (TZ-16 Этапы 4–7). Попасть в них можно только по
+ * deep-link вида `?type=lesson-bundle`: в пикере их пока нет.
+ * Нужен, чтобы `generate()` отвечал честным «скоро будет», а не сообщением
+ * «не получилось, попробуйте ещё раз», в котором повтор бессмысленен.
+ */
+const NOT_YET_IMPLEMENTED_TYPES: ReadonlySet<TaskType> = new Set<TaskType>([
+  "lesson-bundle",
+  "interactive",
+  "image",
+]);
+
 function resultKindForType(type: TaskType): ResultKind | null {
   switch (type) {
     case "cards":
@@ -227,6 +239,11 @@ type ResultKind =
  */
 async function fireConfetti() {
   if (typeof window === "undefined") return;
+  // Конфетти — это сильное движение, причём ровно в момент первого
+  // результата, поэтому ради него «меньше движения» и не выключают.
+  // Проверка здесь единственная: других мест вызова нет, все проходят
+  // через эту функцию. Проверяем до импорта, чтобы не грузить модуль.
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   try {
     const mod = await import("canvas-confetti");
     const confetti = mod.default;
@@ -696,6 +713,20 @@ function ConstructorPage() {
   }, [step, mode]);
 
   const generate = async () => {
+    // TZ-16 Этапы 4–7: типы объявлены в TaskType и входят в DEEP_LINK_TYPES,
+    // но генераторов для них ещё нет. Без этой проверки учитель, пришедший по
+    // ссылке `?type=lesson-bundle`, доходил до кнопки «Создать» и получал
+    // «Не получилось, попробуйте ещё раз» — а повтор не помог бы никогда.
+    // Показываем честное «скоро», ничего не списав с квоты.
+    if (NOT_YET_IMPLEMENTED_TYPES.has(type)) {
+      toast({
+        tone: "info",
+        title: "Этот формат ещё в работе",
+        description: "Пока доступны рабочий лист, план урока, презентация, КТП, карточки и комплект материалов",
+      });
+      return;
+    }
+
     trackEvent("constructor_generate_click", {
       mode,
       subject,
@@ -1779,7 +1810,7 @@ function StepHeader({
             />
             <span
               className={`text-[10px] uppercase tracking-wider font-semibold transition-colors ${
-                i <= currentIdx ? "text-warm-700" : "text-warm-400"
+                i <= currentIdx ? "text-warm-700" : "text-[color:var(--text-muted)]"
               }`}
             >
               {it.label}
@@ -1897,7 +1928,7 @@ function SelectStep({
       <div className="space-y-1">
         {SUBJECT_CATEGORIES.map((cat) => (
           <section key={cat.title}>
-            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-warm-400 mb-0.5">
+            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-[color:var(--text-muted)] mb-0.5">
               {cat.title}
             </h3>
             <div className="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-7 gap-1">
@@ -2305,7 +2336,7 @@ function ConfigureStep({
             className="w-full accent-brand-500"
             aria-label="Количество заданий"
           />
-          <div className="flex justify-between text-[10px] text-warm-400 mt-0.5">
+          <div className="flex justify-between text-[10px] text-[color:var(--text-muted)] mt-0.5">
             <span>5</span>
             <span>15</span>
             <span>30</span>
@@ -2607,7 +2638,7 @@ function GeneratingState({
                   ? "text-warm-950 font-medium"
                   : isPast
                     ? "text-warm-500 line-through"
-                    : "text-warm-400"
+                    : "text-[color:var(--text-muted)]"
               }`}
             >
               <span
