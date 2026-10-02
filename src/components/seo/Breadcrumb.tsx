@@ -17,6 +17,7 @@
  */
 
 import Link from "next/link";
+import { SITE_URL } from "@/lib/site";
 import { JsonLd } from "./JsonLd";
 import type { JsonLdData } from "./JsonLd";
 
@@ -29,13 +30,11 @@ export interface BreadcrumbItem {
 
 export interface BreadcrumbProps {
   items: BreadcrumbItem[];
-  /** Базовый URL для абсолютных ссылок в JSON-LD (по умолчанию прод-домен). */
+  /** Базовый URL для абсолютных ссылок в JSON-LD (по умолчанию — SITE_URL). */
   baseUrl?: string;
   /** Класс контейнера — кастомизация отступов. */
   className?: string;
 }
-
-const DEFAULT_BASE = "https://rabochielisty.ru";
 
 function toAbsolute(url: string, baseUrl: string): string {
   if (!url) return baseUrl;
@@ -45,7 +44,7 @@ function toAbsolute(url: string, baseUrl: string): string {
 
 export function Breadcrumb({
   items,
-  baseUrl = DEFAULT_BASE,
+  baseUrl = SITE_URL,
   className,
 }: BreadcrumbProps) {
   // JSON-LD: каждый item получает position + name; абсолютный url — только если он задан.

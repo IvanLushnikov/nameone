@@ -16,6 +16,7 @@ import { InternalError } from "../../lib/errors";
 import { logLlmEvent } from "../log";
 import type { Env } from "../../env";
 import type { LLMResponse, Provider } from "../types";
+import { contentToText } from "../types";
 
 let cachedClient: Anthropic | null = null;
 
@@ -52,15 +53,15 @@ export function getAnthropicProvider(env: Env): Provider {
 
       const first = req.messages[0];
       if (first && first.role === "system") {
-        systemText = first.content;
+        systemText = contentToText(first.content);
         chatMessages = req.messages.slice(1).map((m) => ({
           role: m.role === "system" ? "user" : m.role, // safety: остальные system не должны попасть
-          content: m.content,
+          content: contentToText(m.content),
         }));
       } else {
         chatMessages = req.messages
           .filter((m) => m.role !== "system")
-          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+          .map((m) => ({ role: m.role as "user" | "assistant", content: contentToText(m.content) }));
       }
 
       // Система с prompt cache (только если cacheSystemPrompt === true).

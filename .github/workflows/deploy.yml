@@ -14,6 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    # Least privilege. Без этого блока GITHUB_TOKEN получает права по
+    # умолчанию (write на содержимое репозитория) на весь job, который
+    # трогает прод. Здесь job только читает код и умеет задеплоить —
+    # больше ему ничего не нужно.
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,7 +32,31 @@ jobs:
           cache: npm
 
       - name: Install
-        run: npm ci --no-audit --no-fund
+        run: npm ci --no-fund
+
+      # Проверки блокирующие. Раньше их не было вовсе, и в прод уезжал код,
+      # который мог не проходить даже typecheck.
+      #
+      # Первое время они были предупреждениями: дерево содержало незавершённую
+      # работу, и блокировка останавливала бы выкатку целиком. С 2 октября 2026
+      # дерево зелёное (tsc — 0 ошибок, 338/338 тестов), и предупреждения
+      # больше не нужны: неисправный код в прод не должен попадать молча.
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Без `--environment node`: фронт по умолчанию работает в jsdom, и
+      # подмена окружения роняет все React-тесты (168 вместо 17 падений).
+      - name: Test
+        run: npx vitest run
+
+      # Явная проверка зависимостей. Флаг --no-audit в `npm ci` убран:
+      # аудит должен быть видимым шагом, а не молчаливым пропуском.
+      # Остаётся предупреждением: на next 14.2.35 висит 1 critical + 5 high,
+      # и блокировка остановила бы релиз до апгрейда. Применимость advisory
+      # разобрана — статическому экспорту они неприменимы
+      # (docs/SECURITY-REVIEW-2026-10-02.md, С-4). Апгрейд next отклонил владелец.
+      - name: Audit dependencies (warning only)
+        run: npm audit --audit-level=high || echo "::warning::npm audit нашёл уязвимости — см. лог"
 
       - name: Build
         env:
@@ -43,13 +74,29 @@ jobs:
         # domain не активируется). Без --branch → preview. С --branch=main + production_branch=main → production.
         run: npx --yes wrangler pages deploy out --project-name=listai-prototype --commit-dirty=true --branch=main
 
-  # 2026-09-30: бэкенд (Cloudflare Worker rabochielisty-api) жил отдельно от Pages
-  # и не деплоился из CI — правки в backend/ попадали на прод только вручную
-  # (TZ-13: language-guard не доехал до API). Теперь бэкенд деплоится тут же.
+  # Бэкенд (Cloudflare Worker rabochielisty-api) жил отдельно от Pages и
+  # не деплоился из CI — правки в backend/ попадали на прод только вручную.
+  # Теперь бэкенд деплоится тут же, после успешной сборки фронта.
+  #
+  # ВРЕМЕННО ТОЛЬКО ВРУЧНУЮ (workflow_dispatch), не на каждый push.
+  # Причина: у воркера не заданы RESEND_API_KEY и ключи ЮKassa, поэтому
+  # при переходе на [env.production.vars] вход и оплата начнут отдавать отказ
+  # — ALLOW_DEV_MAGIC_URL и ALLOW_DEMO_PAYMENTS там выключены осознанно.
+  # Заливать боевой бэк, пока секретов нет, нельзя: это хуже нынешнего
+  # состояния (сейчас вход работает через dev-режим, пусть и с дырой).
+  #
+  # Как включить автодеплой обратно: после того как
+  #   npx wrangler secret put RESEND_API_KEY   --env production
+  #   npx wrangler secret put YOOKASSA_SHOP_ID --env production
+  #   npx wrangler secret put YOOKASSA_SECRET_KEY --env production
+  # удалить условие `if:` ниже. Джобы проверок при этом продолжат работать.
   deploy-backend:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: build-and-deploy
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
@@ -64,11 +111,27 @@ jobs:
 
       - name: Install backend deps
         working-directory: backend
-        run: npm ci --no-audit --no-fund
+        run: npm ci --no-fund
+
+      # Проверки бэкенда до выкатки. Раньше бэк уезжал на прод без них.
+      - name: Typecheck
+        working-directory: backend
+        run: npm run typecheck
+
+      - name: Test
+        working-directory: backend
+        run: npx vitest run
 
       - name: Deploy API Worker
         working-directory: backend
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 9fe2955fcf08aecf91754823a7aae0aa
-        run: npx --yes wrangler deploy
+        # --env production ОБЯЗАТЕЛ. Без него wrangler публикует верхнюю
+        # секцию [vars] — это конфигурация РАЗРАБОТКИ: APP_ENV=development,
+        # FRONTEND_URL=http://localhost:3000, ALLOW_DEV_MAGIC_URL=true,
+        # ALLOW_DEMO_PAYMENTS=true. Именно так 2 октября 2026 на прод уехал
+        # воркер, который отдавал ссылку для входа в ответе и принимал оплату
+        # без сверки с ЮKassa. Прод-конфигурация живёт в [env.production.vars]
+        # и при деплое без --env в неё НЕ попадает.
+        run: npx --yes wrangler deploy --env production

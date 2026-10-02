@@ -14,6 +14,7 @@ import type { Env } from "../env";
 import { availableModels } from "../llm/config";
 import { embed } from "../llm";
 import { BadRequestError } from "../lib/errors";
+import { rateLimitMiddleware } from "../middleware/ratelimit";
 
 const llmRouter = new Hono<{ Bindings: Env }>();
 
@@ -26,20 +27,37 @@ const embedSchema = z.object({
   texts: z.array(z.string().min(1).max(8000)).min(1).max(100),
 });
 
-llmRouter.post("/embeddings", async (c) => {
-  let body: unknown;
+/**
+ * Лимит на эмбеддинги.
+ *
+ * Ручка анонимная — иначе фронт не сможет считать похожесть до входа в ЛК.
+ * Но без лимита это готовая точка расхода: любой может дёргать платный
+ * эмбеддинг-эндпоинт нашего провайдера сколько угодно раз.
+ * 60 запросов в час на IP с запасом перекрывает нормальное использование
+ * (кегль в UI) и не даёт опустошить счёт.
+ */
+const embedLimit = rateLimitMiddleware({
+  limit: 60,
+  windowSec: 3600,
+  bucket: "embeddings",
+});
+
+llmRouter.post("/embeddings", embedLimit, async (c) => {
+  let textsBody: unknown;
   try {
-    body = await c.req.json();
+    textsBody = await c.req.json();
   } catch {
     throw new BadRequestError("Invalid JSON body");
   }
-  const { texts } = embedSchema.parse(body);
+  const { texts } = embedSchema.parse(textsBody);
   const result = await embed({ texts }, c.env);
   return c.json({
     ok: true,
     vectors: result.vectors,
     model: result.model,
-    costUsd: result.costUsd,
+    // costUsd наружу не отдаём: это внутренняя метрика расхода на провайдера,
+    // наружу она ничего полезного не даёт, но показывает постороннему, сколько
+    // мы тратим и сколько он «накрутил».
   });
 });
 

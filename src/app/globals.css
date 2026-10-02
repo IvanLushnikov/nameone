@@ -1,3 +1,10 @@
+/* KaTeX подключается ГЛОБАЛЬНО, а не в компоненте MathText: формулы должны
+   выглядеть правильно и при window.print(), где JS-импорт не сработает.
+   Путь проверен по node_modules/katex/package.json → exports["."].import.default
+   = ./dist/katex.mjs, стиль рядом — dist/katex.min.css.
+   Сам JS-рендерер ленивый (import("katex") в MathText), этот CSS весит мало. */
+@import "katex/dist/katex.min.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -7,6 +14,11 @@
   --foreground: #1F2937;
   --brand-gradient: linear-gradient(135deg, #22B37C 0%, #46CB97 50%, #82E0BB 100%);
   --accent-gradient: linear-gradient(135deg, #FF7E55 0%, #FFA688 100%);
+  /* Приглушённый текст: плейсхолдеры, подписи, метки.
+     warm-400 (#CBA772) даёт на белом ~2:1 — как цвет линий и иконок он годится,
+     но как цвет ТЕКСТА не проходит WCAG AA (4.5:1). Здесь warm-600 (~4.6:1).
+     Применять как text-[color:var(--text-muted)]. */
+  --text-muted: #A5783F;
 }
 
 @layer base {
@@ -40,8 +52,38 @@
     width: 210mm;
     min-height: 297mm;
     padding: 18mm 16mm;
-    /* переходная вёрстка: на мобилке масштабируется */
+    /* масштаб ставит .worksheet-scale (см. WorksheetScale.tsx):
+       коэффициент приходит в --ws-scale, трансформация — здесь. */
     transform-origin: top left;
+  }
+
+  /* Масштабирование листа A4 под ширину контейнера (планшет, мобилка).
+     Клиентский компонент WorksheetScale измеряет свою ширину через
+     ResizeObserver и пишет коэффициент в --ws-scale (inline-стиль).
+     Без этого 210mm ≈ 794px не влезает в iPad портрет (~720px полезной ширины). */
+  .worksheet-scale {
+    --ws-scale: 1;
+    width: 100%;
+  }
+
+  /* Компенсирующая обёртка: размеры = масштабированный лист, иначе под листом
+     остаётся пустое место высотой неотмасштабированного A4.
+     Высота приходит из JS (замер offsetHeight), до замера — auto.
+     padding-block — чтобы overflow не срезал тень листа; на ширину не влияет. */
+  .worksheet-scale__box {
+    width: calc(210mm * var(--ws-scale));
+    padding-block: 12px;
+    margin-inline: auto;
+    overflow: hidden;
+  }
+
+  /* Лист внутри обёртки живёт в натуральную ширину A4 — transform на потомке. */
+  .worksheet-scale__sheet {
+    width: 210mm;
+  }
+
+  .worksheet-scale .worksheet-page {
+    transform: scale(var(--ws-scale));
   }
 
   .worksheet-task {
@@ -50,6 +92,18 @@
 
   .worksheet-task-num {
     @apply inline-flex items-center justify-center w-7 h-7 rounded-full bg-brand-100 text-brand-800 font-semibold text-sm mr-2 shrink-0;
+  }
+
+  /* Формулы внутри текста задания (MathText → KaTeX). Правил намеренно минимум:
+     базовую линию и кегль KaTeX считает сам, размер шрифта тоже не трогаем
+     (его 1.21em — это калибровка под кегль обычного текста, сбивать нельзя).
+     Своё делаем только два: формула не рвётся переносом строки и наследует
+     цвет текста — иначе на печати служебные символы KaTeX уедут в свой цвет. */
+  .math-inline {
+    white-space: nowrap;
+  }
+  .math-inline .katex {
+    color: inherit;
   }
 
   /* Декоративные "волны" для hero */
@@ -87,6 +141,33 @@
   }
 }
 
+/* Уважаем системную настройку «меньше движения». Без этого блока прыгающие
+   точки, пульс до 30 секунд во время генерации и появление карточек
+   анимируются даже у тех, кому это противно.
+   Имена классов — ровно те, что объявлены как animation в tailwind.config.ts:
+   fade-in, scale-in, bounce-subtle. animate-pulse — штатная утилита Tailwind.
+   shimmer навешен инлайном через style (CTA/Hero/Comparison/PricingTeaser),
+   класса-обёртки нет — цепляемся по самому атрибуту. Это страховка к
+   проверке в самих компонентах через useReducedMotion. Конфетти — JS,
+   их гасит не CSS: в app/constructor/page.tsx вызов идёт через fireConfetti,
+   который сам уважает prefers-reduced-motion. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-bounce-subtle,
+  .animate-pulse,
+  .animate-fade-in,
+  .animate-scale-in {
+    animation: none !important;
+  }
+  /* shimmer приходит инлайном в style="animation: shimmer ...". */
+  [style*="shimmer"] {
+    animation: none !important;
+  }
+  /* Плавный скролл тоже выключаем — он сам по себе анимация. */
+  html {
+    scroll-behavior: auto;
+  }
+}
+
 /* Печатные стили: для будущей фичи "Скачать PDF" через window.print */
 @media print {
   @page {
@@ -104,5 +185,18 @@
     margin: 0 !important;
     width: 100% !important;
     padding: 0 !important;
+  }
+  /* На печати масштаб всегда 1: печатаем в натуральную величину A4.
+     Иначе отмасштабированный лист уехал бы за поля и поехала разбивка страниц. */
+  .worksheet-scale,
+  .worksheet-scale__box,
+  .worksheet-scale__sheet {
+    width: 100% !important;
+    height: auto !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+  .worksheet-scale .worksheet-page {
+    transform: none !important;
   }
 }

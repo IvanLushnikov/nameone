@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/shared/Logo";
 import { Button } from "@/components/ui/Button";
-import { Menu, X, Sparkles, GraduationCap, LayoutDashboard } from "lucide-react";
+import { Menu, X, Sparkles, GraduationCap, LayoutDashboard, Library } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { getProfile } from "@/lib/utils/storage";
 import type { UserProfile } from "@/lib/types";
@@ -13,6 +13,7 @@ import { PROFILE_CHANGED_EVENT } from "@/lib/events";
 
 const nav = [
   { href: "/constructor", label: "Генератор", icon: Sparkles },
+  { href: "/materials", label: "Банк материалов", icon: Library },
   { href: "/oge", label: "ОГЭ / ЕГЭ", icon: GraduationCap },
   { href: "/pricing", label: "Тарифы", icon: null },
   { href: "/dashboard", label: "Кабинет", icon: LayoutDashboard },

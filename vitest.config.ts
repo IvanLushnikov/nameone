@@ -1,9 +1,12 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
 
-// F-06 fix (27.09.2026): tests/integration/photo-check.test.ts поднимает
-// Hono-app для behavior-тестов. Hono живёт только в backend/node_modules —
-// резолвим через alias, чтобы vitest не падал на "Cannot find package 'hono'".
+// Алиас hono нужен интеграционным тестам корня: они поднимают Hono-приложение
+// бэкенда, а hono лежит только в backend/node_modules и из root не резолвится
+// ("Cannot find package 'hono'"). Реально этим пользуется
+// tests/integration/polza-cost-regression.test.ts и его соседи.
+// Комментарии 27.09.2026 ссылались на tests/integration/photo-check.test.ts —
+// такого файла нет; настройки остались, имена приведены в соответствие (02.10).
 const HONO_FROM_BACKEND = path.resolve(__dirname, './backend/node_modules/hono');
 const BACKEND_DIR = path.resolve(__dirname, './backend');
 
@@ -24,15 +27,14 @@ export default defineConfig({
       'src/**/*.test.{ts,tsx}',
       'tests/**/*.test.{ts,tsx}',
     ],
-    // F-test: tests/integration/polza-provider.test.ts мокает node-fetch.
     // По умолчанию vitest НЕ inline'ит CJS-зависимости нод-модулей (идёт через
     // delegate). Без `inline` `vi.mock('node-fetch')` не перехватывает вызовы
-    // OpenAI SDK и реальные запросы идут на polza.ai.
-    // inline node-fetch + openai, чтобы vi.mock работал на production-код.
+    // OpenAI SDK и реальные запросы идут на polza.ai — то есть тест стучится
+    // в платный API вместо проверки расчёта цены.
+    // inline node-fetch + openai, чтобы vi.mock работал на production-коде.
     //
-    // F-06 fix (27.09.2026): photo-check.test.ts поднимает f06Router на
-    // тестовом Hono app — hono лежит только в backend/node_modules, не в
-    // root. Inline'им hono, чтобы vitest нашёл его по абсолютному path.
+    // hono добавляется для интеграционных тестов корня, которые поднимают
+    // Hono-приложение бэкенда (см. алиас выше).
     server: {
       deps: {
         inline: [/node-fetch/, /openai/, /hono/],
@@ -42,15 +44,16 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
-      // F-06: backend-only пакеты, недоступные из root. Алиасим на конкретные
-      // entry-points внутри backend/node_modules (там есть свой package.json).
+      // backend-only пакет, недоступный из root. Алиасим на конкретный
+      // entry-point внутри backend/node_modules (там есть свой package.json).
       hono: HONO_FROM_BACKEND,
     },
   },
-  // F-06 fix (27.09.2026): tests/integration/photo-check.test.ts ходит в
-  // backend/src через require("../../backend/src/routes/f06"). По умолчанию
-  // Vite блокирует выход за пределы cwd — добавляем backend/ в allow, чтобы
-  // require видел backend-исходники.
+  // Интеграционные тесты корня читают backend/src напрямую — например
+  // tests/integration/polza-cost-regression.test.ts импортирует
+  // "../../backend/src/llm/config", а plans-price-sources.test.ts сверяет
+  // цены фронта с backend/src/services/billing.ts. По умолчанию Vite блокирует
+  // выход за пределы cwd — добавляем backend/ в allow.
   server: {
     fs: {
       allow: [BACKEND_DIR],

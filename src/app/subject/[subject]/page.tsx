@@ -4,8 +4,12 @@ import type { Metadata } from "next";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { ArrowRight, Sparkles } from "lucide-react";
+import { ArrowRight, Sparkles, BookOpen } from "lucide-react";
 import { subjects, getSubject } from "@/lib/content/subjects";
+import { getUMK } from "@/lib/content/umk";
+import { umkEntryLabel } from "@/lib/content/landing-seo";
+import { SITE_URL } from "@/lib/site";
+import { plural } from "@/lib/utils/cn";
 import type { Grade, Subject as SubjectType } from "@/lib/types";
 
 type Props = { params: { subject: string } };
@@ -50,8 +54,12 @@ export function generateMetadata({ params }: Props): Metadata {
   if (!subject) return { title: "Предмет не найден" };
   const subj = prepositionalTitle(subject.slug, subject.title);
   const title = `Рабочие листы по ${subj} — 1-${subject.grades[subject.grades.length - 1].num} класс`;
-  const description = `AI-генератор рабочих листов и тестов по ${subj}. ${subject.grades.length} классов, ${subject.grades.reduce((s: number, g: Grade) => s + g.topics.length, 0)} тем. PDF с ответами за 30 секунд.`;
-  const base = "https://rabochielisty.ru";
+  const gradeCount = subject.grades.length;
+  const subjectTopicCount = subject.grades.reduce((s: number, g: Grade) => s + g.topics.length, 0);
+  const gradeWord = plural(gradeCount, "класс", "класса", "классов");
+  const topicWord = plural(subjectTopicCount, "тема", "темы", "тем");
+  const description = `AI-генератор рабочих листов и тестов по ${subj}. ${gradeCount} ${gradeWord}, ${subjectTopicCount} ${topicWord}. PDF с ответами за 30 секунд.`;
+  const base = SITE_URL;
   const canonicalUrl = `${base}/subject/${subject.slug}`;
   return {
     title,
@@ -89,6 +97,9 @@ export default function SubjectHubPage({ params }: Props) {
   const subject: SubjectType | undefined = getSubject(params.subject);
   if (!subject) return notFound();
 
+  /** УМК предмета — для блока «Рабочие листы по вашему учебнику». */
+  const subjectUMK = getUMK(subject.slug);
+
   const colorMap = {
     brand: "from-brand-500 to-brand-700",
     accent: "from-accent-500 to-accent-700",
@@ -112,7 +123,7 @@ export default function SubjectHubPage({ params }: Props) {
             </div>
             <Badge tone="brand" className="mb-4">
               <Sparkles className="w-3 h-3" />
-              {subject.grades.length} классов · {subject.grades.reduce((s: number, g: Grade) => s + g.topics.length, 0)} тем
+              {subject.grades.length} {plural(subject.grades.length, "класс", "класса", "классов")} · {subject.grades.reduce((s: number, g: Grade) => s + g.topics.length, 0)} {plural(subject.grades.reduce((s: number, g: Grade) => s + g.topics.length, 0), "тема", "темы", "тем")}
             </Badge>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-display font-bold tracking-tight text-balance">
               Рабочие листы по{" "}
@@ -156,13 +167,46 @@ export default function SubjectHubPage({ params }: Props) {
                   <div className="text-4xl font-bold text-warm-950 group-hover:text-brand-600 transition-colors">
                     {g.num}
                   </div>
-                  <div className="text-xs text-warm-500 mt-1">{g.topics.length} тем</div>
+                  <div className="text-xs text-warm-500 mt-1">{g.topics.length} {plural(g.topics.length, "тема", "темы", "тем")}</div>
                 </Card>
               </Link>
             ))}
           </div>
         </div>
       </section>
+
+      {/*
+        Блок «Ваши учебники».
+        Второй заявленный дифференциатор (POSITIONING.md §4, колонка УМК) был
+        невидим: на страницах предметов не было ни одного упоминания УМК, хотя
+        именно сюда учитель приходит по запросу «рабочие листы по Виленкину
+        5 класс». Список берётся из `umk.ts` — того же источника, что и
+        фильтр в конструкторе, поэтому текст на странице и в генераторе не
+        разойдутся. Блок выводится, только если для предмета УМК заданы.
+      */}
+      {subjectUMK.length > 0 && (
+        <section className="py-12 sm:py-16">
+          <div className="container-tight">
+            <h2 className="text-2xl font-display font-bold mb-2">Рабочие листы по вашему учебнику</h2>
+            <p className="text-warm-600 mb-6">
+              Задания собираются под программу конкретного УМК — не «просто по математике», а по тому
+              учебнику, по которому вы ведёте урок.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {subjectUMK.map((entry) => (
+                <Link
+                  key={entry.id}
+                  href={`/subject/${subject.slug}?umk=${entry.id}`}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-warm-200 bg-white hover:border-brand-300 hover:bg-brand-50 transition-colors text-sm text-warm-800"
+                >
+                  <BookOpen className="w-4 h-4 text-warm-400 shrink-0" />
+                  {umkEntryLabel(entry)}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Popular topics by grade */}
       <section className="py-12 sm:py-16 bg-warm-50 border-y border-warm-100">

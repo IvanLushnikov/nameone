@@ -1,6 +1,7 @@
 "use client";
 
 import { Card } from "@/components/ui/Card";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useInView } from "@/hooks/useInView";
 import { Check, X, Sparkles, Loader2 } from "lucide-react";
 
@@ -12,7 +13,7 @@ const GENERIC_ROW = [
 ];
 
 const OUR_ROW = [
-  "Таксономия по ФГОС 2021, 1–11 класс",
+  "Таксономия: ФГОС 2021 для 1–9, ФГОС СОО с 01.09.2027 для 10–11",
   "PDF в формате A4 с ответами и пояснениями",
   "Каждый ответ проверяется автоматически",
   "Без VPN, оплата в ₽, от 500 ₽/мес",
@@ -21,6 +22,7 @@ const OUR_ROW = [
 
 export function Comparison() {
   const [ref, inView] = useInView<HTMLDivElement>({ once: true, margin: "-15% 0px" });
+  const reducedMotion = useReducedMotion();
 
   return (
     <section ref={ref} className="py-20 sm:py-28">
@@ -97,11 +99,11 @@ export function Comparison() {
             <div className="bg-white border border-brand-200 rounded-2xl p-4 mb-4 space-y-2 relative overflow-hidden">
               <div
                 className="absolute inset-0 bg-gradient-to-r from-transparent via-brand-100/50 to-transparent pointer-events-none"
-                style={{ animation: "shimmer 2s linear infinite", backgroundSize: "200% 100%" }}
+                style={{ animation: reducedMotion ? "none" : "shimmer 2s linear infinite", backgroundSize: "200% 100%" }}
               />
               <div className="relative flex items-center justify-between mb-2 pb-2 border-b border-warm-100">
                 <div className="text-[10px] font-semibold text-warm-950">Обыкновенные дроби · 5 кл.</div>
-                <div className="text-[9px] text-emerald-600 font-bold">✓ 8 сек</div>
+                <div className="text-[9px] text-emerald-600 font-bold">✓ 30 сек</div>
               </div>
               {[
                 "Сократите: 8/12 = __",

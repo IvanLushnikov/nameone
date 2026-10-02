@@ -1,7 +1,16 @@
 {
   "compilerOptions": {
+    // Next 14 собирает под современный браузерный стек, и проект уже опирается на
+    // итерацию Map/Set (`for (const x of new Map())`) в нескольких местах.
+    // Без явного target TypeScript по умолчанию берёт ES5, где такая итерация
+    // запрещена без downlevelIteration и даёт TS2802. Ставим ES2020 — это
+    // соответствует целям сборки и убирает целый класс ложных ошибок.
+    "target": "ES2020",
     "lib": ["dom", "dom.iterable", "esnext"],
-    "types": ["@cloudflare/workers-types"],
+    "types": [
+      "@cloudflare/workers-types",
+      "@testing-library/jest-dom/vitest"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -22,6 +31,6 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["next-env.d.ts", "src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "src/lib/llm/**", "backend/**", "tests/e2e/**"]
+  "include": ["next-env.d.ts", "src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", "backend/**", "tests/e2e/**"]
 }

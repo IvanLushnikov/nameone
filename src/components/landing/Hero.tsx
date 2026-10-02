@@ -5,11 +5,22 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Sparkles, Timer, FileCheck, Wand2, ArrowRight, Play, Check } from "lucide-react";
 import { useTilt } from "@/hooks/useTilt";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { getRealMetrics } from "@/components/landing/Stats";
+import { FREE_QUOTA_LABEL } from "@/lib/content/plans";
+import { SITE_HOST } from "@/lib/site";
 import { useRouter } from "next/navigation";
 
 const DOWNLOAD_HREF =
   "/constructor?subject=math&grade=5&topic=drobi-obyknovennye&type=worksheet";
 const REGEN_HREF = "/constructor?subject=math&grade=5&type=worksheet";
+
+/**
+ * Число тем в каталоге считается из таксономии, а не вписано в разметку:
+ * секция «Что внутри» (Stats) и секция предметов (Subjects) показывают то же
+ * самое значение, поэтому расходиться им больше не с чем.
+ */
+const CATALOG_TOPICS = getRealMetrics().topics;
 
 export function Hero() {
   return (
@@ -26,7 +37,7 @@ export function Hero() {
         <div className="max-w-3xl mx-auto text-center">
           <Badge tone="brand" className="mb-5 animate-fade-in">
             <Sparkles className="w-3.5 h-3.5" />
-            Бета · 3 бесплатно без регистрации
+            Бета · {FREE_QUOTA_LABEL}, без регистрации
           </Badge>
 
           {/* TZ-1: убран animate-fade-in — он оставлял H1 на opacity:0 при первом кадре
@@ -62,7 +73,7 @@ export function Hero() {
           <div className="mt-12 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm animate-fade-in" style={{ animationDelay: "0.4s", animationFillMode: "both" }}>
             <Stat icon={<Timer className="w-4 h-4" />} label="Среднее время" value="~30 сек" />
             <Stat icon={<FileCheck className="w-4 h-4" />} label="С&nbsp;ответами и&nbsp;пояснениями" value="100%" />
-            <Stat icon={<Sparkles className="w-4 h-4" />} label="Тем в&nbsp;каталоге" value="300+" />
+            <Stat icon={<Sparkles className="w-4 h-4" />} label="Тем в&nbsp;каталоге" value={`${CATALOG_TOPICS}+`} />
           </div>
         </div>
 
@@ -99,6 +110,7 @@ function HeroMockup() {
   const router = useRouter();
   const [pendingHref, setPendingHref] = React.useState<string | null>(null);
   const [showReadyHint, setShowReadyHint] = React.useState(false);
+  const reducedMotion = useReducedMotion();
 
   React.useEffect(() => {
     let timer: number | undefined;
@@ -147,7 +159,7 @@ function HeroMockup() {
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           </div>
           <div>
-            <div className="text-xs font-semibold text-warm-950">Готово за 8 сек</div>
+            <div className="text-xs font-semibold text-warm-950">Готово за 30 сек</div>
             <div className="text-[10px] text-warm-500">Ответы внутри</div>
           </div>
         </div>
@@ -159,8 +171,8 @@ function HeroMockup() {
           <span className="w-3 h-3 rounded-full bg-amber-400" />
           <span className="w-3 h-3 rounded-full bg-emerald-400" />
         </div>
-        <div className="flex-1 mx-4 h-7 rounded-md bg-warm-50 grid place-items-center text-xs text-warm-400 font-mono">
-          rabochielisty.ru/constructor/matematika/5-klass/drobi-obyknovennye
+        <div className="flex-1 mx-4 h-7 rounded-md bg-warm-50 grid place-items-center text-xs text-warm-500 font-mono">
+          {SITE_HOST}/subject/math/5/drobi-obyknovennye
         </div>
       </div>
 
@@ -170,14 +182,14 @@ function HeroMockup() {
 
           <div className="relative flex items-start justify-between mb-4 pb-3 border-b border-warm-200">
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-warm-400">
+              <div className="text-[10px] uppercase tracking-wider text-[color:var(--text-muted)]">
                 Рабочий лист
               </div>
               <div className="text-sm font-semibold text-warm-950 mt-0.5">
                 Обыкновенные дроби · 5 класс
               </div>
             </div>
-            <div className="text-right text-[10px] text-warm-400">Вариант 1 · ⏱ 15 мин</div>
+            <div className="text-right text-[10px] text-[color:var(--text-muted)]">Вариант 1 · ⏱ 15 мин</div>
           </div>
 
           <ol className="space-y-3 text-[12px] sm:text-[13px] leading-relaxed text-warm-900">
@@ -195,7 +207,7 @@ function HeroMockup() {
             ))}
           </ol>
 
-          <div className="mt-6 pt-3 border-t border-dashed border-warm-200 text-[10px] text-warm-400 text-center">
+          <div className="mt-6 pt-3 border-t border-dashed border-warm-200 text-[10px] text-[color:var(--text-muted)] text-center">
             РабочиеЛисты AI · Ответы и пояснения на&nbsp;отдельной странице · Подходит для&nbsp;печати на&nbsp;A4
           </div>
 
@@ -215,14 +227,14 @@ function HeroMockup() {
               <span className="text-xs text-warm-500">Генерация</span>
               <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Готово за 8 сек
+                Готово за 30 сек
               </span>
             </div>
             <div className="text-sm font-semibold text-warm-950">5 заданий · со&nbsp;сложностью средняя</div>
             <div className="mt-3 h-1.5 bg-warm-100 rounded-full overflow-hidden">
               <div
                 className="h-full bg-gradient-to-r from-brand-400 to-brand-600"
-                style={{ animation: "shimmer 2s linear infinite, fade-in 1s 0.7s both", backgroundSize: "200% 100%" }}
+                style={{ animation: reducedMotion ? "none" : "shimmer 2s linear infinite, fade-in 1s 0.7s both", backgroundSize: "200% 100%" }}
               />
             </div>
           </div>
@@ -286,7 +298,7 @@ function HeroMockup() {
       </div>
 
       {/* Подсказка 3D-tilt для десктопа */}
-      <div className="hidden lg:block absolute -bottom-8 left-1/2 -translate-x-1/2 text-[10px] text-warm-400 uppercase tracking-wider opacity-60">
+      <div className="hidden lg:block absolute -bottom-8 left-1/2 -translate-x-1/2 text-[10px] text-[color:var(--text-muted)] uppercase tracking-wider opacity-60">
         ↔ двигайте мышью для&nbsp;3D
       </div>
     </div>

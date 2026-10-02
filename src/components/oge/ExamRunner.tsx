@@ -29,6 +29,14 @@ interface Props {
   onExit: () => void;
 }
 
+/**
+ * Единая обводка фокуса — та же строка, что в ui/Button.tsx. В тренажёре её
+ * раньше не было вообще: с клавиатуры по заданию нельзя было пройти, фокус
+ * был не виден. Кольцо должно выглядеть одинаково на всех кнопках проекта.
+ */
+const focusRing =
+  "focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-brand-500";
+
 type Answer = {
   problemNumber: number;
   value: string;
@@ -195,6 +203,7 @@ export function ExamRunner({ variant, onExit }: Props) {
               type="button"
               onClick={() => setProblemIdx(i)}
               className={cn(
+                focusRing,
                 "shrink-0 w-9 h-9 rounded-lg grid place-items-center text-xs font-semibold transition-all",
                 current
                   ? "bg-brand-500 text-white shadow-brand"
@@ -217,18 +226,26 @@ export function ExamRunner({ variant, onExit }: Props) {
           type="button"
           onClick={goPrev}
           disabled={problemIdx === 0}
-          className="inline-flex items-center gap-1.5 text-warm-600 hover:text-warm-950 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          className={cn(
+            focusRing,
+            "inline-flex items-center gap-1.5 text-warm-600 hover:text-warm-950 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          )}
         >
           <ChevronLeft className="w-4 h-4" />
           Предыдущее
         </button>
-        <div className="text-warm-500">
+        {/* aria-live: переход между заданиями должен озвучиваться, а не только
+            меняться цифрой. aria-atomic — чтобы «Задание 3 из 10» читалось целиком. */}
+        <div className="text-warm-500" aria-live="polite" aria-atomic="true">
           Задание <span className="font-bold text-warm-950">{problemIdx + 1}</span> из {totalProblems}
         </div>
         <button
           type="button"
           onClick={goNext}
-          className="inline-flex items-center gap-1.5 text-warm-600 hover:text-warm-950 transition-colors"
+          className={cn(
+            focusRing,
+            "inline-flex items-center gap-1.5 text-warm-600 hover:text-warm-950 transition-colors"
+          )}
         >
           Следующее
           <ChevronRight className="w-4 h-4" />
@@ -246,20 +263,25 @@ export function ExamRunner({ variant, onExit }: Props) {
             Часть {problem.part} · {problem.points}{" "}
             {problem.points === 1 ? "балл" : "балла"}
           </Badge>
-          <span className="text-xs text-warm-500 sm:hidden">
+          <span className="text-xs text-warm-500 sm:hidden" aria-live="polite" aria-atomic="true">
             {problemIdx + 1} / {totalProblems}
           </span>
         </div>
         <p className="text-lg leading-relaxed text-warm-950 mb-6">{problem.text}</p>
 
         {problem.options && problem.options.length > 0 && (
-          <div className="space-y-2 mb-6">
+          // Семантика радиогруппы: варианты — это выбор ОДНОГО ответа,
+          // а не набор независимых кнопок. Скринридер читает «1 из 4, выбрано».
+          <div className="space-y-2 mb-6" role="radiogroup" aria-label="Варианты ответа">
             {problem.options.map((opt, i) => (
               <button
                 key={i}
                 type="button"
+                role="radio"
+                aria-checked={currentAnswer === opt}
                 onClick={() => setCurrentAnswer(opt)}
                 className={cn(
+                  focusRing,
                   "w-full p-3 rounded-xl border text-left transition-colors",
                   currentAnswer === opt
                     ? "border-brand-500 bg-brand-50 text-brand-800"
@@ -297,12 +319,16 @@ export function ExamRunner({ variant, onExit }: Props) {
           <button
             type="button"
             onClick={() => setShowHint((v) => !v)}
-            className="inline-flex items-center gap-1.5 text-sm text-warm-500 hover:text-warm-900"
+            aria-expanded={showHint}
+            className={cn(
+              focusRing,
+              "inline-flex items-center gap-1.5 text-sm text-warm-500 hover:text-warm-900"
+            )}
           >
             <Lightbulb className="w-4 h-4" />
             {showHint ? "Скрыть подсказку" : "Показать подсказку"}
           </button>
-          <span className="text-xs text-warm-400 hidden sm:inline">
+          <span className="text-xs text-[color:var(--text-muted)] hidden sm:inline">
             ⏱ {pluralizeMinutes(Math.max(1, Math.floor((Date.now() - startRef.current) / 60000)))} на задание
           </span>
         </div>
@@ -319,7 +345,11 @@ export function ExamRunner({ variant, onExit }: Props) {
           type="button"
           onClick={goPrev}
           disabled={problemIdx === 0}
-          className="inline-flex items-center gap-1 px-3 h-9 rounded-lg bg-warm-100 text-warm-700 disabled:opacity-30"
+          aria-label="Предыдущее задание"
+          className={cn(
+            focusRing,
+            "inline-flex items-center gap-1 px-3 h-9 rounded-lg bg-warm-100 text-warm-700 disabled:opacity-30"
+          )}
         >
           <ArrowBigLeft className="w-4 h-4" />
         </button>
@@ -327,7 +357,11 @@ export function ExamRunner({ variant, onExit }: Props) {
         <button
           type="button"
           onClick={goNext}
-          className="inline-flex items-center gap-1 px-3 h-9 rounded-lg bg-warm-100 text-warm-700"
+          aria-label="Следующее задание"
+          className={cn(
+            focusRing,
+            "inline-flex items-center gap-1 px-3 h-9 rounded-lg bg-warm-100 text-warm-700"
+          )}
         >
           <ArrowBigRight className="w-4 h-4" />
         </button>
@@ -358,7 +392,7 @@ export function ExamRunner({ variant, onExit }: Props) {
         <button
           type="button"
           onClick={onExit}
-          className="text-sm text-warm-500 hover:text-warm-900"
+          className={cn(focusRing, "text-sm text-warm-500 hover:text-warm-900")}
         >
           ← Выйти без сохранения
         </button>

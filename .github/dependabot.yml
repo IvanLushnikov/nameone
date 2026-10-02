@@ -1,0 +1,49 @@
+# Автоматическое обновление зависимостей.
+#
+# В проекте не было ни этого файла, ни сканирования на утечку секретов.
+# Итог: уязвимые версии пакетов держались месяцами, а единственной проверкой
+# был ручной `npm audit`, который в CI был отключён флагом --no-audit.
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Europe/Moscow
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+      - security
+
+  - package-ecosystem: npm
+    directory: "/backend"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Europe/Moscow
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps/backend)"
+    labels:
+      - dependencies
+      - security
+
+  - package-ecosystem: npm
+    directory: "/worker-self-verify"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Europe/Moscow
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps/worker)"
+    labels:
+      - dependencies
+      - security

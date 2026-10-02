@@ -28,6 +28,7 @@ import {
   ShadingType,
 } from "docx";
 import type { Ktp, KtpEntry, KtpLessonKind } from "@/lib/types";
+import { SITE_HOST } from "@/lib/site";
 
 /** Заголовки колонок КТП — единый источник правды для UI и DOCX. */
 export const KTP_COLUMNS = [
@@ -254,7 +255,7 @@ export async function generateKtpDocx(ktp: Ktp): Promise<Blob> {
             children: [
               new Paragraph({
                 alignment: AlignmentType.RIGHT,
-                children: [new TextRun({ text: "РабочиеЛисты AI · rabochielisty.ru", size: 16, color: "BBBBBB" })],
+                children: [new TextRun({ text: `РабочиеЛисты AI · ${SITE_HOST}`, size: 16, color: "BBBBBB" })],
               }),
             ],
           }),

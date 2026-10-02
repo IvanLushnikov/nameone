@@ -316,7 +316,7 @@ export const PRESETS: Preset[] = [
   {
     id: "homework",
     title: "Домашняя работа",
-    description: "10 заданий, средняя — стандартная домашка с пояснениями",
+    description: "10 заданий, средний уровень — домашнее задание с пояснениями",
     icon: BookOpen,
     count: 10,
     difficulty: "medium",

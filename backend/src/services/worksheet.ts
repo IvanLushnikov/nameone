@@ -89,5 +89,26 @@ export async function getWorksheetById(
     return JSON.parse(row.payload_json) as Worksheet;
   } catch {
     return null;
+
   }
+}
+
+/**
+ * Кому принадлежит лист.
+ *
+ * Нужно для проверки прав на чтение: у сохранённого листа есть владелец,
+ * и отдавать его по одной лишь ссылке нельзя. `null` означает «лист создан
+ * анонимно» (демо-генерация без входа) — у таких нет персональных данных
+ * и чужого владельца, поэтому обращение с ними разбирает роут.
+ */
+export async function getWorksheetOwnerId(
+  db: D1Database,
+  id: string,
+): Promise<string | null | undefined> {
+  const row = await db
+    .prepare(`SELECT user_id FROM worksheets WHERE id = ?1`)
+    .bind(id)
+    .first<{ user_id: string | null }>();
+  if (!row) return undefined; // листа нет вообще
+  return row.user_id; // строка — владелец, null — анонимный лист
 }

@@ -20,6 +20,11 @@ interface Props {
  *   undefined          → серый «— не проверено» (verify ещё не запускался)
  *
  * Tooltip через native `title` — без зависимостей и работает в print/export.
+ *
+ * `no-print` в базовых классах: бейдж нужен учителю при проверке в браузере,
+ * но на распечатанном листе «не проверено» — служебная мусорная плашка.
+ * Правило `.no-print { display: none !important }` живёт в @media print
+ * в globals.css.
  */
 export function VerifiedBadge({ verified, explanation, className }: Props) {
   const state: "ok" | "warn" | "unknown" =
@@ -31,7 +36,7 @@ export function VerifiedBadge({ verified, explanation, className }: Props) {
     <span
       title={explanation ?? config.title}
       className={cn(
-        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ring-1 ring-inset whitespace-nowrap",
+        "no-print inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ring-1 ring-inset whitespace-nowrap",
         config.classes,
         className
       )}

@@ -53,7 +53,7 @@ export const taskTypeSchema = z.enum([
 
 export const planSchema = z.enum(["free", "base", "plus"]);
 
-export const periodSchema = z.enum(["monthly", "yearly"]);
+export const periodSchema = z.enum(["monthly", "academicYear"]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Составные схемы

@@ -35,6 +35,34 @@ export interface UsageInfo {
   plan: AuthUser["plan"];
 }
 
+/**
+ * Полный ответ /api/users/usage — зеркало `UsageStatus` + сигналы антифрода
+ * из backend/src/routes/users.ts.
+ *
+ * Взвешенные токены — единица потребления, по которой считается норма
+ * (backend/src/services/usage.ts). `over: true` означает «норма превышена»,
+ * но НЕ «генерация заблокирована»: порог мягкий, генерация продолжается.
+ */
+export interface UsagePayload {
+  plan: "free" | "base" | "plus";
+  /** Норма за окно в взвешенных токенах. null = тариф без нормы (free). */
+  norm: number | null;
+  weightedTokensUsed: number;
+  over: boolean;
+  remaining: number | null;
+  periodEndsAt: string | null;
+  /** Токены, переведённые в листы: понятная подпись для учителя. */
+  worksheetsEquivalent: number;
+  /** Остаток бесплатных генераций (3 всего). null у платных. */
+  freeRemaining: number | null;
+  /** Показать ли невидимый Turnstile: у отпечатка есть признаки фрода. */
+  requiresChallenge: boolean;
+  /** Старые поля — бэк их ещё отдаёт. */
+  generationsToday: number;
+  generationsLimit: number;
+  generationsResetAt?: string | null;
+}
+
 interface ApiOk {
   ok: true;
   [k: string]: unknown;
@@ -121,10 +149,15 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 }
 
 /**
- * GET /api/users/usage — лимит генераций на сегодня (light payload).
+ * GET /api/users/usage — остаток нормы тарифа (light payload).
  *
  * Бросает, если юзер не залогинен (401). Caller должен сам решать,
  * показывать ли виджет лимита.
+ *
+ * С 2026-10-02 отдаёт ВЗВЕШЕННЫЕ ТОКЕНЫ (единицу потребления) вместо
+ * «генераций на сегодня»: сутки у тарифа больше не существует, а норма
+ * считается в токенах Luna-эквивалента. Старые поля
+ * (generationsToday/ResetAt) бэк ещё отдаёт — ломать их не стали.
  */
 export async function getUsage(): Promise<UsageInfo> {
   const res = await getJson<{ ok: true } & UsageInfo>("/api/users/usage");
@@ -134,6 +167,21 @@ export async function getUsage(): Promise<UsageInfo> {
     generationsResetAt: res.generationsResetAt ?? null,
     plan: res.plan,
   };
+}
+
+/**
+ * Мягкая версия getUsage для UI: не бросает, а отдаёт null.
+ *
+ * Дашборд вызывает это на mount. Ошибка здесь не должна ломать профиль:
+ * карточка нормы просто не рисуется, остальное работает как раньше.
+ */
+export async function fetchUsage(): Promise<UsagePayload | null> {
+  try {
+    const res = await getJson<{ ok: true } & UsagePayload>("/api/users/usage");
+    return res as UsagePayload;
+  } catch {
+    return null;
+  }
 }
 
 /**

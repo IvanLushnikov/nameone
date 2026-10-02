@@ -3,7 +3,8 @@ import { AdminGuard } from "@/components/admin/AdminGuard";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 
 export const metadata: Metadata = {
-  title: "Админка · РабочиеЛисты AI",
+  // Бренд добавляет template в корневом layout — руками не дописываем.
+  title: "Админка",
   robots: { index: false, follow: false },
 };
 

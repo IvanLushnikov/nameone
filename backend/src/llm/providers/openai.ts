@@ -19,6 +19,7 @@ import { InternalError } from "../../lib/errors";
 import { logLlmEvent } from "../log";
 import type { Env } from "../../env";
 import type { LLMResponse, Provider } from "../types";
+import { contentToText } from "../types";
 
 interface OpenAIProviderState {
   client: OpenAI;
@@ -59,10 +60,19 @@ export function getOpenAIProvider(env: Env): Provider {
       void _env;
       const start = Date.now();
 
+      // `LLMContent` = строка | массив частей. OpenAI-совместимый chat API в
+      // этой ветке принимает только строку, поэтому приводим через
+      // contentToText — так же, как это делает anthropic.ts. Задачи с картинкой
+      // (photo-check) идут через polza, у которого свой путь сборки частей.
+      // `role` приводим к union из трёх значений и переносим в `messages`
+      // как `ChatCompletionMessageParam[]`. Без явного `as` TypeScript не может
+      // связать `content: string` с конкретной веткой объединения по `role`
+      // (у assistant-сообщения content — только строка, у system — тоже),
+      // и ошибка вылезает как «not assignable to ChatCompletionMessageParam».
       const messages = req.messages.map((m) => ({
         role: m.role,
-        content: m.content,
-      }));
+        content: contentToText(m.content),
+      })) as unknown as OpenAI.Chat.Completions.ChatCompletionMessageParam[];
 
       const body: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
         model: req.model,

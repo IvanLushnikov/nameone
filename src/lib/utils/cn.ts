@@ -10,9 +10,15 @@ export function cn(...inputs: ClassValue[]) {
 
 /**
  * Форматирует дату в человекочитаемый формат на русском.
+ *
+ * Принимает `number` как **unix-время в миллисекундах** — так его отдаёт D1
+ * (`created_at` в секундах, поэтому вызовы умножают на 1000). Раньше сигнатура
+ * была `Date | string`, и три места с числом (`FormsTab`, `InteractiveList`,
+ * `InteractiveDetail`) не компилировались: пришлось бы кастовать в каждом.
  */
-export function formatDate(date: Date | string): string {
-  const d = typeof date === "string" ? new Date(date) : date;
+export function formatDate(date: Date | string | number): string {
+  const d =
+    typeof date === "string" ? new Date(date) : date instanceof Date ? date : new Date(date);
   return d.toLocaleDateString("ru-RU", {
     day: "numeric",
     month: "long",
@@ -36,7 +42,15 @@ export function timeAgo(date: Date | string): string {
   return formatDate(d);
 }
 
-function plural(n: number, one: string, few: string, many: string): string {
+/**
+ * Русское склонение: plural(1, "предмет", "предмета", "предметов") → "предмет",
+ * plural(21, ...) → "предмет", plural(2, ...) → "предмета", plural(5, ...) → "предметов".
+ *
+ * Возвращает СЛОВО, а не число: вызывающий сам склеивает «21 предмет».
+ * Экспортируется, потому что числа в интерфейсе считаются динамически
+ * (каталог предметов, счётчики лимитов) — подпись нельзя зашивать строкой.
+ */
+export function plural(n: number, one: string, few: string, many: string): string {
   const mod10 = n % 10;
   const mod100 = n % 100;
   if (mod100 >= 11 && mod100 <= 14) return many;
@@ -83,4 +97,12 @@ export function pluralizeTasks(n: number): string {
  */
 export function pluralizeMinutes(n: number): string {
   return plural(n, "минута", "минуты", "минут");
+}
+
+/**
+ * Склонение для количества файлов в комплекте материалов (TZ-16 §3.2):
+ * 1 файл, 2 файла, 5 файлов.
+ */
+export function pluralizeFiles(n: number): string {
+  return plural(n, "файл", "файла", "файлов");
 }

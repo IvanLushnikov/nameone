@@ -6,7 +6,10 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { FgosBadge } from "@/components/ui/FgosBadge";
 import { Sparkles, ArrowRight } from "lucide-react";
+import { plural } from "@/lib/utils/cn";
 import { getSubject, subjects } from "@/lib/content/subjects";
+import { FREE_QUOTA_LABEL } from "@/lib/content/plans";
+import { SITE_URL } from "@/lib/site";
 import type { Grade, Topic } from "@/lib/types";
 
 type Props = { params: { subject: string; grade: string } };
@@ -28,9 +31,16 @@ export function generateMetadata({ params }: Props): Metadata {
   const grade = subject.grades.find((g: Grade) => g.num === gradeNum);
   if (!grade) return { title: "Класс не найден" };
 
-  const title = `Рабочие листы по ${subject.title.toLowerCase()} ${gradeNum} класс — ${grade.topics.length} тем`;
-  const description = `Рабочие листы, тесты и карточки по ${subject.title.toLowerCase()} для ${gradeNum} класса. ${grade.topics.length} тем по ФГОС. PDF с ответами за 30 секунд. Бесплатно 3 листа в сутки.`;
-  const base = "https://rabochielisty.ru";
+  // Считаем один раз и склоняем: «N тем» на 5 темах читается как «на пяти тем».
+  const topicWord = plural(grade.topics.length, "тема", "темы", "тем");
+  // В типах Subject нет поля с предложным падежом (`nameInCase`/`instrumental`),
+  // поэтому после предлога «по» название предмета берём в кавычки — иначе в
+  // сниппете выходит «по математика». Если добавим такое поле в таксономию,
+  // заменим на `по ${subj}` (см. карту SUBJECT_PREPOSITIONAL в /subject/[subject]).
+  const subjectName = `предмету «${subject.title}»`;
+  const title = `Рабочие листы по ${subjectName} для ${gradeNum} класса — ${grade.topics.length} ${topicWord}`;
+  const description = `Рабочие листы, тесты и карточки по ${subjectName} для ${gradeNum} класса. ${grade.topics.length} ${plural(grade.topics.length, "тема", "темы", "тем")} по ФГОС. PDF с ответами за 30 секунд. Бесплатно — ${FREE_QUOTA_LABEL.toLowerCase()}.`;
+  const base = SITE_URL;
   const canonicalUrl = `${base}/subject/${subject.slug}/${gradeNum}`;
 
   return {
@@ -100,7 +110,7 @@ export default function GradeHubPage({ params }: Props) {
                 {subject.title}, {gradeNum} класс
               </h1>
               <p className="mt-3 text-lg text-warm-600 max-w-xl">
-                {grade.topics.length} тем по ФГОС. Рабочие листы, тесты и карточки с ответами за 30 секунд.
+                {grade.topics.length} {plural(grade.topics.length, "тема", "темы", "тем")} по ФГОС. Рабочие листы, тесты и карточки с ответами за 30 секунд.
               </p>
             </div>
             <Button

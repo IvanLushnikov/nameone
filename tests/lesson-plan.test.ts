@@ -154,7 +154,7 @@ describe("LessonPlanPreview — рендер", () => {
     expect(container.textContent).toContain("3. Новая тема");
     expect(container.textContent).toContain("4. Отработка");
     expect(container.textContent).toContain("5. Рефлексия");
-    expect(container.textContent).toContain("6. Домашка");
+    expect(container.textContent).toContain("6. Домашнее задание");
 
     // Итог по времени — 45 мин
     expect(container.textContent).toContain("45 мин");

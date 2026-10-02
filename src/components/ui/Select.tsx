@@ -53,7 +53,8 @@ export function Select({
   const sizeClasses = {
     sm: "h-9 text-sm",
     md: "h-11 text-sm",
-    lg: "h-13 text-base",
+    // h-12 — тот же шаг, что и в Button.tsx (h-13 не существует в шкале).
+    lg: "h-12 text-base",
   }[size];
 
   return (
@@ -65,12 +66,14 @@ export function Select({
         className={cn(
           "w-full px-3.5 flex items-center justify-between gap-2 bg-white border border-warm-200 rounded-xl text-left transition-all",
           "focus:outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100",
-          "disabled:bg-warm-50 disabled:cursor-not-allowed disabled:text-warm-400",
+          "disabled:bg-warm-50 disabled:cursor-not-allowed disabled:text-[color:var(--text-muted)]",
           sizeClasses,
           open && "border-brand-500 ring-4 ring-brand-100"
         )}
       >
-        <span className={cn("truncate", selected ? "text-warm-950" : "text-warm-400")}>
+        {/* Плейсхолдер — это текст, поэтому токен контраста, а не warm-400.
+            Иконку шеврона ниже оставляем на warm-400: для графики он хорош. */}
+        <span className={cn("truncate", selected ? "text-warm-950" : "text-[color:var(--text-muted)]")}>
           {selected ? selected.label : placeholder}
         </span>
         <ChevronDown

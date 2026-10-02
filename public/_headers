@@ -1,0 +1,25 @@
+# Security headers — Cloudflare Pages
+#
+# Почему файл, а не headers() в next.config.mjs:
+# проект собирается статическим экспортом (`output: "export"`), а Next.js
+# в этом режиме не умеет отдавать заголовки — им негде жить в готовых
+# HTML-файлах. Для Pages правильный механизм — `_headers` в public/.
+# Cloudflare читает файл на деплое и применяет правила ко всем ответам.
+#
+# ВАЖНО: контент-безопасности (CSP для скриптов) здесь намеренно нет.
+# Сайт грузит внешние шрифты и аналитику, и жёсткий CSP без полного списка
+# источников просто сломает страницы. CSP добавляем отдельным шагом вместе
+# с инвентаризацией внешних доменов — см. docs/SECURITY-REVIEW-2026-10-02.md.
+
+# Не отдавать полную ссылку в Referer: на странице входа токен может стоять
+# в query (?token=...), и без этого правила он утекает в аналитику.
+/*
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), interest-cohort=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+
+# Статика: хэш в имени файла — можно держать в кэше год.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

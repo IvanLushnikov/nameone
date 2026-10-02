@@ -20,6 +20,7 @@ import {
 } from "../db/queries";
 import { userId, magicLinkToken, sessionToken } from "../lib/shortid";
 import { sendMagicLinkEmail } from "./email";
+import { InternalError } from "../lib/errors";
 
 export const MAGIC_LINK_TTL_SECONDS = 15 * 60; // 15 минут
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 дней
@@ -83,6 +84,32 @@ export async function requestMagicLink(
 ): Promise<RequestMagicLinkResult> {
   const email = emailSchema.parse(rawEmail);
 
+  // ── Безопасность: fail-closed на неверной конфигурации ────────────────────
+  // Если почта не настроена, sendMagicLinkEmail не отправляет письмо, а
+  // ВОЗВРАЩАЕТ готовую ссылку для входа (удобно для локальной разработки).
+  // Опасные режимы включаются ТОЛЬКО явным флагом, а не отсутствием
+  // какого-либо признака. Причина конкретная: 2 октября 2026 выяснилось, что
+  // боевой воркер задеплоен с настройками разработки (APP_ENV=development,
+  // FRONTEND_URL=http://localhost:3000). Проверка вида «в проде — не выдавать»
+  // опиралась на APP_ENV, который на проде был неверным, и молча выключилась
+  // бы вместе с защитой.
+  //
+  // Принцип: «выдать ссылку для входа» — привилегированное поведение,
+  // поэтому включается только положительным ответом владельца
+  // (ALLOW_DEV_MAGIC_URL=true). Нет флага — нет и выдачи, независимо от того,
+  // что написано в APP_ENV, FRONTEND_URL или ещё где-либо.
+  const devMagicAllowed = env.ALLOW_DEV_MAGIC_URL === "true";
+
+  if (!env.RESEND_API_KEY && !devMagicAllowed) {
+    // eslint-disable-next-line no-console
+    console.error(
+      "[auth] КРИТИЧНО: не задан RESEND_API_KEY, а ALLOW_DEV_MAGIC_URL не включён. " +
+        "Письма не отправляются, ссылка для входа не выдаётся — запросы отклоняются, " +
+        "ничего не утекает. Задать ключ: npx wrangler secret put RESEND_API_KEY --name rabochielisty-api",
+    );
+    throw new InternalError("Отправка писем не настроена");
+  }
+
   // 1. user upsert (find-or-create).
   let user = await getUserByEmail(db, email);
   let createdHere = false;
@@ -128,10 +155,11 @@ export async function requestMagicLink(
     );
   }
 
-  // В dev-режиме (нет RESEND) возвращаем URL, чтобы UI мог показать "ссылка такая".
-  return sendResult.url
-    ? { ok: true, sent: true, devMagicUrl: sendResult.url }
-    : { ok: true, sent: true };
+  // Ссылка для входа уходит клиенту ТОЛЬКО при явном ALLOW_DEV_MAGIC_URL=true.
+  // Во всех остальных случаях ответ одинаковый — { ok, sent } — независимо от
+  // того, дошло письмо или нет и есть ли ссылка под рукой.
+  if (!devMagicAllowed || !sendResult.url) return { ok: true, sent: true };
+  return { ok: true, sent: true, devMagicUrl: sendResult.url };
 }
 
 export interface ConsumeMagicLinkResult {
@@ -170,9 +198,30 @@ export async function consumeMagicLinkAndCreateSession(
 }
 
 function buildMagicLinkUrl(env: Env, token: string): string {
-  // FRONTEND_URL — это origin фронта. Auth callback страница собирает сессию.
-  // Пример: https://rabochielisty.ru/auth/callback?token=<token>
-  const base = env.FRONTEND_URL.replace(/\/+$/, "");
+  // APP_PUBLIC_URL — один origin фронта, специально для ссылок, которые видит
+  // человек. FRONTEND_URL в проде содержит список через запятую (он нужен CORS,
+  // который список разбирает), и вставлять его целиком в ссылку нельзя:
+  // получилось бы «https://a.ru,https://b.ru/auth/callback?token=…».
+  // Fallback на первый элемент списка нужен только для старых конфигураций,
+  // где APP_PUBLIC_URL ещё не задали.
+  const raw = env.APP_PUBLIC_URL ?? env.FRONTEND_URL.split(",")[0] ?? "";
+  const base = raw.trim().replace(/\/+$/, "");
+
+  // Ссылка с localhost бесполезна учителю: письмо уйдёт, а открыть его будет
+  // негде. На проде такая конфигурация означает, что воркер задеплоен из
+  // секции [vars] вместо [env.production.vars]. Лучше явная ошибка в лог, чем
+  // письмо с адресом, который не существует, — и чем обманчивое «мы отправили
+  // ссылку, не работает».
+  if (!base || /^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:|$)/i.test(base) || !/^https?:\/\//.test(base)) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[auth] КРИТИЧНО: не удалось собрать ссылку для входа (APP_PUBLIC_URL="${env.APP_PUBLIC_URL ?? "—"}", ` +
+        `FRONTEND_URL="${env.FRONTEND_URL ?? "—"}"). Похоже, воркер задеплоен с настройками разработки. ` +
+        `Укажите APP_PUBLIC_URL в [env.production.vars], например "https://<домен>".`,
+    );
+    throw new InternalError("Некорректная конфигурация фронта");
+  }
+
   return `${base}/auth/callback?token=${token}`;
 }
 

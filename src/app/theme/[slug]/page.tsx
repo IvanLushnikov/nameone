@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Sparkles, ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { WEEKLY_TOPICS, getWeeklyTopicBySeoSlug } from "@/lib/content/weekly-topics";
+import { SITE_URL } from "@/lib/site";
 
 type Props = { params: { slug: string } };
 
@@ -15,9 +16,10 @@ export function generateMetadata({ params }: Props): Metadata {
   const topic = getWeeklyTopicBySeoSlug(params.slug);
   if (!topic) return { title: "Тема не найдена" };
 
-  const title = `${topic.title} — рабочие листы · ${topic.grade} класс · РабочиеЛисты AI`;
+  // Бренд в конце не дописываем — его добавляет template в корневом layout.
+  const title = `${topic.title} — рабочие листы · ${topic.grade} класс`;
   const description = `${topic.whyText.slice(0, 140)} Сгенерируйте рабочий лист за 30 секунд.`;
-  const canonical = `https://rabochielisty.ru/theme/${topic.seoSlug}/`;
+  const canonical = `${SITE_URL}/theme/${topic.seoSlug}/`;
 
   return {
     title,

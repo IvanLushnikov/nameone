@@ -238,7 +238,8 @@ export interface SubscriptionView {
   id: string;
   plan: "base" | "plus";
   status: string;
-  period: "monthly" | "yearly";
+  /** `academicYear` = 9 месяцев от даты оплаты, НЕ календарный год. */
+  period: "monthly" | "academicYear";
   startsAt: string;
   endsAt: string;
   autoRenew: boolean;
@@ -254,6 +255,12 @@ export interface AuthUser {
   name: string | null;
   plan: "free" | "base" | "plus";
   isAdmin: boolean;
+  /**
+   * Роль. `student` генерировать контент не может — только решать выданное
+   * (тариф «Школа», запуск Q1 2027). Пока строки в user_roles нет —
+   * это `teacher`, и поведение прежнее.
+   */
+  role: "teacher" | "student";
 }
 
 export interface AppVariables {
@@ -273,7 +280,8 @@ export interface AppEnv {
 
 export interface CreatePaymentRequest {
   plan: "base" | "plus";
-  period: "monthly" | "yearly";
+  /** `academicYear` = 9 месяцев от даты оплаты, НЕ календарный год. */
+  period: "monthly" | "academicYear";
 }
 
 export interface CreatePaymentResponse {

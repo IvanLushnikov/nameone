@@ -23,6 +23,7 @@ import {
   getGrade,
   subjects,
 } from "@/lib/content/subjects";
+import { JsonLd } from "@/components/seo";
 
 type Props = { params: { subject: string; grade: string; topic: string } };
 
@@ -44,8 +45,9 @@ export function generateMetadata({ params }: Props): Metadata {
   const topic = getTopic(params.subject, Number(params.grade), params.topic);
   if (!subject || !grade || !topic) return { title: "Тема не найдена" };
 
-  const title = `Презентация по теме «${topic.title}» · ${grade.num} класс · РабочиеЛисты AI`;
-  const description = `Готовая презентация по ФГОС для ${grade.num} класса по предмету «${subject.title.toLowerCase()}» на тему «${topic.title}». 10 слайдов с заметками спикера в PPTX. Сгенерируйте за 30 секунд.`;
+  // Бренд в конце не дописываем — его добавляет template в корневом layout.
+  const title = `Презентация по теме «${topic.title}» · ${grade.num} класс`;
+  const description = `Готовая презентация по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topic.title}». 10 слайдов с заметками спикера в PPTX. Сгенерируйте за 30 секунд.`;
 
   return {
     title,
@@ -68,8 +70,31 @@ export default function PresentationTopicPage({ params }: Props) {
 
   if (!subject || !grade || !topic) return notFound();
 
+  // Разметка по образцу /subject/[subject]/[grade]/[topic] — LearningResource +
+  // AlignmentObject по разделу ФГОС. Рендерим всегда: здесь это единственный
+  // источник разметки для ~469 URL презентаций.
+  const jsonLd: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "LearningResource",
+    name: `Презентация по теме «${topic.title}»`,
+    description: `Готовая презентация по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topic.title}». 10 слайдов с заметками спикера в PPTX.`,
+    inLanguage: "ru-RU",
+    educationalLevel: `${grade.num} класс`,
+    learningResourceType: ["Презентация", "Слайды"],
+    about: { "@type": "Thing", name: subject.title },
+  };
+  if (topic.fgosRef) {
+    jsonLd.educationalAlignment = {
+      "@type": "AlignmentObject",
+      alignmentType: "educationalFramework",
+      targetName: topic.fgosRef,
+      educationalFramework: "ФГОС 2021",
+    };
+  }
+
   return (
     <>
+      <JsonLd data={jsonLd} id="ld-presentation" />
       {/* Hero */}
       <section className="relative bg-gradient-to-b from-warm-50 to-white pt-8 sm:pt-12 pb-10">
         <div className="absolute inset-0 -z-10 bg-grid opacity-50" />

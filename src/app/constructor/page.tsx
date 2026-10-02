@@ -12,9 +12,15 @@ import { WorksheetPreview } from "@/components/constructor/WorksheetPreview";
 import { LessonPlanPreview } from "@/components/constructor/LessonPlanPreview";
 import { PresentationPreview } from "@/components/constructor/PresentationPreview";
 import { KtpPreview } from "@/components/constructor/KtpPreview";
+import { InteractiveCreatePanel } from "@/components/interactives/InteractiveCreatePanel";
+import { isInteractiveFormat } from "@/lib/interactives/formats";
+import type { InteractiveFormat } from "@/lib/interactives/types";
+import { CardsPreview } from "@/components/constructor/CardsPreview";
+import { MaterialsPreview } from "@/components/constructor/MaterialsPreview";
+import { LessonBundlePreview } from "@/components/constructor/LessonBundlePreview";
 import { PaywallModal } from "@/components/shared/PaywallModal";
 import { ArtifactTypePicker } from "@/components/constructor/ArtifactTypePicker";
-import { TypePreviewThumb } from "@/components/constructor/TypePreviewThumb";
+import { ArtifactTypePreview } from "@/components/constructor/ArtifactTypePreview";
 import {
   PresetGrid,
   PRESETS,
@@ -33,6 +39,7 @@ import {
   RotateCcw,
   X,
   Camera,
+  Send,
 } from "lucide-react";
 import { subjects, getSubject, getGrade } from "@/lib/content/subjects";
 import { getUMK } from "@/lib/content/umk";
@@ -47,34 +54,90 @@ import type {
   GenerationRequest,
   SubjectSlug,
   TaskType,
+  UserHistoryItem,
   Worksheet,
   LessonPlan,
   Presentation,
   Ktp,
+  CardSet,
+  MaterialBundle,
+  LessonBundle,
   Subject as SubjectType,
   Grade as GradeType,
 } from "@/lib/types";
-import { addToHistory, saveFavorite, toggleFavorite, trackExamModeSelected } from "@/lib/utils/storage";
+import { addToHistory, getHistory, saveFavorite, toggleFavorite, trackExamModeSelected } from "@/lib/utils/storage";
 import {
   generateWorksheetSmart,
   generateLessonPlanSmart,
   generatePresentationSmart,
   generateKtpSmart,
+  generateCardsSmart,
+  generateMaterialsSmart,
+  generateBundleSmart,
 } from "@/lib/client/llm";
 import { generateWorksheetDocx, downloadBlob } from "@/lib/utils/docx";
 import { trackEvent } from "@/lib/track";
 import { generateLessonPlanDocx } from "@/lib/utils/lesson-plan-docx";
+import { generateCardsDocx } from "@/lib/utils/cards-docx";
+import { printCards } from "@/lib/utils/cards-print";
+import { generateMaterialsZip, materialsZipFilename } from "@/lib/utils/materials-zip";
+import { generateBundleZip, bundleZipFilename, bundleReadyCount } from "@/lib/utils/bundle-zip";
 import { generateKtpDocx } from "@/lib/utils/ktp-docx";
 import { generatePptx, pptxFilename } from "@/lib/utils/pptx";
-import { canGenerate, consume, getRemaining } from "@/lib/utils/limit";
-import { pluralizeTasks } from "@/lib/utils/cn";
-import { saveWorksheet } from "@/lib/worksheets/api";
+import { canGenerate, consume, getRemaining, refund } from "@/lib/utils/limit";
+import { isTouchDevice, subscribeToDeviceChange } from "@/lib/utils/device";
+import { ACADEMIC_YEAR_MONTHS, FREE_GENERATIONS, PLANS, priceLabel, priceShort } from "@/lib/content/plans";
+import { plural } from "@/lib/utils/cn";
+import { pluralizeTasks, pluralizeFiles } from "@/lib/utils/cn";
+import { saveWorksheet, type SaveWorksheetInput } from "@/lib/worksheets/api";
+import { ShareFormDialog } from "@/components/teacher/ShareFormDialog";
+import { toFormSourceTask } from "@/lib/forms/types";
+import { getProfile } from "@/lib/utils/storage";
 import { useUsage } from "@/lib/hooks/useUsage";
 import { EditChat } from "@/components/f08/EditChat";
 import { PhotoCheckPanel } from "@/components/f06/PhotoCheckPanel";
 
 /** F-04-C: режим wizard. «По теме» — текущий flow. «По номеру» — экзамен → предмет → номера → параметры. */
 type Mode = "topic" | "exam";
+
+/**
+ * F-08 `EditChat` — заглушка чата AI-правок, реальной логики пока нет.
+ * Показываем её (и кнопку «AI-правки») только под флагом: пользователю не
+ * нужно видеть «EditChat (stub)» с полем «Stub input» и кнопкой «Send».
+ * Включается переменной окружения `NEXT_PUBLIC_ENABLE_EDIT_CHAT=1`.
+ */
+const EDIT_CHAT_ENABLED = process.env.NEXT_PUBLIC_ENABLE_EDIT_CHAT === "1";
+
+/**
+ * З1: окно «свежести» для восстановления листа после перезагрузки.
+ * Восстанавливаем только то, что учительница делала в текущей сессии —
+ * вчерашний лист из истории показывать не надо.
+ */
+const RESTORE_WINDOW_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * З8: сколько тем показываем до нажатия «Показать все».
+ * Раньше список просто обрезался по высоте, а полосу прокрутки прятал
+ * `scrollbar-hide` — учительница не видела, что список не кончился.
+ */
+const TOPICS_PREVIEW_COUNT = 6;
+
+/**
+ * Тарифы одним текстом для карточки лимита.
+ * Берём из `plans.ts`, чтобы при смене цен карточка не расходилась
+ * с тарифной страницей (план: единый источник цен).
+ * Слово «год» в значении «годовая подписка» / «/год» запрещено планом —
+ * поэтому только «учебный год» (период обучения) и помесячная цена.
+ */
+const PLANS_TEXT = `Подписка ${PLANS.base.name} — ${priceLabel(
+  "base",
+  "academicYear",
+)} за учебный год (${ACADEMIC_YEAR_MONTHS} мес) или ${priceShort("base", "month")} помесячно. ${
+  PLANS.plus.name
+} — ${priceLabel("plus", "academicYear")} за учебный год или ${priceShort(
+  "plus",
+  "month",
+)} помесячно.`;
 
 /**
  * Шаги визарда. topic-mode: 3 шага («select» = предмет+класс, «topic», «configure»).
@@ -90,12 +153,105 @@ type Step =
   | "exam-number";
 
 /**
+ * TZ-16 §4.3 (точка 1): whitelist типов для deep-link `?type=`.
+ *
+ * Раньше это был инлайн-массив из 7 значений — любое новое значение `TaskType`
+ * приходилось вспоминать здесь, иначе `?type=materials` молча игнорировался.
+ * Теперь это единственный источник правды, и `satisfies` не даёт забыть
+ * ни один тип: забытый ключ = ошибка компиляции.
+ */
+const DEEP_LINK_TYPES = [
+  "worksheet",
+  "test",
+  "cards",
+  "control",
+  "lesson-plan",
+  "presentation",
+  "ktp",
+  "oge",
+  "ege",
+  "materials",
+  "lesson-bundle",
+  "interactive",
+  "image",
+] as const satisfies readonly TaskType[];
+
+/**
+ * TZ-16 §4.3 (точка 5): какой «вид» артефакта показывать для выбранного типа.
+ *
+ * КЛЮЧЕВОЙ РЕФАКТОРИНГ. Раньше `kind` выводился из «первого не-нуль»
+ * (`worksheet ? "worksheet" : lessonPlan ? …`). Это работало только потому,
+ * что `handleArtifactTypeChange` сбрасывал ВСЕ закэшированные артефакты при
+ * смене типа. При 9 типах и параллельной генерации пакета одна забытая
+ * ветка = показ чужого артефакта учителю. Теперь `kind` — чистая функция от
+ * `type`, состояние на него не влияет.
+ *
+ * `test` / `control` / `oge` / `ege` — это `worksheet` с перепаковкой
+ * заданий (Б-6 в TZ-16), поэтому все они дают вид «worksheet».
+ * `cards` и `materials` (TZ-16 §3.1–3.2) — самостоятельные артефакты
+ * со своими превью. Типы из Этапов 4–7 отдают `null`: артефакта для них
+ * пока нет, и UI показывает placeholder, а не чужой результат.
+ */
+/**
+ * Типы без генератора (TZ-16 Этапы 6–7). Попасть в них можно только по
+ * deep-link вида `?type=interactive`: в пикере их пока нет.
+ * Нужен, чтобы `generate()` отвечал честным «скоро будет», а не сообщением
+ * «не получилось, попробуйте ещё раз», в котором повтор бессмысленен.
+ */
+const NOT_YET_IMPLEMENTED_TYPES: ReadonlySet<TaskType> = new Set<TaskType>([
+  "interactive",
+  "image",
+]);
+
+function resultKindForType(type: TaskType): ResultKind | null {
+  switch (type) {
+    case "cards":
+      return "cards";
+    case "materials":
+      return "materials";
+    case "lesson-bundle":
+      return "lesson-bundle";
+    case "worksheet":
+    case "test":
+    case "control":
+    case "oge":
+    case "ege":
+      return "worksheet";
+    case "lesson-plan":
+      return "lesson-plan";
+    case "presentation":
+      return "presentation";
+    case "ktp":
+      return "ktp";
+    // TZ-16 Этапы 6–7: мок/превью/экспорт появятся позже.
+    case "interactive":
+    case "image":
+      return null;
+  }
+}
+
+/** Вид артефакта, который умеет отрисовать текущий UI. */
+type ResultKind =
+  | "worksheet"
+  | "lesson-plan"
+  | "presentation"
+  | "ktp"
+  | "cards"
+  | "materials"
+  | "lesson-bundle";
+
+/**
  * F-04-B: success-конфетти после удачной генерации.
  * ~80 частиц сверху страницы, ~1.2с (ticks ~75 × 16мс).
  * Dynamic import — SSR-safe: canvas-confetti трогает window/canvas, не годится для server-render.
  */
 async function fireConfetti() {
   if (typeof window === "undefined") return;
+  // Конфетти — это сильное движение, причём ровно в момент первого
+  // результата, поэтому ради него «меньше движения» и не выключают.
+  // Проверка здесь единственная: других мест вызова нет, все проходят
+  // через эту функцию. Проверяем до импорта, чтобы не грузить модуль.
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   try {
     const mod = await import("canvas-confetti");
     const confetti = mod.default;
@@ -114,6 +270,54 @@ async function fireConfetti() {
     // Не критично — просто пропускаем визуал, генерация уже успешна.
     console.warn("[confetti] skipped:", err);
   }
+}
+
+type ArtifactKind =
+  | "worksheet"
+  | "lesson-plan"
+  | "presentation"
+  | "ktp"
+  | "cards"
+  | "materials"
+  | "lesson-bundle";
+
+/**
+ * З1: определяем тип артефакта из его содержимого.
+ *
+ * Discriminator-поля те же, что и в `utils/storage.ts`:
+ *   Worksheet → `tasks`, LessonPlan → `stages`, Presentation → `slides`, Ktp → `weeks`.
+ * Нужен, чтобы (а) не восстановить КТП в слот рабочего листа и (б) понять,
+ * в какой state класть восстановленное.
+ */
+function artifactKindOf(artifact: UserHistoryItem["artifact"]): ArtifactKind | null {
+  if (!artifact || typeof artifact !== "object") return null;
+  const a = artifact as unknown as Record<string, unknown>;
+  if (Array.isArray(a.tasks)) return "worksheet";
+  if (Array.isArray(a.stages)) return "lesson-plan";
+  if (Array.isArray(a.slides)) return "presentation";
+  if (Array.isArray(a.weeks)) return "ktp";
+  // TZ-16 §3.1: у карточек поле `cards`, у материалов — `files`.
+  // Проверка порядка важна: у карточек нет ни tasks/stages/slides/weeks,
+  // а у материалов — только `files`, так что коллизий нет.
+  if (Array.isArray(a.cards)) return "cards";
+  if (Array.isArray(a.files)) return "materials";
+  // TZ-16 §3.4: у пакета «урок целиком» обязательное поле `failed`
+  // (список неудачных слотов) — оно есть даже при полном успехе, поэтому
+  // Array.isArray, а не проверка на непустоту. Проверка идёт последней:
+  // LessonBundle не содержит tasks/stages/slides/weeks/cards/files.
+  if (Array.isArray(a.failed)) return "lesson-bundle";
+  return null;
+}
+
+/** `TaskType`/`"exam"` из записи истории → наш внутренний `ArtifactKind`. */
+function historyTypeToKind(type: UserHistoryItem["type"]): ArtifactKind | null {
+  if (type === "lesson-plan" || type === "presentation" || type === "ktp") return type;
+  // TZ-16: cards и materials — самостоятельные артефакты, а не рабочий лист.
+  if (type === "cards") return "cards";
+  if (type === "materials") return "materials";
+  if (type === "lesson-bundle") return "lesson-bundle";
+  // worksheet / test / control / oge / ege → это рабочий лист.
+  return "worksheet";
 }
 
 function ConstructorPage() {
@@ -157,10 +361,54 @@ function ConstructorPage() {
   const [lessonPlan, setLessonPlan] = React.useState<LessonPlan | null>(null);
   const [presentation, setPresentation] = React.useState<Presentation | null>(null);
   const [ktp, setKtp] = React.useState<Ktp | null>(null);
+  // TZ-16 §3.1–3.2: карточки и комплект материалов — отдельные артефакты.
+  const [cardSet, setCardSet] = React.useState<CardSet | null>(null);
+  const [materialBundle, setMaterialBundle] = React.useState<MaterialBundle | null>(null);
+  // TZ-16 §3.4: «Урок целиком» — комплект из 4 артефактов, заполняется частично.
+  const [lessonBundle, setLessonBundle] = React.useState<LessonBundle | null>(null);
+  /**
+   * Правда о последнем материале: он пришёл из LLM или это типовая заготовка.
+   *
+   * Раньше флаг `isDemo` возвращался из `client/llm.ts`, но в интерфейс не
+   * попадал вообще: при сбое бэка учитель получал шаблон с конфетти и тостом
+   * «Готово за 30 сек» и не знал, что AI не отвечал. Для сервиса, который живёт
+   * на доверии, молчаливая подмена — самая дорогая ошибка: такой лист учитель
+   * отдаёт ученикам.
+   *
+   * Теперь заготовка всегда помечена, а рядом стоит кнопка «Повторить».
+   */
+  const [isDemoResult, setIsDemoResult] = React.useState(false);
   const [remaining, setRemaining] = React.useState<number>(3);
   const [showPaywall, setShowPaywall] = React.useState(false);
   /** F-06: видна ли inline-панель проверки фото тетради (только worksheet). */
   const [photoCheckOpen, setPhotoCheckOpen] = React.useState(false);
+  /** TZ-12: открыта ли модалка «Выдать классу». */
+  const [shareFormOpen, setShareFormOpen] = React.useState(false);
+  /**
+   * TZ-12: `worksheetId`, под которым лист сохранился на сервере.
+   * Нужен, чтобы `POST /api/assignments/forms` снял снимок заданий сам.
+   * Пока `saveWorksheet` не ответил — `null`, тогда в модалку уходит снимок
+   * `tasks[]` напрямую (этот же путь работает для листов до логина).
+   */
+  const [savedWorksheetId, setSavedWorksheetId] = React.useState<string | null>(null);
+  // TZ-13: формат игры, выбранный в блоке «Оживить урок» (?interactiveFormat=).
+  // null = учитель в конструкторе не про интерактив, обычный флоу листа.
+  const [interactiveFormat, setInteractiveFormat] = React.useState<InteractiveFormat | null>(null);
+  /**
+   * TZ-12: залогинен ли учитель — для кнопки «Выдать классу».
+   * Сначала `false`, потом синхронизируем в effect: `getProfile()` читает
+   * localStorage, а на пререндере (output: "export" собирает клиентские
+   * компоненты на сервере) профиля ещё нет. Пока `profileChecked === false`,
+   * кнопку не рисуем вовсе — иначе на гидрации «Войдите» мигнёт поверх
+   * настоящего состояния.
+   */
+  const [isLoggedIn, setIsLoggedIn] = React.useState(false);
+  const [profileChecked, setProfileChecked] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsLoggedIn(Boolean(getProfile()));
+    setProfileChecked(true);
+  }, []);
   /**
    * W1+п.2: useUsage — серверный счётчик генераций на сегодня для залогиненных.
    * Для анонимных юзеров usage = null; UI fallback'ится на localStorage (`limit.ts`).
@@ -178,9 +426,128 @@ function ConstructorPage() {
 
   const { toast } = useToast();
 
+  /**
+   * З3/З4: тач-устройство или десктоп. На таче главная кнопка экспорта —
+   * «Сохранить в PDF», а DOCX не предлагается вообще.
+   *
+   * Начальное значение `false` (десктоп) нужно для SSR: проект собирается как
+   * static export, и на сервере `window` нет. На клиенте эффект ниже
+   * пересчитывает значение сразу после монтирования.
+   */
+  const [isTouch, setIsTouch] = React.useState(false);
+  React.useEffect(() => {
+    setIsTouch(isTouchDevice());
+    // Подписка нужна на случай смены типа устройства (iPad подключили к
+    // монитору, окно перетащили на узкий экран).
+    return subscribeToDeviceChange(setIsTouch);
+  }, []);
+
+  /**
+   * З1: восстановление последнего артефакта после перезагрузки.
+   *
+   * Самая дорогая жалоба: учительница обновила страницу (на iPad это ещё и
+   * pull-to-refresh) и потеряла и сам лист, и потраченную попытку. Лист жил
+   * только в React-стейте, а в историю попадали метаданные.
+   *
+   * Теперь в 5 последних записях истории лежит сам артефакт
+   * (`UserHistoryItem.artifact`), поэтому после перезагрузки мы достаём
+   * самый свежий (окно 2 часа) и кладём обратно в state.
+   */
+  const restoredRef = React.useRef(false);
+  React.useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    if (typeof window === "undefined") return;
+
+    // Deep-link (?subject=/?topic=/?exam=) — пользователь САМ пришёл собирать
+    // новый лист, восстановление старого только сбило бы его с толку.
+    const hasDeepLink =
+      !!searchParams.get("exam") ||
+      !!searchParams.get("topic") ||
+      !!searchParams.get("subject");
+    if (hasDeepLink) return;
+
+    const now = Date.now();
+    // История отсортирована новыми сверху, поэтому берём первую подходящую.
+    const candidate = getHistory().find((item) => {
+      if (!item.artifact) return false;
+      const age = now - new Date(item.createdAt).getTime();
+      if (!Number.isFinite(age) || age > RESTORE_WINDOW_MS || age < 0) return false;
+      // Тип в истории должен совпадать с типом самого артефакта — иначе это
+      // битая запись, и класть её в state опасно.
+      return historyTypeToKind(item.type) === artifactKindOf(item.artifact);
+    });
+
+    const kind = candidate ? artifactKindOf(candidate.artifact) : null;
+    if (!candidate || !kind) return;
+
+    switch (kind) {
+      case "worksheet":
+        setWorksheet(candidate.artifact as Worksheet);
+        break;
+      case "lesson-plan":
+        setLessonPlan(candidate.artifact as LessonPlan);
+        break;
+      case "presentation":
+        setPresentation(candidate.artifact as Presentation);
+        break;
+      case "ktp":
+        setKtp(candidate.artifact as Ktp);
+        break;
+      case "cards":
+        setCardSet(candidate.artifact as CardSet);
+        break;
+      case "materials":
+        setMaterialBundle(candidate.artifact as MaterialBundle);
+        break;
+      case "lesson-bundle":
+        setLessonBundle(candidate.artifact as LessonBundle);
+        break;
+    }
+
+    // Восстанавливаем и контекст подбора, чтобы «Новый вариант» и правки
+    // работали сразу, без повторного выбора предмета/класса/темы.
+    setSubject(candidate.subject);
+    if (typeof candidate.grade === "number") setGrade(candidate.grade);
+    const restoredTopic = (candidate.artifact as { topic?: string }).topic;
+    if (restoredTopic) setTopic(restoredTopic);
+    // Ставим исходный TaskType (например «test» или «control»), а не только
+    // «worksheet» — иначе подпись в превью была бы неверной.
+    setType(candidate.type as TaskType);
+    // Шаг «Параметры» — единственный, где preview с артефактом виден
+    // справа (на шаге «Что» правая колонка скрыта).
+    setStep("configure");
+
+    toast({
+      tone: "info",
+      title: "Лист восстановлен",
+      description: "Вот ваши PDF и DOCX — генерация не потерялась",
+    });
+    trackEvent("constructor_artifact_restored", { kind, id: candidate.id });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Init: подтянуть query params из SEO-страниц тем + лимит
   React.useEffect(() => {
     setRemaining(getRemaining());
+
+    // F-06.1: deep-link `?photo=1` — точка входа из ЛК и с лендинга.
+    // Раскрывает секцию проверки сразу, как только появится лист. Сама панель
+    // рендерится только для `kind === "worksheet"`, поэтому флаг безопасен и
+    // до генерации: лишнего ничего не будет на экране.
+    if (searchParams.get("photo") === "1") setPhotoCheckOpen(true);
+
+    // TZ-13 §4.9: приход из блока «Оживить урок» на экране листа.
+    // Раньше параметр отправлялся, но здесь не читался — учитель выбирал
+    // формат и попадал в обычную форму листа, то есть выбор молча терялся.
+    // Панель создания игры рендерится в блоке ниже и использует серверный
+    // `savedWorksheetId`: ранклеру нужен id листа В БАЗЕ, а не клиентский.
+    const formatParam = searchParams.get("interactiveFormat");
+    if (formatParam && isInteractiveFormat(formatParam)) {
+      setInteractiveFormat(formatParam);
+      setType("interactive");
+      setStep("configure");
+    }
 
     // F-04-C: deep-link для режима «По номеру ОГЭ/ЕГЭ».
     // Имеет приоритет над topic-флоу, т.к. `?exam=` — это маркер экзамен-режима.
@@ -224,7 +591,10 @@ function ConstructorPage() {
       if (t) setTopic(t);
       if (d && ["easy", "medium", "hard"].includes(d)) setDifficulty(d);
       if (!Number.isNaN(c) && c >= 5 && c <= 30) setCount(c);
-      if (ty && ["worksheet", "test", "cards", "control", "lesson-plan", "presentation", "ktp"].includes(ty)) setType(ty as TaskType);
+      // TZ-16: whitelist расширен на 4 новых типа из TaskType. Deep-link
+      // `?type=materials` (и lesson-bundle / interactive / image) больше не
+      // игнорируется молча. Сами артефакты придут в Этапах 2–7.
+      if (ty && DEEP_LINK_TYPES.includes(ty)) setType(ty);
       // Deep-link → перескакиваем максимально далеко.
       // UMK больше не отдельный шаг — оно inline в TopicStep (если опций > 1) или auto-pick (если 1).
       if (t) {
@@ -258,6 +628,9 @@ function ConstructorPage() {
     setLessonPlan(null);
     setPresentation(null);
     setKtp(null);
+    setCardSet(null);
+    setMaterialBundle(null);
+    setLessonBundle(null);
     setPhotoCheckOpen(false);
     // F-04-C: сброс экзамен-флоу.
     setExam(null);
@@ -322,6 +695,9 @@ function ConstructorPage() {
     setLessonPlan(null);
     setPresentation(null);
     setKtp(null);
+    setCardSet(null);
+    setMaterialBundle(null);
+    setLessonBundle(null);
     setPhotoCheckOpen(false);
   }, []);
 
@@ -338,6 +714,9 @@ function ConstructorPage() {
     setLessonPlan(null);
     setPresentation(null);
     setKtp(null);
+    setCardSet(null);
+    setMaterialBundle(null);
+    setLessonBundle(null);
     if (next === "exam") {
       setStep("exam-select");
     } else {
@@ -383,6 +762,20 @@ function ConstructorPage() {
   }, [step, mode]);
 
   const generate = async () => {
+    // TZ-16 Этапы 6–7: типы объявлены в TaskType и входят в DEEP_LINK_TYPES,
+    // но генераторов для них ещё нет. Без этой проверки учитель, пришедший по
+    // ссылке `?type=interactive`, доходил до кнопки «Создать» и получал
+    // «Не получилось, попробуйте ещё раз» — а повтор не помог бы никогда.
+    // Показываем честное «скоро», ничего не списав с квоты.
+    if (NOT_YET_IMPLEMENTED_TYPES.has(type)) {
+      toast({
+        tone: "info",
+        title: "Этот формат ещё в работе",
+        description: "Пока доступны рабочий лист, тест, контрольная, карточки, план урока, презентация, КТП, материалы и урок целиком",
+      });
+      return;
+    }
+
     trackEvent("constructor_generate_click", {
       mode,
       subject,
@@ -427,16 +820,34 @@ function ConstructorPage() {
       };
     }
 
-    if (!canGenerate()) {
+    /**
+     * Бесплатный лимит проверяем только у бесплатного тарифа.
+     *
+     * Раньше здесь стояло голое `canGenerate()` — то есть локальный счётчик из
+     * localStorage ограничивал ВСЕХ, включая платящих. Учитель на «Базовом»
+     * или «Плюсе» упирался в «Лимит бесплатных генераций» на четвёртом листе
+     * в тот же день и на другой вкладке, хотя его тариф к localStorage отношения
+     * не имеет: лимиты платных считает бэк.
+     *
+     * Для анонимов (serverUsage === null) поведение прежнее — 3 бесплатные
+     * генерации. Решение об оплате принимает бэк (402 → paywall), поэтому
+     * клиентский чек — только против недопустимой генерации у бесплатного.
+     */
+    const isPaid = serverUsage?.plan === "base" || serverUsage?.plan === "plus";
+    if (!isPaid && !canGenerate()) {
       setShowPaywall(true);
       return;
     }
 
     setGenerating(true);
+    setIsDemoResult(false);
     setWorksheet(null);
     setLessonPlan(null);
     setPresentation(null);
     setKtp(null);
+    setCardSet(null);
+    setMaterialBundle(null);
+    setLessonBundle(null);
     setPhotoCheckOpen(false);
     setProgressStage("selecting");
 
@@ -451,76 +862,198 @@ function ConstructorPage() {
     scheduleStage("verifying", 1000);
     scheduleStage("formatting", 2500);
 
+    // З2: квота списывается ПОСЛЕ успешной генерации (строка `consume()` ниже,
+    // уже после `await`). Флаг защищает от двойного возврата: если после
+    // списания упало что-то ещё (сборка payload, сохранение), `catch` вернёт
+    // ровно одну попытку. Если упала сама генерация — списания ещё не было,
+    // и refund не вызывается вовсе.
+    let quotaConsumed = false;
+
     try {
       // Q1-2027: switch по типу артефакта — разные smart-функции и разный result-handling.
+      //
+      // TZ-16 §4.3 (точка 2), КРИТИЧНО: `default` больше НЕ отдаёт worksheet молча.
+      // Именно из-за этого `cards` сегодня генерировал обычный рабочий лист —
+      // учитель выбирал «Карточки» и получал лист с уплотнёнными заданиями.
+      // Теперь каждый тип обязан иметь явный `case`; exhaustiveness-проверка
+      // внизу не даст забыть новый тип из TaskType (забытый case = ошибка компиляции).
       const result = await (async () => {
         switch (type) {
-          case "lesson-plan":
-            return { kind: "lesson-plan" as const, payload: (await generateLessonPlanSmart(body)).data };
-          case "presentation":
-            return { kind: "presentation" as const, payload: (await generatePresentationSmart(body)).data };
-          case "ktp":
-            return { kind: "ktp" as const, payload: (await generateKtpSmart(body)).data };
-          default:
-            return { kind: "worksheet" as const, payload: (await generateWorksheetSmart(body)).worksheet };
+          case "lesson-plan": {
+            const r = await generateLessonPlanSmart(body);
+            return { kind: "lesson-plan" as const, payload: r.data, isDemo: r.isDemo };
+          }
+          case "presentation": {
+            const r = await generatePresentationSmart(body);
+            return { kind: "presentation" as const, payload: r.data, isDemo: r.isDemo };
+          }
+          case "ktp": {
+            const r = await generateKtpSmart(body);
+            return { kind: "ktp" as const, payload: r.data, isDemo: r.isDemo };
+          }
+          // TZ-16 §3.1: карточки — самостоятельный артефакт со своим моком.
+          // Раньше `cards` был в списке ниже и молча отдавал обычный лист.
+          case "cards": {
+            const r = await generateCardsSmart(body);
+            return { kind: "cards" as const, payload: r.data, isDemo: r.isDemo };
+          }
+          // TZ-16 §3.2: комплект материалов (словарь / справочник / раздатка).
+          case "materials": {
+            const r = await generateMaterialsSmart(body);
+            return { kind: "materials" as const, payload: r.data, isDemo: r.isDemo };
+          }
+          // TZ-16 §3.4: «урок целиком» — 4 слота. Оркестрация ПАРАЛЛЕЛЬНА
+          // (Promise.allSettled внутри generateBundleSmart → мок): при отказе
+          // одного слота остальные три не теряются, отказ уходит в `failed`.
+          case "lesson-bundle": {
+            const r = await generateBundleSmart(body);
+            return { kind: "lesson-bundle" as const, payload: r.data, isDemo: r.isDemo };
+          }
+          // Лист с разной перепаковкой заданий.
+          case "worksheet":
+          case "test":
+          case "control":
+          case "oge":
+          case "ege": {
+            const r = await generateWorksheetSmart(body);
+            return { kind: "worksheet" as const, payload: r.worksheet, isDemo: r.isDemo };
+          }
+          // TZ-16 Этапы 6–7: типы объявлены в TaskType и видны в пикере,
+          // но генераторов для них ещё нет. Явная ошибка вместо тихой подмены.
+          case "interactive":
+          case "image":
+            throw new Error(`[generate] тип "${type}" ещё не реализован (TZ-16, Этапы 6–7)`);
+          default: {
+            // Exhaustiveness: если в TaskType добавят новый тип и забудут case
+            // выше, `type` здесь перестанет быть `never` и сборка упадёт.
+            const unhandled: never = type;
+            throw new Error(`[generate] необработанный тип: ${String(unhandled)}`);
+          }
         }
       })();
 
+      // З2: списание квоты — только здесь, уже после успешного `await`.
       const counter = consume();
-      const left = Math.max(0, 3 - counter.count);
+      quotaConsumed = true;
+      const left = Math.max(0, FREE_GENERATIONS - counter.count);
 
       // Снэпим к "done" и сбрасываем pending-переходы.
       stageTimers.forEach((id) => window.clearTimeout(id));
       setProgressStage("done");
 
+      // Честность результата: заготовка всегда помечается в интерфейсе.
+      setIsDemoResult(result.isDemo);
+
       // Сохраняем в правильный state.
+      // TZ-16 §4.3 (точка 3): цепочка if/else заменена на switch — на 7 типах
+      // она была источником багов, а с 9 их стало 13.
       let artifactTitle = "";
       let historyType: TaskType = "worksheet";
       let histSubject: SubjectSlug | null = null;
       let histGrade: number | undefined = undefined;
+      let artifactId = "";
 
-      if (result.kind === "lesson-plan") {
-        const lp = result.payload as LessonPlan;
-        setLessonPlan(lp);
-        artifactTitle = lp.title;
-        historyType = "lesson-plan";
-        histSubject = lp.subject;
-        histGrade = lp.grade;
-      } else if (result.kind === "presentation") {
-        const p = result.payload as Presentation;
-        setPresentation(p);
-        artifactTitle = p.title;
-        historyType = "presentation";
-        histSubject = p.subject;
-        histGrade = p.grade;
-      } else if (result.kind === "ktp") {
-        const k = result.payload as Ktp;
-        setKtp(k);
-        artifactTitle = k.title;
-        historyType = "ktp";
-        histSubject = k.subject;
-        histGrade = k.grade;
-      } else {
-        const ws = result.payload as Worksheet;
-        setWorksheet(ws);
-        artifactTitle = ws.title;
-        histSubject = ws.subject as SubjectSlug;
-        histGrade = ws.grade;
+      switch (result.kind) {
+        case "lesson-plan": {
+          const lp = result.payload as LessonPlan;
+          setLessonPlan(lp);
+          artifactTitle = lp.title;
+          artifactId = lp.id;
+          historyType = "lesson-plan";
+          histSubject = lp.subject;
+          histGrade = lp.grade;
+          break;
+        }
+        case "presentation": {
+          const p = result.payload as Presentation;
+          setPresentation(p);
+          artifactTitle = p.title;
+          artifactId = p.id;
+          historyType = "presentation";
+          histSubject = p.subject;
+          histGrade = p.grade;
+          break;
+        }
+        case "ktp": {
+          const k = result.payload as Ktp;
+          setKtp(k);
+          artifactTitle = k.title;
+          artifactId = k.id;
+          historyType = "ktp";
+          histSubject = k.subject;
+          histGrade = k.grade;
+          break;
+        }
+        case "worksheet": {
+          const ws = result.payload as Worksheet;
+          setWorksheet(ws);
+          artifactTitle = ws.title;
+          artifactId = ws.id;
+          histSubject = ws.subject as SubjectSlug;
+          histGrade = ws.grade;
+          break;
+        }
+        // TZ-16 §3.1: у CardSet есть свои subject/grade — берём из артефакта.
+        case "cards": {
+          const cs = result.payload as CardSet;
+          setCardSet(cs);
+          artifactTitle = cs.title;
+          artifactId = cs.id;
+          historyType = "cards";
+          histSubject = cs.subject;
+          histGrade = cs.grade;
+          break;
+        }
+        // TZ-16 §3.2: у MaterialBundle — тоже свои subject/grade.
+        case "materials": {
+          const mb = result.payload as MaterialBundle;
+          setMaterialBundle(mb);
+          artifactTitle = mb.title;
+          artifactId = mb.id;
+          historyType = "materials";
+          histSubject = mb.subject;
+          histGrade = mb.grade;
+          break;
+        }
+        // TZ-16 §3.4: у LessonBundle — свои subject/grade. Комплект может быть
+        // неполным (часть слотов в `failed`) — это не ошибка генерации,
+        // поэтому провала тут не делаем: превью само покажет статусы слотов.
+        case "lesson-bundle": {
+          const lb = result.payload as LessonBundle;
+          setLessonBundle(lb);
+          artifactTitle = lb.title;
+          artifactId = lb.id;
+          historyType = "lesson-bundle";
+          histSubject = lb.subject;
+          histGrade = lb.grade;
+          break;
+        }
+        default: {
+          // Exhaustiveness: новый `kind` без ветки = ошибка компиляции.
+          // После исчерпывающего switch сам `result` сужается до `never`,
+          // поэтому проверяем весь объект, а не `result.kind`.
+          const unhandled: never = result;
+          throw new Error(`[generate] необработанный результат: ${JSON.stringify(unhandled)}`);
+        }
       }
 
       setRemaining(left);
 
       addToHistory({
-        id: result.kind === "lesson-plan" ? (result.payload as LessonPlan).id
-          : result.kind === "presentation" ? (result.payload as Presentation).id
-          : result.kind === "ktp" ? (result.payload as Ktp).id
-          : (result.payload as Worksheet).id,
+        // TZ-16: id берём из switch выше, а не из тернарника по result.kind —
+        // на 13 типах такой тернарник гарантированно что-то забывает.
+        id: artifactId,
         type: historyType,
         title: artifactTitle,
         subject: (histSubject ?? subject) as SubjectSlug,
         grade: histGrade,
         createdAt: new Date().toISOString(),
         isFavorite: false,
+        // З1: кладём в историю сам артефакт, а не только метаданные —
+        // иначе перезагрузка страницы стирает результат генерации.
+        // `addToHistory` сам обрезает это поле у всех, кроме 5 последних,
+        // чтобы localStorage не раздувался.
+        artifact: result.payload as UserHistoryItem["artifact"],
       });
 
       // W1+п.2+п.3: синхронно с localStorage addToHistory — сохраняем артефакт
@@ -534,83 +1067,115 @@ function ConstructorPage() {
       // На бэке zod-схема SaveBody матчит `type` и валидирует специфичные поля
       // (tasks/stages/slides/weeks). payload_json хранит весь data, чтобы при
       // GET /api/worksheets/:id данные совпадали с тем, что прислал фронт.
-      const saveInput: Parameters<typeof saveWorksheet>[0] = (() => {
-        if (result.kind === "worksheet") {
-          const ws = result.payload as Worksheet;
-          return {
-            type: "worksheet" as const,
-            subject: ws.subject as SubjectSlug,
-            grade: ws.grade,
-            topic: ws.topic,
-            title: ws.title,
-            difficulty: ws.difficulty,
-            tasks: ws.tasks,
-            source: "mock",
-          };
+      const saveInput: SaveWorksheetInput | null = (() => {
+        // TZ-16 §4.3 (точка 4): цепочка if/else → switch. Раньше последняя
+        // ветка была безусловным «ktp» без проверки, то есть любой будущий
+        // тип молча сохранялся бы как КТП. Новые типы (materials и др.) сюда
+        // не доходят: generate() для них бросает явную ошибку на Этапе 1.
+        switch (result.kind) {
+          case "worksheet": {
+            const ws = result.payload as Worksheet;
+            return {
+              type: "worksheet" as const,
+              subject: ws.subject as SubjectSlug,
+              grade: ws.grade,
+              topic: ws.topic,
+              title: ws.title,
+              difficulty: ws.difficulty,
+              tasks: ws.tasks,
+              source: "mock",
+            };
+          }
+          case "lesson-plan": {
+            const lp = result.payload as LessonPlan;
+            return {
+              type: "lesson-plan" as const,
+              subject: lp.subject,
+              grade: lp.grade,
+              topic: lp.topic,
+              title: lp.title,
+              difficulty, // lesson-plan: optional на бэке, передаём из стейта как есть.
+              goals: lp.goals,
+              equipment: lp.equipment,
+              stages: lp.stages,
+              homework: lp.homework,
+              fgosRef: lp.fgosRef,
+              source: "mock",
+            };
+          }
+          case "presentation": {
+            const p = result.payload as Presentation;
+            return {
+              type: "presentation" as const,
+              subject: p.subject,
+              grade: p.grade,
+              topic: p.topic,
+              title: p.title,
+              slideCount: p.slideCount,
+              slides: p.slides,
+              theme: p.theme,
+              source: "mock",
+            };
+          }
+          case "ktp": {
+            const k = result.payload as Ktp;
+            return {
+              type: "ktp" as const,
+              subject: k.subject,
+              grade: k.grade,
+              // topic у КТП опционален (на бэке optional); берём из req, если есть.
+              topic: (k as { topic?: string }).topic,
+              title: k.title,
+              schoolYear: k.schoolYear,
+              totalHours: k.totalHours,
+              weeks: k.weeks,
+              source: "mock",
+            };
+          }
+          default: {
+            // TZ-16 §3.1–3.2: карточки и материалы пока не сохраняются в БД.
+            // Причина не в лени, а в контракте: `SaveWorksheetInput` и zod-схема
+            // `SaveBody` на бэке знают только 4 типа (worksheet / lesson-plan /
+            // presentation / ktp). Отправлять им payload карточек означает
+            // гарантированный 400 validation на каждой генерации. Артефакт при
+            // этом не теряется — он лежит в истории (localStorage) и
+            // восстанавливается после перезагрузки.
+            // Серверное сохранение для этих типов придёт вместе с их
+            // LLM-эндпоинтами (`/api/cards`, `/api/materials`).
+            if (result.kind === "cards" || result.kind === "materials" || result.kind === "lesson-bundle") {
+              return null;
+            }
+            // Exhaustiveness: новый `kind` без ветки сохранения = ошибка компиляции.
+            // После исчерпывающего switch сам `result` сужается до `never`.
+            const unhandled: never = result;
+            throw new Error(`[generate] нет ветки сохранения для: ${JSON.stringify(unhandled)}`);
+          }
         }
-        if (result.kind === "lesson-plan") {
-          const lp = result.payload as LessonPlan;
-          return {
-            type: "lesson-plan" as const,
-            subject: lp.subject,
-            grade: lp.grade,
-            topic: lp.topic,
-            title: lp.title,
-            difficulty, // lesson-plan: optional на бэке, передаём из стейта как есть.
-            goals: lp.goals,
-            equipment: lp.equipment,
-            stages: lp.stages,
-            homework: lp.homework,
-            fgosRef: lp.fgosRef,
-            source: "mock",
-          };
-        }
-        if (result.kind === "presentation") {
-          const p = result.payload as Presentation;
-          return {
-            type: "presentation" as const,
-            subject: p.subject,
-            grade: p.grade,
-            topic: p.topic,
-            title: p.title,
-            slideCount: p.slideCount,
-            slides: p.slides,
-            theme: p.theme,
-            source: "mock",
-          };
-        }
-        // ktp
-        const k = result.payload as Ktp;
-        return {
-          type: "ktp" as const,
-          subject: k.subject,
-          grade: k.grade,
-          // topic у КТП опционален (на бэке optional); берём из req, если есть.
-          topic: (k as { topic?: string }).topic,
-          title: k.title,
-          schoolYear: k.schoolYear,
-          totalHours: k.totalHours,
-          weeks: k.weeks,
-          source: "mock",
-        };
       })();
 
-      void saveWorksheet(saveInput).then((r) => {
-        if (r.ok) {
-          // Обновить виджет лимита: для залогиненного — счётчик с сервера,
-          // для анонимного — noop (хук сам себя не вызывает при 401).
-          void refreshUsage();
-        } else if (r.error === "validation" || r.error === "internal") {
-          // "network" → тост НЕ показываем (типичная ситуация: оффлайн / API
-          // URL не задан в dev — без паники, юзер видит лист локально).
-          toast({
-            tone: "info",
-            title: "Не удалось сохранить на сервере",
-            description: "Лист сохранён локально, на сервере появится после восстановления соединения",
-          });
-        }
-        // "unauthorized" — silent skip, юзер просто не залогинен.
-      });
+      // Карточки и материалы пока не умеют сохраняться на бэк (см. ветку
+      // `return null` выше) — не шлём запрос, который гарантированно отбросят.
+      if (saveInput) {
+        void saveWorksheet(saveInput).then((r) => {
+          if (r.ok) {
+            // TZ-12: сохранили id листа — «Выдать классу» сможет ссылаться на него
+            // серверным ID вместо клиентского снимка заданий.
+            setSavedWorksheetId(r.worksheetId);
+            // Обновить виджет лимита: для залогиненного — счётчик с сервера,
+            // для анонимного — noop (хук сам себя не вызывает при 401).
+            void refreshUsage();
+          } else if (r.error === "validation" || r.error === "internal") {
+            // "network" → тост НЕ показываем (типичная ситуация: оффлайн / API
+            // URL не задан в dev — без паники, юзер видит лист локально).
+            toast({
+              tone: "info",
+              title: "Не удалось сохранить на сервере",
+              description: "Лист сохранён локально, на сервере появится после восстановления соединения",
+            });
+          }
+          // "unauthorized" — silent skip, юзер просто не залогинен.
+        });
+      }
 
       // F-04-B: success-burst сверху страницы (~80 частиц, ~1.2с).
       void fireConfetti();
@@ -618,15 +1183,28 @@ function ConstructorPage() {
       toast({
         tone: "success",
         title: "Готово!",
-        description: `Сгенерировано за 1 сек · demo-режим.`,
+        // З6/З7: единое время «30 сек» — столько же стоит в заголовке и в
+        // подписи под кнопкой. Слово «demo-режим» в пользовательский текст
+        // не выносим: учителю оно ничего не объясняет.
+        // Для разработчика: это заявленное время из UI, а не замер. Когда
+        // подключим реальный LLM — считаем `performance.now()` и подставляем
+        // фактическое, тогда здесь же уйдёт и «· demo-режим».
+        description: "Готово за 30 сек · сохраните в PDF",
       });
     } catch (err) {
       stageTimers.forEach((id) => window.clearTimeout(id));
       setProgressStage(null);
+      // З2: неудачная генерация не должна стоить попытки. Возвращаем квоту
+      // только если она уже была списана (иначе refund() ушёл бы в минус).
+      if (quotaConsumed) {
+        refund();
+        setRemaining(getRemaining());
+        quotaConsumed = false;
+      }
       toast({
         tone: "error",
         title: "Не получилось",
-        description: "Попробуйте ещё раз через пару секунд",
+        description: "Попытка не потрачена — попробуйте ещё раз",
       });
       console.error("[generate] failed:", err);
     } finally {
@@ -641,6 +1219,13 @@ function ConstructorPage() {
   };
 
   const handlePrint = () => {
+    // TZ-16 §3.1: у карточек своя печатная сетка (2×5 на A4 с линией сгиба),
+    // обычный window.print() её не применит — стили живут в CARDS_PRINT_CSS,
+    // который инжектит printCards().
+    if (type === "cards") {
+      printCards();
+      return;
+    }
     if (typeof window !== "undefined") window.print();
   };
 
@@ -668,6 +1253,54 @@ function ConstructorPage() {
       const blob = await generatePptx(presentation);
       downloadBlob(blob, pptxFilename(presentation));
       toast({ tone: "success", title: "PPTX скачан", description: "Откройте в PowerPoint или Google Slides" });
+      return;
+    }
+    // TZ-16 §3.1: карточки — DOCX с таблицей для разрезания.
+    if (type === "cards" && cardSet) {
+      const blob = await generateCardsDocx(cardSet);
+      const filename = `${cardSet.subject}-${cardSet.grade}kl-${cardSet.topic}-cards.docx`
+        .toLowerCase()
+        .replace(/\s+/g, "-");
+      downloadBlob(blob, filename);
+      toast({ tone: "success", title: "DOCX скачан", description: "Карточки с рамками — режьте и раздавайте" });
+      return;
+    }
+    // TZ-16 §3.2: материалы — ZIP-архив со всеми файлами комплекта.
+    if (type === "materials" && materialBundle) {
+      const blob = await generateMaterialsZip(materialBundle);
+      const filename = materialsZipFilename(materialBundle);
+      downloadBlob(blob, filename);
+      toast({
+        tone: "success",
+        title: "ZIP скачан",
+        description: `${materialBundle.files.length} ${pluralizeFiles(materialBundle.files.length)} в архиве`,
+      });
+      return;
+    }
+    // TZ-16 §3.4: «урок целиком» — один ZIP со всеми готовыми слотами.
+    // Частичный комплект скачивается как есть: сколько собралось, столько
+    // файлов в архиве, без заглушек на месте отказавших слотов.
+    if (type === "lesson-bundle" && lessonBundle) {
+      const ready = bundleReadyCount(lessonBundle);
+      if (ready === 0) {
+        toast({
+          tone: "error",
+          title: "Скачивать нечего",
+          description: "Ни один файл не собрался — попробуйте ещё раз",
+        });
+        return;
+      }
+      const blob = await generateBundleZip(lessonBundle);
+      const filename = bundleZipFilename(lessonBundle);
+      downloadBlob(blob, filename);
+      toast({
+        tone: "success",
+        title: "ZIP скачан",
+        description:
+          lessonBundle.failed.length === 0
+            ? `${ready} ${pluralizeFiles(ready)} в архиве`
+            : `${ready} из 4 ${pluralizeFiles(ready)} · остальные не собрались`,
+      });
       return;
     }
     if (!worksheet) return;
@@ -841,8 +1474,24 @@ function ConstructorPage() {
                 setWithExplanations={setWithExplanations}
                 remaining={remaining}
                 generating={generating}
-                /** Q1-2027: флаг подписки Плюс — пока true, реальный тариф привяжем позже. */
-                hasPlus={true}
+                /** Плюс-фичи закрыты для всех, у кого нет тарифа plus.
+                 *  Раньше здесь стояло `hasPlus={true}` с комментарием
+                 *  «Q1-2027: привяжем позже» — то есть платный порог не работал
+                 *  вообще: КТП, презентации и план урока были доступны каждому,
+                 *  и на тариф Плюс не было даже намёка на ограничение.
+                 *  Источник — серверный usage.plan, он уже приходит из useUsage. */
+                hasPlus={serverUsage?.plan === "plus"}
+                /** TZ-12: если юзер пришёл через preset и его тип совпадает с current `type`,
+                 * скрываем сегментер (показываем компактный chip с «Изменить»). */
+                presetLocked={
+                  selectedPresetId
+                    ? PRESETS.find((p) => p.id === selectedPresetId) ?? null
+                    : null
+                }
+                onClearPresetLock={() => {
+                  setSelectedPresetId(null);
+                  setPresetMode("custom");
+                }}
                 summary={mode === "topic"
                   ? subjectData && grade
                     ? `${subjectData.emoji} ${subjectData.shortTitle} · ${grade} кл${topic && gradeData?.topics.find((tt) => tt.slug === topic) ? ` · ${gradeData.topics.find((tt) => tt.slug === topic)!.title}` : ""}`
@@ -891,15 +1540,33 @@ function ConstructorPage() {
 
             {generating && <GeneratingState stage={progressStage} />}
 
-            {/* Q1-2027: switch по типу — рендерим правильный preview + кнопки. */}
-            {!generating && (worksheet || lessonPlan || presentation || ktp) && (() => {
-              const kind: "worksheet" | "lesson-plan" | "presentation" | "ktp" =
-                worksheet ? "worksheet" : lessonPlan ? "lesson-plan" : presentation ? "presentation" : "ktp";
+            {/* Q1-2027: switch по типу — рендерим правильный preview + кнопки.
+             * TZ-16 §4.3 (точка 5): `kind` выводится ИЗ `type` (resultKindForType),
+             * а не из «первого не-нуль». Старый код полагался на то, что
+             * handleArtifactTypeChange сбрасывает все артефакты; при 9 типах
+             * и параллельной генерации пакета одна забытая ветка = показ
+             * чужого артефакта. Плюс добавлена проверка, что артефакт
+             * соответствующего вида реально есть — иначе placeholder. */}
+            {!generating && (() => {
+              const kind = resultKindForType(type);
+              const hasArtifact = Boolean(
+                kind === "worksheet" ? worksheet
+                : kind === "lesson-plan" ? lessonPlan
+                : kind === "presentation" ? presentation
+                : kind === "cards" ? cardSet
+                : kind === "materials" ? materialBundle
+                : kind === "lesson-bundle" ? lessonBundle
+                : ktp,
+              );
+              if (!kind || !hasArtifact) return null;
 
               const title =
                 kind === "worksheet" ? worksheet!.title :
                 kind === "lesson-plan" ? lessonPlan!.title :
                 kind === "presentation" ? presentation!.title :
+                kind === "cards" ? cardSet!.title :
+                kind === "materials" ? materialBundle!.title :
+                kind === "lesson-bundle" ? lessonBundle!.title :
                 ktp!.title;
 
               const subtitle =
@@ -909,10 +1576,35 @@ function ConstructorPage() {
                     ? `План урока · ${lessonPlan!.stages.length} этапов · ~${lessonPlan!.stages.reduce((s, x) => s + x.durationMin, 0)} мин`
                     : kind === "presentation"
                       ? `Презентация · ${presentation!.slideCount} слайдов · тема ${presentation!.theme}`
-                      : `КТП · ${ktp!.schoolYear} · ${ktp!.totalHours} ч`;
+                      : kind === "cards"
+                        ? `Карточки · ${cardSet!.cards.length} шт. · для повторения`
+                        : kind === "materials"
+                          ? `Материалы · ${materialBundle!.files.length} ${pluralizeFiles(materialBundle!.files.length)} · комплект`
+                          : kind === "lesson-bundle"
+                            ? `Урок целиком · ${bundleReadyCount(lessonBundle!)} из 4 · ${lessonBundle!.failed.length === 0 ? "всё готово" : "частично"}`
+                            : `КТП · ${ktp!.schoolYear} · ${ktp!.totalHours} ч`;
 
+              // TZ-16 §3.2/§3.4: материалы и «урок целиком» отдаются архивом,
+              // а не одним документом — подпись кнопки должна соответствовать
+              // формату файла.
               const downloadLabel =
-                kind === "presentation" ? "PPTX" : "DOCX";
+                kind === "presentation" ? "PPTX"
+                : kind === "materials" || kind === "lesson-bundle" ? "ZIP"
+                : "DOCX";
+
+              // З4: экспорт по типу устройства.
+              //   - Тач (iPad/планшет/телефон): главная кнопка «Сохранить в PDF»,
+              //     DOCX не предлагаем вообще — на iPad скачивание файла неудобно,
+              //     печать работает через системный диалог «Сохранить в PDF».
+              //   - Десктоп: PDF первой кнопкой + «Скачать DOCX» для редактирования.
+              // Для презентации печать бессмысленна (слайды), поэтому там, как и
+              // раньше, остаётся только скачивание PPTX — на любом устройстве.
+              // TZ-16 §3.4: пакет из 4 артефактов в PDF не превращается —
+              // печатать нечего, полезен только ZIP. Поэтому «урок целиком»
+              // ведёт себя как презентация: одна кнопка скачивания, без PDF.
+              const isDocxArtifact = kind !== "presentation" && kind !== "lesson-bundle";
+              const showPdfButton = isDocxArtifact;
+              const showDownloadButton = isDocxArtifact ? !isTouch : true;
 
               return (
                 <div className="space-y-4">
@@ -924,6 +1616,14 @@ function ConstructorPage() {
                     <p className="text-sm text-warm-500 mt-0.5 break-words">{subtitle}</p>
                   </div>
                   <div className="no-print flex flex-wrap items-center gap-2">
+                    {/* З4: PDF — первая кнопка в ряду и главное действие на таче.
+                        Жалоба «не поняла где жмакать» = нужна не аббревиатура,
+                        а понятная подпись. */}
+                    {showPdfButton && (
+                      <Button variant="primary" size="sm" leftIcon={<Download className="w-4 h-4" />} onClick={handlePrint}>
+                        Сохранить в PDF
+                      </Button>
+                    )}
                     <Button variant="secondary" size="sm" leftIcon={<Heart className="w-4 h-4" />} onClick={handleSaveFavorite}>
                       <span className="hidden sm:inline">В избранное</span>
                       <span className="sm:hidden">Избранное</span>
@@ -934,17 +1634,21 @@ function ConstructorPage() {
                     </Button>
                     {kind === "worksheet" && (
                       <>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          leftIcon={<Sparkles className="w-4 h-4" />}
-                          onClick={handleOpenEditChat}
-                          aria-label="Открыть AI-правки"
-                          data-testid="open-edit-chat"
-                        >
-                          <span className="hidden sm:inline">AI-правки</span>
-                          <span className="sm:hidden">AI</span>
-                        </Button>
+                        {/* З5: кнопка AI-правок — только под флагом, иначе она
+                            ведёт в заглушку EditChat (stub). */}
+                        {EDIT_CHAT_ENABLED && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            leftIcon={<Sparkles className="w-4 h-4" />}
+                            onClick={handleOpenEditChat}
+                            aria-label="Открыть AI-правки"
+                            data-testid="open-edit-chat"
+                          >
+                            <span className="hidden sm:inline">AI-правки</span>
+                            <span className="sm:hidden">AI</span>
+                          </Button>
+                        )}
                         <Button
                           variant="secondary"
                           size="sm"
@@ -959,17 +1663,83 @@ function ConstructorPage() {
                           </span>
                           <span className="sm:hidden">Фото</span>
                         </Button>
+                        {/* TZ-12, этап 4: выдача листа по ссылке/QR. Отдельная
+                            кнопка, а не «ещё один пункт меню»: это второй по
+                            ценности шаг после «сделать лист» — экономия бумаги
+                            и времени на раздачу. Неавторизованному — вход. */}
+                        {profileChecked &&
+                          (isLoggedIn ? (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              leftIcon={<Send className="w-4 h-4" />}
+                              onClick={() => setShareFormOpen(true)}
+                              data-testid="open-share-form"
+                            >
+                              <span className="hidden sm:inline">Выдать классу</span>
+                              <span className="sm:hidden">Выдать</span>
+                            </Button>
+                          ) : (
+                            <Button
+                              as="link"
+                              href="/login"
+                              variant="secondary"
+                              size="sm"
+                              leftIcon={<Lock className="w-4 h-4" />}
+                              data-testid="share-form-login"
+                            >
+                              <span className="hidden sm:inline">
+                                Войдите, чтобы выдать лист классу
+                              </span>
+                              <span className="sm:hidden">Войти</span>
+                            </Button>
+                          ))}
                       </>
                     )}
-                    {kind !== "presentation" && (
-                      <Button variant="primary" size="sm" leftIcon={<Download className="w-4 h-4" />} onClick={handlePrint}>
-                        PDF
+                    {/* З4: на тач-устройствах эта кнопка не рендерится вообще,
+                        поэтому `downloadBlob` для docx там недостижим. */}
+                    {showDownloadButton && (
+                      <Button variant="secondary" size="sm" onClick={handleDocx}>
+                        {`Скачать ${downloadLabel}`}
                       </Button>
                     )}
-                    <Button variant="secondary" size="sm" onClick={handleDocx}>
-                      {downloadLabel}
-                    </Button>
                   </div>
+
+                  {/* З4: на таче объясняем одной строкой, куда нажимать и почему
+                      нет DOCX — иначе учительница ищет кнопку, которой нет. */}
+                  {isTouch && isDocxArtifact && (
+                    <p className="no-print text-xs text-warm-500">
+                      На планшете файл сохраняется как PDF. На компьютере можно скачать DOCX для редактирования
+                    </p>
+                  )}
+
+                  {/* Честность результата. Заготовку нельзя выдавать за AI-материал:
+                      на бэке есть только /api/worksheets/generate и /api/exams/generate,
+                      поэтому конспекты, презентации, КТП, карточки и комплекты
+                      сейчас собираются из шаблона. Учитель должен видеть это прямо
+                      на материале, а не после того, как отдаст лист классу. */}
+                  {isDemoResult && (
+                    <div
+                      role="status"
+                      className="no-print mb-4 rounded-xl border border-accent-300 bg-accent-50 p-4 text-sm text-warm-900"
+                    >
+                      <p className="font-semibold">Это демонстрационная заготовка</p>
+                      <p className="mt-1 text-warm-700">
+                        Сервис сейчас недоступен, поэтому задания типовые: они взяты из заготовки, а не собраны
+                        под вашу тему. Формат и разметку посмотреть можно, но отдавать такой лист ученикам как
+                        проверенный материал не стоит. Попробуйте ещё раз — обычно помогает.
+                      </p>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="mt-3"
+                        onClick={() => generate()}
+                        disabled={generating}
+                      >
+                        Повторить
+                      </Button>
+                    </div>
+                  )}
 
                   {kind === "worksheet" && (
                     <WorksheetPreview
@@ -998,7 +1768,11 @@ function ConstructorPage() {
                       />
                     </div>
                   )}
-                  {kind === "worksheet" && worksheet && (
+                  {/* З5: заглушка EditChat (stub) показывается только под флагом
+                      `NEXT_PUBLIC_ENABLE_EDIT_CHAT=1`. По умолчанию учитель её
+                      не видит — раньше «EditChat (stub)» с полем «Stub input»
+                      висел на странице безусловно. Сам компонент не трогаем. */}
+                  {EDIT_CHAT_ENABLED && kind === "worksheet" && worksheet && (
                     <EditChat
                       worksheet={worksheet}
                       onApply={(next: import("@/lib/types").Worksheet) => {
@@ -1010,6 +1784,11 @@ function ConstructorPage() {
                   {kind === "lesson-plan" && <LessonPlanPreview plan={lessonPlan!} />}
                   {kind === "presentation" && <PresentationPreview presentation={presentation!} />}
                   {kind === "ktp" && <KtpPreview ktp={ktp!} />}
+                  {kind === "cards" && <CardsPreview set={cardSet!} />}
+                  {kind === "materials" && <MaterialsPreview bundle={materialBundle!} />}
+                  {/* TZ-16 §3.4: 4 слота со статусом. Комплект может быть неполным — */}
+                  {/* превью показывает, что именно не собралось и почему.          */}
+                  {kind === "lesson-bundle" && <LessonBundlePreview bundle={lessonBundle!} />}
 
                   <Card className="no-print bg-gradient-to-br from-brand-50 to-white border-brand-200">
                     <div className="flex items-start gap-3">
@@ -1019,7 +1798,11 @@ function ConstructorPage() {
                       <div className="flex-1">
                         <h3 className="font-semibold text-warm-950">Лимит бесплатных генераций</h3>
                         {/* W1+п.2: для залогиненного юзера — серверный счётчик (useUsage),
-                            для анонимного — localStorage (`limit.ts`). Один источник UI. */}
+                            для анонимного — localStorage (`limit.ts`). Один источник UI.
+
+                            З11: тарифы без слова «год» в смысле подписки — только «учебный
+                            год» (это период обучения, не годовая оплата) и помесячная
+                            цена. Старые «375 ₽/мес при оплате за год» убраны. */}
                         <p className="text-sm text-warm-600 mt-1">
                           {(() => {
                             if (serverUsage) {
@@ -1030,9 +1813,9 @@ function ConstructorPage() {
                               if (isUnlimited) {
                                 return `Безлимит (план ${serverUsage.plan}). Сегодня уже сгенерировано: ${serverUsage.generationsToday}.`;
                               }
-                              return `Осталось ${left} из ${serverUsage.generationsLimit} на сегодня. Подписка Базовый — безлимит за 500 ₽/мес (или 375 ₽/мес при оплате за год).`;
+                              return `Осталось ${left} из ${serverUsage.generationsLimit} на сегодня. ${PLANS_TEXT}`;
                             }
-                            return `Осталось ${remaining} из 3 на сегодня. Подписка Базовый — безлимит за 500 ₽/мес (или 375 ₽/мес при оплате за год).`;
+                            return `Осталось ${remaining} из 3 на сегодня. ${PLANS_TEXT}`;
                           })()}
                         </p>
                         <div className="mt-2 h-1.5 bg-white rounded-full overflow-hidden">
@@ -1061,6 +1844,42 @@ function ConstructorPage() {
       </div>
 
       <PaywallModal open={showPaywall} onClose={() => setShowPaywall(false)} remaining={remaining} />
+
+      {/* TZ-13 §4.9, шаги 3–8: панель создания игры. Показываем только когда
+          учитель пришёл именно за интерактивом (блок «Оживить урок» на листе
+          или `?interactiveFormat=` в URL) — в обычном флоу листа её быть не
+          должно, это лишний блок перед teacher-only зоной.
+
+          `worksheetId` — серверный id листа: ранклер берёт задания из
+          `payload_json`, а клиентский id из localStorage бэку неизвестен. */}
+      {interactiveFormat && mode === "topic" && (
+        <div className="container-tight pb-8 no-print">
+          <InteractiveCreatePanel
+            worksheetId={savedWorksheetId}
+            format={interactiveFormat}
+            title={worksheet?.title ?? "Лист"}
+            subject={subject ?? (worksheet ? String(worksheet.subject) : "")}
+            grade={worksheet?.grade ?? grade ?? 0}
+            itemCount={count}
+          />
+        </div>
+      )}
+
+      {/* TZ-12: «Выдать классу» доступна только для рабочего листа — у плана
+          урока, презентации и КТП нет заданий, которые ученик решал бы в браузере.
+          `resultKindForType` — тот же маппинг, что и в блоке результата: у типа
+          «test» / «control» / «cards» артефакт тоже рабочий лист. */}
+      {resultKindForType(type) === "worksheet" && worksheet && (
+        <ShareFormDialog
+          open={shareFormOpen}
+          onClose={() => setShareFormOpen(false)}
+          title={worksheet.title}
+          subject={String(worksheet.subject)}
+          grade={worksheet.grade}
+          worksheetId={savedWorksheetId ?? undefined}
+          tasks={worksheet.tasks.map(toFormSourceTask)}
+        />
+      )}
     </>
   );
 }
@@ -1135,7 +1954,7 @@ function StepHeader({
             />
             <span
               className={`text-[10px] uppercase tracking-wider font-semibold transition-colors ${
-                i <= currentIdx ? "text-warm-700" : "text-warm-400"
+                i <= currentIdx ? "text-warm-700" : "text-[color:var(--text-muted)]"
               }`}
             >
               {it.label}
@@ -1253,7 +2072,7 @@ function SelectStep({
       <div className="space-y-1">
         {SUBJECT_CATEGORIES.map((cat) => (
           <section key={cat.title}>
-            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-warm-400 mb-0.5">
+            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-[color:var(--text-muted)] mb-0.5">
               {cat.title}
             </h3>
             <div className="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-7 gap-1">
@@ -1329,7 +2148,15 @@ function TopicStep({
   onBack: () => void;
 }) {
   const umkList = getUMK(subjectData.slug, gradeData.num);
-  const showUmkChips = umkList.length > 1;
+
+  // З9: выбор учебника влияет только на темы, у которых проставлены метки
+  // `Topic.umk`. Сейчас метки есть ТОЛЬКО у алгебры (7-9 кл), у остальных 20
+  // предметов их нет — значит переключатель автора ничего не меняет, а
+  // учительница всё равно его видит («нет смысла выбирать автора»).
+  // Поэтому показываем чипы только когда в выбранном классе есть размеченные
+  // темы: тогда выбор действительно на что-то влияет.
+  const hasMarkedTopics = gradeData.topics.some((t) => !!t.umk && t.umk.length > 0);
+  const showUmkChips = umkList.length > 1 && hasMarkedTopics;
 
   // F-09: реальный фильтр по УМК. Тема показывается если:
   //   - у темы НЕТ поля umk (общая для всех УМК), или
@@ -1340,6 +2167,24 @@ function TopicStep({
     if (!t.umk || t.umk.length === 0) return true;
     return t.umk.includes(umk);
   });
+
+  /**
+   * З8: список тем больше не прячет полосу прокрутки и прямо говорит,
+   * сколько тем показано из скольких, плюс кнопка «Показать все».
+   * Жалоба была «там всего 4 темы… пролистала — а там всего 8»: список
+   * обрезался по `max-h`, а класс `scrollbar-hide` прятал полосу прокрутки.
+   */
+  const [showAllTopics, setShowAllTopics] = React.useState(false);
+  // Смена предмета/класса/учебника = новый список → снова сворачиваем.
+  React.useEffect(() => {
+    setShowAllTopics(false);
+  }, [subjectData.slug, gradeData.num, umk]);
+
+  const topicsTotal = filteredTopics.length;
+  const visibleTopics = showAllTopics
+    ? filteredTopics
+    : filteredTopics.slice(0, TOPICS_PREVIEW_COUNT);
+  const canShowMore = !showAllTopics && topicsTotal > TOPICS_PREVIEW_COUNT;
 
   return (
     <Card>
@@ -1380,12 +2225,25 @@ function TopicStep({
         </div>
       )}
 
-      <div className="space-y-2 max-h-[420px] overflow-y-auto -mx-2 px-2 scrollbar-hide">
-        {filteredTopics.length === 0 ? (
+      {/* З8: счётчик «Показано N из M» — пользователь сразу видит, что список
+          обрезан. Полосу прокрутки убрали (`scrollbar-hide` её прятал). */}
+      {topicsTotal > 0 && (
+        <p className="text-xs text-warm-500 mb-2">
+          Показано {visibleTopics.length} из {topicsTotal}
+        </p>
+      )}
+
+      {/* max-h остаётся как ограничение раскрытого списка, но полоса прокрутки
+          теперь видимая — сигнал «список продолжается». */}
+      <div
+        className={`space-y-2 -mx-2 px-2 ${showAllTopics ? "" : "max-h-[420px] overflow-y-auto"}`}
+        data-testid="topics-list"
+      >
+        {topicsTotal === 0 ? (
           <div className="text-sm text-warm-500 py-6 text-center">
             Для выбранного учебника нет тем. Попробуйте сбросить выбор УМК — кнопка «Назад».
           </div>
-        ) : filteredTopics.map((t) => (
+        ) : visibleTopics.map((t) => (
           <button
             key={t.slug}
             type="button"
@@ -1411,6 +2269,18 @@ function TopicStep({
           </button>
         ))}
       </div>
+
+      {canShowMore && (
+        <Button
+          variant="secondary"
+          size="sm"
+          className="mt-3 w-full"
+          onClick={() => setShowAllTopics(true)}
+          data-testid="show-all-topics"
+        >
+          {`Показать все (${topicsTotal})`}
+        </Button>
+      )}
     </Card>
   );
 }
@@ -1443,6 +2313,11 @@ function ConfigureStep({
   onEditSummary,
   onGenerate,
   onReset,
+  /** TZ-12 (QA-аудит 2026-09-30, шаг 2): если юзер выбрал preset — сегментер
+   * типа скрывается (показывается chip «задано шаблоном» + «Изменить»). */
+  presetLocked,
+  onClearPresetLock,
+  /** Название выбранного пресета — для подписи в ConfigureStep. */
   selectedPresetId,
   selectedPresetTitle,
 }: {
@@ -1467,6 +2342,12 @@ function ConfigureStep({
   onEditSummary: () => void;
   onGenerate: () => void;
   onReset: () => void;
+  /** TZ-12: выбранный preset (если есть). Если его тип совпадает с текущим —
+   * сегментер не показываем, чтобы юзер не выбирал «то же самое» заново. */
+  presetLocked: Preset | null;
+  /** TZ-12: «Изменить» в chip-блоке presetLocked — сбрасывает preset-блокировку,
+   * юзер возвращается к свободному выбору типа. */
+  onClearPresetLock: () => void;
   /**
    * TZ-12: id выбранного шаблонного пресета (Шаг 1 «Сценарий»).
    * Если пресет выбран — тип артефакта уже задан им, и повторно спрашивать
@@ -1476,6 +2357,30 @@ function ConfigureStep({
   /** Название выбранного пресета — для подписи «Тип выбран шаблоном: …». */
   selectedPresetTitle: string | null;
 }) {
+  // TZ-12: блокировка активна, когда preset выбран И его тип совпадает с current.
+  const isPresetLocked = presetLocked !== null && presetLocked.type === type;
+  // Локализованная подпись выбранного типа (как в ArtifactTypePicker / ARTIFACT_TYPE_OPTIONS).
+  const lockedLabel = (() => {
+    if (!presetLocked) return "";
+    switch (presetLocked.type) {
+      case "worksheet": return "Лист";
+      case "test": return "Тест";
+      case "cards": return "Карточки";
+      case "control": return "Контрольная";
+      case "lesson-plan": return "План урока";
+      case "presentation": return "Презентация";
+      case "ktp": return "КТП";
+      case "oge": return "Вариант ОГЭ";
+      case "ege": return "Вариант ЕГЭ";
+      // TZ-16: новые типы. Preset'ов с такими типами пока нет (PresetGrid —
+      // out of scope TZ-16 §11), но switch исчерпывающий по TaskType, и без
+      // этих веток подпись была бы пустой строкой.
+      case "materials": return "Материалы";
+      case "lesson-bundle": return "Урок целиком";
+      case "interactive": return "Интерактив";
+      case "image": return "Картинка";
+    }
+  })();
 
   const typeFixedByPreset = Boolean(selectedPresetId);
 
@@ -1511,19 +2416,29 @@ function ConfigureStep({
 
       <div className="space-y-4">
         {/* Q1-2027: сегментер типа артефакта — 7 опций в 2 ряда (3 быстрых + 4 тяжёлых).
-            TZ-12: если тип уже задан шаблоном на Шаге 1, не спрашиваем повторно —
-            вместо сегментера показываем строку «Тип выбран шаблоном» + ссылку «Сменить». */}
+         * TZ-12: если тип пришёл из preset — сегментер скрыт, показываем компактный
+         * chip с «Изменить» (юзер может вернуться к свободному выбору). */}
         <div>
           <label className="text-xs font-medium text-warm-500 uppercase tracking-wider mb-1.5 block">Тип</label>
-          {typeFixedByPreset ? (
-            <div className="flex items-center justify-between gap-2 rounded-xl border border-warm-200 bg-warm-50 px-3 h-11">
-              <span className="text-sm text-warm-700 truncate min-w-0">
-                Выбран шаблоном: <span className="font-medium text-warm-950">{selectedPresetTitle}</span>
-              </span>
+          {isPresetLocked && presetLocked ? (
+            <div
+              className="flex items-center justify-between gap-2 p-3 rounded-xl border border-warm-200 bg-warm-50"
+              data-testid="artifact-type-preset-locked"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="inline-flex items-center gap-1.5 px-2 h-7 rounded-lg bg-white text-warm-950 text-sm font-medium border border-warm-200 shrink-0">
+                  <Sparkles className="w-3.5 h-3.5 text-brand-500" aria-hidden />
+                  <span className="truncate">{lockedLabel}</span>
+                </span>
+                <span className="text-xs text-warm-500 truncate">
+                  задан шаблоном «{presetLocked.title}»
+                </span>
+              </div>
               <button
                 type="button"
-                onClick={onEditSummary}
-                className="text-xs font-medium text-brand-600 hover:underline shrink-0 whitespace-nowrap"
+                onClick={onClearPresetLock}
+                className="text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded px-1"
+                aria-label="Изменить тип артефакта"
               >
                 Изменить
               </button>
@@ -1578,7 +2493,7 @@ function ConfigureStep({
             className="w-full accent-brand-500"
             aria-label="Количество заданий"
           />
-          <div className="flex justify-between text-[10px] text-warm-400 mt-0.5">
+          <div className="flex justify-between text-[10px] text-[color:var(--text-muted)] mt-0.5">
             <span>5</span>
             <span>15</span>
             <span>30</span>
@@ -1688,51 +2603,61 @@ function EmptyPreview({
       : "Выберите предмет слева";
 
   // F-09: превью выбранного типа — образец, чтобы пользователь понимал, что получит.
-  const TYPE_PREVIEW: Record<TaskType, { label: string; sample: string; desc: string }> = {
+  // TZ-12: текстовый sample заменён на миниатюрное SVG-превью формата в <ArtifactTypePreview/>.
+  const TYPE_PREVIEW: Record<TaskType, { label: string; desc: string }> = {
     worksheet: {
       label: "Рабочий лист",
-      sample: "1. Решите уравнение: 3x + 12 = 0…",
       desc: "Классический список заданий с местом для ответов. PDF или DOCX.",
     },
     test: {
       label: "Тест",
-      sample: "1. Сократите дробь 8/12.   ○ A) 1/2  ○ B) 2/3  ○ C) 4/6  ○ D) 3/4",
       desc: "Все задания — multiple-choice, легко проверить по шифру ответов.",
     },
     cards: {
       label: "Карточки",
-      sample: "Карточка 1: «Столица Франции?» → ответ: Париж",
       desc: "Компактная сетка карточек для повторения и запоминания.",
     },
     control: {
       label: "Контрольная",
-      sample: "Вариант 1 / Вариант 2 · 2 балла за задание · критерии оценки",
       desc: "Два варианта одной работы плюс критерии оценивания.",
     },
     "lesson-plan": {
       label: "План урока",
-      sample: "Этапы: 1) Оргмомент 2 мин · 2) Опрос 7 мин · 3) Новая тема 18 мин…",
       desc: "ФГОС-конспект на 45 минут, готовый к проведению.",
     },
     presentation: {
       label: "Презентация",
-      sample: "Слайд 3: «Дроби в нашей жизни» — картинка + 3 пункта",
       desc: "5–20 слайдов в PPTX. Иллюстрации и тезисы подобраны LLM.",
     },
     ktp: {
       label: "КТП",
-      sample: "Сентябрь · Тема 1 (4 ч) · Тема 2 (3 ч) · …",
       desc: "Календарно-тематическое планирование на учебный год.",
     },
     oge: {
       label: "Вариант ОГЭ",
-      sample: "Часть 1 (задания 1–19) + Часть 2 (20–25)",
       desc: "Полный вариант ОГЭ по номерам заданий ФИПИ.",
     },
     ege: {
       label: "Вариант ЕГЭ",
-      sample: "Часть 1 (задания 1–27) + Часть 2 (28–…)",
       desc: "Полный вариант ЕГЭ по номерам заданий ФИПИ.",
+    },
+    // TZ-16: 4 новых типа. Типизация Record<TaskType, …> требует ВСЕХ ключей —
+    // забытый ключ = ошибка компиляции (нам это и нужно, ключи не обходим).
+    materials: {
+      label: "Материалы",
+      desc: "Комплект доп. файлов к теме: словарь, справочные данные, раздатка. ZIP.",
+    },
+    "lesson-bundle": {
+      label: "Урок целиком",
+      desc: "Лист, презентация, план урока и тест из одной темы одним нажатием. ZIP.",
+    },
+    interactive: {
+      label: "Интерактив",
+      desc: "Форма с вопросами по теме, которую ученики заполняют сами.",
+    },
+    image: {
+      label: "Картинка",
+      desc: "Иллюстрация к заданию: плакат, схема или наглядное пособие. PNG.",
     },
   };
   const preview = TYPE_PREVIEW[type] ?? TYPE_PREVIEW.worksheet;
@@ -1761,8 +2686,9 @@ function EmptyPreview({
       </div>
 
       {/* F-09: превью выбранного типа — образец результата.
-          TZ-12: вместо строки текста — визуальная миниатюра формата (квадратики,
-          радио-кружки, сетка слайдов и т.п.), чтобы юзер сразу видел результат. */}
+         * TZ-12: вместо строки текста — визуальная миниатюра формата (квадратики,
+         * радио-кружки, сетка слайдов и т.п.), чтобы юзер сразу видел результат.
+         * Компонент покрыт tests/regression/artifact-type-preview.test.tsx. */}
       <div className="px-4 sm:px-6 pb-4">
         <div className="text-[10px] uppercase tracking-wider text-warm-500 font-semibold mb-2">
           Как будет выглядеть результат
@@ -1772,8 +2698,8 @@ function EmptyPreview({
             <div className="text-xs font-semibold text-warm-950">{preview.label}</div>
             <div className="text-[10px] text-warm-500 uppercase tracking-wider">пример</div>
           </div>
-          <TypePreviewThumb type={type} />
-          <div className="text-[11px] text-warm-500 mt-3">{preview.desc}</div>
+          <ArtifactTypePreview type={type} className="mb-3" title={`Миниатюра формата «${preview.label}»`} />
+          <div className="text-[11px] text-warm-500">{preview.desc}</div>
         </div>
       </div>
 
@@ -1871,7 +2797,7 @@ function GeneratingState({
                   ? "text-warm-950 font-medium"
                   : isPast
                     ? "text-warm-500 line-through"
-                    : "text-warm-400"
+                    : "text-[color:var(--text-muted)]"
               }`}
             >
               <span
@@ -2005,7 +2931,7 @@ function ExamSubjectStep({
         </Button>
       </div>
       <p className="text-sm text-warm-500 mb-5">
-        {exam === "oge" ? "ОГЭ · 9 класс" : "ЕГЭ · 11 класс"} — доступно {list.length} предметов
+        {exam === "oge" ? "ОГЭ · 9 класс" : "ЕГЭ · 11 класс"} — доступно {list.length} {plural(list.length, "предмет", "предмета", "предметов")}
       </p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
         {list.map((s) => (
@@ -2051,6 +2977,20 @@ function ExamNumberStep({
   const list = getExamNumbers(exam, subject);
   const subjectTitle = getExamSubjects(exam).find((s) => s.slug === subject)?.title ?? subject;
 
+  // З8: та же болезнь, что со списком тем — сетка номеров обрезалась по
+  // `max-h-[280px]`, а `scrollbar-hide` прятал полосу прокрутки. Показываем
+  // «Показано N из M» и кнопку «Показать все», полосу прокрутки не прячем.
+  const [showAllNumbers, setShowAllNumbers] = React.useState(false);
+  React.useEffect(() => {
+    setShowAllNumbers(false);
+  }, [exam, subject]);
+
+  const numbersTotal = list.length;
+  const visibleNumbers = showAllNumbers
+    ? list
+    : list.slice(0, TOPICS_PREVIEW_COUNT);
+  const canShowMoreNumbers = !showAllNumbers && numbersTotal > TOPICS_PREVIEW_COUNT;
+
   const toggle = (n: number) => {
     if (numbers.includes(n)) {
       onNumbersChange(numbers.filter((x) => x !== n));
@@ -2094,9 +3034,17 @@ function ExamNumberStep({
         </div>
       )}
 
-      {/* Сетка доступных номеров */}
-      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-5 max-h-[280px] overflow-y-auto -mx-2 px-2 scrollbar-hide">
-        {list.map((it) => {
+      {/* Сетка доступных номеров — с видимой полосой прокрутки (З8). */}
+      {numbersTotal > 0 && (
+        <p className="text-xs text-warm-500 mb-2">
+          Показано {visibleNumbers.length} из {numbersTotal}
+        </p>
+      )}
+      <div
+        className={`grid grid-cols-3 sm:grid-cols-4 gap-2 mb-5 -mx-2 px-2 ${showAllNumbers ? "" : "max-h-[280px] overflow-y-auto"}`}
+        data-testid="exam-numbers-list"
+      >
+        {visibleNumbers.map((it) => {
           const isSelected = numbers.includes(it.number);
           return (
             <button
@@ -2121,6 +3069,18 @@ function ExamNumberStep({
           );
         })}
       </div>
+
+      {canShowMoreNumbers && (
+        <Button
+          variant="secondary"
+          size="sm"
+          className="mb-5 w-full"
+          onClick={() => setShowAllNumbers(true)}
+          data-testid="show-all-exam-numbers"
+        >
+          {`Показать все (${numbersTotal})`}
+        </Button>
+      )}
 
       <div className="pt-3 border-t border-warm-100 flex items-center justify-between gap-3">
         <p className="text-xs text-warm-500">

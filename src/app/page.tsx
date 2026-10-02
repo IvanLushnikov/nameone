@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Hero } from "@/components/landing/Hero";
 import { WeeklyTopicBlock } from "@/components/landing/WeeklyTopic";
+import { MaterialsBankBlock } from "@/components/landing/MaterialsBankBlock";
 import { RealStats } from "@/components/landing/Stats";
 import { Features } from "@/components/landing/Features";
 import { Seasonal } from "@/components/landing/Seasonal";
@@ -11,9 +12,14 @@ import { FAQ } from "@/components/landing/FAQ";
 import { CTA } from "@/components/landing/CTA";
 import { PageTracker } from "@/components/shared/PageTracker";
 import { JsonLd } from "@/components/seo";
+import { faqItems, stripMarkdown } from "@/lib/content/landing-seo";
+import { SITE_URL, SUPPORT_EMAIL } from "@/lib/site";
 
 // TZ-10 §9.2: JSON-LD Organization + WebSite с SearchAction (для sitelinks-searchbox в Яндексе).
-const SITE_URL = "https://rabochielisty.ru";
+// Базовый URL берётся из общего модуля, а не из литерала здесь: локальная копия
+// константы жила отдельно от `src/lib/site.ts` и продолжала указывать на
+// нерезолвящийся rabochielisty.ru, даже когда его выносили в переменную окружения.
+// Тот же принцип у контактов — адрес поддержки не зашит в разметку.
 
 // TZ-10 §5.4 / §9.6: og:image для главной — статичный PNG (TZ-10 Этап 3, вариант B).
 // Edge route `src/app/og/[...slug]/route.tsx` остаётся для будущей миграции на
@@ -46,7 +52,7 @@ const homeJsonLd = [
     contactPoint: {
       "@type": "ContactPoint",
       contactType: "customer support",
-      email: "hello@rabochielisty.ru",
+      email: SUPPORT_EMAIL,
       availableLanguage: ["Russian"],
     },
   },
@@ -66,6 +72,28 @@ const homeJsonLd = [
       "query-input": "required name=search_term_string",
     },
   },
+  /**
+   * FAQPage — разметка девяти вопросов, которые и так видны на главной.
+   *
+   * Раньше разметка была написана и лежала в `FaqBlock.tsx`, но не была
+   * подключена нигде: на странице темы её отключили из-за таймаутов
+   * static generation, а на главную не включили. Из-за этого вопросы про
+   * бесплатные генерации и безопасность не могли попасть в расширенные
+   * сниппеты.
+   *
+   * Текст берём из того же массива, что рисует компонент FAQ, и чистим
+   * markdown через `stripMarkdown` — иначе в `question.name` уехали бы
+   * звёздочки от `**жирного**` и обратные кавычки от `кода`.
+   */
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faqItems.map((item) => ({
+      "@type": "Question",
+      name: stripMarkdown(item.q),
+      acceptedAnswer: { "@type": "Answer", text: stripMarkdown(item.a) },
+    })),
+  },
 ];
 
 export default function Home() {
@@ -81,6 +109,7 @@ export default function Home() {
       <PricingTeaser />
       <FAQ />
       <WeeklyTopicBlock />
+      <MaterialsBankBlock />
       <CTA />
       <PageTracker eventName="landing_view" data={{ source: "home" }} />
     </>

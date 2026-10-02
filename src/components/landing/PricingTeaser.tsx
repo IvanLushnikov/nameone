@@ -1,83 +1,32 @@
 "use client";
 
 import Link from "next/link";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 import * as React from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Check, Sparkles } from "lucide-react";
 import { useInView } from "@/hooks/useInView";
 import { cn } from "@/lib/utils/cn";
+import {
+  ACADEMIC_YEAR_NOTE,
+  DEFAULT_PERIOD,
+  PERIODS,
+  PERIOD_IDS,
+  PLANS,
+  academicYearSaving,
+  maxAcademicYearDiscount,
+  priceFor,
+  formatRub,
+  type PeriodId,
+  type Plan,
+} from "@/lib/content/plans";
 
-type Period = "month" | "year";
+const teaserPlans = Object.values(PLANS).filter((p) => p.inTeaser);
 
-const plans = [
-  {
-    id: "free",
-    name: "Бесплатно",
-    description: "Попробовать и понять, нужно ли",
-    features: [
-      "3 генерации в сутки",
-      "Все предметы, 1-11 класс",
-      "PDF с ответами и пояснениями",
-      "Без регистрации",
-    ],
-    cta: "Начать бесплатно",
-    href: "/constructor",
-    highlight: false,
-    accent: "from-warm-300 to-warm-500",
-    month: { price: "0 ₽", sub: "навсегда", saving: null },
-    year: { price: "0 ₽", sub: "навсегда", saving: null },
-  },
-  {
-    id: "base",
-    name: "Базовый",
-    description: "Для репетиторов и родителей",
-    features: [
-      "Безлимитные генерации",
-      "История и шаблоны",
-      "Избранное и сохранённые настройки",
-      "Семейный доступ до 5 человек",
-    ],
-    cta: "Оформить подписку",
-    href: "/pricing",
-    highlight: true,
-    accent: "from-brand-400 via-brand-500 to-brand-600",
-    month: { price: "500 ₽", sub: "в месяц", saving: null },
-    year: {
-      price: "375 ₽",
-      sub: "в месяц при оплате за год",
-      saving: "4 500 ₽ за год — экономия 1 500 ₽",
-    },
-  },
-  {
-    id: "plus",
-    name: "Плюс",
-    description: "Всё для урока: листы, планы, презентации, КТП, ОГЭ/ЕГЭ",
-    features: [
-      "Всё из Базового",
-      "Планы уроков по ФГОС",
-      "Презентации и КТП",
-      "Варианты ОГЭ/ЕГЭ с разбором",
-      "Адаптивные тесты",
-      "Telegram-бот",
-      "Ранний доступ к новым фичам",
-    ],
-    cta: "Выбрать Плюс",
-    href: "/pricing",
-    highlight: false,
-    accent: "from-accent-400 to-accent-600",
-    month: { price: "1 500 ₽", sub: "в месяц", saving: null },
-    year: {
-      price: "1 000 ₽",
-      sub: "в месяц при оплате за год",
-      saving: "12 000 ₽ за год — экономия 6 000 ₽",
-    },
-  },
-];
-
-export function PricingTeaser() {
+export function PricingTeaser({ headingLevel: Heading = "h2" }: { headingLevel?: "h1" | "h2" }) {
   const [ref, inView] = useInView<HTMLDivElement>({ once: true });
-  const [period, setPeriod] = React.useState<Period>("year");
+  const [period, setPeriod] = React.useState<PeriodId>(DEFAULT_PERIOD);
 
   return (
     <section
@@ -89,53 +38,56 @@ export function PricingTeaser() {
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-600 mb-3">
             Тарифы
           </p>
-          <h2 className="text-3xl sm:text-4xl font-display font-bold tracking-tight">
+          <Heading className="text-3xl sm:text-4xl font-display font-bold tracking-tight">
             Начните бесплатно. Платите, когда&nbsp;удобно.
-          </h2>
+          </Heading>
           <p className="mt-3 text-warm-600">
-            Без скрытых платежей. Отмена в 1 клик. Возврат за 7 дней.
+            Без скрытых платежей. Подписку можно отменить в любой момент.
           </p>
         </div>
 
-        {/* Period toggle */}
-        <div className="flex justify-center mb-10">
+        {/* Переключатель периода: только «Учебный год» и «Помесячно».
+            Календарного года (12 месяцев) нет — платить летом не нужно. */}
+        <div className="flex flex-col items-center gap-3 mb-10">
           <div className="inline-flex p-1 rounded-full bg-warm-100 border border-warm-200">
-            <button
-              type="button"
-              onClick={() => setPeriod("month")}
-              className={cn(
-                "px-4 sm:px-5 py-2 rounded-full text-sm font-medium transition-all",
-                period === "month"
-                  ? "bg-white text-warm-950 shadow-soft"
-                  : "text-warm-600 hover:text-warm-900"
-              )}
-            >
-              Помесячно
-            </button>
-            <button
-              type="button"
-              onClick={() => setPeriod("year")}
-              className={cn(
-                // TZ-9: pr-4 (правее) + pl-5 — бейдж «−25%» не должен вылезать за pill.
-                "pl-5 pr-4 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-2",
-                period === "year"
-                  ? "bg-white text-warm-950 shadow-soft"
-                  : "text-warm-600 hover:text-warm-900"
-              )}
-            >
-              За год
-              {/* TZ-9: бейдж с whitespace-nowrap и более крупным px-2, чтобы не обрезался. */}
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-bold whitespace-nowrap">
-                −25%
-              </span>
-            </button>
+            {PERIOD_IDS.map((id) => {
+              const p = PERIODS[id];
+              const isActive = period === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setPeriod(id)}
+                  aria-pressed={isActive}
+                  className={cn(
+                    id === "academicYear"
+                      ? // pl-5 pr-4 — бейдж со скидкой не должен вылезать за pill.
+                        "pl-5 pr-4 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-2"
+                      : "px-4 sm:px-5 py-2 rounded-full text-sm font-medium transition-all",
+                    isActive
+                      ? "bg-white text-warm-950 shadow-soft"
+                      : "text-warm-600 hover:text-warm-900"
+                  )}
+                >
+                  {p.label}
+                  {id === "academicYear" && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-bold whitespace-nowrap">
+                      −{maxAcademicYearDiscount()}%
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
+          <p className="text-sm text-warm-500 text-center max-w-md">
+            {ACADEMIC_YEAR_NOTE}
+          </p>
         </div>
 
         <div className="grid md:grid-cols-3 gap-4 sm:gap-5 max-w-5xl mx-auto">
-          {plans.map((p, i) => (
+          {teaserPlans.map((p, i) => (
             <PricingCard
-              key={p.name}
+              key={p.id}
               plan={p}
               index={i}
               inView={inView}
@@ -145,19 +97,19 @@ export function PricingTeaser() {
         </div>
 
         <p className="mt-8 text-center text-sm text-warm-500">
-          Также доступны{" "}
+          Все условия и скидки —{" "}
           <Link
             href="/pricing"
             className="text-brand-600 hover:text-brand-700 font-medium"
           >
-            годовые тарифы со скидкой
-          </Link>{" "}
-          и{" "}
+            на странице тарифов
+          </Link>
+          . Есть вариант{" "}
           <Link
             href="/pricing#b2b"
             className="text-brand-600 hover:text-brand-700 font-medium"
           >
-            подписка для классов
+            для класса
           </Link>
           .
         </p>
@@ -172,13 +124,15 @@ function PricingCard({
   inView,
   period,
 }: {
-  plan: (typeof plans)[number];
+  plan: Plan;
   index: number;
   inView: boolean;
-  period: Period;
+  period: PeriodId;
 }) {
+  const reducedMotion = useReducedMotion();
   const isHighlight = plan.highlight;
-  const pricing = plan[period];
+  const price = priceFor(plan.id, period);
+  const saving = period === "academicYear" ? academicYearSaving(plan.id) : null;
 
   return (
     <div
@@ -196,7 +150,7 @@ function PricingCard({
         <div
           className={`absolute -inset-[2px] rounded-3xl bg-gradient-to-br ${plan.accent} opacity-60 blur-lg animate-fade-in`}
           style={{
-            animation: "shimmer 4s linear infinite",
+            animation: reducedMotion ? "none" : "shimmer 4s linear infinite",
             backgroundSize: "200% 200%",
           }}
         />
@@ -218,14 +172,12 @@ function PricingCard({
           </div>
           <div className="flex items-baseline gap-1 flex-wrap">
             <span className="text-3xl font-bold text-warm-950 whitespace-nowrap">
-              {pricing.price}
+              {formatRub(price.amount)}
             </span>
-            <span className="text-sm text-warm-500">/ {pricing.sub}</span>
+            <span className="text-sm text-warm-500">/ {price.unit}</span>
           </div>
-          {pricing.saving && (
-            <p className="mt-1.5 text-xs font-medium text-emerald-700">
-              {pricing.saving}
-            </p>
+          {saving && (
+            <p className="mt-1.5 text-xs font-medium text-emerald-700">{saving}</p>
           )}
           <p className="mt-2 text-sm text-warm-600">{plan.description}</p>
         </div>

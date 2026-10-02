@@ -35,7 +35,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             ref={ref}
             id={inputId}
             className={cn(
-              "w-full h-11 px-3.5 text-sm bg-white border border-warm-200 rounded-xl text-warm-950 placeholder:text-warm-400 transition-all",
+              "w-full h-11 px-3.5 text-sm bg-white border border-warm-200 rounded-xl text-warm-950 placeholder:text-[color:var(--text-muted)] transition-all",
               "focus:outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100",
               "disabled:bg-warm-50 disabled:cursor-not-allowed",
               error && "border-rose-400 focus:border-rose-500 focus:ring-rose-100",
@@ -53,7 +53,8 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           <p
             className={cn(
               "mt-1.5 text-xs",
-              error ? "text-rose-600" : "text-warm-500"
+              // hint — приглушённый текст 12px, warm-500 (~2.7:1) не проходит AA
+              error ? "text-rose-600" : "text-[color:var(--text-muted)]"
             )}
           >
             {error ?? hint}
@@ -89,7 +90,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           ref={ref}
           id={inputId}
           className={cn(
-            "w-full px-3.5 py-2.5 text-sm bg-white border border-warm-200 rounded-xl text-warm-950 placeholder:text-warm-400 transition-all resize-y min-h-[88px]",
+            "w-full px-3.5 py-2.5 text-sm bg-white border border-warm-200 rounded-xl text-warm-950 placeholder:text-[color:var(--text-muted)] transition-all resize-y min-h-[88px]",
             "focus:outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100",
             error && "border-rose-400 focus:border-rose-500 focus:ring-rose-100",
             className
@@ -100,7 +101,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           <p
             className={cn(
               "mt-1.5 text-xs",
-              error ? "text-rose-600" : "text-warm-500"
+              error ? "text-rose-600" : "text-[color:var(--text-muted)]"
             )}
           >
             {error ?? hint}

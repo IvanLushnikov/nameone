@@ -7,6 +7,7 @@ import {
   AlignmentType,
   PageOrientation,
   Table,
+  TableLayoutType,
   TableRow,
   TableCell,
   WidthType,
@@ -14,13 +15,83 @@ import {
   Footer,
   Header,
   PageNumber,
+  Math as DocxMath,
+  type ParagraphChild,
 } from "docx";
-import type { Worksheet } from "@/lib/types";
+import type { Worksheet, WorksheetTask } from "@/lib/types";
+import { parseMathText } from "@/lib/math/latex";
+import { latexToOmml, latexToUnicode } from "@/lib/math/latex-to-omml";
+import { SITE_HOST } from "@/lib/site";
 
 /**
  * Генератор DOCX для рабочего листа.
  * Учитель может открыть в Word/LibreOffice и отредактировать.
  */
+
+/**
+ * Задание с опциональным LaTeX-полем (Ф-10).
+ *
+ * `text_latex` в `src/lib/types.ts` пока нет — берём структурным пересечением,
+ * тем же приёмом, что и `chartSpec` в WorksheetPreview. `text` не подменяем:
+ * он остаётся источником правды для проверки ответов, `text_latex` — только
+ * для отрисовки (здесь — в виде OMML, потому что KaTeX в документ не едет).
+ */
+type TaskWithLatex = WorksheetTask & { text_latex?: string };
+
+/**
+ * Собирает содержимое абзаца, где формулы становятся нативной математикой Word.
+ *
+ * Текстовые сегменты идут обычными `TextRun`, формульные — OMML через
+ * `latexToOmml`. Если формулу в OMML превести не удалось, подставляем
+ * юникод-фолбэк (`⅛ ⅓ ² √ × ·`): файл должен остаться читаемым, лучше
+ * «2/3», чем сломанная выгрузка.
+ */
+function mathChildren(text: string, textLatex?: string, size?: number): ParagraphChild[] {
+  const children: ParagraphChild[] = [];
+  for (const segment of parseMathText(text, textLatex)) {
+    if (segment.type === "text") {
+      if (segment.value) children.push(new TextRun({ text: segment.value, size }));
+      continue;
+    }
+    const omml = latexToOmml(segment.latex);
+    if (omml) children.push(new DocxMath({ children: omml }));
+    else children.push(new TextRun({ text: latexToUnicode(segment.latex), size }));
+  }
+  return children;
+}
+
+/**
+ * Ширины колонок таблицы ответов.
+ *
+ * Заданы ОДИН раз и используются в трёх местах: на `Table` (`columnWidths`),
+ * на всех строках (`width` в `TableRow`) и через `layout: FIXED`. Раньше
+ * ширины были только в строке заголовка, из-за чего Google Docs рисовал
+ * посимвольные колонки (скрин от учительницы) — ему не хватало сетки
+ * `tblGrid` и фиксированного layout.
+ *
+ * Единицы — DXA (twips). A4 портрет = 11906, минус поля 1000+1000 = 9906.
+ * Пропорции 8 / 32 / 60 (№ / Ответ / Пояснение) от ширины 9906.
+ */
+const COL_NO_PCT = 8;
+const COL_ANSWER_PCT = 32;
+const COL_EXPLAIN_PCT = 60;
+const TABLE_TOTAL_DXA = 9906;
+const COLUMN_WIDTHS_DXA = [
+  Math.round((TABLE_TOTAL_DXA * COL_NO_PCT) / 100),
+  Math.round((TABLE_TOTAL_DXA * COL_ANSWER_PCT) / 100),
+  Math.round((TABLE_TOTAL_DXA * COL_EXPLAIN_PCT) / 100),
+];
+
+/** То же самое, но в процентах — так надёжнее понимают Word и LibreOffice. */
+const COLUMN_WIDTHS_PCT = [COL_NO_PCT, COL_ANSWER_PCT, COL_EXPLAIN_PCT];
+
+/**
+ * `width` для ячейки по индексу колонки. Задаём ВСЕМ строкам (и шапке, и
+ * данным) — иначе строки данных растягиваются по содержимому.
+ */
+function cellWidthPct(colIndex: number): { size: number; type: (typeof WidthType)[keyof typeof WidthType] } {
+  return { size: COLUMN_WIDTHS_PCT[colIndex] ?? 100, type: WidthType.PERCENTAGE };
+}
 
 export async function generateWorksheetDocx(
   worksheet: Worksheet,
@@ -76,25 +147,23 @@ export async function generateWorksheetDocx(
 
   // Задания
   for (const task of worksheet.tasks) {
-    const lines: string[] = [];
-
-    lines.push(`${task.number}. ${task.text}`);
-
-    if (task.options && task.options.length > 0) {
-      task.options.forEach((opt, i) => {
-        lines.push(`   ${String.fromCharCode(65 + i)}) ${opt}`);
-      });
-    }
+    const taskLatex = (task as TaskWithLatex).text_latex;
 
     children.push(
       new Paragraph({
-        children: [new TextRun({ text: lines[0], size: 24 })],
+        children: [
+          new TextRun({ text: `${task.number}. `, size: 24 }),
+          ...mathChildren(task.text, taskLatex, 24),
+        ],
         spacing: { after: 80 },
       }),
-      ...lines.slice(1).map(
-        (line) =>
+      ...(task.options ?? []).map(
+        (opt, i) =>
           new Paragraph({
-            children: [new TextRun({ text: line, size: 22 })],
+            children: [
+              new TextRun({ text: `   ${String.fromCharCode(65 + i)}) `, size: 22 }),
+              ...mathChildren(opt, undefined, 22),
+            ],
             spacing: { after: 40 },
           })
       ),
@@ -112,11 +181,22 @@ export async function generateWorksheetDocx(
   }
 
   // Подвал листа
+  // Подвал листа.
+  // ВАЖНО: «проверено AI» пишем ТОЛЬКО когда проверка реально прошла.
+  // Раньше строка печаталась безусловно, для любого листа: на экране бейдж
+  // честно показывал «не проверено» (и исчезал на печати), а в скачанном
+  // DOCX оставалось утверждение «проверено AI» — ровно тот вопрос, который
+  // задала учительница.
+  const allVerified =
+    worksheet.tasks.length > 0 && worksheet.tasks.every((t) => t.verified === true);
+
   children.push(
     new Paragraph({
       children: [
         new TextRun({
-          text: "РабочиеЛисты AI · rabochielisty.ru · проверено AI",
+          text: allVerified
+            ? `РабочиеЛисты AI · ${SITE_HOST} · проверено AI`
+            : `РабочиеЛисты AI · ${SITE_HOST}`,
           size: 18,
           color: "999999",
         }),
@@ -156,15 +236,15 @@ export async function generateWorksheetDocx(
         children: [
           new TableCell({
             children: [new Paragraph({ children: [new TextRun({ text: "№", bold: true })] })],
-            width: { size: 8, type: WidthType.PERCENTAGE },
+            width: cellWidthPct(0),
           }),
           new TableCell({
             children: [new Paragraph({ children: [new TextRun({ text: "Ответ", bold: true })] })],
-            width: { size: 32, type: WidthType.PERCENTAGE },
+            width: cellWidthPct(1),
           }),
           new TableCell({
             children: [new Paragraph({ children: [new TextRun({ text: "Пояснение", bold: true })] })],
-            width: { size: 60, type: WidthType.PERCENTAGE },
+            width: cellWidthPct(2),
           }),
         ],
       }),
@@ -174,23 +254,23 @@ export async function generateWorksheetDocx(
             children: [
               new TableCell({
                 children: [new Paragraph({ children: [new TextRun({ text: String(task.number), bold: true })] })],
+                width: cellWidthPct(0),
               }),
               new TableCell({
-                children: [new Paragraph({ children: [new TextRun({ text: task.answer ?? "—" })] })],
+                children: [
+                  new Paragraph({ children: mathChildren(task.answer ?? "—", undefined) }),
+                ],
+                width: cellWidthPct(1),
               }),
               new TableCell({
                 children: [
                   new Paragraph({
-                    children: [
-                      new TextRun({
-                        text:
-                          withExplanations && task.explanation
-                            ? task.explanation
-                            : "—",
-                      }),
-                    ],
+                    children: mathChildren(
+                      withExplanations && task.explanation ? task.explanation : "—"
+                    ),
                   }),
                 ],
+                width: cellWidthPct(2),
               }),
             ],
           })
@@ -201,6 +281,10 @@ export async function generateWorksheetDocx(
       new Table({
         rows,
         width: { size: 100, type: WidthType.PERCENTAGE },
+        // Фиксированный layout + явная сетка колонок: без этого Google Docs
+        // пересчитывает ширины по содержимому и «размазывает» колонки.
+        layout: TableLayoutType.FIXED,
+        columnWidths: COLUMN_WIDTHS_DXA,
         borders: {
           top: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
           bottom: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
@@ -232,7 +316,7 @@ export async function generateWorksheetDocx(
                 alignment: AlignmentType.RIGHT,
                 children: [
                   new TextRun({
-                    text: "РабочиеЛисты AI · rabochielisty.ru",
+                    text: `РабочиеЛисты AI · ${SITE_HOST}`,
                     size: 16,
                     color: "BBBBBB",
                   }),

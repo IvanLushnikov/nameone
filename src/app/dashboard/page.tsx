@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/Tabs";
+import { FormsTab } from "@/components/teacher/FormsTab";
 import { useToast } from "@/components/ui/Toast";
 import {
   getHistory,
@@ -35,10 +36,15 @@ import {
   Trash2,
   ArrowRight,
   Calendar,
+  Send,
+  Camera,
 } from "lucide-react";
 import { timeAgo } from "@/lib/utils/cn";
+import { PLANS, priceShort } from "@/lib/content/plans";
 import { getSubject } from "@/lib/content/subjects";
 import { trackEvent } from "@/lib/track";
+import { UsageCard, type UsagePayload } from "@/components/shared/UsageCard";
+import { fetchUsage } from "@/lib/auth/api";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -47,6 +53,13 @@ export default function DashboardPage() {
   const [favorites, setFavorites] = React.useState<FavoriteArtifact[]>([]);
   const [templates, setTemplates] = React.useState<UserTemplate[]>([]);
   const [profile, setProfile] = React.useState<UserProfile | null>(null);
+  // Остаток нормы тарифа. Считает сервер (взвешенные токены), клиент только
+  // показывает. null = не пришло/не залогинен, тогда карточка не рисуется.
+  const [usage, setUsage] = React.useState<UsagePayload | null>(null);
+  const [usageLoading, setUsageLoading] = React.useState(true);
+  // Активная вкладка. Раньше Tabs получал жёсткий value="history" и пустой
+  // onValueChange={() => {}} — вкладки «Избранное» и «Шаблоны» не переключались.
+  const [tab, setTab] = React.useState("history");
 
   React.useEffect(() => {
     const h = getHistory();
@@ -59,6 +72,25 @@ export default function DashboardPage() {
       favoritesCount: getFavorites().length,
       templatesCount: getTemplates().length,
     });
+  }, []);
+
+  // Норма приходит с сервера. Ошибка здесь НЕ должна ломать профиль: карточка
+  // просто не рисуется, а остальное работает как раньше.
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const u = await fetchUsage();
+        if (!cancelled && u) setUsage(u);
+      } catch {
+        // Тишина — см. комментарий выше.
+      } finally {
+        if (!cancelled) setUsageLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const refresh = () => {
@@ -124,7 +156,40 @@ export default function DashboardPage() {
 
       <StatsRow history={history} favorites={favorites} templates={templates} />
 
-      <Tabs value="history" onValueChange={() => {}} className="mt-10">
+      {/* Остаток нормы: для free — сколько осталось бесплатных генераций,
+          для base/plus — взвешенные токены + «≈ N листов». При превышении
+          показывает предложение, а не блокировку: порог мягкий. */}
+      <div className="mt-6">
+        <UsageCard usage={usage} loading={usageLoading} />
+      </div>
+
+      {/* F-06.1: точка входа в проверку домашки из ЛК.
+          Ведёт в конструктор с `?photo=1` — секция проверки раскрывается сразу.
+          Отдельная карточка, а не ещё одна кнопка в шапке: у учителя два разных
+          намерения — «создать лист» и «проверить, что ученик сделал сам». */}
+      <Card className="mt-4 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-start gap-4 min-w-0">
+            <div className="w-11 h-11 rounded-xl bg-accent-50 flex items-center justify-center shrink-0">
+              <Camera className="w-5 h-5 text-accent-600" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-semibold text-warm-950">
+                Проверить домашку и задать вопросы
+              </h2>
+              <p className="text-sm text-warm-600 mt-1">
+                Сфотографируйте тетрадь — будет балл и оценка. Если что-то
+                вызывает вопросы, составьте 3–5 вопросов для беседы с учеником.
+              </p>
+            </div>
+          </div>
+          <Button as="link" href="/constructor?photo=1" variant="secondary" size="md">
+            Проверить фото
+          </Button>
+        </div>
+      </Card>
+
+      <Tabs value={tab} onValueChange={setTab} className="mt-10">
         <TabsList>
           <TabsTrigger value="history">
             <History className="w-3.5 h-3.5 mr-1.5" />
@@ -137,6 +202,12 @@ export default function DashboardPage() {
           <TabsTrigger value="templates">
             <LayoutTemplate className="w-3.5 h-3.5 mr-1.5" />
             Шаблоны · {templates.length}
+          </TabsTrigger>
+          {/* TZ-12: первая серверная вкладка. Остальные три живут в localStorage,
+              формы — на сервере, поэтому вкладка своя и грузится отдельно. */}
+          <TabsTrigger value="forms" data-testid="tab-forms">
+            <Send className="w-3.5 h-3.5 mr-1.5" />
+            Выданное
           </TabsTrigger>
         </TabsList>
 
@@ -208,6 +279,10 @@ export default function DashboardPage() {
             </div>
           )}
         </TabsContent>
+
+        <TabsContent value="forms">
+          <FormsTab />
+        </TabsContent>
       </Tabs>
     </div>
   );
@@ -224,8 +299,8 @@ function ProfileHeader({
 }) {
   const planBadge = {
     free: { tone: "neutral" as const, label: "Бесплатный план" },
-    base: { tone: "brand" as const, label: "Базовый · 500 ₽/мес" },
-    plus: { tone: "accent" as const, label: "Плюс · 1 500 ₽/мес" },
+    base: { tone: "brand" as const, label: `${PLANS.base.name} · ${priceShort("base", "month")}` },
+    plus: { tone: "accent" as const, label: `${PLANS.plus.name} · ${priceShort("plus", "month")}` },
   }[profile.plan];
 
   return (

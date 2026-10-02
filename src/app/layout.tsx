@@ -68,12 +68,25 @@ export default function RootLayout({
   return (
     <html lang="ru" className={inter.variable}>
       <body className="min-h-screen bg-warm-50 text-warm-950 antialiased font-sans">
-        <div className="flex min-h-screen flex-col">
-          <Header />
-          <main className="flex-1">{children}</main>
-          <Footer />
-        </div>
-        <Toaster />
+        {/* Toaster держит ToastContext.Provider, поэтому всё, что вызывает
+            useToast() (в т.ч. страницы в children), обязано быть ВНУТРИ него.
+            Иначе тосты уходят в console.warn и пользователь их не видит. */}
+        <Toaster>
+          <div className="flex min-h-screen flex-col">
+            {/* Skip-link: с клавиатуры первой попадает не в меню, а в содержимое.
+                До фокуса он спрятан (sr-only), но виден и кликабелен сразу,
+                как только на него попал фокус (focus:not-sr-only). */}
+            <a
+              href="#main"
+              className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:inline-flex focus:items-center focus:rounded-xl focus:bg-white focus:px-4 focus:py-2.5 focus:text-sm focus:font-semibold focus:text-warm-950 focus:shadow-soft-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+            >
+              К содержанию
+            </a>
+            <Header />
+            <main id="main" className="flex-1">{children}</main>
+            <Footer />
+          </div>
+        </Toaster>
         {/* TZ-10 §8.1 / §9.1: Яндекс.Метрика временно отключена для билда — next/script в static export вызывает таймауты. TODO: включить после миграции на Cloudflare SSR / OpenNext, либо использовать inline <script> вместо next/script. */}
         {/* <YandexMetrika counterId={process.env.NEXT_PUBLIC_YM_ID ?? ""} /> */}
       </body>

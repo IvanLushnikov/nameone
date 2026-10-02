@@ -27,6 +27,16 @@ compatibility_flags = ["nodejs_compat"]
 APP_ENV = "development"
 APP_BASE_URL = "http://localhost:8787"
 FRONTEND_URL = "http://localhost:3000"
+# ОДИН origin для ссылок, которые видит человек (magic-link, возврат с оплаты).
+# Отдельная переменная нужна потому, что FRONTEND_URL в проде — список через
+# запятую ради CORS, и вставлять его в ссылку нельзя.
+APP_PUBLIC_URL = "http://localhost:3000"
+# Явные разрешения на режимы, которые нельзя включать по умолчанию НИГДЕ,
+# включая прод. Именно «включено», а не «не запрещено»: 02.10.2026 выяснилось,
+# что боевой воркер задеплоен из секции [vars], поэтому защита, построенная на
+# APP_ENV, выключалась молча.
+ALLOW_DEV_MAGIC_URL = "true"
+ALLOW_DEMO_PAYMENTS = "true"
 
 [[d1_databases]]
 binding = "DB"
@@ -52,6 +62,14 @@ APP_BASE_URL = "https://rabochielisty-api.ivanlusnikov159.workers.dev"
 # на https://rabochielisty.ru,https://www.rabochielisty.ru. До тех пор держим ОБА, чтобы и старый
 # preview-домен (listai-prototype.pages.dev), и новый прод-домен (rabochielisty.ru) ходили в API.
 FRONTEND_URL = "https://listai-prototype.pages.dev,https://www.listai-prototype.pages.dev,https://rabochielisty.ru,https://www.rabochielisty.ru"
+# Прод-домен ОДНИМ значением — в magic-link письма уходит именно он.
+# TODO: поменять на https://rabochielisty.ru сразу после переключения DNS.
+APP_PUBLIC_URL = "https://listai-prototype.pages.dev"
+# В проде оба опасных режима выключены ЯВНО, а не «по умолчанию из коробки».
+# Если кто-то добавит новую секцию окружения, отсутствие этих строк ничего
+# не сломает: поведение по умолчанию везде — запрет.
+ALLOW_DEV_MAGIC_URL = "false"
+ALLOW_DEMO_PAYMENTS = "false"
 
 [[env.production.d1_databases]]
 binding = "DB"
@@ -62,3 +80,10 @@ migrations_dir = "src/db"
 [[env.production.r2_buckets]]
 binding = "PDFS"
 bucket_name = "rabochielisty-pdfs"
+
+# TZ-11 §5.2 (В-2.3): фото тетради — персональные данные ребёнка, срок хранения
+# 7 дней. Без этого триггера `delete_at` в D1 не исполняется и фото лежат
+# бессрочно. Раз в сутки в 03:00 UTC — фото удаляются воркером, даже если
+# учитель ни разу не открыл дашборд.
+[env.production.triggers]
+crons = ["0 3 * * *"]

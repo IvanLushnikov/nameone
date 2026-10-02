@@ -1,19 +1,58 @@
+import type { Metadata } from "next";
 import { PricingTeaser } from "@/components/landing/PricingTeaser";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Check, X, GraduationCap, Building2 } from "lucide-react";
 import { PageTracker } from "@/components/shared/PageTracker";
+import {
+  ACADEMIC_YEAR_NOTE,
+  ARTIFACT_NAMES,
+  FREE_QUOTA_LABEL,
+  PLANS,
+  academicYearSaving,
+  formatRub,
+  priceLabel,
+  priceShort,
+  priceSummary,
+} from "@/lib/content/plans";
+import { SITE_URL } from "@/lib/site";
+
+/**
+ * Коммерческий поиск: «сколько стоит рабочие листы», «тарифы», «цена подписки
+ * для учителя». Без своих метаданных страница наследовала заголовок главной и
+ * не отвечала ни на один денежный запрос.
+ *
+ * Цены в description НЕ зашиты строкой, а собраны хелперами `plans.ts` — тем
+ * же путём, что и подписи на самой странице. Иначе цена в сниппете Google
+ * разошлась бы с ценой под кнопкой: пользователь увидел бы одно, посетил
+ * страницу и увидел другое, а на «/год» вместо «учебный год» ещё и обещание
+ * несуществующего периода.
+ *
+ * Период везде «учебный год», а НЕ «год»: календарного года в продукте нет,
+ * и это же проверяет tests/unit/plans-consistency.test.ts.
+ */
+export const metadata: Metadata = {
+  title: `Тарифы — ${FREE_QUOTA_LABEL} бесплатно, дальше от ${priceShort("base", "month")}`,
+  description: `Базовый ${priceShort("base", "month")} или ${priceShort("base", "academicYear")}. Плюс — ${priceShort("plus", "month")}, включает ОГЭ/ЕГЭ, презентации и КТП. ${FREE_QUOTA_LABEL} — без карты и без регистрации. Оплата картой РФ и СБП.`,
+  alternates: { canonical: `${SITE_URL}/pricing` },
+};
+
+/**
+ * Строка «Цена» собирается из plans.ts — тот же источник, что и карточки
+ * тарифов на лендинге. Периодов ровно два: учебный год (9 мес) и помесячно.
+ */
+const priceCell = (planId: "free" | "base" | "plus" | "school") => priceSummary(planId);
 
 const comparison = [
   {
     feature: "Цена",
-    free: "0 ₽",
-    base: "500 ₽/мес · 4 500 ₽/год",
-    plus: "1 500 ₽/мес · 12 000 ₽/год",
-    school: "3 000 ₽/класс",
+    free: priceCell("free"),
+    base: priceCell("base"),
+    plus: priceCell("plus"),
+    school: priceCell("school"),
   },
   {
-    feature: "Генерации в сутки",
+    feature: "Бесплатные генерации",
     free: "3",
     base: "Безлимит",
     plus: "Безлимит",
@@ -69,35 +108,35 @@ const comparison = [
     school: "✓",
   },
   {
-    feature: "Адаптивные тесты",
+    feature: `${ARTIFACT_NAMES.control} с критериями оценивания`,
     free: "—",
     base: "—",
     plus: "✓",
     school: "✓",
   },
   {
-    feature: "Telegram-бот",
+    feature: "Ранний доступ к новым темам и предметам",
     free: "—",
     base: "—",
     plus: "✓",
     school: "✓",
   },
   {
-    feature: "Планы уроков по ФГОС",
+    feature: `${ARTIFACT_NAMES.lessonPlan} по ФГОС`,
     free: "—",
     base: "—",
     plus: "✓",
     school: "✓",
   },
   {
-    feature: "Презентации PPTX",
+    feature: `${ARTIFACT_NAMES.presentation} (PPTX)`,
     free: "—",
     base: "—",
     plus: "✓",
     school: "✓",
   },
   {
-    feature: "КТП на год (DOCX)",
+    feature: `${ARTIFACT_NAMES.ktp} на год (DOCX)`,
     free: "—",
     base: "—",
     plus: "✓",
@@ -149,9 +188,18 @@ const renderCell = (v: string) => {
 export default function PricingPage() {
   return (
     <>
+
       {/* TZ-2: убран дубль-hero «Простая экономика» — PricingTeaser ниже уже имеет
-          свой eyebrow «Тарифы» + h2 «Начните бесплатно…» + описание + переключатель Помесячно/За год. */}
-      <PricingTeaser />
+          свой eyebrow «Тарифы» + h2 «Начните бесплатно…» + описание + переключатель
+          «Учебный год (9 мес)» / «Помесячно». */}
+      {/* Заголовок страницы — тот же блок, что и на главной, но повышенный до
+          h1. Раньше здесь стоял скрытый `sr-only` h1, потому что общий
+          компонент PricingTeaser не давал выбрать уровень: на главной его
+          заголовок обязан остаться h2 (там h1 уже в Hero), а на странице
+          тарифов он и есть главный. Теперь уровень задаётся пропом, поэтому
+          страница получила настоящий видимый заголовок, а главная — второй
+          h1 не получила. */}
+      <PricingTeaser headingLevel="h1" />
 
       {/* Comparison table */}
       <section className="py-12 sm:py-20">
@@ -209,25 +257,17 @@ export default function PricingPage() {
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-warm-200 text-warm-700 text-xs font-semibold mb-4">
                 <Building2 className="w-3.5 h-3.5" />
-                Скоро · запуск Q1 2027
+                Скоро · запуск {PLANS.school.comingSoon}
               </div>
               <h2 className="text-3xl sm:text-4xl font-display font-bold tracking-tight mb-4">
-                Скоро: тариф «Школа» для классов
+                Скоро: тариф «{PLANS.school.name}» для классов
               </h2>
               <p className="text-warm-600 mb-6">
-                Учитель получит админку с отчётами по успеваемости класса. Ученики — личные кабинеты с историей. Интеграция со школьной LMS. Ориентир цены — 3 000 ₽/мес за класс.
+                Учитель получит админку с отчётами по успеваемости класса. Ученики — личные кабинеты с историей. Интеграция со школьной LMS. Ориентир цены — {priceLabel("school", "month")}.
               </p>
 
               <ul className="space-y-2 mb-6">
-                {[
-                  "Админка учителя с отчётами",
-                  "Личные кабинеты учеников",
-                  "Отслеживание прогресса по темам",
-                  "Шаблоны для контрольных",
-                  "Интеграция со Сферум / Moodle",
-                  "Безлимит по ученикам в классе",
-                  "Готовые КТП для администрации",
-                ].map((f) => (
+                {PLANS.school.features.map((f) => (
                   <li key={f} className="flex items-start gap-2 text-sm text-warm-700">
                     <Check className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
                     {f}
@@ -236,7 +276,9 @@ export default function PricingPage() {
               </ul>
 
               <div className="flex flex-wrap items-baseline gap-2 mb-6">
-                <span className="text-3xl font-bold text-warm-950 whitespace-nowrap">3 000 ₽</span>
+                <span className="text-3xl font-bold text-warm-950 whitespace-nowrap">
+                  {formatRub(PLANS.school.prices.month.amount)}
+                </span>
                 <span className="text-warm-500 whitespace-nowrap">/мес за класс</span>
                 <span className="text-sm text-warm-500">(ориентир)</span>
               </div>
@@ -245,7 +287,7 @@ export default function PricingPage() {
               </p>
 
               <Button variant="primary" size="lg" disabled leftIcon={<GraduationCap className="w-4 h-4" />}>
-                Скоро · запуск Q1 2027
+                {PLANS.school.cta}
               </Button>
             </div>
 
@@ -254,10 +296,10 @@ export default function PricingPage() {
               <div className="space-y-2.5">
                 {[
                   { title: "Контрольная на 2 варианта за 5 минут", desc: "Учитель физики делает 2 PDF и шифр ответов." },
-                  { title: "Домашка по теме для всего класса", desc: "Классрук выдаёт задания через LMS." },
+                  { title: "Задания по теме для всего класса", desc: "Классрук выдаёт задания через LMS." },
                   { title: "Подготовка к ОГЭ по классу", desc: "Автоматический подбор вариантов по слабым темам." },
                   { title: "Отчёт за четверть", desc: "Сколько задач решил класс, какие темы просели." },
-                  { title: "Годовое КТП по предмету", desc: "Учитель делает КТП на 34 недели для администрации за 5 минут." },
+                  { title: "КТП на учебный год по предмету", desc: "Учитель делает КТП на 34 недели для администрации за 5 минут." },
                   { title: "Серия листов + план + презентация к четверти", desc: "Все материалы к теме в одном месте." },
                 ].map((s) => (
                   <div key={s.title} className="p-3 rounded-xl bg-white border border-blue-100">
@@ -283,27 +325,30 @@ export default function PricingPage() {
             {[
               {
                 q: "Можно ли оплатить картой иностранного банка?",
-                a: "Да, через ЮKassa принимаются карты Visa/MasterCard/МИР любых стран. Также доступна оплата через СБП и кошельки.",
+                a: "Да, через ЮКасса принимаются карты Visa/MasterCard/МИР любых стран. Также доступна оплата через СБП и кошельки.",
               },
               {
                 q: "Когда списываются деньги?",
-                a: "Подписка продлевается автоматически раз в месяц. За день до списания мы присылаем напоминание. Отменить можно в любой момент — деньги не спишутся в следующем периоде.",
+                a: "Помесячная подписка продлевается автоматически раз в месяц, учебный год — раз в 9 месяцев (одним платежом, без летних списаний). За день до списания мы присылаем напоминание. Отменить можно в любой момент — деньги не спишутся в следующем периоде.",
               },
               {
-                q: "Есть ли скидки для годовых подписок?",
-                a: "Да. Базовый: 4 500 ₽/год (375 ₽/мес — на 25% дешевле). Плюс: 12 000 ₽/год (1 000 ₽/мес — на 33% дешевле). Оплата за год — без автоматических списаний, продление по желанию.",
+                q: "Что такое учебный год и почему он выгоднее?",
+                a: `Учебный год — это 9 месяцев подряд, а не 12: платить летом, когда вы не работаете, не нужно. Старт считается от даты оплаты. ${ACADEMIC_YEAR_NOTE}. ${PLANS.base.name}: ${priceLabel("base", "academicYear")} — ${academicYearSaving("base")}. ${PLANS.plus.name}: ${priceLabel("plus", "academicYear")} — ${academicYearSaving("plus")}. Можно и помесячно: ${priceLabel("base", "month")} и ${priceLabel("plus", "month")}.`,
               },
               {
                 q: "А если AI ошибётся в задании — деньги вернут?",
                 a: "Если задание содержит ошибку в условии или ответе — напишите в поддержку, заменим или вернём деньги за этот лист. Для ОГЭ/ЕГЭ-вариантов действует расширенная гарантия: пересборка варианта бесплатно.",
               },
               {
-                q: "Можно попробовать Базовый бесплатно?",
-                a: "Да, 7 дней бесплатно — без оплаты и без привязки карты. Если не понравится — отмените в 1 клик, деньги не спишутся. После триала подписка продлевается автоматически.",
+                // Биллинга в проекте пока нет, поэтому обещать пробный период
+                // нельзя. Про бесплатный вход честно пишем «3 бесплатные
+                // генерации» (FREE_QUOTA_LABEL) — без периода и без карты.
+                q: "Что можно попробовать бесплатно?",
+                a: `${FREE_QUOTA_LABEL} — без карты и без регистрации. Этого хватает, чтобы понять, подходит ли сервис под ваши предметы и классы. Дальше — подписка.`,
               },
               {
                 q: "Что если я хочу вернуть деньги?",
-                a: "В течение 7 дней после оплаты можно вернуть всю сумму — просто напишите в поддержку. Без объяснения причин.",
+                a: "Если подписка не подошла — отмените её в личном кабинете, и в следующем периоде списания не будет. Вопросы по оплате и возврату напишите в поддержку, разберёмся по существу.",
               },
               {
                 q: "Можно ли использовать для коммерческих целей?",
@@ -311,7 +356,7 @@ export default function PricingPage() {
               },
               {
                 q: "Что входит в тариф Плюс по новым материалам?",
-                a: "В тариф Плюс входят планы уроков по ФГОС, презентации PPTX и КТП на год (DOCX). Экспорт доступен в PDF, DOCX и PPTX.",
+                a: `В тариф Плюс входят ${ARTIFACT_NAMES.lessonPlan.toLowerCase()} по ФГОС, ${ARTIFACT_NAMES.presentation.toLowerCase()} (PPTX) и ${ARTIFACT_NAMES.ktp} на год (DOCX). Экспорт доступен в PDF, DOCX и PPTX.`,
               },
             ].map((it) => (
               <details

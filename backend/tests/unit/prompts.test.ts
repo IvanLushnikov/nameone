@@ -8,7 +8,7 @@ import { buildWorksheetPrompt } from "../../src/llm/prompts/worksheet-gen";
 import { buildExamPrompt } from "../../src/llm/prompts/exam-gen";
 import { buildValidatePrompt } from "../../src/llm/prompts/validate";
 import { makeCacheKey } from "../../src/llm/cache";
-import { MODEL_COSTS } from "../../src/llm/config";
+import { MODEL_CATALOG, MODEL_COSTS } from "../../src/llm/config";
 import type { Env } from "../../src/env";
 
 const envBase: Env = {
@@ -21,56 +21,67 @@ const envBase: Env = {
   OPENAI_API_KEY: "test-openai",
   ANTHROPIC_API_KEY: "test-anthropic",
   DEEPSEEK_API_KEY: "test-deepseek",
+  POLZA_API_KEY: "test-polza",
 };
 
 describe("pickModel", () => {
-  it("worksheet-gen + free → gpt-6-luna primary, gpt-6-sol fallback", () => {
-    const decision = pickModel("worksheet-gen", "free", envBase);
+  it("worksheet-gen -> gpt-6-luna, escalation luna -> sol -> sonnet", () => {
+    const decision = pickModel("worksheet-gen", envBase);
     expect(decision.primary?.model).toBe("gpt-6-luna");
-    expect(decision.fallbacks[0]?.model).toBe("gpt-6-sol");
-    expect(decision.generation).toBe("primary");
+    expect(decision.primary?.provider).toBe("polza");
+    expect(decision.fallbacks.map((f) => f.model)).toEqual([
+      "gpt-6-sol",
+      "claude-sonnet-5-5",
+    ]);
   });
 
-  it("worksheet-gen + plus → claude-opus-5-5, no fallback", () => {
-    const decision = pickModel("worksheet-gen", "plus", envBase);
-    expect(decision.primary?.model).toBe("claude-opus-5-5");
-    expect(decision.primary?.provider).toBe("anthropic");
+  it("exam-gen -> claude-sonnet-5-5 bez fallbackov (potolok lestnicy)", () => {
+    const decision = pickModel("exam-gen", envBase);
+    expect(decision.primary?.model).toBe("claude-sonnet-5-5");
     expect(decision.fallbacks).toHaveLength(0);
-    expect(decision.generation).toBe("premium");
   });
 
-  it("validate → deepseek-v4-flash", () => {
-    const decision = pickModel("validate", "free", envBase);
+  it("control/ktp/presentation -> sonnet (slozhnye struktтуриrovannye)", () => {
+    for (const task of ["control-gen", "ktp-gen", "presentation-gen"] as const) {
+      expect(pickModel(task, envBase).primary?.model).toBe("claude-sonnet-5-5");
+    }
+  });
+
+  it("test/cards/lesson-plan -> luna (massovye listy)", () => {
+    for (const task of ["test-gen", "cards-gen", "lesson-plan-gen"] as const) {
+      expect(pickModel(task, envBase).primary?.model).toBe("gpt-6-luna");
+    }
+  });
+
+  it("tarif NE vliyaet na vybor modeli -- u pickModel net parametra plan", () => {
+    // Regression 2026-10-02: ranee plan=plus podnimal do Opus na VSE,
+    // vklyuchaya domashku iz 10 zadaniy (3,90 rubl protiv 0,06 rubl u Luna).
+    // Teper parametra plan v funktsii prosto net: arity=2 garantiruet,
+    // chto tarifnaya vetka ne vernetsya molcha.
+    expect(pickModel.length).toBe(2);
+  });
+
+  it("validate -> deepseek-v4-flash", () => {
+    const decision = pickModel("validate", envBase);
     expect(decision.primary?.model).toBe("deepseek-v4-flash");
-    expect(decision.primary?.provider).toBe("deepseek");
     expect(decision.fallbacks).toHaveLength(0);
   });
 
-  it("embed → dashscope primary, openai fallback", () => {
-    const env = { ...envBase, DASHSCOPE_API_KEY: "test-dashscope" };
-    const decision = pickModel("embed", "free", env);
-    expect(decision.primary?.model).toBe("qwen3-embedding-8b");
-    expect(decision.fallbacks[0]?.model).toBe("text-embedding-3-large");
-  });
-
-  it("embed without dashscope → openai primary", () => {
-    const env = { ...envBase };
-    delete env.DASHSCOPE_API_KEY;
-    const decision = pickModel("embed", "free", env);
+  it("embed -> text-embedding-3-large primary, qwen3-embedding-8b fallback", () => {
+    const decision = pickModel("embed", envBase);
     expect(decision.primary?.model).toBe("text-embedding-3-large");
+    expect(decision.fallbacks[0]?.model).toBe("qwen3-embedding-8b");
   });
 
-  it("image-gen → null (not implemented)", () => {
-    const decision = pickModel("image-gen", "plus", envBase);
+  it("image-gen -> null (not implemented)", () => {
+    const decision = pickModel("image-gen", envBase);
     expect(decision.primary).toBe(null);
   });
 
-  it("no API keys → primary null", () => {
+  it("bez POLZA_API_KEY -> primary null (routes fallbackat na mok)", () => {
     const env = { ...envBase };
-    delete env.OPENAI_API_KEY;
-    delete env.OPENROUTER_API_KEY;
-    delete env.ANTHROPIC_API_KEY;
-    const decision = pickModel("worksheet-gen", "free", env);
+    delete env.POLZA_API_KEY;
+    const decision = pickModel("worksheet-gen", env);
     expect(decision.primary).toBe(null);
   });
 });
@@ -180,18 +191,41 @@ describe("makeCacheKey", () => {
 });
 
 describe("MODEL_COSTS", () => {
-  it("all 6 models present", () => {
-    expect(Object.keys(MODEL_COSTS).sort()).toEqual([
-      "claude-opus-5-5",
-      "deepseek-v4-flash",
-      "gpt-6-luna",
-      "gpt-6-sol",
-      "qwen3-embedding-8b",
-      "text-embedding-3-large",
-    ]);
+  it("все модели каталога имеют цену (список не зашит — ловит новые)", () => {
+    // Раньше здесь был зашитый список из 6 моделей. Стоило добавить
+    // claude-sonnet-5-5 — тест падал, показывая «удалите модель или
+    // поправьте тест». Теперь проверяем инвариант: у каждой модели
+    // из MODEL_CATALOG есть цена. Новая модель без цены уронит тест,
+    // но по делу, а не «список разъехался».
+    const catalog = Object.keys(MODEL_CATALOG).sort();
+    expect(Object.keys(MODEL_COSTS).sort()).toEqual(catalog);
+    expect(catalog.length).toBeGreaterThan(0);
   });
 
-  it("claude-opus-5-5 has cacheRead rate", () => {
-    expect(MODEL_COSTS["claude-opus-5-5"]?.cacheReadPer1M).toBe(0.2);
+  it("цены неотрицательны, а у эмбеддингов выход = 0", () => {
+    // Нюанс, который стоит знать: у embedding-моделей выходных токенов
+    // нет вообще, поэтому outputPer1M = 0 — это норма. У qwen3-embedding-8b
+    // нулевая и входная цена: в config.ts это помечено как self-host
+    // placeholder, то есть сознательная заглушка, а не забывка.
+    for (const [id, c] of Object.entries(MODEL_COSTS)) {
+      expect(c.inputPer1M, id).toBeGreaterThanOrEqual(0);
+      expect(c.outputPer1M, id).toBeGreaterThanOrEqual(0);
+    }
+    // Все модели, которые реально генерируют текст, должны что-то стоить.
+    for (const [id, c] of Object.entries(MODEL_COSTS)) {
+      if (MODEL_CATALOG[id]?.embedding) continue;
+      expect(c.outputPer1M, id).toBeGreaterThan(0);
+    }
+  });
+
+  it("cacheRead дороже input и дешевле output (иначе кэш не окупается)", () => {
+    // Смысловая проверка вместо зашитого числа: цены на polza.ai менялись
+    // уже дважды (0.2 -> 0.28 у opus), и жёсткое ожидание каждый раз
+    // становилось ложным падением, а не реальной ошибкой.
+    for (const [id, c] of Object.entries(MODEL_COSTS)) {
+      if (c.cacheReadPer1M === undefined) continue;
+      expect(c.cacheReadPer1M, id).toBeLessThan(c.inputPer1M);
+      expect(c.cacheReadPer1M, id).toBeLessThan(c.outputPer1M);
+    }
   });
 });

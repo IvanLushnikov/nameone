@@ -23,6 +23,7 @@ import {
   getGrade,
   subjects,
 } from "@/lib/content/subjects";
+import { JsonLd } from "@/components/seo";
 
 type Props = { params: { subject: string; grade: string; topic: string } };
 
@@ -44,8 +45,9 @@ export function generateMetadata({ params }: Props): Metadata {
   const topic = getTopic(params.subject, Number(params.grade), params.topic);
   if (!subject || !grade || !topic) return { title: "Тема не найдена" };
 
-  const title = `План урока по теме «${topic.title}» · ${grade.num} класс · РабочиеЛисты AI`;
-  const description = `Готовый план урока по ФГОС для ${grade.num} класса по предмету «${subject.title.toLowerCase()}» на тему «${topic.title}». Конспект на 45 минут с этапами, целями и домашним заданием. Сгенерируйте DOCX за 30 секунд.`;
+  // Бренд в конце не дописываем — его добавляет template в корневом layout.
+  const title = `План урока по теме «${topic.title}» · ${grade.num} класс`;
+  const description = `Готовый план урока по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topic.title}». Конспект на 45 минут с этапами, целями и домашним заданием. Сгенерируйте DOCX за 30 секунд.`;
 
   return {
     title,
@@ -68,8 +70,31 @@ export default function LessonPlanTopicPage({ params }: Props) {
 
   if (!subject || !grade || !topic) return notFound();
 
+  // Разметка по образцу /subject/[subject]/[grade]/[topic] — LearningResource +
+  // AlignmentObject по разделу ФГОС. В отличие от subject-страницы рендерим
+  // всегда: здесь это единственный источник разметки для ~469 URL конспектов.
+  const jsonLd: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "LearningResource",
+    name: `План урока по теме «${topic.title}»`,
+    description: `Готовый план урока по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topic.title}». Конспект на 45 минут с этапами, целями и домашним заданием.`,
+    inLanguage: "ru-RU",
+    educationalLevel: `${grade.num} класс`,
+    learningResourceType: ["План урока", "Конспект", "Технологическая карта"],
+    about: { "@type": "Thing", name: subject.title },
+  };
+  if (topic.fgosRef) {
+    jsonLd.educationalAlignment = {
+      "@type": "AlignmentObject",
+      alignmentType: "educationalFramework",
+      targetName: topic.fgosRef,
+      educationalFramework: "ФГОС 2021",
+    };
+  }
+
   return (
     <>
+      <JsonLd data={jsonLd} id="ld-lesson-plan" />
       {/* Hero */}
       <section className="relative bg-gradient-to-b from-warm-50 to-white pt-8 sm:pt-12 pb-10">
         <div className="absolute inset-0 -z-10 bg-grid opacity-50" />
@@ -298,7 +323,7 @@ export default function LessonPlanTopicPage({ params }: Props) {
               },
               {
                 q: "Сколько стоит генерация плана?",
-                a: "Бесплатно — 3 генерации в сутки. На тарифе Plus — без ограничений.",
+                a: "Бесплатно — 3 генерации. На тарифе Плюс планы урока входят в объём тарифа.",
               },
             ].map((f) => (
               <Card key={f.q}>

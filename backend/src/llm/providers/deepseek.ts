@@ -14,6 +14,7 @@ import { InternalError } from "../../lib/errors";
 import { logLlmEvent } from "../log";
 import type { Env } from "../../env";
 import type { LLMResponse, Provider } from "../types";
+import { contentToText } from "../types";
 
 let cachedClient: OpenAI | null = null;
 
@@ -46,7 +47,15 @@ export function getDeepSeekProvider(env: Env): Provider {
       void _env;
       const start = Date.now();
 
-      const messages = req.messages.map((m) => ({ role: m.role, content: m.content }));
+      // Как и в openai.ts: `role` не сужается до конкретной ветки
+      // `ChatCompletionMessageParam` автоматически, а `LLMContent` — это
+      // строка | массив частей, тогда как chat API ждёт строку. Поэтому
+      // приводим контент через contentToText (тот же паттерн, что в
+      // anthropic.ts), а массив — точечным кастом по `role`.
+      const messages = req.messages.map((m) => ({
+        role: m.role,
+        content: contentToText(m.content),
+      })) as unknown as OpenAI.Chat.Completions.ChatCompletionMessageParam[];
 
       const body: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
         model: req.model,

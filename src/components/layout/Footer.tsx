@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Logo } from "@/components/shared/Logo";
 import { Mail, MessageCircle } from "lucide-react";
+import { SUPPORT_EMAIL } from "@/lib/site";
 
 const cols = [
   {
@@ -40,15 +41,15 @@ export function Footer() {
           <div className="col-span-2">
             <Logo />
             <p className="mt-4 text-sm text-warm-600 max-w-xs leading-relaxed">
-              AI-генератор рабочих листов и тестов по ФГОС. Готовый PDF за 30 секунд для репетиторов, родителей и школьников.
+              AI-генератор рабочих листов, КТП и презентаций по&nbsp;ФГОС для учителей 1–11&nbsp;класса. PDF и&nbsp;DOCX с&nbsp;ответами — за&nbsp;30&nbsp;секунд.
             </p>
             <div className="mt-5 flex gap-2">
               <a
-                href="mailto:hello@rabochielisty.ru"
+                href={`mailto:${SUPPORT_EMAIL}`}
                 className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-white border border-warm-200 text-warm-700 hover:bg-warm-50 text-sm"
               >
                 <Mail className="w-4 h-4" />
-                hello@rabochielisty.ru
+                {SUPPORT_EMAIL}
               </a>
               <a
                 href="https://t.me/rabochielisty"
@@ -79,8 +80,8 @@ export function Footer() {
         </div>
 
         <div className="mt-10 pt-6 border-t border-warm-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-warm-500">
-          <p>© 2026 РабочиеЛисты AI. Все права защищены. Сделано с ❤ для учителей и родителей.</p>
-          <p>Работает на AI · Cloudflare Pages</p>
+          <p>© 2026 РабочиеЛисты AI. Все права защищены. Сделано с ❤ для учителей.</p>
+          <p>Листы в формате A4 · PDF и DOCX</p>
         </div>
       </div>
     </footer>
