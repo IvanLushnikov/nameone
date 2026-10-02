@@ -262,7 +262,7 @@ export async function createPayment(
   const secretKey = env.YOOKASSA_SECRET_KEY;
   const isDevMode = !shopId || !secretKey;
 
-  // ── Почему в проде без ключей нельзя «просто включить демо-оплату» ────────
+  // ── Почему «просто включить демо-оплату» в проде нельзя ───────────────────
   // В dev-режиме yookassa_payment_id равен нашему paymentId, а этот id
   // возвращается клиенту. Значит, клиент знает идентификатор платежа, который
   // мы ему сами выдали, и может дослать поддельное `payment.succeeded`.
@@ -271,15 +271,19 @@ export async function createPayment(
   // Настоящей проверки не будет: сверять с API ЮKassa нечем, ключей нет.
   // Итог: без ключей в проде подписку можно получить бесплатно.
   //
-  // Поэтому симулятор оплаты в production — это не «недонастроенный удобный
-  // режим», а способ выдать бесплатный доступ. Отказываем.
-  if (isDevMode && env.APP_ENV === "production") {
+  // Поэтому симулятор — привилегированный режим, и включается он ТОЛЬКО
+  // положительным флагом ALLOW_DEMO_PAYMENTS=true. Раньше условием был
+  // APP_ENV, и 2 октября выяснилось, что боевой воркер задеплоен с
+  // APP_ENV=development: такая проверка выключилась бы молча, вместе с защитой.
+  const demoPaymentsAllowed = env.ALLOW_DEMO_PAYMENTS === "true";
+
+  if (isDevMode && !demoPaymentsAllowed) {
     // eslint-disable-next-line no-console
     console.error(
-      "[billing] Отказ: в production не заданы YOOKASSA_SHOP_ID / YOOKASSA_SECRET_KEY. " +
-        "Демо-оплата в проде отключена намеренно: без сверки с API ЮKassa подтвердить " +
-        "платёж нечем, и подписку можно было бы активировать подделкой вебхука. " +
-        "Задайте ключи: wrangler secret put YOOKASSA_SHOP_ID / YOOKASSA_SECRET_KEY",
+      "[billing] Отказ: приём платежей не настроен (нет YOOKASSA_SHOP_ID / YOOKASSA_SECRET_KEY), " +
+        "а ALLOW_DEMO_PAYMENTS не включён. Демо-оплата по умолчанию выключена везде, включая прод: " +
+        "без сверки с API ЮKassa подтвердить платёж нечем, и подписку можно было бы активировать " +
+        "подделкой вебхука. Задайте ключи: npx wrangler secret put YOOKASSA_SHOP_ID / YOOKASSA_SECRET_KEY",
     );
     throw new InternalError("Приём платежей не настроен");
   }

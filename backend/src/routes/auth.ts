@@ -76,7 +76,9 @@ authRouter.post("/callback", async (c) => {
 
   return c.json({
     ok: true,
-    sessionToken: result.sessionToken,
+    // Сессионный токен НЕ возвращается в теле ответа — только в HttpOnly-cookie
+    // выше. Раньше он дублировался в JSON, и любая XSS или вредоносное
+    // расширение браузера могли его просто прочитать из ответа.
     user: {
       id: result.user.id,
       email: result.user.email,

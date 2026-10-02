@@ -94,14 +94,71 @@ function checkProductionConfig(env: AppEnv["Bindings"]): void {
   );
 }
 
+/**
+ * Проверка, что опубликованный воркер действительно настроен как прод.
+ *
+ * Отдельная функция не потому, что логика сложная, а потому что её предмет —
+ * не секреты, а сама конфигурация. И она ловит баг, который 2 октября 2026
+ * стоил дороже всех найденных дыр: боевой воркер был задеплоен из секции
+ * `[vars]` вместо `[env.production.vars]`, то есть работал с
+ * `APP_ENV=development` и `FRONTEND_URL=http://localhost:3000`.
+ *
+ * Из этого следовало: вход выдавал ссылку прямо в ответе (дыра К-2), оплата
+ * уходила в симуляцию (бесплатные подписки), а письма уходили с адресом
+ * localhost. Ни один тест этого не показывал — в коде всё выглядело верно.
+ * Ловить такое можно только сверкой с фактическим состоянием воркера.
+ */
+let envChecked = false;
+
+function checkPublishedEnvironment(env: AppEnv["Bindings"]): void {
+  if (envChecked) return;
+  envChecked = true;
+
+  // Значение приходит в виде полного origin («http://localhost:3000»), поэтому
+  // схему снимаем ДО проверки. Иначе «http://localhost:3000» не распознаётся
+  // как локальный адрес — именно такая ошибка была в первой версии этой
+  // проверки, и она бы пропустила неверный деплой.
+  const looksLikeLocal = (value: string | undefined) => {
+    if (!value) return true;
+    const withoutScheme = value.trim().replace(/^https?:\/\//i, "");
+    return /^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:|\/|$)/i.test(withoutScheme);
+  };
+
+  const problems: string[] = [];
+  if (env.APP_ENV !== "production") {
+    problems.push(`APP_ENV="${env.APP_ENV ?? "—"}" (ожидается "production")`);
+  }
+  if (looksLikeLocal(env.FRONTEND_URL)) {
+    problems.push(`FRONTEND_URL="${env.FRONTEND_URL ?? "—"}" указывает на локальную машину`);
+  }
+  if (env.ALLOW_DEV_MAGIC_URL === "true") {
+    problems.push("ALLOW_DEV_MAGIC_URL=true — ссылка входа выдаётся в ответе, вход не защищён");
+  }
+  if (env.ALLOW_DEMO_PAYMENTS === "true") {
+    problems.push("ALLOW_DEMO_PAYMENTS=true — оплата симулируется, подписку можно получить бесплатно");
+  }
+
+  if (problems.length === 0) return;
+
+  // eslint-disable-next-line no-console
+  console.error(
+    "[config] КРИТИЧНО: опубликованный воркер настроен как окружение разработки. " +
+      problems.join("; ") +
+      ". Признак деплоя из [vars] вместо [env.production.vars]. " +
+      "Пока так, вход и оплата работают небезопасно. " +
+      "Задеплойте с окружением: npx wrangler deploy --env production",
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Global middleware
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Самопроверка до всего остального: если секретов нет, об этом надо узнать
-// из лога, а не из 500-го ответа конкретному пользователю.
+// Самопроверка до всего остального: если секретов нет или воркер настроен как
+// окружение разработки, об этом надо узнать из лога, а не из ответа пользователю.
 app.use("*", async (c, next) => {
   checkProductionConfig(c.env);
+  checkPublishedEnvironment(c.env);
   await next();
 });
 

@@ -36,8 +36,12 @@ const DEFAULT_ALLOWED_ORIGINS: readonly string[] = [
 /**
  * Собрать финальный allowlist из DEFAULT + FRONTEND_URL env.
  * Дубликаты убираются, пробелы trim'ятся.
+ *
+ * Экспортируется: тот же список использует originGuard для защиты от CSRF.
+ * Две проверки должны опираться на ОДИН список — иначе легко получить
+ * конфигурацию, где CORS разрешает один домен, а CSRF-защита — другой.
  */
-function parseAllowedOrigins(env: { FRONTEND_URL?: string }): string[] {
+export function parseAllowedOrigins(env: { FRONTEND_URL?: string }): string[] {
   const out = new Set<string>(DEFAULT_ALLOWED_ORIGINS);
   if (env.FRONTEND_URL) {
     for (const raw of env.FRONTEND_URL.split(",")) {
