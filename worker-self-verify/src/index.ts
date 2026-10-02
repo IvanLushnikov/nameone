@@ -70,6 +70,18 @@ interface Env {
   ALLOWED_ORIGINS?: string;
   WORKER_NAME?: string;
   APP_ENV?: string;
+  /**
+   * Общий секрет для server-to-server вызовов.
+   *
+   * ВАЖНО: пока `/verify` вызывается прямо из браузера (src/lib/llm/self-verify.ts),
+   * секрет бесполезен — всё, что лежит в NEXT_PUBLIC_*, видно пользователю.
+   * Поэтому режим включается отдельно, через REQUIRE_SECRET: когда вызов
+   * переедет за основной API (где есть своя сессия и лимиты), достаточно
+   * поставить REQUIRE_SECRET="true" и задать INTERNAL_TOKEN — и воркер
+   * перестанет быть открытым прокси без переписывания кода воркера.
+   */
+  INTERNAL_TOKEN?: string;
+  REQUIRE_SECRET?: string;
 }
 
 interface PolzaModelInfo {
@@ -85,6 +97,64 @@ const POLZA_URL = "https://polza.ai/api/v1/chat/completions";
 const REQUEST_TIMEOUT_MS = 25_000;
 const MOCK_LATENCY_MS = 50;
 const MAX_TASK_LINES = 50;
+
+// ── Ограничение нагрузки ─────────────────────────────────────────────────────
+// Раньше его не было вообще: любой, кто знал адрес воркера (а он публичный на
+// *.workers.dev), мог дёргать платный LLM-вызов сколько угодно раз за наш счёт.
+// Счётчик живёт в памяти инстанса: для защиты от массового злоупотребления этого
+// достаточно, гонять каждого пользователя по отдельному инстансу бессмысленно.
+const RATE_LIMIT_MAX = 20; // запросов
+const RATE_LIMIT_WINDOW_MS = 60_000; // в минуту
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(ip: string): { allowed: boolean; retryAfterSec: number } {
+  const now = Date.now();
+  const bucket = rateBuckets.get(ip);
+
+  if (!bucket || bucket.resetAt <= now) {
+    rateBuckets.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return { allowed: true, retryAfterSec: 0 };
+  }
+  if (bucket.count >= RATE_LIMIT_MAX) {
+    return { allowed: false, retryAfterSec: Math.ceil((bucket.resetAt - now) / 1000) };
+  }
+  bucket.count += 1;
+  return { allowed: true, retryAfterSec: 0 };
+}
+
+// Не даём карте расти бесконечно из-за спуфинга IP.
+function pruneRateBuckets(now: number): void {
+  if (rateBuckets.size < 5_000) return;
+  for (const [key, value] of rateBuckets) {
+    if (value.resetAt <= now) rateBuckets.delete(key);
+  }
+}
+
+/**
+ * Разрешённые origin'ы: список из ALLOWED_ORIGINS (через запятую).
+ *
+ * Раньше здесь стоял литерал `Access-Control-Allow-Origin: "*"`, а
+ * ALLOWED_ORIGINS в wrangler.toml был сужением, которое никто не применял.
+ * Теперь список действительно работает.
+ */
+function resolveAllowedOrigins(env: Env): Set<string> {
+  const raw = (env.ALLOWED_ORIGINS ?? "").trim();
+  if (!raw || raw === "*") return new Set(["*"]);
+  return new Set(
+    raw
+      .split(",")
+      .map((s) => s.trim().replace(/\/+$/, ""))
+      .filter(Boolean),
+  );
+}
+
+function corsOriginFor(request: Request, env: Env): string | null {
+  const origin = request.headers.get("Origin");
+  if (!origin) return null; // не браузер
+  const allowed = resolveAllowedOrigins(env);
+  if (allowed.has("*")) return origin;
+  return allowed.has(origin.replace(/\/+$/, "")) ? origin : null;
+}
 
 // Дефолтная primary-модель: DeepSeek V4 Flash — самый дешёвый валидатор на polza.ai.
 const DEFAULT_POLZA_MODEL = "deepseek/deepseek-v4-flash";
@@ -529,57 +599,157 @@ async function handleVerify(request: Request, env: Env): Promise<Response> {
 
 // =============== Entry ===============
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
+/**
+ * Самопроверка конфигурации при каждом холодном старте.
+ *
+ * Зачем. `/verify` не требует входа: запрос без секрета уходит в платный
+ * LLM на наш счёт. Лимит 20 запросов/мин на IP ограничивает частоту, но не
+ * расход: счёт живёт в памяти, обнуляется на каждом холодном старте,
+ * а с одного IP это до 28 800 запросов в сутки. CORS тут не помогает —
+ * curl и Postman его игнорируют.
+ *
+ * Поэтому состояние воркера должно быть видно в логах, а не вычисляться
+ * по чтению конфига. Особенно опасна починка «по инструкции в
+ * wrangler.toml»: REQUIRE_SECRET поставлен в верхний [vars], а прод-деплой
+ * идёт с `--env production` и верхний [vars] игнорирует — флаг включится
+ * в файле и не подействует на сервере. Ниже это выводится явно.
+ */
+function checkSelfVerifyExposure(env: Env): void {
+  const problems: string[] = [];
 
-    // CORS preflight
+  if (env.REQUIRE_SECRET !== "true") {
+    problems.push(
+      'REQUIRE_SECRET не включён ("' + (env.REQUIRE_SECRET ?? "—") + '") — /verify открыт: ' +
+        "запросы без секрета уходят в платный LLM",
+    );
+  } else if (!env.INTERNAL_TOKEN) {
+    problems.push(
+      "REQUIRE_SECRET=true, но INTERNAL_TOKEN не задан — /verify отвечает 401 всем, " +
+        "включая бота. Проверь: npx wrangler secret put INTERNAL_TOKEN --env production",
+    );
+  }
+
+  if (env.ALLOWED_ORIGINS === "*") {
+    problems.push(
+      'ALLOWED_ORIGINS="*" — воркер принимает вызовы с любого сайта. ' +
+        "Прод-значение живёт в [env.production.vars]; при деплое без --env " +
+        "публикуется верхний [vars] с этой настройкой.",
+    );
+  }
+
+  if (problems.length === 0) return;
+  // eslint-disable-next-line no-console
+  console.error(
+    "[config] КРИТИЧНО: self-verify открыт для внешних вызовов. " +
+      problems.join("; ") +
+      ". Подробности и порядок закрытия — worker-self-verify/wrangler.toml.",
+  );
+}
+
+export default {
+  /**
+   * Внешняя обёртка: проверки безопасности ДО бизнес-логики.
+   *
+   * Внутри `route()` CORS-шапки по-прежнему ставятся как "*" — это локальная
+   * деталь, чтобы его не трогать по частям. Здесь мы перетираем их на честное
+   * значение из ALLOWED_ORIGINS: браузер увидит то, что реально разрешено.
+   */
+  async fetch(request: Request, env: Env): Promise<Response> {
+    checkSelfVerifyExposure(env);
+    const corsOrigin = corsOriginFor(request, env);
+    const headers: Record<string, string> = { Vary: "Origin" };
+    if (corsOrigin) headers["Access-Control-Allow-Origin"] = corsOrigin;
+
+    // Preflight: отвечаем только разрешённому origin'у. Чужому — без шапок,
+    // и его браузер всё равно не даст прочитать ответ.
     if (request.method === "OPTIONS") {
+      if (!corsOrigin) return new Response(null, { status: 403, headers });
       return new Response(null, {
         status: 204,
         headers: {
-          "Access-Control-Allow-Origin": "*",
+          ...headers,
           "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type",
+          "Access-Control-Allow-Headers": "Content-Type, X-Internal-Token",
+          "Access-Control-Max-Age": "86400",
         },
       });
     }
 
-    // Health-check / info
-    if (request.method === "GET" && url.pathname === "/") {
-      return jsonResponse({
-        ok: true,
-        worker: env.WORKER_NAME || "listai-self-verify",
-        env: env.APP_ENV || "development",
-        has_key: Boolean(env.POLZA_API_KEY),
-        model: env.POLZA_MODEL || DEFAULT_POLZA_MODEL,
-        fallback_model: env.POLZA_FALLBACK_MODEL || DEFAULT_POLZA_FALLBACK_MODEL,
-        available_models: AVAILABLE_MODELS,
-        // soft-fail режимы (для интегратора)
-        soft_fail: {
-          input_truncation: { max_lines: MAX_TASK_LINES },
-          parse_fail_model: "parse-fail",
-          unavailable_model: "polza-unavailable",
-        },
-        metrics: {
-          ...metrics,
-          uptime_ms: Date.now() - metrics.started_at,
-        },
-        endpoints: {
-          "POST /verify": "two-pass solve+verify через LLM (Polza)",
-          "GET /": "этот health/info",
-        },
-      });
-    }
-
-    // Verify endpoint
-    if (url.pathname === "/verify") {
-      if (request.method !== "POST") {
-        return errorResponse(405, "Method not allowed. Use POST.");
-      }
-      return handleVerify(request, env);
-    }
-
-    return errorResponse(404, "Not found", `path: ${url.pathname}`);
+    const response = await route(request, env);
+    response.headers.delete("Access-Control-Allow-Origin");
+    for (const [key, value] of Object.entries(headers)) response.headers.set(key, value);
+    return response;
   },
 };
+
+async function route(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+
+  // Health-check / info
+  if (request.method === "GET" && url.pathname === "/") {
+    return jsonResponse({
+      ok: true,
+      worker: env.WORKER_NAME || "listai-self-verify",
+      env: env.APP_ENV || "development",
+      has_key: Boolean(env.POLZA_API_KEY),
+      model: env.POLZA_MODEL || DEFAULT_POLZA_MODEL,
+      fallback_model: env.POLZA_FALLBACK_MODEL || DEFAULT_POLZA_FALLBACK_MODEL,
+      available_models: AVAILABLE_MODELS,
+      // soft-fail режимы (для интегратора)
+      soft_fail: {
+        input_truncation: { max_lines: MAX_TASK_LINES },
+        parse_fail_model: "parse-fail",
+        unavailable_model: "polza-unavailable",
+      },
+      metrics: {
+        ...metrics,
+        uptime_ms: Date.now() - metrics.started_at,
+      },
+      endpoints: {
+        "POST /verify": "two-pass solve+verify через LLM (Polza)",
+        "GET /": "этот health/info",
+      },
+    });
+  }
+
+  // Verify endpoint
+  if (url.pathname === "/verify") {
+    if (request.method !== "POST") {
+      return errorResponse(405, "Method not allowed. Use POST.");
+    }
+
+    // ── Внутренний режим: вызов только по общему секрету ────────────────────
+    // Включается флагом REQUIRE_SECRET. Нужен после того, как вызов `/verify`
+    // переедет за основной API: там уже есть сессия, лимиты и контроль расхода.
+    if (env.REQUIRE_SECRET === "true") {
+      const presented = request.headers.get("X-Internal-Token");
+      if (!env.INTERNAL_TOKEN || presented !== env.INTERNAL_TOKEN) {
+        return errorResponse(401, "Unauthorized");
+      }
+    }
+
+    // ── Ограничение нагрузки ────────────────────────────────────────────────
+    // Единственная мера, которая работает и против curl/Postman: CORS такие
+    // клиенты игнорируют, а лимит по IP — нет.
+    const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+    pruneRateBuckets(Date.now());
+    const limit = checkRateLimit(ip);
+    if (!limit.allowed) {
+      const retryAfter = String(limit.retryAfterSec);
+      return new Response(
+        JSON.stringify({ error: "Too many requests", retry_after_sec: limit.retryAfterSec }),
+        {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "Retry-After": retryAfter,
+          },
+        },
+      );
+    }
+
+    return handleVerify(request, env);
+  }
+
+  return errorResponse(404, "Not found", `path: ${url.pathname}`);
+}

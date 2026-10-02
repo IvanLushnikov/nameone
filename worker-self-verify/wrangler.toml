@@ -37,3 +37,37 @@ APP_ENV = "production"
 ALLOWED_ORIGINS = "https://listai-prototype.pages.dev,https://www.listai-prototype.pages.dev"
 POLZA_MODEL = "deepseek/deepseek-v4-flash"
 POLZA_FALLBACK_MODEL = "openai/gpt-6-luna"
+
+# ── Ограничение нагрузки (в коде: 20 запросов в минуту на IP) ────────────────
+# Лимит в коде, менять здесь нечего. Он нужен потому, что воркер не требует
+# входа: без лимита это открытый прокси к платному LLM на наш счёт.
+# CORS и лимит — разные вещи: curl/Postman CORS игнорируют, лимит по IP нет.
+#
+# ── Режим внутреннего вызова ────────────────────────────────────────────────
+# Пока `/verify` вызывается из браузера (src/lib/llm/self-verify.ts), секрет
+# бесполезен — NEXT_PUBLIC_* виден всем. Поэтому режим выключен.
+#
+# ⚠️ ГЛАВНОЕ ПРАВИЛО ЭТОГО ФАЙЛА
+# Прод-деплой идёт как `wrangler deploy --env production` (см. deploy-backend
+# в .github/workflows/deploy.yml). При `--env` wrangler публикует секцию
+# [env.production] и ВЕРХНИЙ [vars] ИГНОРИРУЕТ. Поэтому:
+#
+#   REQUIRE_SECRET = "true"  ← строка ниже НЕ подействует на прод.
+#   Поставить его надо в [env.production.vars], рядом с ALLOWED_ORIGINS.
+#
+# Если поставить флаг сюда, воркер останется открытым молча: конфиг
+# изменится, в логах ошибки не будет, а /verify продолжит принимать
+# запросы без секрета. Сейчас [env.production.vars] имеет суженные
+# origin'ы, но REQUIRE_SECRET там тоже нет.
+#
+# Порядок включения (после переезда вызова за основной API, где есть
+# сессия и лимиты):
+#   1. npx wrangler secret put INTERNAL_TOKEN --env production
+#   2. REQUIRE_SECRET = "true"  в секции [env.production.vars]  ← не в [vars]
+#   3. Перезалить: npx wrangler deploy --env production
+#   4. Проверить: запрос без заголовка X-Internal-Token должен дать 401
+#
+# Лимит 20 запросов/мин на IP НЕ ограничивает расход: память обнуляется на
+# каждом холодном старте, а с одного IP это 28 800 запросов в сутки.
+# Лимит нужен, чтобы не мешать добросовестным клиентам, а не как защита.
+REQUIRE_SECRET = "false"

@@ -9,13 +9,14 @@
  * model, cost, latency, cached — для UI и аналитики.
  */
 
-import type { Worksheet, GenerationRequest, ExamVariant, LessonPlan, Presentation, Ktp } from '@/lib/types';
+import type { Worksheet, GenerationRequest, ExamVariant, LessonPlan, Presentation, Ktp, LessonBundle } from '@/lib/types';
 // Мёртвый импорт `generateExamVariant as mockExam` удалён 02.10.2026: нигде
 // не использовался, а слой был вне tsc — поэтому незаметно пролежал.
 import { generateWorksheet as mockWorksheet } from '@/lib/mock/generator';
 import { generateLessonPlan as mockLessonPlan } from '@/lib/mock/lesson-plan';
 import { generatePresentation as mockPresentation } from '@/lib/mock/presentation';
 import { generateKtp as mockKtp } from '@/lib/mock/ktp';
+import { mockLessonBundle } from '@/lib/mock/lesson-bundle';
 // isImageGenAvailable определён в config.ts — реэкспортим для удобства (используется в smoke-llm.ts).
 export { isImageGenAvailable } from './config';
 
@@ -70,6 +71,7 @@ export interface GenerateArtifactArgs {
 export interface GenerateLessonPlanResult { lessonPlan: LessonPlan; meta: GenMeta; }
 export interface GeneratePresentationResult { presentation: Presentation; meta: GenMeta; }
 export interface GenerateKtpResult { ktp: Ktp; meta: GenMeta; }
+export interface GenerateBundleResult { bundle: LessonBundle; meta: GenMeta; }
 
 export interface ValidateWorksheetArgs {
   worksheet: Worksheet;
@@ -280,4 +282,24 @@ export async function generateKtpArtifact({ request, bypassCache, turnstileToken
   }
   const ktp = await mockKtp(request);
   return { ktp, meta: { model: 'mock-fallback', provider: 'local', costUsd: 0, latencyMs: Date.now() - start, cached: false, generation: 'fallback-mock' } };
+}
+
+/**
+ * TZ-16 §3.4: «Урок целиком» — комплект из 4 артефактов.
+ *
+ * Эндпоинта `/api/bundles/generate` в этом ТЗ нет (§11 — out of scope), поэтому
+ * фасад всегда уходит в мок. Оркестрация 4 слотов ПАРАЛЛЕЛЬНА и живёт в моке
+ * (`buildLessonBundle`): при отказе одного слота остальные три не теряются,
+ * неудачный слот попадает в `lessonBundle.failed` с причиной.
+ */
+export async function generateBundleArtifact({ request, bypassCache, turnstileToken }: GenerateArtifactArgs): Promise<GenerateBundleResult> {
+  const start = Date.now();
+  const data = await postJson<{ lessonBundle: LessonBundle; meta: GenMeta }>('/api/bundles/generate',
+    { request, bypassCache },
+    turnstileToken ? { 'cf-turnstile-response': turnstileToken } : {});
+  if (data?.lessonBundle) {
+    return { bundle: data.lessonBundle, meta: { ...data.meta, latencyMs: Date.now() - start } };
+  }
+  const bundle = await mockLessonBundle(request);
+  return { bundle, meta: { model: 'mock-fallback', provider: 'local', costUsd: 0, latencyMs: Date.now() - start, cached: false, generation: 'fallback-mock' } };
 }

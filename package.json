@@ -4,13 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && next build --no-lint",
+    "build:full": "next build",
     "start": "next start",
     "lint": "next lint",
     "smoke": "tsx scripts/smoke-llm.ts",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@types/qrcode.react": "^1.0.5",
@@ -20,6 +21,7 @@
     "file-saver": "^2.0.5",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.2",
+    "katex": "^0.18.10",
     "lucide-react": "^1.48.0",
     "next": "14.2.35",
     "qrcode.react": "^4.2.0",
