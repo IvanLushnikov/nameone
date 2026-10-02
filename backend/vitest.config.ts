@@ -30,5 +30,16 @@ export default defineWorkersConfig({
     testTimeout: 30_000,
     hookTimeout: 30_000,
     include: ["tests/**/*.test.ts"],
+
+    // Бэкенд — Cloudflare Worker, CSS в нём нет вообще. Без этой строки vite
+    // при поиске конфига PostCSS поднимается вверх по дереву и находит корневой
+    // postcss.config.mjs от Next.js, который требует `tailwindcss`. Локально это
+    // не проявляется: там есть корневой node_modules с tailwindcss. В CI джоб
+    // делает `cd backend && npm ci`, корневого node_modules нет — и тесты падают
+    // с «Cannot find module 'tailwindcss'», хотя код в порядке.
+    //
+    // Явный пустой список плагинов останавливает поиск: конфиг не поднимается
+    // наверх, и бэк больше не зависит от того, что установлено в корне.
+    css: { postcss: { plugins: [] } },
   },
 });
