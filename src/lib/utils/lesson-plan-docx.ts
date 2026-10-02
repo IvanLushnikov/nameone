@@ -16,6 +16,7 @@ import {
   PageNumber,
 } from "docx";
 import type { LessonPlan } from "@/lib/types";
+import { SITE_HOST } from "@/lib/site";
 
 /**
  * DOCX-экспорт плана урока.
@@ -132,7 +133,7 @@ export async function generateLessonPlanDocx(plan: LessonPlan): Promise<Blob> {
     "new-topic": "3. Новая тема",
     practice: "4. Отработка",
     reflex: "5. Рефлексия",
-    homework: "6. Домашка",
+    homework: "6. Домашнее задание",
   };
 
   const stageRows: TableRow[] = [
@@ -296,7 +297,7 @@ export async function generateLessonPlanDocx(plan: LessonPlan): Promise<Blob> {
     new Paragraph({
       children: [
         new TextRun({
-          text: "РабочиеЛисты AI · rabochielisty.ru · план урока по ФГОС",
+          text: `РабочиеЛисты AI · ${SITE_HOST} · план урока по ФГОС`,
           size: 18,
           color: "999999",
         }),
@@ -325,7 +326,7 @@ export async function generateLessonPlanDocx(plan: LessonPlan): Promise<Blob> {
                 alignment: AlignmentType.RIGHT,
                 children: [
                   new TextRun({
-                    text: "РабочиеЛисты AI · rabochielisty.ru",
+                    text: `РабочиеЛисты AI · ${SITE_HOST}`,
                     size: 16,
                     color: "BBBBBB",
                   }),

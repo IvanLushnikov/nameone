@@ -52,9 +52,34 @@ export function getHistory(): UserHistoryItem[] {
   return read<UserHistoryItem[]>(KEY_HISTORY, []);
 }
 
+/**
+ * Сколько последних записей истории хранят полный артефакт.
+ *
+ * История ограничена 50 записями (см. HISTORY_LIMIT), и раньше они были
+ * «лёгкими» — только метаданные. Теперь 5 последних кладут в себя ещё и
+ * артефакт (задания/этапы/слайды/недели), чтобы результат переживал
+ * перезагрузку страницы. Без обрезки 50 листов с заданиями быстро переполняют
+ * localStorage (~5 МБ на origin), и запись молча перестаёт работать.
+ */
+const ARTIFACT_KEEP = 5;
+
+/** Жёсткий лимит истории. Не менять — на него завязан tests/storage.test.ts. */
+const HISTORY_LIMIT = 50;
+
 export function addToHistory(item: UserHistoryItem) {
-  const list = [item, ...getHistory().filter((x) => x.id !== item.id)].slice(0, 50);
-  write(KEY_HISTORY, list);
+  const list = [item, ...getHistory().filter((x) => x.id !== item.id)].slice(0, HISTORY_LIMIT);
+
+  // Обрезаем тяжёлое поле `artifact` у всего, кроме ARTIFACT_KEEP последних.
+  // Порядок (FIFO) и общий лимит не меняются — меняется только «вес» хвоста,
+  // метаданные (id/тип/заголовок/дата) остаются у всех 50 записей.
+  const trimmed = list.map((x, i) => {
+    if (i < ARTIFACT_KEEP || !x.artifact) return x;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { artifact: _dropped, ...rest } = x;
+    return rest;
+  });
+
+  write(KEY_HISTORY, trimmed);
 }
 
 export function removeFromHistory(id: string) {

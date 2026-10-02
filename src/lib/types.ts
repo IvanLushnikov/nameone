@@ -104,6 +104,16 @@ export interface GenerationRequest {
 export interface WorksheetTask {
   number: number;
   text: string;
+  /**
+   * LaTeX-версия задания для ОТРИСОВКИ, формулы в `$...$`.
+   *
+   * КЛЮЧЕВОЕ ПРАВИЛО: `text` остаётся источником правды для сверки ответов
+   * (`self-verify.ts`) и для разбора формул — переписывать его в LaTeX
+   * нельзя. `text_latex` нужен только чтобы показать дробь вертикально,
+   * как её пишут в тетради. Поле опциональное: у старых ответов модели и у
+   * таксономии его нет, тогда работает legacy-разбор `a/b`.
+   */
+  text_latex?: string | null;
   type: "computation" | "multiple-choice" | "short-answer" | "essay" | "fill-blank";
   options?: string[];
   answer?: string;
@@ -180,8 +190,12 @@ export interface UserHistoryItem {
    *
    * Поле опциональное: записи, сделанные до этого изменения, читаются как
    * есть, миграция не нужна.
+   *
+   * TZ-16 §3.1–3.4: сюда добавлены `CardSet`, `MaterialBundle` и `LessonBundle` —
+   * иначе восстановление артефакта из истории (`artifactKindOf` в конструкторе)
+   * не сможет отличить карточки/материалы/пакет от листа и тихо поставит `undefined`.
    */
-  artifact?: Worksheet | LessonPlan | Presentation | Ktp;
+  artifact?: Worksheet | LessonPlan | Presentation | Ktp | CardSet | MaterialBundle | LessonBundle;
 }
 
 export interface UserTemplate {

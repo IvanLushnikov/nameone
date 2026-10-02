@@ -407,7 +407,7 @@ export default function ExamNumberPage({ params }: Props) {
                   <Card hover className="h-full">
                     <div className="flex items-center justify-between gap-2 mb-1">
                       <Badge tone="brand">Задание {r.number}</Badge>
-                      <span className="text-xs text-warm-400">{r.fgosRef}</span>
+                      <span className="text-xs text-[color:var(--text-muted)]">{r.fgosRef}</span>
                     </div>
                     <h3 className="font-medium text-warm-950 group-hover:text-brand-700 transition-colors">
                       {r.title}

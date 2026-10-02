@@ -280,6 +280,176 @@ function makeDistractors(correct: string, seed: number): string[] {
   return suffix.map((s) => `${trimmed.split(" ").slice(0, 2).join(" ")} ${s}`);
 }
 
+/**
+ * TZ-13: язык формулировок задаётся предметом.
+ *   - "english" / "german" → формулировки на целевом языке.
+ *   - всё остальное → строго на русском.
+ *
+ * Здесь — короткие задания Часть 1 №1 и №2. Для каждого предмета — своё
+ * содержание. Если предмет неизвестен мапе — универсальная русская формулировка
+ * с явной отсылкой к названию предмета (getSubject(...).title).
+ */
+const EXAM_P1_T1: Record<
+  string,
+  { text: string; answer: string; explanation: string }
+> = {
+  math: {
+    text: "Найдите значение выражения: 2,5 · 0,4 + 1,2.",
+    answer: "2,2",
+    explanation: "2,5 · 0,4 = 1,0; 1,0 + 1,2 = 2,2.",
+  },
+  russian: {
+    text: "В каком слове допущена ошибка: приехать, преграда, презирать, приоритет?",
+    answer: "приехать (правильно: при-ехать; смысл «приближение»)",
+    explanation: "ПРИ-/ПРЕ- по значению: «приехать» = приблизиться (ПРИ-); остальные — ПРЕ- = очень/пере-.",
+  },
+  physics: {
+    text: "Тело движется прямолинейно со скоростью 5 м/с в течение 4 с. Какой путь оно пройдёт?",
+    answer: "20 м",
+    explanation: "S = v · t = 5 · 4 = 20 м.",
+  },
+  chemistry: {
+    text: "Определите число протонов в атоме натрия (Na).",
+    answer: "11",
+    explanation: "Атомный номер натрия — 11, значит протонов тоже 11.",
+  },
+  biology: {
+    text: "Какой органоид клетки отвечает за синтез белка?",
+    answer: "рибосома",
+    explanation: "Рибосомы осуществляют трансляцию — сборку белка из аминокислот на матричной РНК.",
+  },
+  informatics: {
+    text: "Переведите число 1010₂ в десятичную систему счисления.",
+    answer: "10",
+    explanation: "1010₂ = 1·8 + 0·4 + 1·2 + 0·1 = 10.",
+  },
+  history: {
+    text: "В каком году произошло Крещение Руси?",
+    answer: "988",
+    explanation: "Крещение Руси состоялось в 988 году при князе Владимире Святославиче.",
+  },
+  social: {
+    text: "Как называется высший орган законодательной власти в Российской Федерации?",
+    answer: "Федеральное Собрание",
+    explanation: "Согласно ст. 94 Конституции РФ, Федеральное Собрание — парламент РФ.",
+  },
+  literature: {
+    text: "Кто является автором романа «Война и мир»?",
+    answer: "Л. Н. Толстой",
+    explanation: "Роман-эпопея «Война и мир» написан Львом Николаевичем Толстым, опубликован в 1869 г.",
+  },
+  english: {
+    text: "Open the brackets: She (read) a book now.",
+    answer: "is reading",
+    explanation: "Present Continuous для действия, происходящего сейчас.",
+  },
+  german: {
+    text: "Setze die richtige Form ein: Ich ___ (gehen) in die Schule.",
+    answer: "gehe",
+    explanation: "Präsens, 1. Person Singular: ich gehe.",
+  },
+};
+
+/** Задание №2 Часть 1: для math/russian и для языков — свои формулировки,
+ *  для физики/информатики/истории — на русском, для языков — на целевом. */
+const EXAM_P1_T2: Record<
+  string,
+  { text: string; options?: string[]; answer: string; explanation: string }
+> = {
+  math: {
+    text: "Решите уравнение: 2x + 6 = 14.",
+    answer: "x = 4",
+    explanation: "Базовый навык по теме.",
+  },
+  russian: {
+    text: "Укажите предложение с деепричастным оборотом.",
+    answer: "Прочитав книгу, я понял главное.",
+    explanation: "Деепричастный оборот отвечает на вопрос «что делая?».",
+  },
+  physics: {
+    text: "Какой формулой выражается второй закон Ньютона?",
+    options: ["F = m·a", "F = m·v", "F = m·g", "F = p·t"],
+    answer: "F = m·a",
+    explanation: "Второй закон Ньютона: F = m·a, где m — масса, a — ускорение.",
+  },
+  chemistry: {
+    text: "Какой газ выделяется при взаимодействии кислоты с металлами?",
+    options: ["кислород", "водород", "углекислый газ", "азот"],
+    answer: "водород",
+    explanation: "Кислота + металл → соль + H₂↑.",
+  },
+  biology: {
+    text: "Какое из перечисленных царств относится к ядерным организмам (эукариотам)?",
+    options: ["бактерии", "вирусы", "животные", "археи"],
+    answer: "животные",
+    explanation: "Животные — эукариоты; бактерии и археи — прокариоты; вирусы — неклеточная форма.",
+  },
+  informatics: {
+    text: "Чему равно значение выражения: 5 AND 3 в побитовой операции (битwise AND)?",
+    options: ["1", "3", "5", "8"],
+    answer: "1",
+    explanation: "5 = 0101₂, 3 = 0011₂, AND = 0001₂ = 1.",
+  },
+  history: {
+    text: "В какой битве произошёл перелом в Великой Отечественной войне?",
+    options: ["битва за Москву", "Сталинградская битва", "битва за Берлин", "Курская битва"],
+    answer: "Сталинградская битва",
+    explanation: "Сталинградская битва (17.07.1942 – 02.02.1943) — коренной перелом в ВОВ.",
+  },
+  social: {
+    text: "Какой тип государства характеризуется наличием единоличной власти?",
+    options: ["демократия", "монархия", "федерация", "республика"],
+    answer: "монархия",
+    explanation: "Монархия — форма правления, при которой верховная власть принадлежит одному лицу — монарху.",
+  },
+  literature: {
+    text: "Как называется художественный приём, при котором описание природы отражает переживания героя?",
+    options: ["аллегория", "психологизм", "пейзаж", "олицетворение"],
+    answer: "психологизм",
+    explanation: "Пейзаж как средство психологизма — приём Толстого, Тургенева, Чехова.",
+  },
+  english: {
+    text: "Choose the right form: If I ___ you, I would go.",
+    options: ["was", "were", "am", "be"],
+    answer: "were",
+    explanation: "Conditional II (нереальное условие): If + Past Simple, would + infinitive. Were для всех лиц.",
+  },
+  german: {
+    text: "Wähle die richtige Form: Ich ___ Deutsch.",
+    options: ["lerne", "lernst", "lernt", "lernen"],
+    answer: "lerne",
+    explanation: "Präsens, 1. Person Singular: ich lerne.",
+  },
+};
+
+/** Резервный универсальный русский текст для неизвестных мапе предметов.
+ *  TZ-13: даже для неожиданных slug'ов язык остаётся русским. */
+function genericRuTask1(subjectTitle: string): {
+  text: string;
+  answer: string;
+  explanation: string;
+} {
+  return {
+    text: `Кратко ответьте на вопрос по предмету «${subjectTitle}»: какой базовый факт изучается в начале курса?`,
+    answer: "индивидуальный ответ",
+    explanation: `Базовый факт определяется программой по предмету «${subjectTitle}».`,
+  };
+}
+
+function genericRuTask2(subjectTitle: string): {
+  text: string;
+  options?: string[];
+  answer: string;
+  explanation: string;
+} {
+  return {
+    text: `Выберите один из вариантов, относящийся к предмету «${subjectTitle}».`,
+    options: ["вариант A", "вариант B", "вариант C", "вариант D"],
+    answer: "вариант B",
+    explanation: `Обоснование выбора зависит от темы по предмету «${subjectTitle}».`,
+  };
+}
+
 export function generateExamVariant(
   exam: "oge" | "ege",
   subjectSlug: string,
@@ -287,49 +457,31 @@ export function generateExamVariant(
 ): ExamVariant {
   const subject = getSubject(subjectSlug);
   const duration = exam === "oge" ? 235 : 235;
+  const subjectTitle = subject?.shortTitle ?? subjectSlug;
+
+  // TZ-13: формулировки строго по языку предмета.
+  const t1 = EXAM_P1_T1[subjectSlug] ?? genericRuTask1(subjectTitle);
+  const t2 = EXAM_P1_T2[subjectSlug] ?? genericRuTask2(subjectTitle);
 
   // Мок: 5 простых + 2 сложных задания
   const problems = [
     {
       number: 1,
       part: 1 as const,
-      text: subjectSlug === "math"
-        ? "Найдите значение выражения: 2,5 · 0,4 + 1,2."
-        : subjectSlug === "russian"
-          ? "В каком слове допущена ошибка: приехать, преграда, презирать, приоритет?"
-          : "Open the brackets: She (read) a book now.",
+      text: t1.text,
       type: "short-answer" as const,
-      answer:
-        subjectSlug === "math"
-          ? "2,2"
-          : subjectSlug === "russian"
-            ? "приехать (правильно: при-ехать; смысл «приближение»)"
-            : "is reading",
-      explanation:
-        subjectSlug === "math"
-          ? "2,5 · 0,4 = 1,0; 1,0 + 1,2 = 2,2."
-          : subjectSlug === "russian"
-            ? "ПРИ-/ПРЕ- по значению: «приехать» = приблизиться (ПРИ-); остальные — ПРЕ- = очень/пере-."
-            : "Present Continuous для действия, происходящего сейчас.",
+      answer: t1.answer,
+      explanation: t1.explanation,
       points: 1,
     },
     {
       number: 2,
       part: 1 as const,
-      text: subjectSlug === "math"
-        ? "Решите уравнение: 2x + 6 = 14."
-        : subjectSlug === "russian"
-          ? "Укажите предложение с деепричастным оборотом."
-          : "Choose the right form: If I ___ you, I would go.",
-      type: "short-answer" as const,
-      options: subjectSlug === "english" ? ["was", "were", "am", "be"] : undefined,
-      answer:
-        subjectSlug === "math"
-          ? "x = 4"
-          : subjectSlug === "russian"
-            ? "Прочитав книгу, я понял главное."
-            : "were",
-      explanation: "Базовый навык по теме.",
+      text: t2.text,
+      type: t2.options ? ("choice" as const) : ("short-answer" as const),
+      options: t2.options,
+      answer: t2.answer,
+      explanation: t2.explanation,
       points: 1,
     },
     {

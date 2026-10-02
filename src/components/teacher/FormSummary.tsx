@@ -280,7 +280,7 @@ function ResponseRow({
             <span>
               {response.scoreTotal} из {response.scoreMax} · {percent}%
             </span>
-            <span className="text-warm-400">
+            <span className="text-[color:var(--text-muted)]">
               {response.durationSec === null
                 ? "—"
                 : `${Math.max(1, Math.round(response.durationSec / 60))} мин`}
@@ -297,9 +297,9 @@ function ResponseRow({
                 key={a.taskNumber}
                 className="flex items-start gap-2 text-sm py-1 border-b border-warm-50 last:border-0"
               >
-                <span className="shrink-0 w-6 text-warm-400">{a.taskNumber}.</span>
+                <span className="shrink-0 w-6 text-[color:var(--text-muted)]">{a.taskNumber}.</span>
                 <span className="flex-1 min-w-0 break-words text-warm-700">
-                  {a.studentAnswer?.trim() ? a.studentAnswer : <em className="text-warm-400">без ответа</em>}
+                  {a.studentAnswer?.trim() ? a.studentAnswer : <em className="text-[color:var(--text-muted)]">без ответа</em>}
                 </span>
                 <span className="shrink-0">
                   {a.needsReview ? (
@@ -312,7 +312,7 @@ function ResponseRow({
                     <span className="text-rose-600">✗</span>
                   )}
                 </span>
-                <span className="shrink-0 w-16 text-right text-warm-400">
+                <span className="shrink-0 w-16 text-right text-[color:var(--text-muted)]">
                   {a.pointsAwarded} / {a.pointsMax}
                 </span>
               </li>

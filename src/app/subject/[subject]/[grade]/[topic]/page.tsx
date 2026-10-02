@@ -20,6 +20,7 @@ import {
   subjects,
 } from "@/lib/content/subjects";
 import type { Topic, TopicExample } from "@/lib/types";
+import { SITE_URL } from "@/lib/site";
 import { AnswerToggle } from "./AnswerToggle";
 
 type Props = { params: { subject: string; grade: string; topic: string } };
@@ -43,12 +44,15 @@ export function generateMetadata({ params }: Props): Metadata {
   if (!subject || !grade || !topic) return { title: "Тема не найдена" };
 
   const title = `${topic.title} — рабочие листы · ${subject.shortTitle} ${grade.num} класс`;
-  const description = `Скачайте готовые рабочие листы и тесты по теме «${topic.title}» для ${grade.num} класса по ${subject.title.toLowerCase()}. ${topic.examples.length} заданий-образцов с ответами. Сгенерируйте свой вариант за 30 секунд.`;
+  // В типах Subject нет поля с предложным падежом, поэтому после «по» название
+  // предмета берём в кавычки — иначе в сниппете выходит «по математика».
+  const subjectName = `предмету «${subject.title}»`;
+  const description = `Скачайте готовые рабочие листы и тесты по теме «${topic.title}» для ${grade.num} класса по ${subjectName}. ${topic.examples.length} заданий-образцов с ответами. Сгенерируйте свой вариант за 30 секунд.`;
 
   // TZ-10 §5.1 / §9.7: canonical + og:type=article + publishedTime/modifiedTime.
   // В таксономии (Topic) нет полей createdAt/updatedAt — ставим текущую дату;
   // когда поле появится, заменить на topic.createdAt/topic.updatedAt.
-  const base = "https://rabochielisty.ru";
+  const base = SITE_URL;
   const canonicalUrl = `${base}/subject/${subject.slug}/${grade.num}/${topic.slug}`;
   const now = new Date();
 
@@ -120,7 +124,7 @@ export default function TopicPage({ params }: Props) {
     "@context": "https://schema.org",
     "@type": "LearningResource",
     name: `Рабочий лист по теме «${topic.title}»`,
-    description: `Готовые рабочие листы и тесты по теме «${topic.title}» для ${grade.num} класса по ${subject.title.toLowerCase()}.`,
+    description: `Готовые рабочие листы и тесты по теме «${topic.title}» для ${grade.num} класса по предмету «${subject.title}».`,
     inLanguage: "ru-RU",
     educationalLevel: `${grade.num} класс`,
     about: { "@type": "Thing", name: subject.title },

@@ -146,7 +146,7 @@ function PrintableSheet({
         </p>
       ) : null}
 
-      <p className="mt-3 text-xs text-warm-400 break-all">{url}</p>
+      <p className="mt-3 text-xs text-[color:var(--text-muted)] break-all">{url}</p>
     </div>
   );
 }

@@ -25,7 +25,7 @@ export interface TaskInputProps {
 }
 
 const inputClass =
-  "w-full min-w-0 h-12 px-3.5 text-base bg-white border border-warm-200 rounded-xl text-warm-950 placeholder:text-warm-400 transition-all focus:outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100";
+  "w-full min-w-0 h-12 px-3.5 text-base bg-white border border-warm-200 rounded-xl text-warm-950 placeholder:text-[color:var(--text-muted)] transition-all focus:outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100";
 
 export function TaskInput({ task, value, onChange }: TaskInputProps) {
   switch (task.type) {

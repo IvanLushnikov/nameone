@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { WorksheetPreview } from "@/components/constructor/WorksheetPreview";
+import { InteractiveCta } from "@/components/worksheet/InteractiveCta";
 import { LessonPlanPreview } from "@/components/constructor/LessonPlanPreview";
 import { PresentationPreview } from "@/components/constructor/PresentationPreview";
 import { KtpPreview } from "@/components/constructor/KtpPreview";
@@ -238,6 +239,27 @@ function PreviewPage() {
 
         {/* F-06 B-4: discriminated union по типу артефакта. */}
         <ArtifactBody artifact={artifact} />
+
+        {/* TZ-13 §4.9 / сценарий A: точка входа в интерактивы — с экрана
+            готового листа. Учитель уже работает с листом по теме, значит
+            интерактив по той же теме нужен ему именно здесь.
+
+            Показываем только для листа с заданиями: ранклер берёт контент из
+            `payload_json` листа, а у плана урока/презентации/КТП заданий нет,
+            и блок был бы враньём («сделаем из этого интерактив»).
+
+            `no-print` — печатать лист учитель хочет без блока, это не часть
+            раздаточного материала. */}
+        {"tasks" in artifact && artifact.tasks.length > 0 && (
+          <div className="container-tight pb-12 no-print">
+            <InteractiveCta
+              worksheetId={artifact.id}
+              worksheetTitle={artifact.title}
+              subject={artifact.subject}
+              grade={artifact.grade}
+            />
+          </div>
+        )}
 
         <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3 no-print">
           <Button as="link" href="/constructor" variant="secondary" leftIcon={<RotateCcw className="w-4 h-4" />}>

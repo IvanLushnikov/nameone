@@ -1,4 +1,6 @@
-import type { Subject, Topic, Grade } from "../types";
+import type { Subject, Topic, Grade, TopicExample } from "../types";
+import { GRADE_EXTENSIONS } from "./grade-extensions";
+import { EXTRA_EXAMPLES } from "./topic-examples-extra";
 
 /**
  * Таксономия предметов, классов и тем.
@@ -3052,7 +3054,7 @@ const physicsGrades: Grade[] = [
         ],
       },
       {
-        slug: "ispарение-kipeniye",
+        slug: "isparenie-kipenie",
         title: "Испарение, конденсация, кипение",
         examples: [
           { text: "При какой температуре кипит вода при нормальном давлении?", answer: "100 °C" },
@@ -3220,7 +3222,7 @@ const physicsGrades: Grade[] = [
         ],
       },
       {
-        slug: "reakтивnoe-dvizhenie",
+        slug: "reaktivnoe-dvizhenie",
         title: "Реактивное движение",
         examples: [
           { text: "Какой принцип лежит в основе реактивного движения?", answer: "закон сохранения импульса (отбрасывание части массы в одну сторону даёт движение тела в противоположную)" },
@@ -4705,6 +4707,65 @@ const peGrades: Grade[] = [
 
 // ====================== SUBJECTS ARRAY ======================
 
+/**
+ * Подмешиваем классы из `grade-extensions/` к базовым массивам.
+ *
+ * База ниже описывает исторически сложившееся покрытие; расширения его
+ * дополняют. Ключ — slug предмета, значение — `Grade[]`.
+ *
+ * Правила слияния:
+ *  - класс с номером, которого нет в базе, → добавляется целиком;
+ *  - класс, который в базе уже есть, → его темы ДОПИСЫВАЮТСЯ
+ *    (а не заменяются), чтобы расширение могло «дозаполнить» класс
+ *    с 2-3 темами до нормального покрытия;
+ *  - результат сортируется по номеру класса: навигация по предмету и
+ *    sitemap идут в порядке `grades`.
+ *
+ * Расширения одного предмета можно держать в нескольких файлах, если
+ * они трогают разные номера классов — конфликтов не будет.
+ */
+function withExtensions(slug: Subject["slug"], base: Grade[]): Grade[] {
+  const extra = GRADE_EXTENSIONS[slug];
+  const extraMap = EXTRA_EXAMPLES;
+
+  // Дополнения примерами живут отдельным слоем: ключ `класс/slug`.
+  // Применяем их первыми, чтобы достраивание классов ниже их не потеряло.
+  const withExamples: Grade[] = extraMap
+    ? base.map((g) => {
+        const touched = g.topics.map((t) => {
+          const add = extraMap[`${slug}/${g.num}/${t.slug}`];
+          if (!add || add.length === 0) return t;
+          const have = new Set(t.examples.map((ex) => ex.text));
+          return { ...t, examples: [...t.examples, ...add.filter((ex) => !have.has(ex.text))] };
+        });
+        return { ...g, topics: touched };
+      })
+    : base;
+
+  if (!extra || extra.length === 0) return withExamples;
+
+  const merged = new Map<number, Grade>();
+  for (const g of withExamples) merged.set(g.num, g);
+
+  for (const g of extra) {
+    const existing = merged.get(g.num);
+    if (!existing) {
+      merged.set(g.num, g);
+      continue;
+    }
+    // Дописываем только темы, которых ещё нет по slug: иначе повторная
+    // загрузка модуля или пересечение двух файлов даст дубли URL.
+    const have = new Set(existing.topics.map((t) => t.slug));
+    const additions = g.topics.filter((t) => !have.has(t.slug));
+    merged.set(g.num, {
+      ...existing,
+      topics: [...existing.topics, ...additions],
+    });
+  }
+
+  return Array.from(merged.values()).sort((a, b) => a.num - b.num);
+}
+
 export const subjects: Subject[] = [
   {
     slug: "math",
@@ -4714,7 +4775,7 @@ export const subjects: Subject[] = [
     color: "brand",
     description:
       "От таблицы умножения до дробей и уравнений. Задания под школьную программу с проверкой ответов.",
-    grades: mathGrades,
+    grades: withExtensions("math", mathGrades),
   },
   {
     slug: "algebra",
@@ -4723,7 +4784,7 @@ export const subjects: Subject[] = [
     emoji: "🧮",
     color: "brand",
     description: "Уравнения, неравенства, функции, прогрессии. Для 7-9 классов.",
-    grades: algebraGrades,
+    grades: withExtensions("algebra", algebraGrades),
   },
   {
     slug: "geometry",
@@ -4732,7 +4793,7 @@ export const subjects: Subject[] = [
     emoji: "📐",
     color: "brand",
     description: "Треугольники, четырёхугольники, окружности, теоремы. Для 7-9 классов.",
-    grades: geometryGrades,
+    grades: withExtensions("geometry", geometryGrades),
   },
   {
     slug: "russian",
@@ -4742,7 +4803,7 @@ export const subjects: Subject[] = [
     color: "accent",
     description:
       "Орфография, грамматика, морфемика, пунктуация. По уровням школьной программы.",
-    grades: russianGrades,
+    grades: withExtensions("russian", russianGrades),
   },
   {
     slug: "literature",
@@ -4751,7 +4812,7 @@ export const subjects: Subject[] = [
     emoji: "📚",
     color: "accent",
     description: "Анализ произведений, авторы, жанры, литературные направления.",
-    grades: literatureGrades,
+    grades: withExtensions("literature", literatureGrades),
   },
   {
     slug: "english",
@@ -4760,7 +4821,7 @@ export const subjects: Subject[] = [
     emoji: "🇬🇧",
     color: "warm",
     description: "Грамматика, лексика, времена. От Present Simple до Conditionals.",
-    grades: englishGrades,
+    grades: withExtensions("english", englishGrades),
   },
   {
     slug: "informatics",
@@ -4769,7 +4830,7 @@ export const subjects: Subject[] = [
     emoji: "💻",
     color: "info",
     description: "Устройство ПК, системы счисления, алгоритмы, программирование.",
-    grades: informaticsGrades,
+    grades: withExtensions("informatics", informaticsGrades),
   },
   {
     slug: "physics",
@@ -4778,7 +4839,7 @@ export const subjects: Subject[] = [
     emoji: "⚛️",
     color: "info",
     description: "Механика, тепло, электричество. Формулы с расшифровкой.",
-    grades: physicsGrades,
+    grades: withExtensions("physics", physicsGrades),
   },
   {
     slug: "chemistry",
@@ -4787,7 +4848,7 @@ export const subjects: Subject[] = [
     emoji: "🧪",
     color: "info",
     description: "Атомы, молекулы, таблица Менделеева, реакции.",
-    grades: chemistryGrades,
+    grades: withExtensions("chemistry", chemistryGrades),
   },
   {
     slug: "biology",
@@ -4796,7 +4857,7 @@ export const subjects: Subject[] = [
     emoji: "🌿",
     color: "info",
     description: "Растения, животные, генетика, человек.",
-    grades: biologyGrades,
+    grades: withExtensions("biology", biologyGrades),
   },
   {
     slug: "geography",
@@ -4805,7 +4866,7 @@ export const subjects: Subject[] = [
     emoji: "🗺️",
     color: "info",
     description: "План и карта, материки, Россия и её регионы.",
-    grades: geographyGrades,
+    grades: withExtensions("geography", geographyGrades),
   },
   {
     slug: "history",
@@ -4814,7 +4875,7 @@ export const subjects: Subject[] = [
     emoji: "🏛️",
     color: "info",
     description: "От Древнего мира до XX века. Россия и мир.",
-    grades: historyGrades,
+    grades: withExtensions("history", historyGrades),
   },
   {
     slug: "social",
@@ -4823,7 +4884,7 @@ export const subjects: Subject[] = [
     emoji: "⚖️",
     color: "info",
     description: "Семья, государство, право, экономика.",
-    grades: societyGrades,
+    grades: withExtensions("social", societyGrades),
   },
   {
     slug: "okruzhaet",
@@ -4832,7 +4893,7 @@ export const subjects: Subject[] = [
     emoji: "🌍",
     color: "warm",
     description: "Природа, тело человека, времена года, природные зоны. 1-4 классы.",
-    grades: okruzhaetGrades,
+    grades: withExtensions("okruzhaet", okruzhaetGrades),
   },
   {
     slug: "german",
@@ -4841,7 +4902,7 @@ export const subjects: Subject[] = [
     emoji: "🇩🇪",
     color: "warm",
     description: "Грамматика, лексика. Аналогично английскому, но на&nbsp;немецком.",
-    grades: germanGrades,
+    grades: withExtensions("german", germanGrades),
   },
   {
     slug: "obzh",
@@ -4850,7 +4911,7 @@ export const subjects: Subject[] = [
     emoji: "🚨",
     color: "accent",
     description: "Безопасность на&nbsp;дороге, пожарная безопасность, военная служба. 5-11 классы.",
-    grades: obzhGrades,
+    grades: withExtensions("obzh", obzhGrades),
   },
   {
     slug: "technology",
@@ -4859,7 +4920,7 @@ export const subjects: Subject[] = [
     emoji: "🛠️",
     color: "warm",
     description: "Труд, кулинария, материаловедение. 5-9 классы.",
-    grades: technologyGrades,
+    grades: withExtensions("technology", technologyGrades),
   },
   {
     slug: "finance",
@@ -4868,7 +4929,7 @@ export const subjects: Subject[] = [
     emoji: "💰",
     color: "brand",
     description: "Бюджет, кредиты, депозиты, налоги. 7-11 классы.",
-    grades: financeGrades,
+    grades: withExtensions("finance", financeGrades),
   },
   {
     slug: "music",
@@ -4877,7 +4938,7 @@ export const subjects: Subject[] = [
     emoji: "🎵",
     color: "accent",
     description: "Ноты, ритм, мелодия, композиторы. 1-8 классы.",
-    grades: musicGrades,
+    grades: withExtensions("music", musicGrades),
   },
   {
     slug: "art",
@@ -4886,7 +4947,7 @@ export const subjects: Subject[] = [
     emoji: "🎨",
     color: "accent",
     description: "Цвет, композиция, рисунок, перспектива. 1-8 классы.",
-    grades: artGrades,
+    grades: withExtensions("art", artGrades),
   },
   {
     slug: "pe",
@@ -4895,7 +4956,7 @@ export const subjects: Subject[] = [
     emoji: "⚽",
     color: "info",
     description: "Нормы ГТО, основы движения, спортивные игры. 1-11 классы.",
-    grades: peGrades,
+    grades: withExtensions("pe", peGrades),
   },
 ];
 
