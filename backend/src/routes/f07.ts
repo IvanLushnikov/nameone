@@ -90,8 +90,22 @@ interface AnswerView {
   checkMethod: string;
 }
 
-/** Ответ ученика + его ответы по заданиям (drill-down). */
-interface ResponseView extends ResponseRow {
+/**
+ * Ответ ученика + его ответы по заданиям (drill-down).
+ *
+ * ВАЖНО: это НЕ `extends ResponseRow`. `ResponseRow` — строка D1 в
+ * snake_case, она наружу не отдаётся. Здесь ровно те поля, которые видит фронт
+ * (`src/lib/forms/types.ts`), в camelCase. Наследование от строки БД в прошлом
+ * означало, что API отдавал `student_name`, а фронт читал `studentName`.
+ */
+interface ResponseView {
+  id: string;
+  studentName: string;
+  studentLabel: string | null;
+  scoreTotal: number;
+  scoreMax: number;
+  durationSec: number | null;
+  submittedAt: number;
   answers: AnswerView[];
 }
 
@@ -465,8 +479,19 @@ f07Router.get("/forms/:id", async (c) => {
     );
 
     for (const resp of responses.results) {
+      // НЕ разбрасываем `...resp`: это строка D1 в snake_case, и она утекала
+      // в JSON как `student_name` / `score_total` / `duration_sec`. Фронт
+      // (`src/lib/forms/types.ts`) ждёт camelCase, поэтому поля перечислены
+      // явно. Раньше здесь был спред — фронт получал `undefined` вместо имени
+      // ученика в списке ответов, и тест это ловил.
       out.push({
-        ...resp,
+        id: resp.id,
+        studentName: resp.student_name,
+        studentLabel: resp.student_label,
+        scoreTotal: resp.score_total,
+        scoreMax: resp.score_max,
+        durationSec: resp.duration_sec,
+        submittedAt: resp.submitted_at,
         answers: answers
           .filter((a) => a.response_id === resp.id)
           .map((a) => ({
