@@ -109,7 +109,10 @@ export function InterviewQuestions({ result, checkId }: InterviewQuestionsProps)
     setCopied(false);
     const res = await generateInterviewQuestions({
       checkId,
-      taskNumbers: selected,
+      // По возрастанию номера, а не в порядке кликов. Порядок кликов зависит от
+      // того, снимал ли учитель отметку, — из-за этого один и тот же набор
+      // заданий уходил бы на бэк двумя разными запросами.
+      taskNumbers: [...selected].sort((a, b) => a - b),
       regenerate,
     });
     if (!res.ok) {
