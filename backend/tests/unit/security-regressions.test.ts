@@ -421,6 +421,42 @@ describe("К-1: подделка вебхука не выдаёт подписк
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("К-2: в production ссылка для входа не уходит наружу", () => {
+  it("молчаливая поломка доставки больше невозможна: ошибка Resend видна клиенту", async () => {
+    // Реальный случай 2 октября 2026: RESEND_API_KEY задан, домен не верифицирован,
+    // Resend отвечает 403, код писал warning в лог — а ответ уходил
+    // { ok: true, sent: true }. Учитель видел «Письмо отправлено» и ждал его
+    // бесконечно: токен был создан, отправить его было нечем.
+    // Теперь ошибка доставки доходит до клиента.
+    const failing = prodEnv({ RESEND_API_KEY: "re_invalid_key_for_test" });
+
+    const res = await call(
+      "/api/auth/magic-link",
+      { body: { email: "delivery-failure@rabochielisty.ru" }, origin: null },
+      failing,
+    );
+    const raw = await res.text();
+
+    // Никакого «отправлено» при сбое доставки.
+    expect(raw).not.toMatch(/"sent":\s*true/);
+    expect(res.status, "сбой доставки должен быть виден клиенту").toBeGreaterThanOrEqual(400);
+    // И при этом никакой утечки: ни ссылки, ни токена.
+    expect(raw).not.toMatch(/token=/);
+    expect(raw).not.toMatch(/devMagicUrl/);
+  });
+
+  it("сообщение об ошибке не выдаёт, зарегистрирован ли адрес", async () => {
+    const failing = prodEnv({ RESEND_API_KEY: "re_invalid_key_for_test" });
+    const res = await call(
+      "/api/auth/magic-link",
+      { body: { email: "definitely-registered@rabochielisty.ru" }, origin: null },
+      failing,
+    );
+    const raw = await res.text();
+    // Никаких слов про регистрацию адреса или пользователя.
+    expect(raw).not.toMatch(/зарегистрир/i);
+    expect(raw).not.toMatch(/пользователь/i);
+  });
+
   it("в production ссылка для входа не возвращается в ответе", async () => {
     const res = await call(
       "/api/auth/magic-link",
