@@ -34,8 +34,12 @@ export interface RateLimitOpts {
 /**
  * Simple djb2 hash → base36. Не криптостойкий — нам нужно только дедуплицировать
  * анонимные IP в bucket'е (16M+ записей на одном ключе нам не грозит).
+ *
+ * Экспортируется наружу: публичные формы (TZ-12) считают лимиты по `djb2(ip)`
+ * и кладут тот же хэш в `form_responses.ip_hash` — хэш должен считаться
+ * одинаково в middleware и в роутах, иначе ключи разъедутся.
  */
-function djb2(input: string): string {
+export function djb2(input: string): string {
   let hash = 5381;
   for (let i = 0; i < input.length; i++) {
     hash = ((hash << 5) + hash + input.charCodeAt(i)) | 0;
