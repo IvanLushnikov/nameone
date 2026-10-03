@@ -694,3 +694,27 @@ describe("Конфигурация: отсутствие секретов не �
     expect(await db().prepare("SELECT id FROM payments").all()).toMatchObject({ results: [] });
   });
 });
+
+describe("Маршруты: заглушка /api/track не съедает соседние роуты", () => {
+  // Регрессия на реальную находку 3 октября 2026. Заглушка объявлена как
+  // `trackRouter.all("*")` и подключена на префиксе "/api": она ловит ЛЮБОЙ
+  // /api/*, а Hono отдаёт запрос первому совпавшему обработчику. Стоя выше
+  // turnstile и admin, заглушка отвечала на них 501 «Server-side tracking ещё
+  // не реализован» — то есть капча и админка были мертвы на проде, молча.
+  //
+  // Тест ловит именно порядок подключения: если новый роут снова встанет выше
+  // заглушки, он попадёт в такой же чёрный ящик.
+  it("роут после заглушки всё равно отвечает своим обработчиком", async () => {
+    const res = await call("/api/turnstile/config", { method: "GET" });
+    const body = (await res.json()) as { ok?: boolean; code?: string; error?: string };
+
+    // Не 501 от заглушки — значит роут turnstile жив и отвечает сам.
+    expect(body.code).not.toBe("NOT_IMPLEMENTED");
+    expect(body.ok).toBe(true);
+  });
+
+  it("заглушка по-прежнему отвечает на неизвестный путь /api/*", async () => {
+    const res = await call("/api/definitely-not-a-route", { method: "GET" });
+    expect(res.status).toBe(501);
+  });
+});
