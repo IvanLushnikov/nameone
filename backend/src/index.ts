@@ -209,9 +209,22 @@ app.route("/api/assignments", f07Router); // F-07: формы учителя (т
 app.route("/api/public/forms", publicFormsRouter); // TZ-12: страница ученика, БЕЗ авторизации
 app.route("/api/interactives", interactivesRouter); // TZ-13: ЛК учителя (требует входа)
 app.route("/api/public/interactives", publicInteractivesRouter); // TZ-13: игра ученика, БЕЗ авторизации
-app.route("/api", trackRouter);  // POST /api/track — публичный
 app.route("/api/turnstile", turnstileRouter); // проверка капчи антифрода (409 → капча → повтор)
 app.route("/api/admin", adminRouter);
+
+/**
+ * Заглушка /api/track подключается ПОСЛЕДНЕЙ — и это не порядок ради порядка.
+ *
+ * В track.ts заглушка объявлена как `trackRouter.all("*")`. Подключённая на
+ * префиксе "/api", она ловит ЛЮБОЙ путь /api/*, а Hono отдаёт запрос первому
+ * совпавшему обработчику и дальше не идёт. Пока заглушка стояла выше
+ * turnstile и admin, оба роута были мертвы: /api/turnstile/config и
+ * /api/admin/* отвечали 501 «Server-side tracking ещё не реализован».
+ * Проверено на боевом воркере 3 октября 2026.
+ *
+ * Любой новый роут с префиксом /api/* добавляй ВЫШЕ этой строки.
+ */
+app.route("/api", trackRouter);  // POST /api/track — публичный
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Error handling & 404
