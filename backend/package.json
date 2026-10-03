@@ -19,7 +19,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
     "hono": "^4.13.0",
-    "nanoid": "^5.1.0",
+    "nanoid": "^6.0.1",
     "openai": "^4.104.0",
     "resend": "^4.8.0",
     "zod": "^3.25.0"
