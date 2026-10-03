@@ -61,7 +61,7 @@ const NEW_CLASSES: Array<[string, number]> = [
 function buildChecks(): Check[] {
   const checks: Check[] = [];
 
-  push(checks, { name: "главная", url: "/", expect: ["РабочиеЛисты"] });
+  push(checks, { name: "главная", url: "/", expect: ["УчЛист"] });
 
   // По странице предмета — навигация не должна вести в пустоту.
   for (const s of subjects) {

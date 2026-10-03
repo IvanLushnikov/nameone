@@ -173,7 +173,7 @@ function periodDurationSeconds(period: Period): number {
  * Первый origin из FRONTEND_URL.
  *
  * В проде FRONTEND_URL — список через запятую (чтобы CORS принимал и
- * listai-prototype.pages.dev, и rabochielisty.ru). Вставлять этот список
+ * listai-prototype.pages.dev, и uchlist.ru). Вставлять этот список
  * целиком в ссылку нельзя: получится нерабочий URL вида
  * «https://a.ru,https://b.ru/auth/callback?token=…». Поэтому для ссылок,
  * которые видит человек, используется отдельная переменная APP_PUBLIC_URL,
@@ -254,7 +254,7 @@ export async function createPayment(
   }
   const amountKopecks = getPriceKopecks(plan, period);
   const amountFormatted = (amountKopecks / 100).toFixed(2);
-  const description = `РабочиеЛисты AI · ${plan} · ${period === "academicYear" ? "учебный год" : "месяц"}`;
+  const description = `УчЛист · ${plan} · ${period === "academicYear" ? "учебный год" : "месяц"}`;
   const paymentId = generatePaymentId();
   const now = Math.floor(Date.now() / 1000);
 

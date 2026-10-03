@@ -87,7 +87,7 @@ export function getOpenAIProvider(env: Env): Provider {
 
       const headers: Record<string, string> = {};
       if (state.actualProvider === "openrouter" && req.cacheSystemPrompt) {
-        headers["X-Title"] = "rabochielisty-ai";
+        headers["X-Title"] = "uchlist-ai";
       }
 
       try {
@@ -151,8 +151,10 @@ function createOpenAIProvider(env: Env): OpenAIProviderState {
       baseURL: getBaseUrl(env, "openrouter"),
       defaultHeaders: {
         // OpenRouter требует identifying headers (можно отключить, но лучше честно).
-        "HTTP-Referer": env.FRONTEND_URL || "https://rabochielisty.ai",
-        "X-Title": "rabochielisty-ai",
+        // Фолбэк раньше был на uchlist.ai / rabochielisty.ai — оба домена не
+        // резолвятся, OpenRouter их отбраковывал. Ставим рабочий uchlist.ru.
+        "HTTP-Referer": env.FRONTEND_URL || "https://uchlist.ru",
+        "X-Title": "УчЛист",
       },
     });
     return { client, actualProvider: "openrouter" };

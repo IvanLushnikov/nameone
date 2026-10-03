@@ -30,7 +30,7 @@
 
 import { FREE_GENERATIONS } from "@/lib/content/plans";
 
-const KEY = "rabochielisty_gens_v1";
+const KEY = "uchlist_gens_v1";
 
 interface Counter {
   count: number;

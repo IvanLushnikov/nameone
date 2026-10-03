@@ -43,7 +43,7 @@ export function Header() {
 
     // Cross-tab: выстреливает storage когда другая вкладка меняет localStorage.
     const onStorage = (e: StorageEvent) => {
-      if (!e.key || e.key === "rabochielisty.profile") refresh();
+      if (!e.key || e.key === "uchlist.profile") refresh();
     };
     window.addEventListener("storage", onStorage);
 

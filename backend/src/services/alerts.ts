@@ -25,7 +25,7 @@ import type { Env } from "../env";
 import { Resend } from "resend";
 import { logLlmEvent } from "../llm/log";
 
-const FROM = "РабочиеЛисты AI <noreply@rabochielisty.ru>";
+const FROM = "УчЛист <noreply@uchlist.ru>";
 /** Не чаще одного письма в сутки на пользователя. */
 const THROTTLE_SECONDS = 24 * 3600;
 
@@ -125,7 +125,7 @@ export async function sendQuotaAlert(
     const { error } = await resend.emails.send({
       from: FROM,
       to: alert.email,
-      subject: `[РабочиеЛисты] Выход за объём тарифа: ${alert.plan}`,
+      subject: `[УчЛист] Выход за объём тарифа: ${alert.plan}`,
       html: buildHtml(alert),
     });
     if (error) {

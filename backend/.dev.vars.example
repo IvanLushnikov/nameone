@@ -2,7 +2,7 @@
 # В проде эти же переменные задаются через `wrangler secret put <KEY>`.
 # .dev.vars — в .gitignore, никогда не коммить.
 
-# LLM — единственный провайдер для РабочиеЛисты AI.
+# LLM — единственный провайдер для УчЛист.
 # Polza.ai — российский агрегатор, один ключ покрывает все модели
 # (openai/gpt-6-luna, anthropic/claude-opus-5.5, deepseek/deepseek-v4-flash,
 #  qwen/qwen3-embedding-8b, openai/text-embedding-3-large).

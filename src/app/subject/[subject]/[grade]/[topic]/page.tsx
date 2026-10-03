@@ -76,11 +76,11 @@ export function generateMetadata({ params }: Props): Metadata {
       title,
       description,
       url: canonicalUrl,
-      siteName: "РабочиеЛисты AI",
+      siteName: "УчЛист",
       locale: "ru_RU",
       publishedTime: now.toISOString(),
       modifiedTime: now.toISOString(),
-      authors: ["Команда РабочиеЛисты AI"],
+      authors: ["Команда УчЛист"],
       // TZ-10 §5.4 / §9.6: og:image — статичный PNG.
 // Per-topic PNG не генерим (660+ тем × N = тысячи файлов) — fallback на
 // уровне предмета. Edge route `src/app/og/[...slug]/route.tsx` остаётся

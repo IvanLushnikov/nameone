@@ -56,8 +56,8 @@ describe("InteractiveCreatePanel — сценарий учителя", () => {
       interactive: {
         id: "int_abc",
         shareToken: "tok123",
-        url: "https://rabochielisty.ru/play/?t=tok123",
-        qrPayload: "https://rabochielisty.ru/play/?t=tok123",
+        url: "https://uchlist.ru/play/?t=tok123",
+        qrPayload: "https://uchlist.ru/play/?t=tok123",
       },
     });
 

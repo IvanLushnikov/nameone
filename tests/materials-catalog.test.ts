@@ -142,7 +142,7 @@ describe("Банк материалов: каталог", () => {
       expect(m.ratingCount).toBeGreaterThan(0);
       expect(m.ratingCount).toBeLessThanOrEqual(m.usesCount + 1);
 
-      expect(m.author).toBe("Редакция РабочиеЛисты");
+      expect(m.author).toBe("Редакция УчЛист");
       expect(m.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(Number.isNaN(new Date(m.updatedAt).getTime())).toBe(false);
       expect(m.count).toBeGreaterThanOrEqual(5);
@@ -245,8 +245,8 @@ describe("Банк материалов: геттеры", () => {
 
   it("materialToSitemapEntry даёт URL с priority 0.7 и monthly", () => {
     const m: MaterialEntry = MATERIALS_CATALOG[0];
-    const entry = materialToSitemapEntry(m, "https://rabochielisty.ru");
-    expect(entry.url).toBe(`https://rabochielisty.ru/material/${m.slug}/`);
+    const entry = materialToSitemapEntry(m, "https://uchlist.ru");
+    expect(entry.url).toBe(`https://uchlist.ru/material/${m.slug}/`);
     expect(entry.priority).toBe(0.7);
     expect(entry.changeFrequency).toBe("monthly");
     expect(entry.lastModified).toBeInstanceOf(Date);

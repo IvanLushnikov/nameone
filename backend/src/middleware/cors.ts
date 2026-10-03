@@ -4,7 +4,7 @@
  * Используем @hono/cors — стандартный, проверенный пакет.
  *
  * Allowlist строится из:
- *   1) HARDCODED прод/preview origins (listai-prototype.pages.dev, rabochielisty.ru)
+ *   1) HARDCODED прод/preview origins (listai-prototype.pages.dev, uchlist.ru)
  *      — нужны потому что FRONTEND_URL env может меняться между dev/local/prod,
  *      а эти домена должны работать всегда.
  *   2) FRONTEND_URL env (comma-separated) — для override'а на dev/preview-deploy'ах.
@@ -22,15 +22,15 @@ import type { AppEnv } from "../types";
  * Origins, которые мы всегда готовы считать "своими".
  *
  * listai-prototype.pages.dev — текущий preview-домен фронта (Pages).
- * rabochielisty.ru — будущий прод-домен (после переезда с listai-*).
+ * uchlist.ru — будущий прод-домен (после переезда с listai-*).
  *
  * Оба с www- и без — Pages иногда отдаёт и так и так.
  */
 const DEFAULT_ALLOWED_ORIGINS: readonly string[] = [
   "https://listai-prototype.pages.dev",
   "https://www.listai-prototype.pages.dev",
-  "https://rabochielisty.ru",
-  "https://www.rabochielisty.ru",
+  "https://uchlist.ru",
+  "https://www.uchlist.ru",
 ];
 
 /**

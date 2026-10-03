@@ -95,13 +95,13 @@ export function Features() {
       <div className="container-tight">
         <div className="max-w-2xl mx-auto text-center mb-12 sm:mb-16">
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-600 mb-3">
-            Почему РабочиеЛисты AI
+            Почему УчЛист
           </p>
           <h2 className="text-3xl sm:text-4xl font-display font-bold tracking-tight">
             Точно по&nbsp;программе. Быстро. Без&nbsp;ошибок в&nbsp;ответах.
           </h2>
           <p className="mt-4 text-lg text-warm-600">
-            Десять вещей, которые отличают РабочиеЛисты AI от&nbsp;шаблонов и&nbsp;ручной&nbsp;работы.
+            Десять вещей, которые отличают УчЛист от&nbsp;шаблонов и&nbsp;ручной&nbsp;работы.
           </p>
         </div>
 

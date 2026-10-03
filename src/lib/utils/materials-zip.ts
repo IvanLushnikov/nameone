@@ -109,7 +109,7 @@ async function textToDocxBlob(title: string, content: string): Promise<Blob> {
   }
 
   const doc = new Document({
-    creator: "РабочиеЛисты AI",
+    creator: "УчЛист",
     title,
     description: "Комплект материалов к уроку",
     sections: [

@@ -20,7 +20,7 @@
  * если учитель рассчитывал, что отдаст его на один урок.
  *
  * ─── Запуск ───
- *   cd backend && npx wrangler d1 execute rabochielisty --remote \
+ *   cd backend && npx wrangler d1 execute uchlist --remote \
  *     --command="ALTER TABLE interactives ADD COLUMN expires_at INTEGER"
  *
  * Либо один раз локально, после чего каталог можно обновлять без риска.

@@ -52,7 +52,7 @@ export function generateMetadata({ params }: Props): Metadata {
       title,
       description,
       url: canonicalUrl,
-      siteName: "РабочиеЛисты AI",
+      siteName: "УчЛист",
       locale: "ru_RU",
       // TZ-10 §5.4 / §9.6: og:image — статичный PNG.
 // Per-grade PNG не генерим (×11 ×20 = 220 файлов) — fallback на уровне

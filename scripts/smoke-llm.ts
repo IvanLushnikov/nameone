@@ -162,7 +162,7 @@ async function checkImageGen() {
 
 async function main() {
   console.log("╭───────────────────────────────────────────╮");
-  console.log("│   РабочиеЛисты AI — LLM smoke-тест        │");
+  console.log("│   УчЛист — LLM smoke-тест        │");
   console.log("╰───────────────────────────────────────────╯");
 
   const models = availableModels();

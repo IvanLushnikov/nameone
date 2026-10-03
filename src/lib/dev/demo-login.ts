@@ -46,7 +46,7 @@ export function isDemoLoginEnabled(): boolean {
 }
 
 const DEMO_NAME = "Иван Лушников";
-const DEMO_EMAIL = "demo@rabochielisty.ru";
+const DEMO_EMAIL = "demo@uchlist.ru";
 
 function daysAgo(days: number): string {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();

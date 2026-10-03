@@ -163,12 +163,12 @@ describe("limit — сверка с сервером", () => {
   });
 
   it("мусор в localStorage не ломает счётчик", () => {
-    window.localStorage.setItem("rabochielisty_gens_v1", "{не json");
+    window.localStorage.setItem("uchlist_gens_v1", "{не json");
     expect(getRemaining()).toBe(FREE_LIMIT);
   });
 
   it("отрицательное значение из хранилища не даёт лишних попыток", () => {
-    window.localStorage.setItem("rabochielisty_gens_v1", JSON.stringify({ count: -5 }));
+    window.localStorage.setItem("uchlist_gens_v1", JSON.stringify({ count: -5 }));
     expect(getRemaining()).toBe(FREE_LIMIT);
   });
 

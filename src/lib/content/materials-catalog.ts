@@ -268,7 +268,7 @@ const SUBJECT_TARGETS: Array<{ subject: SubjectSlug; count: number }> = [
   { subject: "geometry", count: 8 },
 ];
 
-const EDITORIAL_AUTHOR = "Редакция РабочиеЛисты";
+const EDITORIAL_AUTHOR = "Редакция УчЛист";
 
 // ─────────────────────────── Утилиты ───────────────────────────
 

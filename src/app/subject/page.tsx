@@ -50,7 +50,7 @@ export const metadata: Metadata = {
     title,
     description,
     url: `${SITE_URL}/subject`,
-    siteName: "РабочиеЛисты AI",
+    siteName: "УчЛист",
     locale: "ru_RU",
     // Отдельного OG-картинки для оглавления нет — берём общий статичный PNG
     // из public/og/ (per-subject лежат рядом, но это витрина всех предметов).
@@ -59,7 +59,7 @@ export const metadata: Metadata = {
         url: `${SITE_URL}/og/default.png`,
         width: 1200,
         height: 630,
-        alt: "РабочиеЛисты AI — рабочие листы по ФГОС для всех предметов",
+        alt: "УчЛист — рабочие листы по ФГОС для всех предметов",
       },
     ],
   },
@@ -82,7 +82,7 @@ const jsonLd = [
     inLanguage: "ru-RU",
     isPartOf: {
       "@type": "WebSite",
-      name: "РабочиеЛисты AI",
+      name: "УчЛист",
       url: SITE_URL,
     },
   },

@@ -15,7 +15,7 @@
  *     control / oge / ege / ktp / presentation              → Sonnet 5.5
  *     validate / embed / photo-check / image-gen            → своя модель
  *
- * С 2026-09-27 — polza.ai единственный провайдер для РабочиеЛисты AI.
+ * С 2026-09-27 — polza.ai единственный провайдер для УчЛист.
  * Один POLZA_API_KEY покрывает все модели. Без ключа → primary = null
  * (routes должны fallback на mock или вернуть ошибку).
  *
