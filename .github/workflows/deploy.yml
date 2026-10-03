@@ -69,6 +69,17 @@ jobs:
           # ПОСЛЕ ПОКУПКИ ДОМЕНА: поменять значение на https://uchlist.ru
           # ЗДЕСЬ и в .env.example (NEXT_PUBLIC_SITE_URL) синхронно.
           NEXT_PUBLIC_SITE_URL: https://listai-prototype.pages.dev
+          # Адрес API-воркера для СБОРКИ фронта. Не секрет — это публичный
+          # домен воркера, именно он зашивается в бандл (process.env.* читается
+          # на этапе сборки, не в рантайме).
+          #
+          # 3 октября 2026: переменной здесь не было вообще. Фронт собирался с
+          # NEXT_PUBLIC_API_URL = "" и на живом сайте не ходил в бэк ни одним
+          # запросом: src/lib/auth/api.ts кидал NO_API_URL («вход не работает»),
+          # а src/lib/llm/index.ts уходил в локальный мок — учитель получал
+          # правдоподобный, но выдуманный лист. Проверяется так: в бандле
+          # pages.dev/_next/static/chunks/... должен встречаться этот домен.
+          NEXT_PUBLIC_API_URL: https://rabochielisty-api.ivanlusnikov159.workers.dev
         run: npm run build
 
       - name: Deploy to Cloudflare Pages

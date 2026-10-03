@@ -52,3 +52,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Симлинки на node_modules (воркtree) не должны попадать в коммит.
+# Слэш в **/node_modules/ ловит только каталоги, симлинк-файл проходит мимо.
+**/node_modules

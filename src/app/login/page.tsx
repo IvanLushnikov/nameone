@@ -10,6 +10,7 @@ import { useToast } from "@/components/ui/Toast";
 import { Mail, ArrowRight, Sparkles, Rocket } from "lucide-react";
 import { trackEvent } from "@/lib/track";
 import { requestMagicLink } from "@/lib/auth/api";
+import { MAGIC_LINK_READY } from "@/lib/auth/magic-link-status";
 import { DEMO_USER_NAME, enterDemoMode, isDemoLoginEnabled } from "@/lib/dev/demo-login";
 
 export default function LoginPage() {
@@ -79,52 +80,76 @@ export default function LoginPage() {
               </div>
               <h1 className="text-2xl font-semibold text-warm-950">Войти в УчЛист</h1>
               <p className="text-sm text-warm-500 mt-1">
-                Magic link — без пароля. Откроем письмо, нажмёте кнопку — и готово.
+                {MAGIC_LINK_READY
+                  ? "Magic link — без пароля. Откроем письмо, нажмёте кнопку — и готово."
+                  : "Кабинет сохраняет ваши листы, избранное и историю. Пока его можно начать без регистрации."}
               </p>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <Input
-                label="Email"
-                type="email"
-                placeholder="teacher@school.ru"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                leftIcon={<Mail className="w-4 h-4" />}
-                required
-              />
-              <Button type="submit" variant="primary" size="lg" fullWidth loading={loading} rightIcon={<ArrowRight className="w-4 h-4" />}>
-                Получить ссылку на почту
-              </Button>
-            </form>
+            {MAGIC_LINK_READY ? (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <Input
+                  label="Email"
+                  type="email"
+                  placeholder="teacher@school.ru"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  leftIcon={<Mail className="w-4 h-4" />}
+                  required
+                />
+                <Button type="submit" variant="primary" size="lg" fullWidth loading={loading} rightIcon={<ArrowRight className="w-4 h-4" />}>
+                  Получить ссылку на почту
+                </Button>
+              </form>
+            ) : (
+              /* Входа по почте нет: домен для писем ещё не подтверждён (см.
+                 lib/auth/magic-link-status.ts). Показываем честное объяснение
+                 вместо формы, которая обещает несуществующее письмо. */
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 text-center">
+                <p className="text-sm font-semibold text-warm-900">
+                  Вход по ссылке из письма — пока недоступен
+                </p>
+                <p className="mt-1.5 text-sm text-warm-600">
+                  Мы подтверждаем адрес, с которого отправляем письма. Это займёт
+                  несколько дней. Листы можно создавать уже сейчас — регистрация для
+                  этого не нужна.
+                </p>
+              </div>
+            )}
 
             <div className="my-6 flex items-center gap-3">
               <div className="flex-1 h-px bg-warm-100" />
-              <span className="text-xs uppercase tracking-wider text-[color:var(--text-muted)]">или войти через</span>
+              <span className="text-xs uppercase tracking-wider text-[color:var(--text-muted)]">
+                {MAGIC_LINK_READY ? "или войти через" : "скоро вход через"}
+              </span>
               <div className="flex-1 h-px bg-warm-100" />
             </div>
 
+            {/* Вход через соцсети ещё не подключён (нет OAuth-обработчиков и
+                приложений). Кнопки оставлены как витрина, но с подписью
+                «скоро» на самой кнопке: disabled без подписи выглядит как
+                сломавшаяся кнопка, и человек жмёт по ней впустую. */}
             <div className="grid grid-cols-3 gap-2">
-              {[
-                { label: "VK", title: "Скоро" },
-                { label: "Яндекс", title: "Скоро" },
-                { label: "Telegram", title: "Скоро" },
-              ].map((s) => (
+              {["VK", "Яндекс", "Telegram"].map((s) => (
                 <button
-                  key={s.label}
+                  key={s}
                   type="button"
                   disabled
-                  title={s.title}
-                  aria-label={`${s.label} (${s.title})`}
-                  className="h-11 rounded-xl border border-warm-200 bg-white text-sm font-medium text-[color:var(--text-muted)] cursor-not-allowed hover:bg-warm-50 transition-colors"
+                  title={`${s} — вход пока не подключён`}
+                  aria-label={`${s} — вход пока не подключён`}
+                  className="flex flex-col items-center justify-center gap-0.5 h-16 rounded-xl border border-warm-200 bg-white text-sm font-medium text-[color:var(--text-muted)] cursor-not-allowed transition-colors"
                 >
-                  {s.label}
+                  <span>{s}</span>
+                  <span className="text-[10px] uppercase tracking-wide text-warm-400">
+                    скоро
+                  </span>
                 </button>
               ))}
             </div>
 
             <p className="mt-6 text-xs text-warm-500 text-center">
-              Регистрируясь, вы соглашаетесь с{" "}
+              {MAGIC_LINK_READY ? "Регистрируясь" : "Используя сервис"}, вы
+              соглашаетесь с{" "}
               <Link href="/legal/offer" className="text-brand-600 hover:text-brand-700">
                 публичной офертой
               </Link>{" "}
@@ -135,16 +160,32 @@ export default function LoginPage() {
               .
             </p>
 
-            <div className="mt-6 pt-6 border-t border-warm-100 text-center">
-              <Link
+            {/* Пока входа нет, это главное действие страницы — поэтому кнопка
+                во всю ширину, а не мелкая ссылка внизу. */}
+            {MAGIC_LINK_READY ? (
+              <div className="mt-6 pt-6 border-t border-warm-100 text-center">
+                <Link
+                  href="/constructor"
+                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600 hover:text-brand-700 group"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Создать лист без регистрации
+                  <span className="transition-transform group-hover:translate-x-0.5">→</span>
+                </Link>
+              </div>
+            ) : (
+              <Button
+                as="link"
                 href="/constructor"
-                className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600 hover:text-brand-700 group"
+                variant="primary"
+                size="lg"
+                fullWidth
+                leftIcon={<Sparkles className="w-4 h-4" />}
+                rightIcon={<ArrowRight className="w-4 h-4" />}
               >
-                <Sparkles className="w-4 h-4" />
                 Создать лист без регистрации
-                <span className="transition-transform group-hover:translate-x-0.5">→</span>
-              </Link>
-            </div>
+              </Button>
+            )}
 
             {/* Локальный демо-вход: только в dev-сборке (см. lib/dev/demo-login.ts).
                 Пишет профиль в localStorage и открывает /dashboard без почты. */}
