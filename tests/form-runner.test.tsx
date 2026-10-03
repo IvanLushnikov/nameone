@@ -68,15 +68,26 @@ function makeForm(overrides: Record<string, unknown> = {}) {
 /** Промис, который мы разрешим сами — чтобы поймать состояние loading. */
 const pending = () => new Promise(() => {});
 
+/**
+ * Токен задаётся через НАСТОЯЩИЙ `window.location.search`: FormRunner больше
+ * не читает `useSearchParams()` — хук требовал границу <Suspense> при статическом
+ * экспорте, а её fallback закрывал страницу до гидратации. Пока тест подсовывал
+ * токен через мок хука, компонент его не видел и уходил в состояние «без
+ * токена»: 8 тестов падали, а полный прогон это скрывал.
+ */
+function setSearch(value: string): void {
+  window.history.replaceState({}, "", value ? `/form?${value}` : "/form");
+}
+
 beforeEach(() => {
-  mocks.search = "t=tok123";
+  setSearch("t=tok123");
   mocks.loadPublicForm.mockReset();
   mocks.submitPublicForm.mockReset();
 });
 
 describe("FormRunner — состояния страницы ученика", () => {
   it("без токена в ссылке показывает понятную ошибку, а не пустой экран", async () => {
-    mocks.search = "";
+    setSearch("");
     render(<FormRunner />);
 
     const box = await screen.findByTestId("form-error");

@@ -113,7 +113,7 @@ vi.mock("@/components/ui/Toast", async () => {
 });
 
 /** Ключ бесплатного счётчика в localStorage (`src/lib/utils/limit.ts`). */
-const QUOTA_KEY = "uchlist_gens_v1";
+const QUOTA_KEY = "rabochielisty_gens_v1";
 
 /** Окно восстановления из продукта: 2 часа. */
 const RESTORE_WINDOW_MS = 2 * 60 * 60 * 1000;
