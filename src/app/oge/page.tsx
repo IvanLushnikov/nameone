@@ -105,7 +105,7 @@ const STAGE_LABELS = [
   "готовим разбор",
 ] as const;
 
-const PENDING_KEY = "rabochielisty_oge_pending_v1";
+const PENDING_KEY = "uchlist_oge_pending_v1";
 
 const SUBJECTS_BY_SLUG: Record<string, string> = {
   math: "Математика",

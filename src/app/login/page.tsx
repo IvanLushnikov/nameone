@@ -77,7 +77,7 @@ export default function LoginPage() {
               <div className="w-12 h-12 rounded-xl bg-brand-500 text-white grid place-items-center mx-auto mb-4 shadow-brand">
                 <Mail className="w-6 h-6" />
               </div>
-              <h1 className="text-2xl font-semibold text-warm-950">Войти в РабочиеЛисты AI</h1>
+              <h1 className="text-2xl font-semibold text-warm-950">Войти в УчЛист</h1>
               <p className="text-sm text-warm-500 mt-1">
                 Magic link — без пароля. Откроем письмо, нажмёте кнопку — и готово.
               </p>

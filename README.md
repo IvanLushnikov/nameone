@@ -1,8 +1,8 @@
-# РабочиеЛисты AI — фронтенд (MVP)
+# УчЛист — фронтенд (MVP)
 
-> Лайв: **https://listai-prototype.pages.dev/** (временный, до регистрации `rabochielisty.ru` → переключение DNS CNAME)
+> Лайв: **https://listai-prototype.pages.dev/** (временный, до регистрации `uchlist.ru` → переключение DNS CNAME)
 > Документы по проекту: `docs/`
-> Бренд: **РабочиеЛисты AI** · домен `rabochielisty.ru` (решение 2026-09-25, см. `docs/BRAND.md`)
+> Бренд: **УчЛист** · домен `uchlist.ru` (решение 2026-10-02, см. `docs/BRAND.md`)
 
 ## Что собрано
 
@@ -158,7 +158,7 @@ npx --yes wrangler pages deploy out \
 # production, и кастомный домен не активируется. НЕ добавляй --branch=production.
 ```
 
-**Не перезаписывает `ilushnikov-portfolio`** (там твой личный сайт). Создан новый проект `listai-prototype` — рабочее имя Pages-проекта до переезда на прод-домен `rabochielisty.ru`. После регистрации домена переименуй Pages-проект (см. «Как переключить с listai-prototype на rabochielisty.ru» ниже).
+**Не перезаписывает `ilushnikov-portfolio`** (там твой личный сайт). Создан новый проект `listai-prototype` — рабочее имя Pages-проекта до переезда на прод-домен `uchlist.ru`. После регистрации домена переименуй Pages-проект (см. «Как переключить с listai-prototype на uchlist.ru» ниже).
 
 ---
 
@@ -208,32 +208,32 @@ npx --yes wrangler pages deploy out \
 
 ---
 
-## Как переключить с listai-prototype на rabochielisty.ru
+## Как переключить с listai-prototype на uchlist.ru
 
-> **Предусловие:** бренд уже зафиксирован в `docs/BRAND.md` (**РабочиеЛисты / rabochielisty.ru**). Домен `rabochielisty.ru` нужно купить и привязать к Pages-проекту.
+> **Предусловие:** бренд уже зафиксирован в `docs/BRAND.md` (**УчЛист / uchlist.ru**). Домен `uchlist.ru` нужно купить и привязать к Pages-проекту.
 
-Пошаговый план переключения с временного Pages-домена `listai-prototype.pages.dev` на прод-домен `rabochielisty.ru`:
+Пошаговый план переключения с временного Pages-домена `listai-prototype.pages.dev` на прод-домен `uchlist.ru`:
 
 ```sh
-# 1. Купить домен rabochielisty.ru (~600 ₽/год на reg.ru / regery).
+# 1. Купить домен uchlist.ru (~600 ₽/год на reg.ru / regery).
 #    Проверить занятость перед покупкой: https://www.reg.ru/whois/
 
-# 2. DNS: CNAME rabochielisty.ru → listai-prototype.pages.dev
+# 2. DNS: CNAME uchlist.ru → listai-prototype.pages.dev
 #    (Pages auto-certificate выпустит SSL через несколько минут.)
-#    Альтернатива — переименовать Pages-проект на "rabochielisty" и указать
-#    CNAME на rabochielisty.pages.dev. Старый домен listai-prototype.pages.dev
+#    Альтернатива — переименовать Pages-проект на "uchlist" и указать
+#    CNAME на uchlist.pages.dev. Старый домен listai-prototype.pages.dev
 #    продолжит работать.
 
 # 3. В backend/wrangler.toml [env.production.vars].FRONTEND_URL убрать listai-prototype
-#    и оставить только https://rabochielisty.ru,https://www.rabochielisty.ru.
+#    и оставить только https://uchlist.ru,https://www.uchlist.ru.
 #    Задеплоить воркер: cd backend && npm run deploy
 
 # 4. Массовая замена по коду и докам:
 grep -rl "listai\|listai-prototype\|listai\.ru" src/ docs/ README.md
 
 # 5. Cookies / storage ключи (опционально, чтобы старые счётчики обнулились):
-#    src/lib/utils/limit.ts → KEY = "rabochielisty_gens_v1"
-#    src/lib/utils/storage.ts → KEY_HISTORY = "rabochielisty.history" и т.д.
+#    src/lib/utils/limit.ts → KEY = "uchlist_gens_v1"
+#    src/lib/utils/storage.ts → KEY_HISTORY = "uchlist.history" и т.д.
 
 # 6. Перебилдить и передеплоить:
 npm run build
@@ -249,7 +249,7 @@ npx --yes wrangler pages deploy out --project-name=listai-prototype --commit-dir
 
 ## Сколько стоит хост сейчас
 
-**Cloudflare Pages** — бесплатно до неограниченного количества запросов на Direct Upload. Текущий Pages-проект `listai-prototype` (рабочее имя до переезда на `rabochielisty.ru`) будет стоить **$0/мес** пока трафик в пределах Free Tier (Unlimited bandwidth, 500 builds/мес, 100 custom domains).
+**Cloudflare Pages** — бесплатно до неограниченного количества запросов на Direct Upload. Текущий Pages-проект `listai-prototype` (рабочее имя до переезда на `uchlist.ru`) будет стоить **$0/мес** пока трафик в пределах Free Tier (Unlimited bandwidth, 500 builds/мес, 100 custom domains).
 
 LLM-API на проде — отдельная статья расходов, см. `docs/02-llm-architecture.md`.
 
@@ -257,7 +257,7 @@ LLM-API на проде — отдельная статья расходов, с
 
 ## Что осталось сделать до продакшена
 
-1. **Домен и бренд** — купить `rabochielisty.ru` (~600 ₽/год на reg.ru), прописать DNS CNAME, переключить Pages-проект `listai-prototype` на прод-домен `rabochielisty.ru` (пошаговый план в разделе «Как переключить с listai-prototype на rabochielisty.ru» выше)
+1. **Домен и бренд** — купить `uchlist.ru` (~600 ₽/год на reg.ru), прописать DNS CNAME, переключить Pages-проект `listai-prototype` на прод-домен `uchlist.ru` (пошаговый план в разделе «Как переключить с listai-prototype на uchlist.ru» выше)
 2. **Бэк** — сделан, см. `backend/`. Осталось:
    - **Вебхуки ЮKassa не проверяют подлинность.** Сейчас доверяем payload'у.
      Нужен IP-allowlist в ЛК ЮKassa (или HMAC). Отмечено TODO в

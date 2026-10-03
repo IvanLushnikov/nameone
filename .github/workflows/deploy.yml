@@ -61,6 +61,14 @@ jobs:
       - name: Build
         env:
           NEXT_TELEMETRY_DISABLED: 1
+          # Домен uchlist.ru ещё не куплен (решение владельца 2026-10-03).
+          # Пока uchlist.ru не резолвится, собирать с ним нельзя: sitemap.xml,
+          # robots.txt, canonical и og:image поедут на мёртвый хост, и поисковик
+          # перестанет обходить сайт. Поэтому здесь — рабочий pages.dev.
+          #
+          # ПОСЛЕ ПОКУПКИ ДОМЕНА: поменять значение на https://uchlist.ru
+          # ЗДЕСЬ и в .env.example (NEXT_PUBLIC_SITE_URL) синхронно.
+          NEXT_PUBLIC_SITE_URL: https://listai-prototype.pages.dev
         run: npm run build
 
       - name: Deploy to Cloudflare Pages

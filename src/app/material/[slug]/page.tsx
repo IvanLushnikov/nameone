@@ -31,7 +31,7 @@ export function generateMetadata({ params }: Props): Metadata {
   if (!material) return { title: "Материал не найден" };
 
   const subject = getSubject(material.subject);
-  const title = `${material.title} — РабочиеЛисты`;
+  const title = `${material.title} — УчЛист`;
   const description = material.description;
   const canonical = `${SITE_URL}/material/${material.slug}/`;
 
@@ -69,12 +69,12 @@ function buildJsonLd(material: MaterialEntry, subjectTitle: string, fgosRef?: st
     author: { "@type": "Organization", name: material.author },
     publisher: {
       "@type": "Organization",
-      name: "РабочиеЛисты",
+      name: "УчЛист",
       url: SITE_URL,
     },
     isPartOf: {
       "@type": "WebSite",
-      name: "РабочиеЛисты",
+      name: "УчЛист",
       url: SITE_URL,
     },
     // Столбик d (POSITIONING.md §3): привязка к программе.

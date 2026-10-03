@@ -70,7 +70,7 @@ export function generateMetadata({ params }: Props): Metadata {
       title,
       description,
       url: canonicalUrl,
-      siteName: "РабочиеЛисты AI",
+      siteName: "УчЛист",
       locale: "ru_RU",
       // TZ-10 §5.4 / §9.6: og:image — статичный PNG (TZ-10 Этап 3, вариант B).
       // Edge route оставлен для будущей миграции, но static-export не работает с Edge runtime.

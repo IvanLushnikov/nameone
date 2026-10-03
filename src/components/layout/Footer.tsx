@@ -52,7 +52,7 @@ export function Footer() {
                 {SUPPORT_EMAIL}
               </a>
               <a
-                href="https://t.me/rabochielisty"
+                href="https://t.me/uchlist"
                 className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-white border border-warm-200 text-warm-700 hover:bg-warm-50 text-sm"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -80,7 +80,7 @@ export function Footer() {
         </div>
 
         <div className="mt-10 pt-6 border-t border-warm-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-warm-500">
-          <p>© 2026 РабочиеЛисты AI. Все права защищены. Сделано с ❤ для учителей.</p>
+          <p>© 2026 УчЛист. Все права защищены. Сделано с ❤ для учителей.</p>
           <p>Листы в формате A4 · PDF и DOCX</p>
         </div>
       </div>

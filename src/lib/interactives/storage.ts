@@ -21,7 +21,7 @@
  */
 
 /** Префикс ключа. Токен интерактива входит в ключ: у каждого — своя попытка. */
-const KEY_PREFIX = "rabochielisty:interactive:";
+const KEY_PREFIX = "uchlist:interactive:";
 
 /** Что мы храним на одну попытку. */
 export interface StoredAttempt {

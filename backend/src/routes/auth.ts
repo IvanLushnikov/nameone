@@ -59,12 +59,12 @@ authRouter.post("/callback", async (c) => {
   // Set HttpOnly Secure cookie.
   //
   // SameSite=None: фронт на listai-prototype.pages.dev (Pages preview, рабочее название
-  // до выбора бренда — см. docs/BRAND.md) и в перспективе на rabochielisty.ru (прод-домен),
+  // до выбора бренда — см. docs/BRAND.md) и в перспективе на uchlist.ru (прод-домен),
   // бэк на *.workers.dev — разные origin'ы. С SameSite=Lax браузер НЕ отдаёт cookie
   // при cross-origin fetch (XHR/fetch из фронта на бэк). SameSite=None + Secure —
   // единственный вариант, который работает на разных доменах.
   //
-  // Когда переедем на один eTLD+1 (например rabochielisty.ru apex + api.rabochielisty.ru),
+  // Когда переедем на один eTLD+1 (например uchlist.ru apex + api.uchlist.ru),
   // можно вернуть SameSite=Lax — это безопаснее (CSRF mitigation).
   setCookie(c, "session", result.sessionToken, {
     httpOnly: true,

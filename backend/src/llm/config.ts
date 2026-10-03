@@ -96,7 +96,7 @@ export interface ModelSpec {
 /**
  * Каталог моделей.
  *
- * Polza.ai — единственный провайдер для РабочиеЛисты AI. Один POLZA_API_KEY
+ * Polza.ai — единственный провайдер для УчЛист. Один POLZA_API_KEY
  * покрывает все модели каталога. Прямые ключи OpenAI/Anthropic/DeepSeek/DashScope
  * больше не используются (см. docs/02-llm-architecture.md Section 5).
  *

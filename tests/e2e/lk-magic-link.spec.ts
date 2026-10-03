@@ -43,7 +43,7 @@ test.describe("ЛК: magic-link login flow", () => {
     // Заголовок виден — допускаем оба варианта бренда (до/после ребрендинга).
     await expect(
       page.getByRole("heading", {
-        name: /Войти в (РабочиеЛисты AI|ЛистAI)/i,
+        name: /Войти в (УчЛист|ЛистAI)/i,
       }),
     ).toBeVisible();
 
@@ -98,7 +98,7 @@ test.describe("ЛК: magic-link login flow", () => {
       // Полная проверка error-flow.
       await expect(
         page.getByRole("heading", {
-          name: /Войти в (РабочиеЛисты AI|ЛистAI)/i,
+          name: /Войти в (УчЛист|ЛистAI)/i,
         }),
       ).toBeVisible();
     } else {

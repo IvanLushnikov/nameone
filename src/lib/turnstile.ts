@@ -62,7 +62,7 @@ function loadTurnstileScript(): Promise<void> {
   if (scriptPromise) return scriptPromise;
 
   scriptPromise = new Promise<void>((resolve, reject) => {
-    const cb = "__rabochielisty_turnstile_onload";
+    const cb = "__uchlist_turnstile_onload";
     (window as unknown as Record<string, unknown>)[cb] = () => {
       delete (window as unknown as Record<string, unknown>)[cb];
       resolve();

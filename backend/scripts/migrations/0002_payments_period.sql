@@ -20,10 +20,10 @@
 --
 -- Применение (прод):
 --   cd backend
---   npx wrangler d1 execute rabochielisty --remote --file=scripts/migrations/0002_payments_period.sql
+--   npx wrangler d1 execute uchlist --remote --file=scripts/migrations/0002_payments_period.sql
 --
 -- Применение (локально):
---   npx wrangler d1 execute rabochielisty --local  --file=scripts/migrations/0002_payments_period.sql
+--   npx wrangler d1 execute uchlist --local  --file=scripts/migrations/0002_payments_period.sql
 --
 -- Идемпотентна: повторный запуск безопасен.
 

@@ -239,7 +239,7 @@ export async function generateKtpDocx(ktp: Ktp): Promise<Blob> {
   const totalLessons = ktp.weeks.reduce((acc, w) => acc + w.entries.length, 0);
 
   const doc = new Document({
-    creator: "РабочиеЛисты AI",
+    creator: "УчЛист",
     title: ktp.title,
     description: `КТП · ${ktp.subject} · ${ktp.grade} класс · ${ktp.schoolYear}`,
     sections: [
@@ -255,7 +255,7 @@ export async function generateKtpDocx(ktp: Ktp): Promise<Blob> {
             children: [
               new Paragraph({
                 alignment: AlignmentType.RIGHT,
-                children: [new TextRun({ text: `РабочиеЛисты AI · ${SITE_HOST}`, size: 16, color: "BBBBBB" })],
+                children: [new TextRun({ text: `УчЛист · ${SITE_HOST}`, size: 16, color: "BBBBBB" })],
               }),
             ],
           }),

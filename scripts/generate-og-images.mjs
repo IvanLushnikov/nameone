@@ -264,7 +264,7 @@ function OgCard({ brand, title, subtitle, badges }) {
           letterSpacing: "-0.005em",
         },
       },
-      "rabochielisty.ru",
+      "uchlist.ru",
     ),
   );
 
@@ -322,7 +322,7 @@ async function renderPng(element) {
  */
 function defaultCard() {
   return OgCard({
-    brand: "РабочиеЛисты AI",
+    brand: "УчЛист",
     title: "Рабочие листы по ФГОС за 30 секунд",
     subtitle: "Без регистрации — 3 бесплатно",
     badges: BADGES,
@@ -334,7 +334,7 @@ function defaultCard() {
  */
 function subjectCard({ title }) {
   return OgCard({
-    brand: "РабочиеЛисты AI",
+    brand: "УчЛист",
     title: `Рабочие листы по ${title.toLowerCase()}`,
     subtitle: "Рабочие листы 1-11 класс по ФГОС 2021",
     badges: BADGES,

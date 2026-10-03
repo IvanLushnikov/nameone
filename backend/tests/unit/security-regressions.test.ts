@@ -128,8 +128,8 @@ function prodEnv(overrides: Partial<Env> = {}): Env {
   return {
     ...(env as unknown as Env),
     APP_ENV: "production",
-    FRONTEND_URL: "https://rabochielisty.ru",
-    APP_PUBLIC_URL: "https://rabochielisty.ru",
+    FRONTEND_URL: "https://uchlist.ru",
+    APP_PUBLIC_URL: "https://uchlist.ru",
     RESEND_API_KEY: undefined,
     YOOKASSA_SHOP_ID: undefined,
     YOOKASSA_SECRET_KEY: undefined,
@@ -187,7 +187,7 @@ async function call(
 }
 
 /** Origin нашего фронта — есть в allowlist воркера. */
-const GOOD_ORIGIN = "https://rabochielisty.ru";
+const GOOD_ORIGIN = "https://uchlist.ru";
 /** Сайт злоумышленника, которого в allowlist нет. */
 const EVIL_ORIGIN = "https://phishing.example.com";
 
@@ -230,7 +230,7 @@ describe("К-1: подделка вебхука не выдаёт подписк
   });
 
   it("metadata.plan='plus' в теле не превращает оплату base в подписку plus", async () => {
-    const { userId, token } = await seedSession("forger@rabochielisty.ru");
+    const { userId, token } = await seedSession("forger@uchlist.ru");
 
     // Честно создаём платёж на базовый тариф — так же, как это делает фронт.
     const created = await call(
@@ -306,7 +306,7 @@ describe("К-1: подделка вебхука не выдаёт подписк
 
   it("честная оплата активирует подписку по данным из БД", async () => {
     // Контроль к предыдущим двум тестам: защита не должна ломать оплату.
-    const { userId } = await seedSession("paying@rabochielisty.ru");
+    const { userId } = await seedSession("paying@uchlist.ru");
     const now = Math.floor(Date.now() / 1000);
     await db()
       .prepare(
@@ -350,7 +350,7 @@ describe("К-1: подделка вебхука не выдаёт подписк
     // dev-режим. В нём клиент знает paymentId и может дослать вебхук сам —
     // сверять платёж нечем, потому что ключей нет. То есть подписку можно
     // было активировать бесплатно. Симулятор в проде отключён.
-    const { token } = await seedSession("noyookassa@rabochielisty.ru");
+    const { token } = await seedSession("noyookassa@uchlist.ru");
     const res = await call(
       "/api/billing/create",
       { body: { plan: "plus", period: "academicYear" }, token },
@@ -363,7 +363,7 @@ describe("К-1: подделка вебхука не выдаёт подписк
   });
 
   it("в development демо-оплата работает — локальная разработка не сломана", async () => {
-    const { userId, token } = await seedSession("devpay@rabochielisty.ru");
+    const { userId, token } = await seedSession("devpay@uchlist.ru");
     const res = await call(
       "/api/billing/create",
       { body: { plan: "base", period: "monthly" }, token },
@@ -378,7 +378,7 @@ describe("К-1: подделка вебхука не выдаёт подписк
   });
 
   it("повторное уведомление не продлевает подписку заново (защита от replay)", async () => {
-    const { userId } = await seedSession("replay@rabochielisty.ru");
+    const { userId } = await seedSession("replay@uchlist.ru");
     const now = Math.floor(Date.now() / 1000);
     await db()
       .prepare(
@@ -424,7 +424,7 @@ describe("К-2: в production ссылка для входа не уходит �
   it("в production ссылка для входа не возвращается в ответе", async () => {
     const res = await call(
       "/api/auth/magic-link",
-      { body: { email: "noletter@rabochielisty.ru" }, origin: null },
+      { body: { email: "noletter@uchlist.ru" }, origin: null },
       prodEnv(), // RESEND_API_KEY отсутствует — именно этот случай был дырой
     );
     const raw = await res.text();
@@ -447,7 +447,7 @@ describe("К-2: в production ссылка для входа не уходит �
 
     const res = await call(
       "/api/auth/magic-link",
-      { body: { email: "misdeployed@rabochielisty.ru" }, origin: null },
+      { body: { email: "misdeployed@uchlist.ru" }, origin: null },
       misdeployed,
     );
     expect(res.status, "ссылка входа обязана быть закрыта при неверном APP_ENV").toBeGreaterThanOrEqual(400);
@@ -456,7 +456,7 @@ describe("К-2: в production ссылка для входа не уходит �
 
   it("оплата не симулируется даже если APP_ENV врёт", async () => {
     const misdeployed = prodEnv({ APP_ENV: "development" });
-    const { userId } = await seedSession("misdeployed-pay@rabochielisty.ru");
+    const { userId } = await seedSession("misdeployed-pay@uchlist.ru");
     const session = await db()
       .prepare("SELECT token FROM sessions WHERE user_id = ?1 LIMIT 1")
       .bind(userId)
@@ -478,7 +478,7 @@ describe("К-2: в production ссылка для входа не уходит �
     });
     const res = await call(
       "/api/auth/magic-link",
-      { body: { email: "badurl@rabochielisty.ru" }, origin: null },
+      { body: { email: "badurl@uchlist.ru" }, origin: null },
       broken,
     );
     expect(res.status).toBeGreaterThanOrEqual(400);
@@ -487,7 +487,7 @@ describe("К-2: в production ссылка для входа не уходит �
   it("в production без настроенной почты вход закрывается, а не выдаётся", async () => {
     const res = await call(
       "/api/auth/magic-link",
-      { body: { email: "failclosed@rabochielisty.ru" }, origin: null },
+      { body: { email: "failclosed@uchlist.ru" }, origin: null },
       prodEnv(),
     );
 
@@ -495,7 +495,7 @@ describe("К-2: в production ссылка для входа не уходит �
     expect(res.status).toBeGreaterThanOrEqual(400);
     const user = await db()
       .prepare("SELECT id FROM users WHERE email = ?1")
-      .bind("failclosed@rabochielisty.ru")
+      .bind("failclosed@uchlist.ru")
       .first();
     expect(user).toBeNull();
   });
@@ -503,7 +503,7 @@ describe("К-2: в production ссылка для входа не уходит �
   it("в development ссылка возвращается — локальная разработка не сломана", async () => {
     const res = await call(
       "/api/auth/magic-link",
-      { body: { email: "dev@rabochielisty.ru" }, origin: null },
+      { body: { email: "dev@uchlist.ru" }, origin: null },
       devEnv(),
     );
     const body = (await res.json()) as { devMagicUrl?: string };
@@ -513,12 +513,12 @@ describe("К-2: в production ссылка для входа не уходит �
   it("сессионный токен не возвращается в теле ответа (С-1)", async () => {
     await call(
       "/api/auth/magic-link",
-      { body: { email: "cookie@rabochielisty.ru" }, origin: null },
+      { body: { email: "cookie@uchlist.ru" }, origin: null },
       devEnv(),
     );
     const row = await db()
       .prepare("SELECT token FROM magic_links WHERE email = ?1 ORDER BY created_at DESC LIMIT 1")
-      .bind("cookie@rabochielisty.ru")
+      .bind("cookie@uchlist.ru")
       .first<{ token: string }>();
     expect(row).not.toBeNull();
 
@@ -552,7 +552,7 @@ describe("К-3: изменяющие запросы с чужим Origin отк�
   });
 
   it("POST со своим Origin проходит", async () => {
-    const { token } = await seedSession("goodorigin@rabochielisty.ru");
+    const { token } = await seedSession("goodorigin@uchlist.ru");
     const res = await call(
       "/api/billing/create",
       { body: { plan: "base", period: "monthly" }, token },
@@ -563,7 +563,7 @@ describe("К-3: изменяющие запросы с чужим Origin отк�
 
   it("POST без Origin проходит — серверный вызов, а не браузер", async () => {
     // Иначе мы бы отрезали собственный вебхук ЮKassa и любые серверные вызовы.
-    const { token } = await seedSession("noorigin@rabochielisty.ru");
+    const { token } = await seedSession("noorigin@uchlist.ru");
     const res = await call(
       "/api/billing/create",
       { body: { plan: "base", period: "monthly" }, token, origin: null },
@@ -578,7 +578,7 @@ describe("К-3: изменяющие запросы с чужим Origin отк�
   });
 
   it("DELETE с чужим Origin блокируется", async () => {
-    const { token } = await seedSession("deletecsrf@rabochielisty.ru");
+    const { token } = await seedSession("deletecsrf@uchlist.ru");
     const res = await call("/api/auth/logout", { method: "DELETE", origin: EVIL_ORIGIN, token });
     expect(res.status).toBe(403);
   });
@@ -600,7 +600,7 @@ describe("С-2: чужой рабочий лист не отдаётся по с
   }
 
   it("аноним получает 404 на чужой сохранённый лист", async () => {
-    const owner = await seedSession("owner@rabochielisty.ru");
+    const owner = await seedSession("owner@uchlist.ru");
     await seedWorksheet("ws_private", owner.userId);
 
     const res = await call("/api/worksheets/ws_private", { method: "GET" });
@@ -609,8 +609,8 @@ describe("С-2: чужой рабочий лист не отдаётся по с
   });
 
   it("другой залогиненный учитель тоже получает 404", async () => {
-    const owner = await seedSession("owner2@rabochielisty.ru");
-    const other = await seedSession("other@rabochielisty.ru");
+    const owner = await seedSession("owner2@uchlist.ru");
+    const other = await seedSession("other@uchlist.ru");
     await seedWorksheet("ws_private2", owner.userId);
 
     const res = await call("/api/worksheets/ws_private2", { method: "GET", token: other.token });
@@ -618,7 +618,7 @@ describe("С-2: чужой рабочий лист не отдаётся по с
   });
 
   it("владелец читает свой лист", async () => {
-    const owner = await seedSession("owner3@rabochielisty.ru");
+    const owner = await seedSession("owner3@uchlist.ru");
     await seedWorksheet("ws_mine", owner.userId);
 
     const res = await call("/api/worksheets/ws_mine", { method: "GET", token: owner.token });
@@ -644,11 +644,11 @@ describe("Конфигурация: отсутствие секретов не �
     const bad = prodEnv({ RESEND_API_KEY: undefined, YOOKASSA_SHOP_ID: undefined, YOOKASSA_SECRET_KEY: undefined });
 
     // Вход: должен отказать, а не выдать ссылку.
-    const login = await call("/api/auth/magic-link", { body: { email: "cfg@rabochielisty.ru" }, origin: null }, bad);
+    const login = await call("/api/auth/magic-link", { body: { email: "cfg@uchlist.ru" }, origin: null }, bad);
     expect(login.status).toBeGreaterThanOrEqual(400);
 
     // Оплата: должна отказать, а не создать фиктивный платёж.
-    const { userId } = await seedSession("cfgpay@rabochielisty.ru");
+    const { userId } = await seedSession("cfgpay@uchlist.ru");
     const token = await db()
       .prepare("SELECT token FROM sessions WHERE user_id = ?1 LIMIT 1")
       .bind(userId)

@@ -90,7 +90,7 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
                 </div>
               </div>
               <div className="text-right text-xs text-warm-500 shrink-0">
-                <div>РабочиеЛисты AI</div>
+                <div>УчЛист</div>
                 <div className="mt-0.5">{formatDate(worksheet.createdAt)}</div>
                 <div className="mt-2 inline-block px-2 py-0.5 rounded border border-brand-300 text-brand-700 text-[10px] font-semibold no-print">
                   Проверено AI
@@ -193,7 +193,7 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
 
             {/* Подвал */}
             <footer className="mt-10 pt-4 border-t border-warm-200 flex items-center justify-between text-[10px] text-[color:var(--text-muted)]">
-              <span>РабочиеЛисты AI · {SITE_HOST}</span>
+              <span>УчЛист · {SITE_HOST}</span>
               <span>Стр. 1 из {withAnswers ? 2 : 1}</span>
             </footer>
           </article>
@@ -213,7 +213,7 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
                     <div className="text-xs text-warm-600 mt-1">Только для учителя · не раздавать ученикам</div>
                   </div>
                   <div className="text-right text-xs text-warm-500 shrink-0">
-                    <div>РабочиеЛисты AI</div>
+                    <div>УчЛист</div>
                     <div className="mt-2 inline-block px-2 py-0.5 rounded border border-accent-300 text-accent-700 text-[10px] font-semibold">
                       Шифр ответов
                     </div>
@@ -246,7 +246,7 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
                 </ol>
 
                 <footer className="mt-10 pt-4 border-t border-warm-200 flex items-center justify-between text-[10px] text-[color:var(--text-muted)]">
-                  <span>РабочиеЛисты AI · {SITE_HOST}</span>
+                  <span>УчЛист · {SITE_HOST}</span>
                   <span>Стр. 2 из 2 · только для учителя</span>
                 </footer>
               </article>

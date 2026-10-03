@@ -81,7 +81,7 @@ export function CardsPreview({ set }: Props) {
                   </div>
                 </div>
                 <div className="text-right text-xs text-warm-500 shrink-0">
-                  <div>РабочиеЛисты AI</div>
+                  <div>УчЛист</div>
                   <div className="mt-0.5">{formatDate(set.createdAt)}</div>
                   <div className="mt-2 inline-block px-2 py-0.5 rounded border border-brand-300 text-brand-700 text-[10px] font-semibold">
                     Режьте по рамкам
@@ -107,7 +107,7 @@ export function CardsPreview({ set }: Props) {
               </div>
 
               <footer className="cards-print-footer mt-6 pt-3 border-t border-warm-200 flex items-center justify-between text-[10px] text-[color:var(--text-muted)]">
-                <span>РабочиеЛисты AI · {SITE_HOST}</span>
+                <span>УчЛист · {SITE_HOST}</span>
                 <span>Наведите или нажмите на карточку, чтобы увидеть ответ</span>
               </footer>
             </article>

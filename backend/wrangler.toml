@@ -1,4 +1,4 @@
-# Cloudflare Workers config — РабочиеЛисты AI backend.
+# Cloudflare Workers config — УчЛист backend.
 #
 # Deploy:    npm run deploy
 # Dev local: npm run dev   (wrangler dev --local)
@@ -58,12 +58,12 @@ compatibility_flags = ["nodejs_compat"]
 [env.production.vars]
 APP_ENV = "production"
 APP_BASE_URL = "https://rabochielisty-api.ivanlusnikov159.workers.dev"
-# TODO: после регистрации rabochielisty.ru и переключения DNS CNAME — заменить listai-prototype.pages.dev
-# на https://rabochielisty.ru,https://www.rabochielisty.ru. До тех пор держим ОБА, чтобы и старый
-# preview-домен (listai-prototype.pages.dev), и новый прод-домен (rabochielisty.ru) ходили в API.
-FRONTEND_URL = "https://listai-prototype.pages.dev,https://www.listai-prototype.pages.dev,https://rabochielisty.ru,https://www.rabochielisty.ru"
+# TODO: после регистрации uchlist.ru и переключения DNS CNAME — заменить listai-prototype.pages.dev
+# на https://uchlist.ru,https://www.uchlist.ru. До тех пор держим ОБА, чтобы и старый
+# preview-домен (listai-prototype.pages.dev), и новый прод-домен (uchlist.ru) ходили в API.
+FRONTEND_URL = "https://listai-prototype.pages.dev,https://www.listai-prototype.pages.dev,https://uchlist.ru,https://www.uchlist.ru"
 # Прод-домен ОДНИМ значением — в magic-link письма уходит именно он.
-# TODO: поменять на https://rabochielisty.ru сразу после переключения DNS.
+# TODO: поменять на https://uchlist.ru сразу после переключения DNS.
 APP_PUBLIC_URL = "https://listai-prototype.pages.dev"
 # В проде оба опасных режима выключены ЯВНО, а не «по умолчанию из коробки».
 # Если кто-то добавит новую секцию окружения, отсутствие этих строк ничего

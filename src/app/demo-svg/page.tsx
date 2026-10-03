@@ -1,5 +1,5 @@
 /**
- * Demo-страница SVG-графиков в рабочих листах РабочиеЛисты AI.
+ * Demo-страница SVG-графиков в рабочих листах УчЛист.
  *
  * Внутренний показ для коллег (2026-09-25).
  * 9 примеров — по одному на каждый из 7 типов графиков + 2 phase1-baseline (bar/line).
@@ -182,7 +182,7 @@ export default async function DemoSvgPage() {
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
         <header className="mb-10">
           <h1 className="text-3xl font-bold text-brand-900 sm:text-4xl">
-            РабочиеЛисты AI — SVG-графики
+            УчЛист — SVG-графики
           </h1>
           <p className="mt-3 text-base text-warm-700 sm:text-lg">
             Внутренний demo от 25.09.2026. {worksheets.length} примеров рабочих листов
@@ -284,6 +284,6 @@ export default async function DemoSvgPage() {
 }
 
 export const metadata = {
-  title: "РабочиеЛисты AI — SVG-графики (внутренний demo)",
+  title: "УчЛист — SVG-графики (внутренний demo)",
   description: "Внутренний показ SVG-графиков в рабочих листах для коллег.",
 };

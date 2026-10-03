@@ -1,5 +1,5 @@
 /**
- * РабочиеЛисты AI — Cloudflare Workers entry point.
+ * УчЛист — Cloudflare Workers entry point.
  *
  * Структура:
  *   1. CORS (для FRONTEND_URL) — на всех запросах

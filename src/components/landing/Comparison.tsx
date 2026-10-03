@@ -35,7 +35,7 @@ export function Comparison() {
             30 секунд на&nbsp;урок vs&nbsp;вечер в&nbsp;Word
           </h2>
           <p className="mt-3 text-warm-600">
-            Шаблоны и ручная работа в Word не учитывают ваш класс, ошибаются в задачах и не дают готовый PDF. РабочиеЛисты AI — узкоспециализированный инструмент для&nbsp;учителей.
+            Шаблоны и ручная работа в Word не учитывают ваш класс, ошибаются в задачах и не дают готовый PDF. УчЛист — узкоспециализированный инструмент для&nbsp;учителей.
           </p>
         </div>
 
@@ -75,7 +75,7 @@ export function Comparison() {
             </ul>
           </Card>
 
-          {/* РабочиеЛисты AI card */}
+          {/* УчЛист card */}
           <Card
             className="relative h-full bg-gradient-to-br from-brand-50/50 to-white border-brand-200"
             style={{
@@ -89,10 +89,10 @@ export function Comparison() {
             <div className="absolute top-4 right-4">
               <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-brand-500 text-white text-xs font-semibold">
                 <Sparkles className="w-3 h-3" />
-                РабочиеЛисты AI
+                УчЛист
               </span>
             </div>
-            <h3 className="text-lg font-semibold text-warm-950 mb-1">Через РабочиеЛисты AI</h3>
+            <h3 className="text-lg font-semibold text-warm-950 mb-1">Через УчЛист</h3>
             <p className="text-sm text-brand-700 mb-5 font-medium">30 секунд — PDF готов</p>
 
             {/* Mock worksheet auto-generated */}

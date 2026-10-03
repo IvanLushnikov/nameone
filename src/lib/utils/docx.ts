@@ -195,8 +195,8 @@ export async function generateWorksheetDocx(
       children: [
         new TextRun({
           text: allVerified
-            ? `РабочиеЛисты AI · ${SITE_HOST} · проверено AI`
-            : `РабочиеЛисты AI · ${SITE_HOST}`,
+            ? `УчЛист · ${SITE_HOST} · проверено AI`
+            : `УчЛист · ${SITE_HOST}`,
           size: 18,
           color: "999999",
         }),
@@ -298,7 +298,7 @@ export async function generateWorksheetDocx(
   }
 
   const doc = new Document({
-    creator: "РабочиеЛисты AI",
+    creator: "УчЛист",
     title: worksheet.title,
     description: `${worksheet.subject} · ${worksheet.grade} класс`,
     sections: [
@@ -316,7 +316,7 @@ export async function generateWorksheetDocx(
                 alignment: AlignmentType.RIGHT,
                 children: [
                   new TextRun({
-                    text: `РабочиеЛисты AI · ${SITE_HOST}`,
+                    text: `УчЛист · ${SITE_HOST}`,
                     size: 16,
                     color: "BBBBBB",
                   }),

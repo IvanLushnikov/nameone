@@ -27,8 +27,8 @@ fi
 
 : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN не задан. Положи его в .env или передай через env}"
 : "${CLOUDFLARE_ACCOUNT_ID:=9fe2955fcf08aecf91754823a7aae0aa}"
-# TODO: после регистрации rabochielisty.ru и переключения DNS CNAME — переименовать
-# CF_PAGES_PROJECT в Pages Dashboard (или создать новый Pages-проект rabochielisty.ru
+# TODO: после регистрации uchlist.ru и переключения DNS CNAME — переименовать
+# CF_PAGES_PROJECT в Pages Dashboard (или создать новый Pages-проект uchlist.ru
 # и поменять значение по умолчанию тут). До тех пор держим listai-prototype — это
 # реальное имя Pages-проекта, который сейчас обслуживает прод-трафик (см. docs/BRAND.md).
 : "${CF_PAGES_PROJECT:=listai-prototype}"
@@ -44,11 +44,11 @@ if [ ! -d "out" ] || [ ! -f "out/index.html" ]; then
   npm run build
 fi
 
-echo "→ Деплой РабочиеЛисты AI (out/) → $CF_PAGES_PROJECT"
+echo "→ Деплой УчЛист (out/) → $CF_PAGES_PROJECT"
 npx --yes wrangler pages deploy out \
   --project-name="$CF_PAGES_PROJECT" \
   --commit-dirty=true
 
 echo ""
 echo "✓ Готово. URL: https://$CF_PAGES_PROJECT.pages.dev/"
-echo "  Бренд: РабочиеЛисты AI (см. docs/BRAND.md). Прод-домен после регистрации: rabochielisty.ru."
+echo "  Бренд: УчЛист (см. docs/BRAND.md). Прод-домен после регистрации: uchlist.ru."

@@ -44,8 +44,8 @@ describe("createInteractive — контракт с бэкендом", () => {
         ok: true,
         id: "int_abc",
         shareToken: "tok123",
-        url: "https://rabochielisty.ru/play/?t=tok123",
-        qrPayload: "https://rabochielisty.ru/play/?t=tok123",
+        url: "https://uchlist.ru/play/?t=tok123",
+        qrPayload: "https://uchlist.ru/play/?t=tok123",
       }),
     );
 

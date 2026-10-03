@@ -5,7 +5,7 @@
 
 import { cookies } from "next/headers";
 
-const COOKIE_GENERATIONS = "rabochielisty_gens";
+const COOKIE_GENERATIONS = "uchlist_gens";
 const COOKIE_LIMIT = 3;
 
 export interface GenerationCounter {

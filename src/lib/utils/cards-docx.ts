@@ -167,7 +167,7 @@ export async function generateCardsDocx(set: CardSet): Promise<Blob> {
   }
 
   const doc = new Document({
-    creator: "РабочиеЛисты AI",
+    creator: "УчЛист",
     title: set.title,
     description: `${set.subject} · ${set.grade} класс · ${set.cards?.length ?? 0} карточек`,
     sections: [

@@ -3,10 +3,10 @@
 import type { UserHistoryItem, UserTemplate, UserProfile, Worksheet, LessonPlan, Presentation, Ktp } from "@/lib/types";
 import { PROFILE_CHANGED_EVENT } from "@/lib/events";
 
-const KEY_HISTORY = "rabochielisty.history";
-const KEY_TEMPLATES = "rabochielisty.templates";
-const KEY_PROFILE = "rabochielisty.profile";
-const KEY_FAVORITES = "rabochielisty.favorites";
+const KEY_HISTORY = "uchlist.history";
+const KEY_TEMPLATES = "uchlist.templates";
+const KEY_PROFILE = "uchlist.profile";
+const KEY_FAVORITES = "uchlist.favorites";
 
 /**
  * Дискриминированный union всех артефактов, которые можно класть в избранное.
@@ -175,7 +175,7 @@ export function isFavorited(id: string): boolean {
 
 // ===== Аналитика событий =====
 
-const KEY_EVENTS = "rabochielisty.events";
+const KEY_EVENTS = "uchlist.events";
 
 export interface AnalyticsEvent {
   name: string;

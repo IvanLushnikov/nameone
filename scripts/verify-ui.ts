@@ -90,7 +90,7 @@ function buildChecks(): Check[] {
     {
       name: "главная",
       url: "/",
-      expect: ["РабочиеЛисты"],
+      expect: ["УчЛист"],
     },
   ];
 

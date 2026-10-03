@@ -1,4 +1,4 @@
--- РабочиеЛисты AI — D1 schema.
+-- УчЛист — D1 schema.
 -- Запуск: npm run db:migrate:local   или   npm run db:migrate:prod
 --
 -- Соглашения:
