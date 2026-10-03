@@ -18,6 +18,7 @@
 import { env, SELF, applyD1Migrations } from "cloudflare:test";
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import type { Env } from "../../src/env";
+import { buildFormUrl } from "../../src/routes/f07";
 
 declare module "cloudflare:test" {
   interface ProvidedEnv extends Env {}
@@ -252,6 +253,46 @@ describe("учительские формы (TZ-12, f07)", () => {
     expect(row!.show_answers).toBe(0); // по умолчанию ответы НЕ показываем
     expect(row!.expires_at).toBeGreaterThan(Math.floor(Date.now() / 1000));
     expect(JSON.parse(row!.payload_json).tasks[0].answer).toBe("4");
+  });
+
+  /**
+   * Регресс на домен в публичной ссылке (найдено 02.10.2026).
+   *
+   * `FRONTEND_URL` в проде — список через запятую ради CORS:
+   *   "https://listai-prototype.pages.dev,https://www...,https://uchlist.ru,..."
+   * Раньше buildFormUrl брал ПЕРВЫЙ элемент, и QR вёл на preview-домен
+   * Cloudflare вместо рабочего сайта. Выглядело правильно, работало не туда.
+   *
+   * Правильный источник — `APP_PUBLIC_URL`: один origin для ссылок, которые
+   * видит человек (так же делает buildMagicLinkUrl).
+   */
+  it("ссылка формы берёт домен из APP_PUBLIC_URL, а не первый из FRONTEND_URL", () => {
+    const url = buildFormUrl(
+      {
+        FRONTEND_URL:
+          "https://listai-prototype.pages.dev,https://www.listai-prototype.pages.dev,https://uchlist.ru,https://www.uchlist.ru",
+        APP_PUBLIC_URL: "https://uchlist.ru",
+      } as unknown as Env,
+      "tok123",
+    );
+
+    expect(url).toBe("https://uchlist.ru/form/?t=tok123");
+    // Главное: ни запятой, ни preview-домена в ссылке для учителя быть не должно.
+    expect(url).not.toContain(",");
+    expect(url).not.toContain("listai-prototype");
+  });
+
+  it("без APP_PUBLIC_URL — fallback на первый домен FRONTEND_URL (старые конфиги)", () => {
+    const url = buildFormUrl(
+      { FRONTEND_URL: "https://uchlist.ru,https://www.uchlist.ru" } as unknown as Env,
+      "tok123",
+    );
+    expect(url).toBe("https://uchlist.ru/form/?t=tok123");
+  });
+
+  it("убирает хвостовой слешш, чтобы не было //form/", () => {
+    const url = buildFormUrl({ APP_PUBLIC_URL: "https://uchlist.ru///" } as unknown as Env, "t");
+    expect(url).toBe("https://uchlist.ru/form/?t=t");
   });
 
   it("F2b: short-answer в листе → check_mode = llm", async () => {
