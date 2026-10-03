@@ -19,7 +19,9 @@
 
 import { test, expect, type Route } from "@playwright/test";
 
-const BASE = process.env.E2E_BASE_URL ?? "https://listai-prototype.pages.dev";
+// Слеш в конце BASE обязателен: без него Cloudflare Pages отдаёт 308 на
+// /login/, и Playwright теряет форму (getByLabel(/Email/) не находится).
+const BASE = (process.env.E2E_BASE_URL ?? "https://listai-prototype.pages.dev").replace(/\/+$/, "");
 const REAL_API = process.env.E2E_REAL_API === "1";
 
 test.describe("ЛК: magic-link login flow", () => {
@@ -48,6 +50,8 @@ test.describe("ЛК: magic-link login flow", () => {
     ).toBeVisible();
 
     await page.getByLabel(/Email/i).fill("teacher@school.ru");
+    // Согласие на обработку ПДн обязательно — без отметки magic link не уходит.
+    await page.getByTestId("login-consent-pdn").check();
     await page.getByRole("button", { name: /Получить ссылку/i }).click();
 
     // Должны перейти на step === "sent" — H2 «Проверьте почту».
@@ -56,7 +60,8 @@ test.describe("ЛК: magic-link login flow", () => {
     ).toBeVisible({ timeout: 5_000 });
 
     // Подтверждение что email отображается.
-    await expect(page.getByText("teacher@school.ru")).toBeVisible();
+    // exact обязателен: без него цепляет и <strong>, и абзац «Проверьте ...».
+    await expect(page.getByText("teacher@school.ru", { exact: true })).toBeVisible();
 
     // Если фронт уже на новой логике — mock был вызван. Если нет — не падаем.
     if (apiHit >= 1) {
@@ -85,6 +90,8 @@ test.describe("ЛК: magic-link login flow", () => {
 
     await page.goto(BASE + "/login");
     await page.getByLabel(/Email/i).fill("teacher@school.ru");
+    // Согласие на обработку ПДн обязательно — без отметки magic link не уходит.
+    await page.getByTestId("login-consent-pdn").check();
     await page.getByRole("button", { name: /Получить ссылку/i }).click();
 
     // Ждём либо toast error (новая логика), либо sent state (старая логика).

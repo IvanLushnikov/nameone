@@ -20,6 +20,10 @@ export default function LoginPage() {
   const [email, setEmail] = React.useState("");
   const [step, setStep] = React.useState<"email" | "sent">("email");
   const [loading, setLoading] = React.useState(false);
+  // С 01.09.2025 (156-ФЗ, ч. 4 ст. 9 152-ФЗ) согласие на обработку ПДн —
+  // отдельный документ, а не строчка в оферте. Без явной отметки magic link
+  // не отправляем: это и есть отправка ПДн за границу без согласия.
+  const [consentPdn, setConsentPdn] = React.useState(false);
 
   React.useEffect(() => {
     trackEvent("login_view");
@@ -28,6 +32,15 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.includes("@")) return;
+    if (!consentPdn) {
+      toast({
+        title: "Нужно согласие на обработку данных",
+        description:
+          "Отметьте согласие на обработку персональных данных — без него мы не можем отправить ссылку на почту.",
+        tone: "error",
+      });
+      return;
+    }
     const emailDomain = email.split("@")[1] ?? "unknown";
     trackEvent("login_submit", { emailDomain });
 
@@ -97,7 +110,45 @@ export default function LoginPage() {
                   leftIcon={<Mail className="w-4 h-4" />}
                   required
                 />
-                <Button type="submit" variant="primary" size="lg" fullWidth loading={loading} rightIcon={<ArrowRight className="w-4 h-4" />}>
+
+                {/* Согласие на обработку ПДн — отдельная форма, отдельный документ.
+                    Не прячем в текст оферты: так требует ч. 4 ст. 9 152-ФЗ. */}
+                <div className="rounded-xl border border-warm-200 bg-warm-50/60 p-3.5">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={consentPdn}
+                      onChange={(e) => setConsentPdn(e.target.checked)}
+                      data-testid="login-consent-pdn"
+                      className="w-5 h-5 mt-0.5 accent-brand-500 shrink-0"
+                    />
+                    <span className="text-sm text-warm-700">
+                      Согласен на обработку персональных данных
+                      <span className="block text-xs text-warm-600 mt-1">
+                        Мы используем адрес электронной почты, чтобы отправить ссылку
+                        для входа и сохранить вашу историю генераций. Текст согласия —
+                        отдельный документ,{" "}
+                        <Link
+                          href="/legal/consent"
+                          className="text-brand-600 hover:text-brand-700 underline"
+                        >
+                          прочитать
+                        </Link>
+                        . Отозвать согласие можно в любой момент.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="lg"
+                  fullWidth
+                  loading={loading}
+                  disabled={!consentPdn}
+                  rightIcon={<ArrowRight className="w-4 h-4" />}
+                >
                   Получить ссылку на почту
                 </Button>
               </form>
@@ -148,16 +199,18 @@ export default function LoginPage() {
             </div>
 
             <p className="mt-6 text-xs text-warm-500 text-center">
-              {MAGIC_LINK_READY ? "Регистрируясь" : "Используя сервис"}, вы
-              соглашаетесь с{" "}
+              {MAGIC_LINK_READY ? "Оформляя вход" : "Используя сервис"}, вы
+              принимаете{" "}
               <Link href="/legal/offer" className="text-brand-600 hover:text-brand-700">
-                публичной офертой
+                публичную оферту
               </Link>{" "}
               и{" "}
               <Link href="/legal/privacy" className="text-brand-600 hover:text-brand-700">
-                политикой конфиденциальности
+                политику конфиденциальности
               </Link>
-              .
+              . Согласие на обработку персональных данных даётся отдельной
+              отметкой в форме входа — это самостоятельный документ, а не часть
+              оферты.
             </p>
 
             {/* Пока входа нет, это главное действие страницы — поэтому кнопка

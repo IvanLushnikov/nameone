@@ -56,3 +56,10 @@ next-env.d.ts
 # Симлинки на node_modules (воркtree) не должны попадать в коммит.
 # Слэш в **/node_modules/ ловит только каталоги, симлинк-файл проходит мимо.
 **/node_modules
+
+# playwright: артефакты прогонов и скриншоты падающих тестов.
+# Без этих правил `test-results/` и `tests/screenshots/` попадали в
+# `git add -A` после каждого e2e-прогона.
+test-results/
+playwright-report/
+tests/screenshots/
