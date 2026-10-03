@@ -21,10 +21,14 @@
  *   - страница никогда не рендерит плеер с недозагруженным конфигом: неизвестный
  *     формат или битые items → аккуратная ошибка, а не пустой экран (ТЗ Р-3);
  *   - `token` кодируется в URL — он приходит из ссылки учителя, а не из кода.
+ *
+ * ПОЧЕМУ НЕ useSearchParams(). Хук при `output: "export"` требует границы
+ * <Suspense>, а её fallback закрывал бы собой страницу до гидратации. Токен
+ * читается из `window.location.search` в useEffect: страница сразу рисует
+ * скелетон загрузки (как раньше рисовал fallback), а не пустоту.
  */
 
 import * as React from "react";
-import { useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { InteractiveShell } from "@/components/interactives/InteractiveShell";
@@ -37,12 +41,18 @@ type Phase =
   | { kind: "error"; message: string; missingToken?: boolean };
 
 export function PlayRunner() {
-  const searchParams = useSearchParams();
-  const token = searchParams.get("t") ?? "";
+  // undefined = токен из URL ещё не прочитан (эффект не отработал). Это НЕ
+  // «нет токена»: пустая строка — честный ответ «в ссылке не хватает кода».
+  const [token, setToken] = React.useState<string | undefined>(undefined);
+
+  React.useEffect(() => {
+    setToken(new URLSearchParams(window.location.search).get("t") ?? "");
+  }, []);
 
   const [phase, setPhase] = React.useState<Phase>({ kind: "loading" });
 
   const load = React.useCallback(async () => {
+    if (token === undefined) return;
     if (!token) {
       setPhase({
         kind: "error",
@@ -95,7 +105,9 @@ export function PlayRunner() {
     );
   }
 
-  return <InteractiveShell token={token} interactive={phase.interactive} />;
+  // token здесь гарантированно не null: ready-фаза достижима только после load(),
+  // а load() выходит на «нет токена» раньше. `?? ""` — чтобы удовлетворить тип.
+  return <InteractiveShell token={token ?? ""} interactive={phase.interactive} />;
 }
 
 /** Скелетон первой секунды. */

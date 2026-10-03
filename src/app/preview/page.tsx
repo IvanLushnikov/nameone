@@ -1,8 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { Suspense } from "react";
-import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { WorksheetPreview } from "@/components/constructor/WorksheetPreview";
@@ -40,16 +38,27 @@ import { useToast } from "@/components/ui/Toast";
  *     для рендера — `UserHistoryItem` не содержит `tasks/stages/slides/weeks`. Поэтому при отсутствии в
  *     favorites показываем понятное сообщение с CTA «Открыть из избранного».
  *   - B-4: рендерим через discriminated union — 4 типа артефактов, 4 превью-компонента.
+ *
+ * `?id` читается из `window.location.search` в useEffect, а не через
+ * `useSearchParams()`: хук при `output: "export"` требовал границы <Suspense>,
+ * а её fallback («Загрузка…») закрывал собой страницу до гидратации. Пока
+ * эффект не отработал, рендерится тот же скелетон, что и раньше по `!artifact`.
  */
-function PreviewPage() {
-  const searchParams = useSearchParams();
-  const id = searchParams.get("id") ?? "";
+export default function PreviewPage() {
   const { toast } = useToast();
+  // null = id ещё не прочитан из URL (эффект не отработал).
+  const [id, setId] = React.useState<string | null>(null);
   const [artifact, setArtifact] = React.useState<FavoriteArtifact | null>(null);
   const [isFav, setIsFav] = React.useState(false);
   const [notFound, setNotFound] = React.useState(false);
 
   React.useEffect(() => {
+    setId(new URLSearchParams(window.location.search).get("id") ?? "");
+  }, []);
+
+  React.useEffect(() => {
+    // Ещё не прочитали URL — не трактуем это как «лист не найден».
+    if (id === null) return;
     if (!id) {
       setNotFound(true);
       return;
@@ -178,6 +187,8 @@ function PreviewPage() {
   }
 
   if (!artifact) {
+    // Скелетон на время чтения localStorage — тот же текст, что был в Suspense
+    // fallback, но он больше не блокирует гидратацию самой страницы.
     return (
       <div className="container-tight py-20 text-center text-warm-500">
         Загрузка…
@@ -332,13 +343,5 @@ function EmptyWorksheetState({ title }: { title: string }) {
         </Button>
       </div>
     </div>
-  );
-}
-
-export default function PreviewPageWrapper() {
-  return (
-    <Suspense fallback={<div className="container-tight py-20 text-center text-warm-500">Загрузка…</div>}>
-      <PreviewPage />
-    </Suspense>
   );
 }

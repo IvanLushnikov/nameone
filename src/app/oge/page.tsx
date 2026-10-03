@@ -21,14 +21,14 @@
  *   429 → бесплатная квота кончилась · 409 → подтвердить, что не робот
  *   5xx/сеть → демонстрационный вариант с пометкой и кнопкой «Повторить».
  *
- * `useSearchParams` требует границы <Suspense> при `output: "export"`
- * (next.config.mjs) — тот же приём, что в /auth/callback и /constructor.
+ * Query читается из `window.location.search` внутри `useEffect`, а не через
+ * `useSearchParams()`: хук при `output: "export"` требует границы <Suspense>,
+ * а её fallback («Загрузка…») закрывал собой всю страницу на 3–4 секунды,
+ * пока догружается JS. Статический HTML теперь сразу содержит контент.
  */
 
 import * as React from "react";
-import { Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -148,9 +148,7 @@ const examSubjects: Array<{
   { slug: "literature", name: "Литература", Icon: BookMarked, color: "accent", popular: false },
 ];
 
-function OgeHubInner() {
-  const searchParams = useSearchParams();
-
+export default function OgeHubInner() {
   const [exam, setExam] = React.useState<ExamKind>("oge");
   /** Поле выбора номера варианта: задаёт учитель, уходит в URL. */
   const [variantInput, setVariantInput] = React.useState("1");
@@ -265,7 +263,10 @@ function OgeHubInner() {
       void run(pending);
       return;
     }
-    const fromUrl = readUrlTarget(searchParams);
+    // Читаем query из window.location, а не через useSearchParams: хук требовал
+    // <Suspense> при статическом экспорте, и fallback прятал всю страницу до
+    // гидратации. Эффект и так с пустым списком зависимостей — читаем один раз.
+    const fromUrl = readUrlTarget(new URLSearchParams(window.location.search));
     if (!fromUrl) return;
     setExam(fromUrl.exam);
     setVariantInput(String(fromUrl.variantNumber));
@@ -707,16 +708,4 @@ function clearPending(): void {
 function toFailure(err: unknown): ExamApiError {
   if (err instanceof ExamApiError) return err;
   return new ExamApiError("unavailable", 0, "UNKNOWN", null);
-}
-
-export default function OgeHubPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="container-tight py-20 text-center text-warm-500">Загрузка…</div>
-      }
-    >
-      <OgeHubInner />
-    </Suspense>
-  );
 }

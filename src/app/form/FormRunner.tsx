@@ -3,9 +3,10 @@
 /**
  * Клиентская часть страницы ученика (TZ-12, этап 3).
  *
- * Оборачивается в `<Suspense>` в `page.tsx` — Next.js 14 при `output: "export"`
- * не даёт пререндерить компонент с `useSearchParams()` без границы. Ровно тот же
- * приём, что в `src/app/auth/callback/`.
+ * Раньше оборачивался в `<Suspense>` в `page.tsx` — Next.js 14 при `output: "export"`
+ * не даёт пререндерить компонент с `useSearchParams()` без границы. Сейчас обёртки
+ * нет: токен читается из `window.location.search` в useEffect, и страница сразу
+ * рисует скелетон загрузки, а не fallback на весь экран.
  *
  * Состояния (ТЗ §4.4, таблица файлов):
  *   loading    — скелетон «Загружаем задания…» (статика + клиентский фетч).
@@ -23,7 +24,6 @@
  */
 
 import * as React from "react";
-import { useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -40,8 +40,15 @@ import { cn } from "@/lib/utils/cn";
 type Phase = "loading" | "needCode" | "needName" | "answering" | "submitted" | "error";
 
 export function FormRunner() {
-  const searchParams = useSearchParams();
-  const token = searchParams.get("t");
+  // undefined = токен ещё не прочитан из URL (эффект не отработал).
+  // ВАЖНО: это НЕ `null` — `URLSearchParams.get()` возвращает null для
+  // отсутствующего параметра, и такой токен обязан дать ошибку «Ссылка
+  // неполная», а не крутить вечную загрузку.
+  const [token, setToken] = React.useState<string | undefined>(undefined);
+
+  React.useEffect(() => {
+    setToken(new URLSearchParams(window.location.search).get("t") ?? "");
+  }, []);
 
   const [phase, setPhase] = React.useState<Phase>("loading");
   const [form, setForm] = React.useState<PublicForm | null>(null);
@@ -58,6 +65,7 @@ export function FormRunner() {
   const [submitError, setSubmitError] = React.useState<string | null>(null);
 
   const load = React.useCallback(async () => {
+    if (token === undefined) return;
     if (!token) {
       setErrorMessage(
         "Ссылка неполная — не хватает кода формы. Откройте ссылку целиком или попросите учителя прислать её ещё раз",
