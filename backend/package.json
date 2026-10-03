@@ -22,7 +22,7 @@
     "nanoid": "^5.1.0",
     "openai": "^4.104.0",
     "resend": "^4.8.0",
-    "zod": "^3.25.0"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.41",
