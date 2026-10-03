@@ -6,7 +6,7 @@ import type { Metadata } from "next";
  * то есть выглядела в выдаче как главная страница сайта.
  */
 export const metadata: Metadata = {
-  title: "Вход — УчЛист",
+  title: "Завершение входа",
   description: "Завершение входа в личный кабинет УчЛист по одноразовой ссылке.",
   robots: { index: false, follow: false },
 };

@@ -7,7 +7,7 @@ import type { Metadata } from "next";
  * копия. Индексировать его незачем, поэтому закрыт от индексации.
  */
 export const metadata: Metadata = {
-  title: "Вход — УчЛист",
+  title: "Вход",
   description:
     "Вход в личный кабинет учителя УчЛист: история листов, история педагога и проверка заданий по фото.",
   robots: { index: false, follow: true },

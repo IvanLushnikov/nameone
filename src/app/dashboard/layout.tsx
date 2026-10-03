@@ -7,7 +7,7 @@ import type { Metadata } from "next";
  * вход и кабинет выглядели как две копии главной страницы.
  */
 export const metadata: Metadata = {
-  title: "Кабинет — УчЛист",
+  title: "Кабинет",
   description:
     "Личный кабинет УчЛист: история генераций, задания и проверка по фото.",
   robots: { index: false, follow: false },

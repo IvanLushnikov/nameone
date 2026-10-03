@@ -6,7 +6,7 @@ import type { Metadata } from "next";
  * Без собственного описания страница наследовала описание главной.
  */
 export const metadata: Metadata = {
-  title: "Предпросмотр — УчЛист",
+  title: "Предпросмотр",
   description:
     "Предпросмотр рабочего листа, теста, презентации или КТП перед скачиванием.",
   robots: { index: false, follow: false },
