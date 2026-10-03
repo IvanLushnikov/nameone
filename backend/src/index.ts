@@ -42,6 +42,8 @@ import { f08Router } from "./routes/f08";
 import { publicFormsRouter } from "./routes/publicForms";
 import { purgeExpiredPhotos } from "./jobs/purgeExpiredPhotos";
 import { purgeExpiredForms } from "./jobs/purgeExpiredForms";
+import { sendRenewalReminders, chargeDueSubscriptions } from "./jobs/billingRecurring";
+import { journalRouter } from "./routes/journal";
 import { interactivesRouter } from "./routes/interactives";
 import { publicInteractivesRouter } from "./routes/interactives-public";
 
@@ -205,6 +207,7 @@ app.route("/api/users", usersRouter);
 app.route("/api/billing", billingRouter);
 app.route("/api/account", accountRouter); // ЛК + magic-link
 app.route("/api/assignments", f06Router); // F-06: POST /:id/photo-check
+app.route("/api/journal", journalRouter); // ТЗ-19: журнал проверок учителя
 app.route("/api/assignments", f07Router); // F-07: формы учителя (требуют входа)
 app.route("/api/public/forms", publicFormsRouter); // TZ-12: страница ученика, БЕЗ авторизации
 app.route("/api/interactives", interactivesRouter); // TZ-13: ЛК учителя (требует входа)
@@ -260,6 +263,29 @@ app.fire = ((event: ScheduledEvent, env: AppEnv["Bindings"], ctx: ExecutionConte
         console.info("[cron] purgeExpiredForms", JSON.stringify(result));
       } catch (e) {
         console.error("[cron] purgeExpiredForms failed", e);
+      }
+
+      // 3) Биллинг (ТЗ-20) — отдельный триггер, раз в час. Подписку нельзя
+      //    продлевать суточным кроном: списалось ночью, а доступ вернулся бы
+      //    только через сутки, и учитель в это время видел бы «оплачено, но
+      //    не работает».
+      //
+      //    Обе функции — no-op, если выключен RECURRING_BILLING_ENABLED или
+      //    не заданы ключи ЮKassa (проверяется внутри). Внешний `if` — чтобы
+      //    окружение, где переменной нет вообще, не дёргало джобы вхолостую.
+      if (typeof env.RECURRING_BILLING_ENABLED === "string") {
+        try {
+          const reminders = await sendRenewalReminders(env.DB, env);
+          console.info("[cron] sendRenewalReminders", JSON.stringify(reminders));
+        } catch (e) {
+          console.error("[cron] sendRenewalReminders failed", e);
+        }
+        try {
+          const charges = await chargeDueSubscriptions(env.DB, env);
+          console.info("[cron] chargeDueSubscriptions", JSON.stringify(charges));
+        } catch (e) {
+          console.error("[cron] chargeDueSubscriptions failed", e);
+        }
       }
     })(),
   );

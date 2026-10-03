@@ -38,8 +38,17 @@ import { callWithFallback } from "../llm/router";
 import { checkLlmRateLimit, ipHashFromHeaders } from "../llm/ratelimit";
 import {
   PHOTO_RETENTION_SECONDS,
+  journalSourceFor,
+  machineResultOf,
+  mergeManualMarks,
+  normalizeTeacherPoints,
   type ExpectedTask,
+  type ManualMarkInput,
+  type MergedCheck,
+  type StoredCheckItem,
 } from "../services/photoCheckGrading";
+import { manualMarksRequestSchema } from "../lib/zod";
+import { upsertJournalEntry } from "../db/journal";
 import {
   INTERVIEW_DISCLAIMER,
   buildInterviewPrompt,
@@ -51,6 +60,7 @@ import {
   completePhotoCheck,
   failPhotoCheck,
   getLatestInterviewQuestions,
+  getManualMarks,
   getPhotoCheckById,
   getPhotoCheckItems,
   getUsageCounter,
@@ -60,6 +70,10 @@ import {
   listUserPhotoChecks,
   markPhotoDeleted,
   monthWindowStart,
+  updatePhotoCheckScore,
+  upsertManualMark,
+  type PhotoCheckItemRow,
+  type PhotoCheckRow,
 } from "../db/photoChecks";
 import { logLlmEvent } from "../llm/log";
 
@@ -238,6 +252,29 @@ f06Router.post(
         updatedAt: now,
       });
 
+      // Журнал проверок (ТЗ-19 §5.1). Отметка из фото-проверки раньше не писалась
+      // НИКУДА — закрыл вкладку, и результата нет нигде. Строка появляется уже
+      // на машинной проверке, а не только после ручных правок: «ничего не
+      // сохранил» и «машина проверила, учитель не смотрел» — разные вещи, и
+      // учителю нужно видеть обе.
+      //
+      // mark/percentage = null, пока сомнительные задания не закрыты: тот же
+      // гейт «непонятно ≠ неправильно», что и в самой проверке.
+      await upsertJournalEntry(db, {
+        userId: user.id,
+        checkId,
+        subject: form.subject,
+        grade: form.grade,
+        mark: result.summary.reviewCount === 0 ? result.summary.gradeMark : null,
+        percentage: result.summary.reviewCount === 0 ? result.summary.percentage : null,
+        earnedPoints: result.summary.earnedPoints,
+        totalPoints: result.summary.totalPoints,
+        source: "machine",
+        pendingTasks: result.summary.reviewCount,
+        occurredAt: now,
+        now,
+      });
+
       logLlmEvent("info", "photo-check done", {
         checkId,
         userId: user.id,
@@ -358,33 +395,116 @@ f06Router.get("/photo-checks/:id", async (c) => {
   }
 
   const items = await getPhotoCheckItems(c.env.DB, id);
-  return c.json({
-    ok: true,
-    checkId: row.id,
-    status: row.status,
-    totalPoints: row.total_points,
-    earnedPoints: row.earned_points,
-    percentage: row.percentage,
-    gradeMark: row.grade_mark,
-    needsReview: row.needs_review === 1,
-    items: items.map((i) => ({
-      number: i.task_number,
-      taskText: i.task_text,
-      expected: i.expected,
-      studentAnswer: i.student_answer,
-      verdict: i.verdict,
-      pointsAwarded: i.points_awarded,
-      maxPoints: i.max_points,
-      confidence: i.confidence,
-      needsReview: i.needs_review === 1,
-      comment: i.comment,
-    })),
-    model: row.model,
-    photoDeleted: row.deleted_at !== null,
-    photoDeleteAt: row.delete_at,
-    createdAt: row.created_at,
-    completedAt: row.completed_at,
+  const marks = await getManualMarks(c.env.DB, id);
+  return c.json(await buildCheckDto(row, items, marks));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /photo-checks/:id/manual-marks — ручные отметки учителя (ТЗ-19 §3)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Отправка ТОЛЬКО по явной кнопке: никакого автосохранения на каждый чекбокс.
+// Автосейв здесь означал бы, что учитель невольно соглашается с чужими отметками
+// просто потому, что кликнул мимоходом, — а его право в том и состоит, чтобы
+// решить самому.
+
+f06Router.post("/photo-checks/:id/manual-marks", async (c) => {
+  const user = requireAuth(c);
+  const id = c.req.param("id");
+  const now = Math.floor(Date.now() / 1000);
+  const db = c.env.DB;
+
+  const row = await getPhotoCheckById(db, id);
+  if (!row || row.user_id !== user.id) {
+    throw new NotFoundError("Проверка не найдена");
+  }
+
+  // У неудачной проверки нет ни одного items — сохранять нечего, и учителю
+  // нужно сказать об этом прямо, а не молча вернуть «сохранено».
+  if (row.status === "failed") {
+    throw new BadRequestError(
+      "Эта проверка не распозналась — отмечать здесь нечего. Сфотографируйте страницу заново.",
+    );
+  }
+
+  const body = manualMarksRequestSchema.parse(await readJsonBody(c));
+
+  const items = await getPhotoCheckItems(db, id);
+  if (items.length === 0) {
+    throw new BadRequestError("По этой проверке нет ни одного задания — отмечать нечего");
+  }
+
+  // Номера заданий сверяем с БАЗОЙ, а не с телом запроса. Молчаливый игнор
+  // чужого номера выглядел бы для учителя как «сохранилось», а на деле его
+  // отметка ушла бы в никуда.
+  const byNumber = new Map(items.map((i) => [i.task_number, i]));
+  const unknown = body.marks.filter((m) => !byNumber.has(m.taskNumber)).map((m) => m.taskNumber);
+  if (unknown.length > 0) {
+    throw new BadRequestError(
+      `В этой работе нет заданий: ${unknown.join(", ")}. Обновите страницу и попробуйте снова.`,
+      { unknownTaskNumbers: unknown },
+    );
+  }
+
+  const existing = await getManualMarks(db, id);
+  // Снимок машины берём из таблицы отметок, если она уже была (первая правка
+  // задания фиксирует «что машина сказала тогда»), иначе — из items.
+  const existingByNumber = new Map(existing.map((m) => [m.task_number, m]));
+
+  for (const mark of body.marks) {
+    const item = byNumber.get(mark.taskNumber);
+    if (!item) continue; // проверено выше, это страховка от гонки
+    const previous = existingByNumber.get(mark.taskNumber);
+    // Балл необязателен (ТЗ-19 §2): «зачтено» без балла = полный балл задания.
+    // Трактовать отсутствие балла как ноль было бы наказанием за краткость.
+    const rawPoints = mark.points ?? (mark.accepted ? item.max_points : 0);
+    await upsertManualMark(db, {
+      checkId: id,
+      taskNumber: mark.taskNumber,
+      accepted: mark.accepted,
+      // Кламмит чистый модуль: мусорный балл → 0, а не исключение наружу.
+      points: normalizeTeacherPoints(rawPoints, item.max_points),
+      modelVerdict: previous ? previous.model_verdict : item.verdict,
+      modelPoints: previous ? previous.model_points : item.points_awarded,
+      author: user.id,
+      updatedAt: now,
+    });
+  }
+
+  // Пересчитываем по ВСЕМ сохранённым отметкам, а не по тем, что пришли в этом
+  // запросе. Учитель может сохранять по частям («закрыл половину, отвлёкся,
+  // вернулся»); если считать только по текущему запросу, то отметки первого
+  // захода выпали бы из итога и проверка навсегда осталась бы «не завершена».
+  const allMarks = await getManualMarks(db, id);
+  const merged = mergeManualMarks(items.map(toStoredItem), allMarks.map(toMarkInput));
+
+  await updatePhotoCheckScore(db, {
+    id,
+    totalPoints: merged.totalPoints,
+    earnedPoints: merged.earnedPoints,
+    percentage: merged.percentage,
+    gradeMark: merged.gradeMark,
+    needsReview: merged.needsReview,
   });
+
+  // Журнал: строка одна на проверку, поэтому сохранение частичного разбора
+  // обновляет её, а не добавляет вторую запись про ту же работу.
+  await upsertJournalEntry(db, {
+    userId: user.id,
+    checkId: id,
+    subject: row.subject,
+    grade: row.grade,
+    mark: merged.gradeMark,
+    percentage: merged.percentage,
+    earnedPoints: merged.earnedPoints,
+    totalPoints: merged.totalPoints,
+    source: journalSourceFor(allMarks.length, merged.pendingReview),
+    pendingTasks: merged.pendingReview,
+    occurredAt: row.completed_at ?? row.created_at,
+    now,
+  });
+
+  return c.json(await buildCheckDto({ ...row, ...scoreOf(merged) }, items, allMarks));
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -663,6 +783,124 @@ f06Router.get("/photo-checks/:checkId/interview-questions", async (c) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Вспомогательное
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Тело запроса как объект. Отдельная обёртка, потому что битый JSON — это
+ * BadRequestError с человеческим текстом, а не SyntaxError, который дошёл бы
+ * до error middleware и превратился в 500 «Internal Server Error».
+ */
+async function readJsonBody(c: Context<AppEnv>): Promise<unknown> {
+  try {
+    return await c.req.json();
+  } catch {
+    throw new BadRequestError("Не удалось прочитать тело запроса — ожидался JSON");
+  }
+}
+
+/** items → StoredItem: только те поля, от которых зависит слияние. */
+function toStoredItem(i: PhotoCheckItemRow): StoredCheckItem {
+  return {
+    number: i.task_number,
+    verdict: i.verdict,
+    pointsAwarded: i.points_awarded,
+    maxPoints: i.max_points,
+    needsReview: i.needs_review === 1,
+  };
+}
+
+/** Строка ручной отметки из БД → вход чистого модуля слияния. */
+function toMarkInput(
+  m: { task_number: number; accepted: number; points: number },
+): ManualMarkInput {
+  return { taskNumber: m.task_number, accepted: m.accepted === 1, points: m.points };
+}
+
+/** Итог после слияния → snake_case строки photo_checks. */
+function scoreOf(merged: MergedCheck): Pick<PhotoCheckRow, "total_points" | "earned_points" | "percentage" | "grade_mark" | "needs_review"> {
+  return {
+    total_points: merged.totalPoints,
+    earned_points: merged.earnedPoints,
+    percentage: merged.percentage,
+    grade_mark: merged.gradeMark,
+    needs_review: merged.needsReview ? 1 : 0,
+  };
+}
+
+/**
+ * Общий DTO проверки для GET и для POST ручных отметок.
+ *
+ * Один сборщик, а не два, потому что ответы обязаны совпадать: после сохранения
+ * учитель должен увидеть ровно ту же картину, которую он потом откроет заново.
+ * Если бы у них различались поля, «повторное открытие теряет отметки»
+ * выглядело бы как ещё одна дыра, а не как следствие двух разных сборщиков.
+ *
+ * ЧТО ДОБАВЛЕНО К ПРЕЖНЕМУ ОТВЕТУ (старые поля не тронуты, ТЗ-19 §2):
+ *   manualMarks  — что именно сохранил учитель;
+ *   decidedBy    — чьё решение в строке (видно в выгрузке на печать);
+ *   pendingReview— сколько сомнительных ещё ждут;
+ *   modelResult  — что предложила машина ДО ручных правок.
+ */
+async function buildCheckDto(
+  row: PhotoCheckRow,
+  items: PhotoCheckItemRow[],
+  marks: Awaited<ReturnType<typeof getManualMarks>>,
+): Promise<Record<string, unknown>> {
+  const merged = mergeManualMarks(items.map(toStoredItem), marks.map(toMarkInput));
+  const machine = machineResultOf(items.map(toStoredItem));
+  const marksByNumber = new Map(marks.map((m) => [m.task_number, m]));
+
+  return {
+    ok: true,
+    checkId: row.id,
+    status: row.status,
+    totalPoints: row.total_points,
+    earnedPoints: row.earned_points,
+    percentage: row.percentage,
+    gradeMark: row.grade_mark,
+    needsReview: row.needs_review === 1,
+    items: items.map((i) => {
+      const mergedItem = merged.items.find((m) => m.number === i.task_number);
+      const mark = marksByNumber.get(i.task_number);
+      return {
+        number: i.task_number,
+        taskText: i.task_text,
+        expected: i.expected,
+        studentAnswer: i.student_answer,
+        correct: (mergedItem?.verdict ?? i.verdict) === "correct",
+        verdict: mergedItem?.verdict ?? i.verdict,
+        pointsAwarded: mergedItem?.pointsAwarded ?? i.points_awarded,
+        maxPoints: i.max_points,
+        confidence: i.confidence,
+        needsReview: mergedItem?.needsReview ?? i.needs_review === 1,
+        comment: i.comment,
+        // Чьё решение в этой строке. Обязательное поле: без него по распечатке
+        // через месяц нельзя отличить «ИИ сказал верно» от «учитель сказал верно».
+        decidedBy: mergedItem?.decidedBy ?? "model",
+        // Снимок машины — виден рядом с итоговым, чтобы правка не выглядела
+        // как ошибка распознавания.
+        modelVerdict: i.verdict,
+        modelPoints: i.points_awarded,
+        teacherAccepted: mark ? mark.accepted === 1 : null,
+        teacherPoints: mark ? mark.points : null,
+        manualUpdatedAt: mark ? mark.updated_at : null,
+      };
+    }),
+    manualMarks: marks.map((m) => ({
+      taskNumber: m.task_number,
+      accepted: m.accepted === 1,
+      points: m.points,
+      updatedAt: m.updated_at,
+    })),
+    pendingReview: merged.pendingReview,
+    modelResult: machine,
+    model: row.model,
+    photoDeleted: row.deleted_at !== null,
+    photoDeleteAt: row.delete_at,
+    createdAt: row.created_at,
+    completedAt: row.completed_at,
+  };
+}
+
 /** Тело POST /photo-checks/:checkId/interview-questions (ТЗ-17 §5.1). */
 interface ParsedInterviewBody {
   /** Какие задания спрашиваем. Пусто = дефолт (см. resolveTaskNumbers). */

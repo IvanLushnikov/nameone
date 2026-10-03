@@ -12,7 +12,6 @@
 import type { D1Database } from "@cloudflare/workers-types";
 import { photoCheckId, photoCheckItemId, shortId, usageCounterId } from "../lib/shortid";
 import type { GradedPhotoItem, PhotoCheckSummary } from "../services/photoCheckGrading";
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Row types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -296,6 +295,140 @@ export async function listExpiredPhotoChecks(
     .bind(args.now, args.limit)
     .all<PhotoCheckRow>();
   return res.results ?? [];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ручные отметки учителя (ТЗ-19)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Отдельная таблица `photo_check_manual_marks`, а НЕ колонка в photo_check_items:
+// строка в items = решение МАШИНЫ, строка здесь = решение УЧИТЕЛЯ. Они не
+// смешиваются, и через месяц видно, где кончилась машина и начался человек.
+
+export interface PhotoCheckManualMarkRow {
+  id: string;
+  check_id: string;
+  task_number: number;
+  accepted: number;
+  points: number;
+  /** Снимок вердикта модели на момент ПЕРВОЙ правки. Дальше не перетирается. */
+  model_verdict: string | null;
+  model_points: number | null;
+  author: string;
+  created_at: number;
+  updated_at: number;
+}
+
+const MANUAL_MARK_COLUMNS = `id, check_id, task_number, accepted, points,
+  model_verdict, model_points, author, created_at, updated_at`;
+
+/** ID строки ручной отметки: `pcmm_<12>`. */
+function photoCheckManualMarkId(): string {
+  return `pcmm_${shortId()}`;
+}
+
+export interface UpsertManualMarkInput {
+  checkId: string;
+  taskNumber: number;
+  accepted: boolean;
+  points: number;
+  /** Что сказала машина по этому заданию — пишется один раз, при вставке. */
+  modelVerdict: string | null;
+  modelPoints: number | null;
+  author: string;
+  updatedAt: number;
+}
+
+/**
+ * Записать/перезаписать ручную отметку по одному заданию.
+ *
+ * UPSERT по UNIQUE(check_id, task_number) — повторное сохранение той же работы
+ * не плодит дубли.
+ *
+ * ПОЧЕМУ снимок машины пишется только при вставке: если учитель открывает
+ * проверку второй раз и правит то же задание ещё раз, перезапись снимка стёрла бы
+ * ровно ту информацию, ради которой он существует — «что машина предложила
+ * В ПЕРВЫЙ РАЗ». Обновление трогает только решение учителя.
+ */
+export async function upsertManualMark(
+  db: D1Database,
+  args: UpsertManualMarkInput,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO photo_check_manual_marks
+         (id, check_id, task_number, accepted, points, model_verdict, model_points,
+          author, created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)
+       ON CONFLICT(check_id, task_number) DO UPDATE SET
+         accepted = excluded.accepted,
+         points = excluded.points,
+         author = excluded.author,
+         updated_at = excluded.updated_at`,
+    )
+    .bind(
+      photoCheckManualMarkId(),
+      args.checkId,
+      args.taskNumber,
+      args.accepted ? 1 : 0,
+      args.points,
+      args.modelVerdict,
+      args.modelPoints,
+      args.author,
+      args.updatedAt,
+    )
+    .run();
+}
+
+export async function getManualMarks(
+  db: D1Database,
+  checkId: string,
+): Promise<PhotoCheckManualMarkRow[]> {
+  const res = await db
+    .prepare(
+      `SELECT ${MANUAL_MARK_COLUMNS} FROM photo_check_manual_marks
+       WHERE check_id = ?1 ORDER BY task_number ASC`,
+    )
+    .bind(checkId)
+    .all<PhotoCheckManualMarkRow>();
+  return res.results ?? [];
+}
+
+/**
+ * Пересчитать итог проверки после ручных правок — одним UPDATE.
+ *
+ * `percentage`/`grade_mark` приходят сюда уже посчитанными чистым модулем слияния,
+ * и могут быть NULL: пока сомнительные задания не закрыты, итоговой отметки
+ * просто нет. Это осознанный «пробел», а не ошибка.
+ */
+export async function updatePhotoCheckScore(
+  db: D1Database,
+  args: {
+    id: string;
+    totalPoints: number;
+    earnedPoints: number;
+    percentage: number | null;
+    gradeMark: string | null;
+    needsReview: boolean;
+  },
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE photo_checks
+         SET total_points = ?2, earned_points = ?3, percentage = ?4,
+             grade_mark = ?5, needs_review = ?6,
+             status = CASE WHEN ?6 = 1 THEN 'partial' ELSE 'ok' END
+       WHERE id = ?1`,
+    )
+    .bind(
+      args.id,
+      args.totalPoints,
+      args.earnedPoints,
+      args.percentage,
+      args.gradeMark,
+      args.needsReview ? 1 : 0,
+    )
+    .run();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -99,6 +99,44 @@ export const paginationSchema = z.object({
 export const createPaymentRequestSchema = z.object({
   plan: z.enum(["base", "plus"]),
   period: periodSchema,
+  /**
+   * Согласие учителя на безакцептные списания (ТЗ-20).
+   *
+   * Поле опциональное именно потому, что по умолчанию согласия нет: пока
+   * переключателя в интерфейсе нет, фронт его не присылает, и `createPayment`
+   * не передаёт в ЮKassa `save_payment_method`. Оплата остаётся разовой.
+   *
+   * `true` имеет смысл ТОЛЬКО для периода «месяц»: учебный год продлевать
+   * не нужно (ТЗ-20 §2.6), и сервис согласие для него проигнорирует.
+   */
+  autoRenew: z.boolean().optional(),
+});
+
+/**
+ * Ручные отметки учителя после проверки по фото (ТЗ-19).
+ *
+ * Потолок 200 отметок в теле — предохранитель от кривого клиента: у листа
+ * максимум 40 заданий (см. routes/f06.ts MAX_TASKS), а 200 взяты с запасом на
+ * то, что учитель сохранит несколько работ подряд одной пачкой. Больше — это
+ * уже не человек нажимает «Сохранить отметки», а что-то сломалось.
+ *
+ * `points` — целое неотрицательное; в 0..maxPoints его клампит чистый модуль
+ * слияния, потому что maxPoints жив в photo_check_items, а не в теле запроса.
+ * `accepted: false` там же даёт 0 независимо от присланного балла.
+ */
+export const manualMarksRequestSchema = z.object({
+  marks: z
+    .array(
+      z.object({
+        taskNumber: z.number().int().positive(),
+        accepted: z.boolean(),
+        // Необязателен (ТЗ-19 §2): «зачтено» без балла = полный балл задания.
+        // Пустое значение — не «ноль», это «учитель не думал о балле».
+        points: z.number().int().nonnegative().optional(),
+      }),
+    )
+    .min(1, "Передайте хотя бы одну отметку")
+    .max(200, "За один раз сохраняем до 200 отметок"),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,3 +149,4 @@ export type GenerateWorksheetRequestInput = z.infer<typeof generateWorksheetRequ
 export type MagicLinkRequestInput = z.infer<typeof magicLinkRequestSchema>;
 export type PaginationInput = z.infer<typeof paginationSchema>;
 export type CreatePaymentRequestInput = z.infer<typeof createPaymentRequestSchema>;
+export type ManualMarksRequestInput = z.infer<typeof manualMarksRequestSchema>;

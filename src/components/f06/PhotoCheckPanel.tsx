@@ -24,11 +24,14 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PhotoUpload } from "./PhotoUpload";
 import { PhotoCheckResultView } from "./PhotoCheckResult";
+import { ManualMarksEditor, type ManualMarkDraft } from "./ManualMarksEditor";
 import {
   deletePhotoCheck,
   runPhotoCheck,
+  saveManualMarks,
   type PhotoCheckApiError,
 } from "@/lib/photo-check/api";
+import { partitionByDecision } from "@/lib/photo-check/confidence";
 import type { PhotoCheckResult, PhotoCheckTask } from "@/lib/photo-check/types";
 import { trackEvent } from "@/lib/track";
 
@@ -60,6 +63,15 @@ export function PhotoCheckPanel({
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
+  // Причина неудачного сохранения ручных отметок. null — ещё не было попытки.
+  const [marksError, setMarksError] = useState<string | null>(null);
+
+  // Разбивка заданий: модель справилась / ждут учителя / уже закрыто.
+  // Считается из ответа сервера, поэтому после сохранения пересобирается сама.
+  const partition = useMemo(
+    () => partitionByDecision(result?.items ?? [], result?.manualMarks ?? []),
+    [result],
+  );
 
   // `local-ws_xxx` — лист не в D1, эталон уходит телом запроса.
   const worksheetId = useMemo(
@@ -127,7 +139,35 @@ export function PhotoCheckPanel({
   function reset() {
     setResult(null);
     setError(null);
+    setMarksError(null);
     setState("idle");
+  }
+
+  /**
+   * Сохранить ручные отметки (ТЗ-19).
+   *
+   * После успеха подставляем ответ сервера целиком, а не «доклеиваем» баллы на
+   * клиенте: пересчитывать итог в двух местах — значит через месяц получить
+   * два разных ответа на один и тот же вопрос «какая отметка».
+   */
+  async function saveMarks(marks: ManualMarkDraft[]) {
+    if (!result) return;
+    setMarksError(null);
+    const res = await saveManualMarks(result.checkId, marks);
+    if (res.ok) {
+      setResult(res);
+      trackEvent("photo_check_manual_marks_saved", {
+        check_id: res.checkId,
+        count: marks.length,
+        pending_review: res.pendingReview,
+      });
+      return;
+    }
+    const err = res as PhotoCheckApiError;
+    setMarksError(err.message ?? "Не удалось сохранить отметки");
+    // Бросаем наружу, чтобы ManualMarksEditor показал текст ошибки и НЕ
+    // сообщил «Сохранено».
+    throw new Error(err.message ?? "Не удалось сохранить отметки");
   }
 
   return (
@@ -142,15 +182,27 @@ export function PhotoCheckPanel({
       </header>
 
       {state === "result" && result ? (
-        <PhotoCheckResultView
-          result={result}
-          onDeletePhoto={removePhoto}
-          checkId={result.checkId}
-          onPrint={() => {
-            if (typeof window !== "undefined") window.print();
-          }}
-          deleting={deleting}
-        />
+        <>
+          <PhotoCheckResultView
+            result={result}
+            onDeletePhoto={removePhoto}
+            checkId={result.checkId}
+            onPrint={() => {
+              if (typeof window !== "undefined") window.print();
+            }}
+            deleting={deleting}
+          />
+          {/* Ручные отметки — отдельным блоком ПОСЛЕ результата: сначала
+              учитель смотрит, что насчитала модель, и только потом решает.
+              Именно этот порядок не даёт ему согласиться с чужим разбором
+              на автомате. */}
+          <ManualMarksEditor
+            partition={partition}
+            initialMarks={result.manualMarks ?? []}
+            onSave={saveMarks}
+            errorMessage={marksError}
+          />
+        </>
       ) : (
         <>
           {/* ── Шаги 1-2: согласие и фото ─────────────────────────────── */}

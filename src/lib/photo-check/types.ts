@@ -17,6 +17,9 @@ export interface PhotoCheckTask {
   maxPoints: number;
 }
 
+/** Чьё решение лежит в строке. Видно в выгрузке на печать (ТЗ-19 §2). */
+export type MarkSource = "model" | "teacher";
+
 /** Вердикт по одному заданию в результате проверки. */
 export interface PhotoCheckItem {
   number: number;
@@ -31,6 +34,43 @@ export interface PhotoCheckItem {
   confidence: number | null;
   needsReview: boolean;
   comment: string | null;
+  /**
+   * Чью отметку видит учитель: машины или свою.
+   *
+   * Опционально ТОЛЬКО ради типов: сервер присылает поле всегда (ТЗ-19 §2), и
+   * компоненты читают `item.decidedBy ?? "model"`. Так правка контракта не ломает
+   * чужие тестовые фикстуры, а в рантайме дефолт недостижим.
+   */
+  decidedBy?: MarkSource;
+  /**
+   * Снимок машинного решения. Через месяц видно, что именно исправил человек.
+   * Nullable: `POST /photo-checks` отдаёт свежий машинный разбор без ручных
+   * отметок, и там снимок = текущий вердикт (сервер проставит). Обязательным
+   * его сделали бы только ценой правки чужих фикстур — а «не разобрано» вместо
+   * снимка читалось бы как «машина молчала».
+   */
+  modelVerdict?: PhotoVerdict;
+  modelPoints?: number;
+  /** null — учитель это задание не смотрел. */
+  teacherAccepted?: boolean | null;
+  teacherPoints?: number | null;
+  manualUpdatedAt?: number | null;
+}
+
+/** Ручная отметка учителя, сохранённая в D1. */
+export interface PhotoCheckManualMark {
+  taskNumber: number;
+  accepted: boolean;
+  points: number;
+  updatedAt: number;
+}
+
+/** Что предложила машина ДО ручных правок. */
+export interface ModelResult {
+  totalPoints: number;
+  earnedPoints: number;
+  percentage: number | null;
+  gradeMark: string | null;
 }
 
 export interface Quota {
@@ -45,14 +85,24 @@ export interface PhotoCheckResult {
   status: "ok" | "partial" | "failed";
   totalPoints: number;
   earnedPoints: number;
+  /** null, пока сомнительные задания не закрыты учителем. */
   percentage: number | null;
   gradeMark: "5" | "4" | "3" | "2" | null;
   needsReview: boolean;
   items: PhotoCheckItem[];
+  /** Что уже сохранил учитель — переживает перезагрузку страницы (ТЗ-19). */
+  manualMarks?: PhotoCheckManualMark[];
+  /** Сколько сомнительных заданий ещё ждут ручного решения. */
+  pendingReview?: number;
+  modelResult?: ModelResult;
   model: string;
-  quota: Quota;
+  /** Есть только у свежей проверки (POST). У сохранённой — см. ниже. */
+  quota?: Quota;
   /** Unix seconds — когда фото будет удалено автоматически (создание + 7 дней). */
-  photoDeleteAt: number;
+  photoDeleteAt?: number;
+  photoDeleted?: boolean;
+  createdAt?: number;
+  completedAt?: number | null;
 }
 
 /** Одна строка истории проверок. */
