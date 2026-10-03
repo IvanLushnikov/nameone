@@ -27,7 +27,12 @@ import { describe, it, expect } from "vitest";
 import {
   PRICES,
   ACADEMIC_YEAR_MONTHS,
+  RENEWAL_ID_PREFIX,
+  consentPaymentId,
   getPriceKopecks,
+  paymentKindById,
+  periodDurationSeconds,
+  renewalPaymentId,
   SELLABLE_PLANS,
   type PaidPlan,
   type Period,
@@ -97,5 +102,51 @@ describe("Plans", () => {
     // осталось, значит вернётся 365-дневное окно.
     expect(PRICES.base).not.toHaveProperty("yearly");
     expect(PRICES.plus).not.toHaveProperty("yearly");
+  });
+});
+
+/**
+ * Префиксы платёжных id — признак согласия на автосписания и признак
+ * автопродления в нашей таблице payments (ТЗ-20).
+ *
+ * Проверяем здесь, а не только в billing-recurring.test.ts, потому что от
+ * правильности этих префиксов зависит безопасность денег: по префиксу вебхук
+ * решает, можно ли продлевать подписку. Обобщив их до «pay_%» по недосмотру,
+ * можно вернуть кейс «продление без согласия».
+ */
+describe("Виды платежей по payments.id (ТЗ-20)", () => {
+  it("обычная покупка, покупка с согласием и автопродление различаются", () => {
+    expect(paymentKindById("pay_k3jd8f2a91xz")).toBe("standard");
+    expect(paymentKindById("pay_a_k3jd8f2a91xz")).toBe("consent");
+    expect(paymentKindById("pay_r_k3jd8f2a91xz")).toBe("renewal");
+  });
+
+  it("согласие и автопродление НЕ путаются между собой", () => {
+    // Самая дорогая ошибка здесь — принять автопродление за согласие: тогда
+    // ручная оплата продлила бы период без согласия на будущие списания.
+    expect(paymentKindById(consentPaymentId())).toBe("consent");
+    expect(paymentKindById(renewalPaymentId())).toBe("renewal");
+    expect(consentPaymentId().startsWith("pay_r_")).toBe(false);
+    expect(renewalPaymentId().startsWith("pay_a_")).toBe(false);
+  });
+
+  it("идентификаторы уникальны и начинаются с префикса, по которому их ищет крон", () => {
+    // RENEWAL_ID_PREFIX участвует в SQL-фильтре крона (GLOB по префиксу):
+    // id обязан начинаться ровно с него.
+    expect(renewalPaymentId().startsWith(RENEWAL_ID_PREFIX)).toBe(true);
+    const ids = new Set(Array.from({ length: 50 }, () => renewalPaymentId()));
+    expect(ids.size).toBe(50);
+  });
+
+  it("длительность периода: месяц = 30 дней, учебный год = около 9 месяцев", () => {
+    // Продление учебного года было бы ошибкой второго порядка: списать с
+    // учителя 3 800 ₽ через 9 месяцев без его согласия.
+    expect(periodDurationSeconds("monthly")).toBe(30 * 86400);
+    expect(periodDurationSeconds("academicYear")).toBeGreaterThan(
+      periodDurationSeconds("monthly") * 8,
+    );
+    expect(periodDurationSeconds("academicYear")).toBeLessThan(
+      periodDurationSeconds("monthly") * 10,
+    );
   });
 });

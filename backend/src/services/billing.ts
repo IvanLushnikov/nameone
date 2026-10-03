@@ -11,8 +11,9 @@
 import type { D1Database } from "@cloudflare/workers-types";
 import type { Env } from "../env";
 import { shortId } from "../lib/shortid";
-import { updateUserPlan } from "../db/queries";
+import { getUserById, updateUserPlan } from "../db/queries";
 import { InternalError, BadRequestError } from "../lib/errors";
+import { sendRenewalDoneEmail, sendRenewalFailedEmail } from "./email";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Прайсинг (в копейках)
@@ -89,6 +90,15 @@ export interface YooKassaWebhookPayload {
     status: string;
     amount?: { value: string; currency: string };
     metadata?: { user_id?: string; plan?: PaidPlan; period?: Period };
+    /**
+     * Способ оплаты из уведомления.
+     *
+     * Это НЕ источник правды: поле приходит извне и может быть подделано
+     * (ровно как metadata.plan). Используется ТОЛЬКО как «идентификатор для
+     * сохранения», и только когда наша запись о платеже помечена согласием
+     * (см. paymentKindById). Если согласия не было — значение игнорируется.
+     */
+    payment_method?: { id?: string; type?: string; saved?: boolean };
     captured_at?: string;
     created_at?: string;
   };
@@ -99,6 +109,19 @@ export interface CreatePaymentParams {
   plan: PaidPlan;
   period: Period;
   returnUrl: string;
+  /**
+   * Явное согласие учителя на безакцептные списания (ТЗ-20).
+   *
+   * Учитывается ТОЛЬКО при `period === "monthly"` И при включённом
+   * RECURRING_BILLING_ENABLED. Учебный год не продлевается (ТЗ-20 §2.6):
+   * оплатив год, учитель не должен получить списание через 9 месяцев.
+   */
+  autoRenewConsent?: boolean;
+  /**
+   * Подменяемый fetch. По умолчанию — глобальный. Нужен, чтобы сетевой вызов
+   * к ЮKassa проверялся тестом без реального магазина и без сети.
+   */
+  fetcher?: typeof globalThis.fetch;
 }
 
 export interface CreatePaymentResult {
@@ -144,10 +167,72 @@ export interface PaymentHistoryRow {
 
 const YOOKASSA_API = "https://api.yookassa.ru/v3/payments";
 
-/** Локальный payment-id — короткий, читабельный, с префиксом. */
+// ─────────────────────────────────────────────────────────────────────────────
+// Виды платежа (ТЗ-20)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Префиксы платёжных id — это признак СОГЛАСИЯ на автосписания и признак
+ * АВТОПРОДЛЕНИЯ в нашей собственной таблице `payments`.
+ *
+ * ── Почему признак живёт в id, а не в отдельной колонке ────────────────────
+ * Миграция в этом проекте = повторный прогон `schema.sql`, а
+ * `ALTER TABLE ADD COLUMN` в SQLite не идемпотентен. Значит, согласие
+ * учителя приходится пометить тем, что уже есть и что мы сами генерируем.
+ * `payments.id` для этого подходит: он наш, он уникален и он кладётся в
+ * `Idempotence-Key` — то есть переиспользовать его для двух разных платежей
+ * нельзя даже теоретически.
+ *
+ * ── Почему это не то же самое, что «доверять телу запроса» ──────────────────
+ * Существующая защита вебхука (см. handleWebhook) запрещает читать план и
+ * период из `body.object.metadata`: любое поле из уведомления может быть
+ * подделано. Префикс здесь, наоборот, ЧИТАЕТСЯ из нашей строки `payments` —
+ * то есть из канонической записи, которую создал наш же код. Подделать его
+ * можно лишь вместе с записью в БД, а это уже другая история (К-1).
+ *
+ * Смысловые значения:
+ *   pay_  — обычная покупка периода. Согласия на списания не было, способ
+ *           оплаты НЕ сохраняем, автопродления не будет никогда.
+ *   pay_a_ — покупка, на которой учитель ЯВНО согласился на будущие
+ *           безакцептные списания. Только этот вид кладёт payment_method.id
+ *           в recurring_payment_methods.
+ *   pay_r_ — автопродление, созданное нашим кроном по сохранённому способу
+ *           оплаты. Только этот вид ПРОДЛЯЕТ текущий период.
+ */
+const PAYMENT_ID_STANDARD = "pay_";
+const PAYMENT_ID_CONSENT = "pay_a_";
+const PAYMENT_ID_RENEWAL = "pay_r_";
+
+export type PaymentKind = "standard" | "consent" | "renewal";
+
+/** Локальный payment-id обычной покупки — короткий, читабельный, с префиксом. */
 function generatePaymentId(): string {
-  return `pay_${shortId()}`;
+  return `${PAYMENT_ID_STANDARD}${shortId()}`;
 }
+
+/** Вид платежа по нашему payment-id. Чистая функция — тестируется без БД. */
+export function paymentKindById(paymentId: string): PaymentKind {
+  if (paymentId.startsWith(PAYMENT_ID_RENEWAL)) return "renewal";
+  if (paymentId.startsWith(PAYMENT_ID_CONSENT)) return "consent";
+  return "standard";
+}
+
+/**
+ * id для платежа, созданного с явным согласием учителя на автосписания.
+ * Экспортируется наружу: этим же конструктором пользуется крон автопродления
+ * (services/billingRecurring.ts), и подписи обязаны совпадать.
+ */
+export function consentPaymentId(): string {
+  return `${PAYMENT_ID_CONSENT}${shortId()}`;
+}
+
+/** id для автопродления (создаёт крон, не учитель). */
+export function renewalPaymentId(): string {
+  return `${PAYMENT_ID_RENEWAL}${shortId()}`;
+}
+
+/** Длина префиксов нужна не только для сравнения: на ней держится фильтр крона. */
+export const RENEWAL_ID_PREFIX = PAYMENT_ID_RENEWAL;
 
 /** Basic auth для ЮKassa (btoa работает с latin1 — пароли ЮKassa в latin1, OK). */
 function basicAuthHeader(shopId: string, secretKey: string): string {
@@ -162,8 +247,11 @@ function basicAuthHeader(shopId: string, secretKey: string): string {
  * обязано быть 9 МЕСЯЦЕВ, а не 365 дней. При 365 днях учитель, оплативший
  * 3 800 ₽ «за учебный год», получал доступ на 12 месяцев, включая все
  * каникулы, — то есть платил за треть лишнего года.
+ *
+ * Экспортируется: тем же расчётом продлевается период при автопродлении
+ * (services/billingRecurring.ts), и две реализации разъехаться не должны.
  */
-function periodDurationSeconds(period: Period): number {
+export function periodDurationSeconds(period: Period): number {
   return period === "academicYear"
     ? Math.round(ACADEMIC_YEAR_MONTHS * 30.44) * 86400
     : 30 * 86400;
@@ -214,9 +302,10 @@ function amountMatches(
 async function fetchPaymentStatus(
   ykId: string,
   env: Env,
+  fetcher: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<"succeeded" | "denied" | "unknown"> {
   try {
-    const response = await fetch(`${YOOKASSA_API}/${encodeURIComponent(ykId)}`, {
+    const response = await fetcher(`${YOOKASSA_API}/${encodeURIComponent(ykId)}`, {
       headers: {
         Authorization: basicAuthHeader(env.YOOKASSA_SHOP_ID!, env.YOOKASSA_SECRET_KEY!),
       },
@@ -243,7 +332,7 @@ export async function createPayment(
   env: Env,
   params: CreatePaymentParams,
 ): Promise<CreatePaymentResult> {
-  const { userId, plan, period, returnUrl } = params;
+  const { userId, plan, period, returnUrl, fetcher = globalThis.fetch } = params;
   // Тариф «Школа» имеет цену, но ещё не продаётся (Q1 2027). Ловим здесь,
   // чтобы фронтовая кнопка не смогла создать платёж по нераскрытой цене.
   if (!SELLABLE_PLANS.has(plan)) {
@@ -255,12 +344,37 @@ export async function createPayment(
   const amountKopecks = getPriceKopecks(plan, period);
   const amountFormatted = (amountKopecks / 100).toFixed(2);
   const description = `УчЛист · ${plan} · ${period === "academicYear" ? "учебный год" : "месяц"}`;
-  const paymentId = generatePaymentId();
-  const now = Math.floor(Date.now() / 1000);
 
+  // ── Согласие на автосписания (ТЗ-20) ────────────────────────────────────
+  // Условия здесь намеренно строгие, все три обязательны:
+  //   1. учитель сам нажал «включить автопродление» (autoRenewConsent);
+  //   2. период помесячный — учебный год продлевать не нужно (§2.6);
+  //   3. фича включена флагом. Пока флаг выключен, карту учителя сохранять
+  //      НЕЛЬЗЯ: сохранили бы, а продлегать было бы нечем — получили бы
+  //      «молча работающее, но не работающее» автопродление.
+  const consentRequested = params.autoRenewConsent === true;
+  const savePaymentMethod =
+    consentRequested && period === "monthly" && env.RECURRING_BILLING_ENABLED === "true";
+  // id платежа: помечаем вид (согласие / автопродление / обычная покупка).
+  // В dev-режиме согласие всегда «не применено»: реальной карты нет, сохранять
+  // нечего, и помечать такой платёж как согласие было бы враньём в данных.
   const shopId = env.YOOKASSA_SHOP_ID;
   const secretKey = env.YOOKASSA_SECRET_KEY;
   const isDevMode = !shopId || !secretKey;
+
+  const paymentId = savePaymentMethod && !isDevMode ? consentPaymentId() : generatePaymentId();
+  const now = Math.floor(Date.now() / 1000);
+
+  if (consentRequested && !savePaymentMethod) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[billing] согласие на автопродление не применено user=${userId} plan=${plan} period=${period} ` +
+        `recurring_enabled=${env.RECURRING_BILLING_ENABLED === "true"}. ` +
+        (period === "academicYear"
+          ? "Учебный год не продлевается — это осознанно (§2.6 ТЗ-20)."
+          : "Фича выключена флагом RECURRING_BILLING_ENABLED. Способ оплаты НЕ сохранён."),
+    );
+  }
 
   // ── Почему «просто включить демо-оплату» в проде нельзя ───────────────────
   // В dev-режиме yookassa_payment_id равен нашему paymentId, а этот id
@@ -316,7 +430,7 @@ export async function createPayment(
   // ─────────────────────────────────────────────────────────────────────────
 
   const idempotenceKey = paymentId; // наш pay_xxx → идемпотентность запроса
-  const body = {
+  const body: Record<string, unknown> = {
     amount: { value: amountFormatted, currency: "RUB" },
     capture: true,
     confirmation: { type: "redirect", return_url: returnUrl },
@@ -324,7 +438,14 @@ export async function createPayment(
     metadata: { user_id: userId, plan, period },
   };
 
-  const response = await fetch(YOOKASSA_API, {
+  // `save_payment_method: true` — это и есть механика автоплатежей у ЮKassa:
+  // на форме оплаты учитель соглашается на будущие списания, а в ответе
+  // приходит `payment_method.id`, который потом используется для безакцептного
+  // списания. Ставим флаг ТОЛЬКО когда согласие действительно было — иначе мы
+  // сохранили бы карту человека, который на списания не подписывался.
+  if (savePaymentMethod) body.save_payment_method = true;
+
+  const response = await fetcher(YOOKASSA_API, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -401,7 +522,9 @@ export async function handleWebhook(
   db: D1Database,
   env: Env,
   body: YooKassaWebhookPayload,
+  options: { fetcher?: typeof globalThis.fetch } = {},
 ): Promise<{ handled: boolean }> {
+  const fetcher = options.fetcher ?? globalThis.fetch;
   if (!body || body.type !== "notification" || !body.event || !body.object) {
     // eslint-disable-next-line no-console
     console.warn(`[billing] webhook: invalid payload shape event=${body?.event ?? "?"}`);
@@ -416,10 +539,16 @@ export async function handleWebhook(
     // ── Шаг 1. Наша каноническая запись о платеже ────────────────────────────
     // Читаем ДО любых записей. Если платежа у нас нет — значит уведомление
     // либо поддельное, либо про оплату, созданную не в этом приложении.
+    //
+    // `id` здесь важен вдвойне: по нему определяется ВИД платежа (обычная
+    // покупка / покупка с согласием / автопродление), см. paymentKindById.
     const payment = await db
-      .prepare(`SELECT user_id, plan, period, amount_rub, status FROM payments WHERE yookassa_payment_id = ?1`)
+      .prepare(
+        `SELECT id, user_id, plan, period, amount_rub, status FROM payments WHERE yookassa_payment_id = ?1`,
+      )
       .bind(ykId)
       .first<{
+        id: string;
         user_id: string | null;
         plan: PaidPlan;
         period: Period | null;
@@ -468,7 +597,7 @@ export async function handleWebhook(
 
     // ── Шаг 4. Живая сверка в API ЮKassa (defense in depth) ──────────────────
     if (env.YOOKASSA_SHOP_ID && env.YOOKASSA_SECRET_KEY) {
-      const live = await fetchPaymentStatus(ykId, env);
+      const live = await fetchPaymentStatus(ykId, env, fetcher);
       if (live === "denied") {
         // API ответил и сказал, что платёж не succeeded.
         // eslint-disable-next-line no-console
@@ -486,13 +615,115 @@ export async function handleWebhook(
       }
     }
 
-    // ── Шаг 5. Всё сошлось — фиксируем оплату и активируем подписку ──────────
+    // ── Шаг 5. Всё сошлось — фиксируем оплату ────────────────────────────────
     await db
       .prepare(`UPDATE payments SET status = 'succeeded', completed_at = ?1 WHERE yookassa_payment_id = ?2`)
       .bind(now, ykId)
       .run();
 
     const userId = payment.user_id;
+    const kind = paymentKindById(payment.id);
+
+    // ── Шаг 5a. Автопродление: продлеваем ТЕКУЩИЙ период ───────────────────
+    // Отличить автопродление от ручной оплаты можно ТОЛЬКО по нашим данным,
+    // и делаем мы это так: при создании платежа крон записывает его yk-id в
+    // subscriptions.yookassa_payment_id продлеваемой подписки. Совпал
+    // yk-id уведомления с активной подпиской — это автопродление этой
+    // подписки, и metadata из тела запроса в этом не участвует.
+    //
+    // Что здесь принципиально: НЕ создаётся новая подписка и НЕ отменяются
+    // прочие. Иначе ежемесячное продление обнуляло бы учителю историю
+    // подписки и сбрасывало бы окно квоты с нуля каждый месяц.
+    if (kind === "renewal") {
+      const target = await db
+        .prepare(
+          `SELECT id, plan, period, status, auto_renew, ends_at
+           FROM subscriptions
+           WHERE user_id = ?1 AND yookassa_payment_id = ?2 AND status = 'active'
+           LIMIT 1`,
+        )
+        .bind(userId, ykId)
+        .first<{
+          id: string;
+          plan: PaidPlan;
+          period: Period;
+          status: string;
+          auto_renew: number;
+          ends_at: number;
+        }>();
+
+      // Строка в recurring_payment_methods = было явное согласие. Без неё
+      // автопродления быть не может: так выглядит и подписка, оплаченная
+      // разово, и подписка, у которой автопродление отменили.
+      const consent = target
+        ? await db
+            .prepare(
+              `SELECT id FROM recurring_payment_methods
+               WHERE subscription_id = ?1 AND status = 'active' LIMIT 1`,
+            )
+            .bind(target.id)
+            .first<{ id: string }>()
+        : null;
+
+      if (target && consent && target.period === "monthly" && target.auto_renew === 1) {
+        // Продлеваем ОТ БОЛЬШЕГО из (конец периода, сейчас).
+        //
+        // Простое `ends_at += месяц` ломается, если крон не ходил неделю: подписка
+        // «просрочена» на 7 дней, и каждое списание продлевало бы период от
+        // старой даты — то есть крон догонял бы по одному списанию за пропущенный
+        // месяц, пока не догонит, и учитель получил бы несколько списаний подряд
+        // за один неоплаченный отрезок. Считая месяц от момента списания, мы
+        // платим ровно за следующий месяц: один платёж = один месяц доступа.
+        const newEndsAt = Math.max(target.ends_at, now) + periodDurationSeconds("monthly");
+        await db
+          .prepare(`UPDATE subscriptions SET ends_at = ?1, updated_at = ?2 WHERE id = ?3`)
+          .bind(newEndsAt, now, target.id)
+          .run();
+        await db
+          .prepare(
+            `UPDATE recurring_payment_methods SET last_charge_at = ?1, updated_at = ?2 WHERE id = ?3`,
+          )
+          .bind(now, now, consent.id)
+          .run();
+
+        // Письмо «продление прошло». Ошибка отправки не должна ломать
+        // обработку: деньги списаны, доступ продлён, письмо — нет.
+        const user = await getUserById(db, userId);
+        if (user) {
+          const sent = await sendRenewalDoneEmail(env, user.email, {
+            plan: target.plan,
+            endsAt: newEndsAt,
+          });
+          if (!sent) {
+            // eslint-disable-next-line no-console
+            console.warn(
+              `[billing] письмо о продлении не отправлено user=${userId} sub=${target.id} — ` +
+                `проверьте RESEND_API_KEY`,
+            );
+          }
+        }
+
+        // eslint-disable-next-line no-console
+        console.info(
+          `[billing] auto-renew extended: user=${userId} sub=${target.id} ` +
+            `plan=${target.plan} until=${newEndsAt} charged_to=${target.ends_at} now=${now}`,
+        );
+        return { handled: true };
+      }
+
+      // Уведомление пришло по платежу-автопродлению, но продлевать нечего.
+      // Платить придётся по обычным правилам — так безопаснее, чем продлить
+      // период без согласия. Логируем loudly: это состояние требует разбора.
+      // eslint-disable-next-line no-console
+      console.error(
+        `[billing] ALERT: платёж помечен как автопродление (${payment.id}), но продлить нечего ` +
+          `(sub=${target?.id ?? "нет"} consent=${consent ? "есть" : "нет"} ` +
+          `period=${target?.period ?? "?"} auto_renew=${target?.auto_renew ?? "?"}). ` +
+          `Деньги списаны — подписку оформляем как обычную покупку периода.`,
+      );
+    }
+
+    // ── Шаг 5b. Обычная покупка периода ─────────────────────────────────────
     const endsAt = now + periodDurationSeconds(period);
 
     // Отменить предыдущие активные подписки этого юзера (новая подписка перебивает)
@@ -504,16 +735,23 @@ export async function handleWebhook(
       .bind(now, userId)
       .run();
 
-    // Создать новую активную подписку
+    // Создать новую активную подписку.
+    //
+    // auto_renew = 1 ТОЛЬКО если по этому платежу было явное согласие на
+    // списания. Раньше здесь стояла константа 1 для всех: подписка выглядела
+    // с автопродлением, которой не было, — ровно то обещание, которое ТЗ-20
+    // снимает с публичных текстов. Строка согласия (recurring_payment_methods)
+    // появляется только в ветке ниже.
     const subId = `sub_${shortId()}`;
+    const withConsent = kind === "consent";
     await db
       .prepare(
         `INSERT INTO subscriptions
            (id, user_id, plan, status, period, yookassa_payment_id,
             starts_at, ends_at, auto_renew, created_at, updated_at)
-         VALUES (?1, ?2, ?3, 'active', ?4, ?5, ?6, ?7, 1, ?6, ?6)`,
+         VALUES (?1, ?2, ?3, 'active', ?4, ?5, ?6, ?7, ?8, ?6, ?6)`,
       )
-      .bind(subId, userId, plan, period, ykId, now, endsAt)
+      .bind(subId, userId, plan, period, ykId, now, endsAt, withConsent ? 1 : 0)
       .run();
 
     // 5. Обновить users.plan (cache column — реальный источник правды это subscriptions)
@@ -530,18 +768,75 @@ export async function handleWebhook(
     }
     await updateUserPlan(db, userId, plan);
 
+    // ── Шаг 5c. Сохраняем способ оплаты, но только при согласии ────────────
+    // `payment_method` приходит из тела уведомления, то есть извне, и сам по
+    // себе не является доказательством согласия (ровно как metadata.plan).
+    // Доказательство согласия — вид нашего платежа (pay_a_), прочитанный из
+    // строки payments. Согласия не было — способ НЕ сохраняем, и крон этот
+    // subscription_id никогда не увидит.
+    if (withConsent) {
+      const method = body.object.payment_method;
+      if (method?.id && method.saved === true) {
+        await db
+          .prepare(
+            `INSERT INTO recurring_payment_methods
+               (id, user_id, subscription_id, yookassa_payment_method_id, plan, status,
+                confirmed_at, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6, ?6, ?6)`,
+          )
+          .bind(
+            `rpm_${shortId()}`,
+            userId,
+            subId,
+            method.id,
+            plan,
+            now,
+          )
+          .run();
+        // eslint-disable-next-line no-console
+        console.info(
+          `[billing] способ оплаты сохранён для автопродления: user=${userId} sub=${subId} plan=${plan}`,
+        );
+      } else {
+        // Согласие было, а карту провайдер не сохранил — значит автопродления
+        // фактически не будет. Молча пропускать нельзя: это разрыв между
+        // обещанием учителю и реальностью, который увидит он, а не мы.
+        // eslint-disable-next-line no-console
+        console.error(
+          `[billing] ALERT: по платежу ${payment.id} было согласие на автопродление, но ` +
+            `payment_method не сохранён провайдером (id=${method?.id ?? "нет"} saved=${method?.saved ?? "нет"}). ` +
+            `Строка согласия не создана — списаний не будет. Разберись вручную.`,
+        );
+      }
+    }
+
     // eslint-disable-next-line no-console
     console.info(
-      `[billing] subscription activated: user=${userId} plan=${plan} period=${period} until=${endsAt}`,
+      `[billing] subscription activated: user=${userId} plan=${plan} period=${period} until=${endsAt} ` +
+        `auto_renew=${withConsent ? 1 : 0} kind=${kind}`,
     );
     return { handled: true };
   }
 
   if (event === "payment.canceled") {
+    const payment = await db
+      .prepare(`SELECT id, user_id, plan, status FROM payments WHERE yookassa_payment_id = ?1`)
+      .bind(ykId)
+      .first<{ id: string; user_id: string | null; plan: PaidPlan; status: string }>();
+
     await db
       .prepare(`UPDATE payments SET status = 'canceled' WHERE yookassa_payment_id = ?1`)
       .bind(ykId)
       .run();
+
+    // Не прошло автопродление — учитель должен узнать об этом письмом, а не
+    // обнаружить по закрывшемуся доступу. Подписку при этом НЕ трогаем: её
+    // период и так закончился, а решение «продлить ли ещё раз» принимает он.
+    if (payment && paymentKindById(payment.id) === "renewal" && payment.user_id) {
+      const user = await getUserById(db, payment.user_id);
+      if (user) await sendRenewalFailedEmail(env, user.email, { plan: payment.plan });
+    }
+
     // eslint-disable-next-line no-console
     console.info(`[billing] payment canceled: ${ykId}`);
     return { handled: true };
@@ -605,20 +900,67 @@ export async function getActiveSubscription(
 }
 
 /**
- * Отменить подписку: status='canceled', auto_renew=0, downgrade users.plan до free.
- * Подписка остаётся активной до конца оплаченного периода (ends_at не двигаем) —
- * фронт сам решит, оставить доступ до конца периода или отрезать сразу.
+ * Отменить подписку.
+ *
+ * Что означает отмена в ТЗ-20: перестаём СПИСЫВАТЬ, а не отрезаем доступ.
+ * Учитель заплатил за текущий период — доступ должен дожить до его конца,
+ * иначе мы отнимаем оплаченное (это же обещано в оферте и в FAQ /pricing).
+ *
+ * Поэтому:
+ *   1. auto_renew = 0 — крон больше не смотрит на эту подписку;
+ *   2. recurring_payment_methods → status='canceled' + canceled_at. Это и
+ *      есть «отмена автоплатежа» с нашей стороны: снятие привязки у провайдера
+ *      для безакцептных списаний не требует отдельного вызова API — мы просто
+ *      перестаём создавать платежи. Удалять способ оплаты из ЛК ЮKassa тоже
+ *      не нужно: привязка без нашего платежа ничего не списывает, и учитель
+ *      сможет снова включить автопродление без повторной оплаты;
+ *   3. status и тариф трогаем ТОЛЬКО если период уже закончился. Пока
+ *      ends_at в будущем — подписка остаётся активной, и учитель пользуется
+ *      тем, за что заплатил.
  */
 export async function cancelSubscription(db: D1Database, userId: string): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
+
   await db
     .prepare(
-      `UPDATE subscriptions SET status = 'canceled', auto_renew = 0, updated_at = ?1
+      `UPDATE subscriptions SET auto_renew = 0, updated_at = ?1
        WHERE user_id = ?2 AND status = 'active'`,
     )
     .bind(now, userId)
     .run();
-  await updateUserPlan(db, userId, "free");
+
+  await db
+    .prepare(
+      `UPDATE recurring_payment_methods SET status = 'canceled', canceled_at = ?1, updated_at = ?1
+       WHERE user_id = ?2 AND status = 'active'`,
+    )
+    .bind(now, userId)
+    .run();
+
+  // Самая «свежая» активная подписка определяет, доживает ли учитель период.
+  const current = await db
+    .prepare(
+      `SELECT id, ends_at FROM subscriptions
+       WHERE user_id = ?1 AND status = 'active'
+       ORDER BY ends_at DESC LIMIT 1`,
+    )
+    .bind(userId)
+    .first<{ id: string; ends_at: number }>();
+
+  if (!current || current.ends_at <= now) {
+    // Период уже закончился — закрываем подписку и снимаем тариф.
+    await db
+      .prepare(
+        `UPDATE subscriptions SET status = 'canceled', auto_renew = 0, updated_at = ?1
+         WHERE user_id = ?2 AND status = 'active'`,
+      )
+      .bind(now, userId)
+      .run();
+    await updateUserPlan(db, userId, "free");
+  }
+
+  // eslint-disable-next-line no-console
+  console.info(`[billing] subscription canceled: user=${userId} auto_renew=0 period_kept=${Boolean(current && current.ends_at > now)}`);
 }
 
 /**

@@ -16,7 +16,7 @@
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { InterviewQuestions } from "@/components/f06/InterviewQuestions";
-import type { PhotoCheckItem, PhotoCheckResult } from "@/lib/photo-check/types";
+import type { PhotoCheckItem, PhotoCheckResult, PhotoVerdict } from "@/lib/photo-check/types";
 
 export interface PhotoCheckResultViewProps {
   result: PhotoCheckResult;
@@ -31,7 +31,7 @@ const VERDICT_LABEL = {
   correct: "Верно",
   incorrect: "Неверно",
   unclear: "Не разобрал",
-} as const;
+} as const satisfies Record<PhotoVerdict, string>;
 
 export function PhotoCheckResultView({
   result,
@@ -89,6 +89,7 @@ export function PhotoCheckResultView({
               <th scope="col" className="py-2 pr-3 font-medium">Задание</th>
               <th scope="col" className="py-2 pr-3 font-medium">Ответ ученика</th>
               <th scope="col" className="py-2 pr-3 font-medium w-24">Вердикт</th>
+              <th scope="col" className="py-2 pr-2 font-medium w-16">Решил</th>
               <th scope="col" className="py-2 pr-2 font-medium w-14 text-right">Балл</th>
             </tr>
           </thead>
@@ -133,6 +134,12 @@ function Row({ item }: { item: PhotoCheckItem }) {
   const tone =
     item.verdict === "correct" ? "success" : item.verdict === "incorrect" ? "danger" : "warm";
   const icon = item.verdict === "correct" ? "✅" : item.verdict === "incorrect" ? "❌" : "⚠️";
+  // `decidedBy`/`modelVerdict` необязательны в типе: ответ старого бека или
+  // тестовая фикстура без них не должны ломать таблицу. Отсутствие поля
+  // читается как «решила машина» — это и было поведением до ТЗ-19.
+  const byTeacher = item.decidedBy === "teacher";
+  const modelVerdict: PhotoVerdict = item.modelVerdict ?? item.verdict;
+  const changed = byTeacher && modelVerdict !== item.verdict;
 
   return (
     <tr
@@ -158,6 +165,20 @@ function Row({ item }: { item: PhotoCheckItem }) {
           <span aria-hidden>{icon}</span>
           {VERDICT_LABEL[item.verdict]}
         </Badge>
+      </td>
+      <td className="py-2.5 pr-2 align-top">
+        {/* ЧЬЁ это решение (ТЗ-19). На распечатке остаётся слово, а не только
+            цвет: по бумаге через месяц видно, что поставил учитель, а что
+            предложила машина. Без этой колонки «выгрузка» обманывала бы —
+            все отметки выглядели бы одинаково. */}
+        <span className={byTeacher ? "font-medium text-warm-950" : "text-warm-600"}>
+          {byTeacher ? "вы" : "ИИ"}
+        </span>
+        {changed && (
+          <span className="block text-xs text-warm-500 mt-0.5">
+            ИИ считал: {VERDICT_LABEL[modelVerdict]}
+          </span>
+        )}
       </td>
       <td className="py-2.5 pr-2 align-top text-right text-warm-900 tabular-nums">
         {item.pointsAwarded}/{item.maxPoints}
