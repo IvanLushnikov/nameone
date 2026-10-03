@@ -2,8 +2,6 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Suspense } from "react";
-import { useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -320,8 +318,7 @@ function historyTypeToKind(type: UserHistoryItem["type"]): ArtifactKind | null {
   return "worksheet";
 }
 
-function ConstructorPage() {
-  const searchParams = useSearchParams();
+export default function ConstructorPage() {
   const [step, setStep] = React.useState<Step>("select");
   const [subject, setSubject] = React.useState<SubjectSlug | null>(null);
   const [grade, setGrade] = React.useState<number | null>(null);
@@ -461,10 +458,14 @@ function ConstructorPage() {
 
     // Deep-link (?subject=/?topic=/?exam=) — пользователь САМ пришёл собирать
     // новый лист, восстановление старого только сбило бы его с толку.
+    // Query читаем из window.location, а не через useSearchParams: хук требует
+    // границы <Suspense> при `output: "export"`, а она прятала бы за fallback
+    // весь контент страницы на время гидратации (3–4 секунды «Загрузка…»).
+    const params = new URLSearchParams(window.location.search);
     const hasDeepLink =
-      !!searchParams.get("exam") ||
-      !!searchParams.get("topic") ||
-      !!searchParams.get("subject");
+      !!params.get("exam") ||
+      !!params.get("topic") ||
+      !!params.get("subject");
     if (hasDeepLink) return;
 
     const now = Date.now();
@@ -535,14 +536,20 @@ function ConstructorPage() {
     // Раскрывает секцию проверки сразу, как только появится лист. Сама панель
     // рендерится только для `kind === "worksheet"`, поэтому флаг безопасен и
     // до генерации: лишнего ничего не будет на экране.
-    if (searchParams.get("photo") === "1") setPhotoCheckOpen(true);
+    // Читаем query один раз на маунте. Раньше здесь был `useSearchParams()`, но
+    // он требовал <Suspense> при статическом экспорте, и fallback закрывал
+    // собой всю страницу, пока грузится JS. `window.location.search` читается
+    // уже после гидратации, поэтому эффект срабатывает ровно один раз.
+    const params = new URLSearchParams(window.location.search);
+
+    if (params.get("photo") === "1") setPhotoCheckOpen(true);
 
     // TZ-13 §4.9: приход из блока «Оживить урок» на экране листа.
     // Раньше параметр отправлялся, но здесь не читался — учитель выбирал
     // формат и попадал в обычную форму листа, то есть выбор молча терялся.
     // Панель создания игры рендерится в блоке ниже и использует серверный
     // `savedWorksheetId`: ранклеру нужен id листа В БАЗЕ, а не клиентский.
-    const formatParam = searchParams.get("interactiveFormat");
+    const formatParam = params.get("interactiveFormat");
     if (formatParam && isInteractiveFormat(formatParam)) {
       setInteractiveFormat(formatParam);
       setType("interactive");
@@ -551,10 +558,10 @@ function ConstructorPage() {
 
     // F-04-C: deep-link для режима «По номеру ОГЭ/ЕГЭ».
     // Имеет приоритет над topic-флоу, т.к. `?exam=` — это маркер экзамен-режима.
-    const examParam = searchParams.get("exam");
+    const examParam = params.get("exam");
     if (examParam === "oge" || examParam === "ege") {
-      const subjParam = searchParams.get("subject") as SubjectSlug | null;
-      const numParam = Number(searchParams.get("number"));
+      const subjParam = params.get("subject") as SubjectSlug | null;
+      const numParam = Number(params.get("number"));
       const subjValid = !!(subjParam && getSubject(subjParam));
       const numValid = !Number.isNaN(numParam) && numParam > 0;
 
@@ -578,12 +585,12 @@ function ConstructorPage() {
     }
 
     // Старый topic-флоу: ?subject=&grade=&topic=&difficulty=&count=&type=
-    const s = searchParams.get("subject") as SubjectSlug | null;
-    const g = Number(searchParams.get("grade"));
-    const t = searchParams.get("topic");
-    const d = searchParams.get("difficulty") as Difficulty | null;
-    const c = Number(searchParams.get("count"));
-    const ty = searchParams.get("type") as TaskType | null;
+    const s = params.get("subject") as SubjectSlug | null;
+    const g = Number(params.get("grade"));
+    const t = params.get("topic");
+    const d = params.get("difficulty") as Difficulty | null;
+    const c = Number(params.get("count"));
+    const ty = params.get("type") as TaskType | null;
     if (s && getSubject(s)) {
       setSubject(s);
       const validGrade = !Number.isNaN(g) && g > 0 ? g : null;
@@ -610,7 +617,7 @@ function ConstructorPage() {
         setStep("select");
       }
     }
-  }, [searchParams]);
+  }, []);
 
   const subjectData = subject ? getSubject(subject) : null;
   const gradeData = subject && grade ? getGrade(subject, grade) : null;
@@ -2820,14 +2827,11 @@ function GeneratingState({
     </Card>
   );
 }
-// Обертка в Suspense обязательна при использовании useSearchParams + output: export
-export default function ConstructorPageWrapper() {
-  return (
-    <Suspense fallback={<div className="container-tight py-20 text-center text-warm-500">Загрузка…</div>}>
-      <ConstructorPage />
-    </Suspense>
-  );
-}
+// Раньше страница была обёрнута в <Suspense fallback="Загрузка…"> — только
+// ради useSearchParams(), который при `output: "export"` требует границы.
+// Fallback закрывал собой весь контент на 3–4 секунды, пока грузится JS.
+// Теперь query читается из window.location внутри useEffect, поэтому
+// статический HTML содержит сразу шапку и первый шаг визарда.
 
 // =============== Mode toggle (F-04-C) ===============
 

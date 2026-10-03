@@ -9,8 +9,10 @@
  * Поэтому: одна статическая страница + токен в query `?t=<token>` + данные из
  * отдельного бэкенд-воркера (ТЗ §4.1, вариант 1).
  *
- * Тот же приём с `useSearchParams()` и `<Suspense>` уже применён в
- * `src/app/auth/callback/page.tsx` — копируем его, а не изобретаем второй.
+ * Обёртка `<Suspense>` была нужна только ради `useSearchParams()` в `FormRunner`:
+ * при `output: "export"` Next.js 14 требует границы, а её fallback закрывал собой
+ * страницу до гидратации. Сейчас токен читается из `window.location.search`
+ * в useEffect, поэтому страница рендерится сразу.
  *
  * Заголовки приватности:
  *   - `robots: { index: false, follow: false }` — чтобы поисковик не закешировал
@@ -21,7 +23,6 @@
  *     для **всех** исходящих запросов, а нам нужен именно запрет утечки из URL.
  */
 
-import * as React from "react";
 import type { Metadata } from "next";
 import { FormRunner } from "./FormRunner";
 
@@ -33,24 +34,6 @@ export const metadata: Metadata = {
   other: { referrer: "no-referrer" },
 };
 
-function LoadingFallback() {
-  return (
-    <div className="container-tight py-12 sm:py-20 max-w-md mx-auto text-center">
-      <div className="w-12 h-12 rounded-xl bg-brand-500 text-white grid place-items-center mx-auto mb-4 shadow-brand animate-pulse">
-        <span className="text-xl font-bold" aria-hidden>
-          ?
-        </span>
-      </div>
-      <h1 className="text-xl font-semibold text-warm-950">Загружаем задания…</h1>
-      <p className="text-sm text-warm-500 mt-2">Это занимает пару секунд.</p>
-    </div>
-  );
-}
-
 export default function FormPage() {
-  return (
-    <React.Suspense fallback={<LoadingFallback />}>
-      <FormRunner />
-    </React.Suspense>
-  );
+  return <FormRunner />;
 }

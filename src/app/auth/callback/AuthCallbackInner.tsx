@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Loader2, CheckCircle2, AlertTriangle, RefreshCw, Mail } from "lucide-react";
@@ -18,14 +18,22 @@ type State =
   | { kind: "error"; message: string };
 
 /**
- * Клиентский эквивалент /auth/callback — обёрнут в <Suspense> в page.tsx,
- * чтобы Next.js 14 при `output: "export"` не падал на useSearchParams() bailout.
+ * Клиентский эквивалент /auth/callback. Раньше был обёрнут в <Suspense> —
+ * только ради `useSearchParams()`, который при `output: "export"` требует
+ * границы, а её fallback закрывал страницу до гидратации. Сейчас токен
+ * читается из `window.location.search` в useEffect.
  */
 export function AuthCallbackInner() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const token = searchParams.get("token");
+  // undefined = токен ещё не прочитан из URL. ВАЖНО: это НЕ `null` —
+  // `URLSearchParams.get()` отдаёт null для отсутствующего параметра, и такой
+  // заход обязан показать «В ссылке нет токена», а не крутить вечную загрузку.
+  const [token, setToken] = React.useState<string | undefined>(undefined);
   const [state, setState] = React.useState<State>({ kind: "loading" });
+
+  React.useEffect(() => {
+    setToken(new URLSearchParams(window.location.search).get("token") ?? "");
+  }, []);
 
   const verify = React.useCallback(
     async (t: string) => {
@@ -89,6 +97,7 @@ export function AuthCallbackInner() {
   );
 
   React.useEffect(() => {
+    if (token === undefined) return;
     trackEvent("auth_callback_view");
     if (!token) {
       trackEvent("auth_callback_error", { reason: "missing_token" });

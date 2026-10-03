@@ -15,19 +15,30 @@
  * Честно обрабатываем ровно четыре состояния (как `FormsTab` у TZ-12):
  *   загрузка / не залогинен (401) / API недоступен (сеть, 5xx) / список.
  * Пустого белого экрана не бывает ни в одном.
+ *
+ * `?id=` читается из `window.location.search` в useEffect, а не через
+ * `useSearchParams()`: хук при `output: "export"` требовал границы <Suspense>,
+ * а её fallback закрывал собой страницу до гидратации. Пока эффект не
+ * отработал, показываем заголовок и заглушку списка — не пустоту.
  */
 
 import * as React from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { ArrowLeft } from "lucide-react";
 import { InteractiveList } from "./InteractiveList";
 import { InteractiveDetail } from "./InteractiveDetail";
 
 export function InteractivesView() {
-  const searchParams = useSearchParams();
   const router = useRouter();
-  const id = searchParams.get("id");
+  // undefined = id ещё не прочитан из URL (эффект не отработал). ВАЖНО: это
+  // НЕ `null` — `URLSearchParams.get()` отдаёт null для отсутствующего
+  // параметра, а такой заход обязан показать список, а не вечную загрузку.
+  const [id, setId] = React.useState<string | undefined>(undefined);
+
+  React.useEffect(() => {
+    setId(new URLSearchParams(window.location.search).get("id") ?? "");
+  }, []);
 
   return (
     <div className="container-tight py-8 sm:py-10" data-testid="interactives-view">
@@ -51,7 +62,13 @@ export function InteractivesView() {
         )}
       </div>
 
-      {id ? <InteractiveDetail id={id} /> : <InteractiveList />}
+      {id === undefined ? (
+        <p className="text-sm text-warm-500 text-center py-12">Загружаем интерактивы…</p>
+      ) : id ? (
+        <InteractiveDetail id={id} />
+      ) : (
+        <InteractiveList />
+      )}
     </div>
   );
 }

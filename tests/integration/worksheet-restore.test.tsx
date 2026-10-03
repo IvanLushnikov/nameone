@@ -57,13 +57,19 @@ import {
 } from "./helpers/constructor-flow";
 
 /**
- * next/navigation — концерн jsdom. Мок отдаёт ПЕРЕМЕННУЮ `searchParams`,
- * чтобы один файл мог проверить и обычный заход, и deep-link (?topic=…),
- * который в продукте отключает восстановление.
+ * Query задаётся через НАСТОЯЩИЙ `window.location.search`: конструктор больше
+ * не читает `useSearchParams()` (хук требовал границу <Suspense> при статическом
+ * экспорте, а её fallback закрывал страницу до гидратации). Один файл проверяет
+ * и обычный заход, и deep-link (?topic=…), который отключает восстановление.
  */
-let searchParams = new URLSearchParams();
+function setSearch(value: string): void {
+  window.history.replaceState(
+    {},
+    "",
+    value ? `/constructor?${value}` : "/constructor"
+  );
+}
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => searchParams,
   usePathname: () => "/constructor/",
   useRouter: () => ({
     push: vi.fn(),
@@ -171,7 +177,7 @@ const KTP_ARTIFACT: Ktp = {
 
 beforeEach(() => {
   window.localStorage.clear();
-  searchParams = new URLSearchParams();
+  setSearch("");
   toastCalls = [];
   mockApi();
   setDevice({ coarse: false, touchPoints: 0, width: 1600 });
@@ -362,14 +368,17 @@ describe("восстановление листа после перезагру�
     toastCalls = [];
 
     // Тот же самый localStorage, но приход по рекламной ссылке на тему.
-    searchParams = new URLSearchParams("topic=drobi");
+    setSearch("topic=drobi");
     renderConstructor();
     await screen.findByText("Что и для кого");
+    // Эффект восстановления обязан отработать ДО проверки. Раньше проверка шла
+    // сразу за findByText и опиралась на то, что эффект уже успел выполниться.
+    // В CI это не гарантировано, и тест падал: восстановление отрабатывало
+    // после проверки, флака по таймингу.
+    await flushPageTimers();
 
     expect(toastCalls.filter((t) => t.title === RESTORE_TOAST)).toHaveLength(0);
     expect(screen.queryAllByText(artifact.title)).toHaveLength(0);
-
-    await flushPageTimers();
   }, 30_000);
 
   it("КТП из истории восстанавливается в свой слот, а не как рабочий лист", async () => {
