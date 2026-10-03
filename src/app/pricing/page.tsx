@@ -32,7 +32,7 @@ import { SITE_URL } from "@/lib/site";
  * и это же проверяет tests/unit/plans-consistency.test.ts.
  */
 export const metadata: Metadata = {
-  title: `Тарифы — ${FREE_QUOTA_LABEL} бесплатно, дальше от ${priceShort("base", "month")}`,
+  title: `Тарифы — 3 генерации бесплатно, дальше от ${priceShort("base", "month")}`,
   description: `Базовый ${priceShort("base", "month")} или ${priceShort("base", "academicYear")}. Плюс — ${priceShort("plus", "month")}, включает ОГЭ/ЕГЭ, презентации и КТП. ${FREE_QUOTA_LABEL} — без карты и без регистрации. Оплата картой РФ и СБП.`,
   alternates: { canonical: `${SITE_URL}/pricing` },
 };
@@ -60,17 +60,17 @@ const comparison = [
   },
   {
     feature: "Предметы",
-    free: "Все 21+",
-    base: "Все 21+",
-    plus: "Все 21+",
-    school: "Все 21+",
+    free: "Все 21 предмет",
+    base: "Все 21 предмет",
+    plus: "Все 21 предмет",
+    school: "Все 21 предмет",
   },
   {
     feature: "Классы",
-    free: "1-11",
-    base: "1-11",
-    plus: "1-11",
-    school: "1-11",
+    free: "1–11",
+    base: "1–11",
+    plus: "1–11",
+    school: "1–11",
   },
   {
     feature: "PDF с ответами и пояснениями",
@@ -83,8 +83,8 @@ const comparison = [
     feature: "История генераций",
     free: "—",
     base: "30 дней",
-    plus: "∞",
-    school: "∞",
+    plus: "Без ограничений",
+    school: "Без ограничений",
   },
   {
     feature: "Избранное и шаблоны",
@@ -143,18 +143,25 @@ const comparison = [
     school: "✓",
   },
   {
-    feature: "Экспорт DOCX и PPTX",
+    feature: "Форматы файла",
     free: "PDF",
-    base: "PDF + DOCX",
-    plus: "PDF + DOCX + PPTX",
-    school: "PDF + DOCX + PPTX",
+    base: "PDF · DOCX",
+    plus: "PDF · DOCX · PPTX",
+    school: "PDF · DOCX · PPTX",
   },
   {
-    feature: "Учеников в кабинете",
+    feature: "Учеников",
     free: "—",
     base: "5",
     plus: "20",
-    school: "∞",
+    school: "Без ограничений",
+  },
+  {
+    feature: "Членов семьи",
+    free: "—",
+    base: "До 5 человек",
+    plus: "До 5 человек",
+    school: "До 5 человек",
   },
   {
     feature: "Админка учителя",
@@ -257,7 +264,7 @@ export default function PricingPage() {
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-warm-200 text-warm-700 text-xs font-semibold mb-4">
                 <Building2 className="w-3.5 h-3.5" />
-                Скоро · запуск {PLANS.school.comingSoon}
+                Скоро · запуск — {PLANS.school.comingSoon}
               </div>
               <h2 className="text-3xl sm:text-4xl font-display font-bold tracking-tight mb-4">
                 Скоро: тариф «{PLANS.school.name}» для классов
@@ -295,8 +302,8 @@ export default function PricingPage() {
               <h3 className="font-semibold text-warm-950 mb-3">Сценарии — превью</h3>
               <div className="space-y-2.5">
                 {[
-                  { title: "Контрольная на 2 варианта за 5 минут", desc: "Учитель физики делает 2 PDF и шифр ответов." },
-                  { title: "Задания по теме для всего класса", desc: "Классрук выдаёт задания через LMS." },
+                  { title: "Контрольная на 2 варианта за 5 минут", desc: "Учитель физики делает два PDF-файла и шифр ответов." },
+                  { title: "Задания по теме для всего класса", desc: "Классный руководитель выдаёт задания через LMS." },
                   { title: "Подготовка к ОГЭ по классу", desc: "Автоматический подбор вариантов по слабым темам." },
                   { title: "Отчёт за четверть", desc: "Сколько задач решил класс, какие темы просели." },
                   { title: "КТП на учебный год по предмету", desc: "Учитель делает КТП на 34 недели для администрации за 5 минут." },
@@ -325,7 +332,7 @@ export default function PricingPage() {
             {[
               {
                 q: "Можно ли оплатить картой иностранного банка?",
-                a: "Да, через ЮКасса принимаются карты Visa/MasterCard/МИР любых стран. Также доступна оплата через СБП и кошельки.",
+                a: "Да, через ЮKassa принимаются карты МИР российских банков. Также доступна оплата через СБП.",
               },
               {
                 q: "Когда списываются деньги?",
@@ -336,7 +343,7 @@ export default function PricingPage() {
                 a: `Учебный год — это 9 месяцев подряд, а не 12: платить летом, когда вы не работаете, не нужно. Старт считается от даты оплаты. ${ACADEMIC_YEAR_NOTE}. ${PLANS.base.name}: ${priceLabel("base", "academicYear")} — ${academicYearSaving("base")}. ${PLANS.plus.name}: ${priceLabel("plus", "academicYear")} — ${academicYearSaving("plus")}. Можно и помесячно: ${priceLabel("base", "month")} и ${priceLabel("plus", "month")}.`,
               },
               {
-                q: "А если AI ошибётся в задании — деньги вернут?",
+                q: "А если ИИ ошибётся в задании — деньги вернут?",
                 a: "Если задание содержит ошибку в условии или ответе — напишите в поддержку, заменим или вернём деньги за этот лист. Для ОГЭ/ЕГЭ-вариантов действует расширенная гарантия: пересборка варианта бесплатно.",
               },
               {
@@ -347,12 +354,12 @@ export default function PricingPage() {
                 a: `${FREE_QUOTA_LABEL} — без карты и без регистрации. Этого хватает, чтобы понять, подходит ли сервис под ваши предметы и классы. Дальше — подписка.`,
               },
               {
-                q: "Что если я хочу вернуть деньги?",
+                q: "Что, если я хочу вернуть деньги?",
                 a: "Если подписка не подошла — отмените её в личном кабинете, и в следующем периоде списания не будет. Вопросы по оплате и возврату напишите в поддержку, разберёмся по существу.",
               },
               {
                 q: "Можно ли использовать для коммерческих целей?",
-                a: "Подписка Плюс включает коммерческую лицензию: можно генерировать листы для учеников и продавать свои курсы. Базовый — только для личного использования.",
+                a: "Подписка Плюс включает коммерческую лицензию: можно генерировать рабочие листы для своих учеников. Перепродавать готовые материалы и курсы нельзя — это не входит в лицензию. Базовый — только для личного использования.",
               },
               {
                 q: "Что входит в тариф Плюс по новым материалам?",

@@ -4,6 +4,19 @@ import { Card } from "@/components/ui/Card";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useInView } from "@/hooks/useInView";
 import { Check, X, Sparkles, Loader2 } from "lucide-react";
+import * as React from "react";
+
+/**
+ * `show` — анимация включается ТОЛЬКО после монтирования на клиенте.
+ * Раньше `opacity: inView ? 1 : 0` попадал в статический HTML, и поисковик
+ * (и учитель с отключённым JS) видел пустые карточки. Теперь в разметке
+ * всегда opacity 1, а скрытое состояние появляется уже в браузере.
+ */
+function useReveal(inView: boolean) {
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+  return !mounted || inView;
+}
 
 const GENERIC_ROW = [
   "Шаблон не различает классы — задания часто мимо программы",
@@ -16,13 +29,14 @@ const OUR_ROW = [
   "Таксономия: ФГОС 2021 для 1–9, ФГОС СОО с 01.09.2027 для 10–11",
   "PDF в формате A4 с ответами и пояснениями",
   "Каждый ответ проверяется автоматически",
-  "Без VPN, оплата в ₽, от 500 ₽/мес",
+  "Без зарубежной карты, оплата в рублях, от 500 ₽ в месяц",
   "Планы уроков, презентации, КТП — в одном сервисе",
 ];
 
 export function Comparison() {
   const [ref, inView] = useInView<HTMLDivElement>({ once: true, margin: "-15% 0px" });
   const reducedMotion = useReducedMotion();
+  const show = useReveal(inView);
 
   return (
     <section ref={ref} className="py-20 sm:py-28">
@@ -32,7 +46,7 @@ export function Comparison() {
             Не в&nbsp;Word
           </p>
           <h2 className="text-3xl sm:text-4xl font-display font-bold tracking-tight">
-            30 секунд на&nbsp;урок vs&nbsp;вечер в&nbsp;Word
+            30 секунд на&nbsp;лист против вечера в&nbsp;Word
           </h2>
           <p className="mt-3 text-warm-600">
             Шаблоны и ручная работа в Word не учитывают ваш класс, ошибаются в задачах и не дают готовый PDF. УчЛист — узкоспециализированный инструмент для&nbsp;учителей.
@@ -44,8 +58,8 @@ export function Comparison() {
           <Card
             className="relative h-full transition-transform duration-300 ease-out motion-safe:hover:rotate-[-0.5deg]"
             style={{
-              opacity: inView ? 1 : 0,
-              transform: inView ? "translateX(0)" : "translateX(-20px)",
+              opacity: show ? 1 : 0,
+              transform: show ? "translateX(0)" : "translateX(-20px)",
               transitionProperty: "opacity, transform",
               transitionDuration: "600ms",
             }}
@@ -55,12 +69,12 @@ export function Comparison() {
                 Шаблон
               </span>
             </div>
-            <h3 className="text-lg font-semibold text-warm-950 mb-1">Если в&nbsp;Word или шаблоне</h3>
-            <p className="text-sm text-warm-500 mb-5">20-40 минут ручной работы</p>
+            <h3 className="text-lg font-semibold text-warm-950 mb-1">В&nbsp;Word или в&nbsp;шаблоне</h3>
+            <p className="text-sm text-warm-500 mb-5">20–40 минут ручной работы</p>
 
             {/* Mock chat */}
             <div className="bg-warm-50 rounded-2xl p-4 mb-4 space-y-2 text-xs">
-              <ChatBubble role="user" text="Сделай рабочий лист по дробям 5 класс, 10 заданий" />
+              <ChatBubble role="user" text="Сделайте рабочий лист по дробям, 5 класс, 10 заданий" />
               <ChatBubble role="assistant" typing />
               <ChatBubble role="assistant" text="Конечно! Вот 10 заданий..." />
             </div>
@@ -79,8 +93,8 @@ export function Comparison() {
           <Card
             className="relative h-full bg-gradient-to-br from-brand-50/50 to-white border-brand-200"
             style={{
-              opacity: inView ? 1 : 0,
-              transform: inView ? "translateX(0)" : "translateX(20px)",
+              opacity: show ? 1 : 0,
+              transform: show ? "translateX(0)" : "translateX(20px)",
               transitionProperty: "opacity, transform",
               transitionDuration: "600ms",
               transitionDelay: "150ms",
@@ -114,8 +128,8 @@ export function Comparison() {
                   key={i}
                   className="relative flex items-start gap-1.5 text-[10px] text-warm-700"
                   style={{
-                    opacity: inView ? 1 : 0,
-                    transform: inView ? "translateX(0)" : "translateX(8px)",
+                    opacity: show ? 1 : 0,
+                    transform: show ? "translateX(0)" : "translateX(8px)",
                     transitionProperty: "opacity, transform",
                     transitionDuration: "300ms",
                     transitionDelay: `${500 + i * 150}ms`,
@@ -141,8 +155,8 @@ export function Comparison() {
         </div>
 
         <p className="mt-8 text-center text-sm text-warm-500 max-w-xl mx-auto">
-          Это не&nbsp;маркетинговые цифры — это пример реальной разницы на&nbsp;одном листе.
-          Для&nbsp;учителя с&nbsp;12&nbsp;учениками — минус 6&nbsp;часов за&nbsp;месяц.
+          Это не&nbsp;рекламные цифры, а расчёт на&nbsp;одном реальном листе.
+          Для&nbsp;учителя с&nbsp;12&nbsp;учениками&nbsp;— около 6&nbsp;часов в&nbsp;месяц.
         </p>
       </div>
     </section>

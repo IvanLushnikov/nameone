@@ -6,6 +6,7 @@ import { subjects } from "@/lib/content/subjects";
 import type { Subject as SubjectType, Grade as GradeType } from "@/lib/types";
 // GradeType retained for totalTopics aggregation
 import { useInView } from "@/hooks/useInView";
+import * as React from "react";
 import { plural } from "@/lib/utils/cn";
 import {
   MathIllustration,
@@ -57,6 +58,20 @@ const illustrationMap: Record<string, React.ElementType> = {
   pe: PeIllustration,
 };
 
+/**
+ * Подпись классов на карточке предмета. Раньше здесь было «6 кл.» — число
+ * КЛАССОВ, которое учитель читал как «6 класс» (и кликал на 1 класс).
+ * Теперь это диапазон: «1–6 классы», «7–11 классы», а для одного класса —
+ * «5 класс».
+ */
+function gradesLabel(subject: SubjectType): string {
+  const nums = subject.grades.map((g: GradeType) => g.num).sort((a: number, b: number) => a - b);
+  const first = nums[0];
+  const last = nums[nums.length - 1];
+  if (first === last) return `${first} класс`;
+  return `${first}\u2013${last} классы`;
+}
+
 const colorGradients: Record<SubjectType["color"], string> = {
   brand: "from-brand-400/30 to-brand-500/10",
   accent: "from-accent-400/30 to-accent-500/10",
@@ -84,8 +99,20 @@ const bentoConfig: Array<{ slug: string; size: "lg" | "md" | "sm"; icon?: React.
   { slug: "social", size: "sm" },
 ];
 
+/**
+ * Появление карточек включается только после монтирования на клиенте:
+ * `opacity: inView ? 1 : 0` попадал в статический HTML, и без JS (и у
+ * поисковика) сетка предметов была невидимой. В разметке теперь всегда 1.
+ */
+function useReveal(inView: boolean) {
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+  return !mounted || inView;
+}
+
 export function Subjects() {
   const [ref, inView] = useInView<HTMLDivElement>({ once: true });
+  const show = useReveal(inView);
 
   // Считаем реальные метрики из каталога (не выдуманные числа)
   const totalTopics = subjects.reduce(
@@ -108,10 +135,10 @@ export function Subjects() {
               Предметы
             </p>
             <h2 className="text-3xl sm:text-4xl font-display font-bold tracking-tight">
-              {totalCount}&nbsp;{plural(totalCount, "предмет", "предмета", "предметов")} · {totalTopics}+&nbsp;{plural(totalTopics, "тема", "темы", "тем")}
+              {totalCount}&nbsp;{plural(totalCount, "предмет", "предмета", "предметов")} · {totalTopics}&nbsp;{plural(totalTopics, "тема", "темы", "тем")}
             </h2>
             <p className="mt-3 text-warm-600 max-w-2xl">
-              От&nbsp;окружающего мира в&nbsp;1&nbsp;классе до&nbsp;ЕГЭ по&nbsp;обществознанию. Таксономия по&nbsp;ФГОС, генерация под&nbsp;уровень ученика.
+              От&nbsp;окружающего мира в&nbsp;1&nbsp;классе до&nbsp;ЕГЭ по&nbsp;обществознанию. Таксономия по&nbsp;ФГОС, генерация по&nbsp;уровню ученика.
             </p>
           </div>
           <Link
@@ -139,7 +166,7 @@ export function Subjects() {
                 subject={subject}
                 size={cfg.size}
                 index={i}
-                inView={inView}
+                show={show}
                 badge={cfg.icon}
               />
             );
@@ -152,7 +179,7 @@ export function Subjects() {
               subject={subject}
               size="sm"
               index={bentoConfig.length + i}
-              inView={inView}
+              show={show}
             />
           ))}
         </div>
@@ -165,13 +192,13 @@ function SubjectBentoCard({
   subject,
   size,
   index,
-  inView,
+  show,
   badge,
 }: {
   subject: SubjectType;
   size: "lg" | "md" | "sm";
   index: number;
-  inView: boolean;
+  show: boolean;
   badge?: React.ElementType;
 }) {
   const Illustration = illustrationMap[subject.slug];
@@ -204,8 +231,8 @@ function SubjectBentoCard({
       }
       className={`group relative rounded-2xl border border-warm-100 bg-white overflow-hidden hover:shadow-soft-lg hover:-translate-y-0.5 transition-all duration-300 ${sizeClasses}`}
       style={{
-        opacity: inView ? 1 : 0,
-        transform: inView ? "translateY(0)" : "translateY(20px)",
+        opacity: show ? 1 : 0,
+        transform: show ? "translateY(0)" : "translateY(20px)",
         transitionProperty: "opacity, transform",
         transitionDuration: "500ms",
         transitionDelay: `${index * 80}ms`,
@@ -254,7 +281,7 @@ function SubjectBentoCard({
         <div className={`mt-auto flex items-center gap-2 text-xs text-warm-500 ${size === "sm" ? "text-[11px]" : ""}`}>
           <span className="inline-flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-brand-500 motion-safe:group-hover:animate-pulse" />
-            {subject.grades.length} кл.
+            {gradesLabel(subject)}
           </span>
           <span className="inline-flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-accent-500 motion-safe:group-hover:animate-pulse" />

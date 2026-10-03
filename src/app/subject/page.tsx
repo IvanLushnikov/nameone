@@ -39,7 +39,7 @@ const totalTopics = subjects.reduce((sum, s) => sum + subjectTopics(s), 0);
 const subjectWord = plural(subjects.length, "предмет", "предмета", "предметов");
 const topicWord = plural(totalTopics, "тема", "темы", "тем");
 const title = `Рабочие листы по ФГОС — ${subjects.length} ${subjectWord}`;
-const description = `Все ${subjects.length} ${subjectWord} школьной программы: ${totalTopics}+ ${topicWord} по ФГОС, 1-11 класс. Готовый рабочий лист с ответами за 30 секунд.`;
+const description = `Все ${subjects.length} ${subjectWord} школьной программы: ${totalTopics} ${topicWord} по ФГОС, 1–11 классов. Готовый рабочий лист с ответами за 30 секунд.`;
 
 export const metadata: Metadata = {
   title,
@@ -195,7 +195,7 @@ export default function SubjectsIndexPage() {
             Не нашли нужный предмет?
           </h2>
           <p className="mt-3 text-warm-600">
-            Напишите тему в генераторе — AI соберёт лист под ваш класс и уровень учеников.
+            Напишите тему в генераторе — ИИ соберёт лист под ваш класс и по уровню учеников.
           </p>
           <Button
             as="link"

@@ -21,9 +21,31 @@ import {
 } from "@/lib/content/subjects";
 import type { Topic, TopicExample } from "@/lib/types";
 import { SITE_URL } from "@/lib/site";
+import { plural, topicTitleWithUmk } from "@/lib/utils/cn";
 import { AnswerToggle } from "./AnswerToggle";
 
 type Props = { params: { subject: string; grade: string; topic: string } };
+
+/**
+ * «2 задания-образца», «5 заданий-образцов», «1 задание-образец».
+ * Раньше строка собиралась как «{N} заданий-образцов», и на двух примерах
+ * выходило «2 заданий-образцов». Само N тоже часть подписи — без него фраза
+ * «. задания-образца с ответами» теряла смысл.
+ */
+function examplesPhrase(count: number): string {
+  return `${count} ${plural(count, "задание-образец", "задания-образца", "заданий-образцов")}`;
+}
+
+/** Сколько одноимённых тем в этом классе — считается один раз на класс. */
+function countTitles(subject: string, grade: number): Map<string, number> {
+  const counts = new Map<string, number>();
+  const found = getGrade(subject, grade);
+  for (const t of found?.topics ?? []) {
+    const key = t.title.trim();
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
 
 export function generateStaticParams() {
   const params: Array<{ subject: string; grade: string; topic: string }> = [];
@@ -43,11 +65,11 @@ export function generateMetadata({ params }: Props): Metadata {
   const topic = getTopic(params.subject, Number(params.grade), params.topic);
   if (!subject || !grade || !topic) return { title: "Тема не найдена" };
 
-  const title = `${topic.title} — рабочие листы · ${subject.shortTitle} ${grade.num} класс`;
+  const title = `${topicTitleWithUmk(topic.title, countTitles(params.subject, Number(params.grade)).get(topic.title.trim()) ?? 1, topic.fgosRef)} — рабочие листы · ${subject.shortTitle} ${grade.num} класс`;
   // В типах Subject нет поля с предложным падежом, поэтому после «по» название
   // предмета берём в кавычки — иначе в сниппете выходит «по математика».
   const subjectName = `предмету «${subject.title}»`;
-  const description = `Скачайте готовые рабочие листы и тесты по теме «${topic.title}» для ${grade.num} класса по ${subjectName}. ${topic.examples.length} заданий-образцов с ответами. Сгенерируйте свой вариант за 30 секунд.`;
+  const description = `Скачайте готовые рабочие листы и тесты по теме «${topicTitleWithUmk(topic.title, countTitles(params.subject, Number(params.grade)).get(topic.title.trim()) ?? 1, topic.fgosRef)}» для ${grade.num} класса по ${subjectName}. ${examplesPhrase(topic.examples.length)} с ответами. Сгенерируйте свой вариант за 30 секунд.`;
 
   // TZ-10 §5.1 / §9.7: canonical + og:type=article + publishedTime/modifiedTime.
   // В таксономии (Topic) нет полей createdAt/updatedAt — ставим текущую дату;
@@ -177,7 +199,7 @@ export default function TopicPage({ params }: Props) {
                 Рабочий лист по теме «{topic.title}»
               </h1>
               <p className="mt-4 text-lg text-warm-600 text-pretty">
-                Готовые задания по ФГОС с ответами и пояснениями. Сгенерируйте свой вариант за 30 секунд — AI подстроится под уровень ученика.
+                Готовые задания по ФГОС с ответами и пояснениями. Сгенерируйте свой вариант за 30 секунд — ИИ подстроится по уровню ученика.
               </p>
 
               <div className="mt-7 flex flex-wrap items-center gap-3">
@@ -212,7 +234,7 @@ export default function TopicPage({ params }: Props) {
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <Check className="w-4 h-4 text-brand-500" />
-                  Проверено AI
+                  Проверено ИИ
                 </span>
               </div>
             </div>
@@ -226,7 +248,7 @@ export default function TopicPage({ params }: Props) {
               <ul className="space-y-2 text-sm text-warm-700">
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
-                  <span>{topic.examples.length} заданий-образцов с ответами</span>
+                  <span>{examplesPhrase(topic.examples.length)} с ответами</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
@@ -254,7 +276,7 @@ export default function TopicPage({ params }: Props) {
               Примеры заданий из этой темы
             </h2>
             <p className="text-warm-600 mb-6">
-              Попробуйте решить сами — ответы спрятаны под кнопкой. Сгенерированный AI лист содержит 5–30 заданий под уровень ученика.
+              Попробуйте решить сами — ответы спрятаны под кнопкой. Сгенерированный лист содержит 5–30 заданий по уровню ученика.
             </p>
 
             <div className="grid sm:grid-cols-2 gap-3">
@@ -306,12 +328,12 @@ export default function TopicPage({ params }: Props) {
               {
                 icon: GraduationCap,
                 title: "Репетиторам",
-                text: "Готовьте листы под конкретного ученика. Делайте 2-3 варианта одной темы, чтобы не списывали.",
+                text: "Готовьте листы под конкретного ученика. Делайте 2–3 варианта одной темы, чтобы не списывали.",
               },
               {
                 icon: FileText,
                 title: "Учителям",
-                text: "Контрольная на 2 варианта с шифром ответов за 5 минут. Подходит для проверочных на 10-15 минут.",
+                text: "Два варианта с шифром ответов за 5 минут. Подходит для проверочных на 10–15 минут.",
               },
               {
                 icon: Sparkles,

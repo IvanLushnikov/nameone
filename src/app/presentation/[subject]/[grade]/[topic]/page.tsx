@@ -17,6 +17,7 @@ import {
   FileText,
   Lightbulb,
 } from "lucide-react";
+import { topicTitleWithUmk } from "@/lib/utils/cn";
 import {
   getTopic,
   getSubject,
@@ -39,6 +40,17 @@ export function generateStaticParams() {
   return params;
 }
 
+/**
+ * Сколько одноимённых тем в этом классе. В 7–9 классах алгебры есть темы,
+ * заведённые под разные УМК («Квадратные корни» по Мерзляку и по Алимову):
+ * без автора учебника их заголовки совпадали, и поисковик не различал
+ * страницы друг друга.
+ */
+function sameNameCount(subject: string, grade: number, title: string): number {
+  const found = getGrade(subject, grade);
+  return (found?.topics ?? []).filter((t) => t.title.trim() === title).length;
+}
+
 export function generateMetadata({ params }: Props): Metadata {
   const subject = getSubject(params.subject);
   const grade = getGrade(params.subject, Number(params.grade));
@@ -46,8 +58,11 @@ export function generateMetadata({ params }: Props): Metadata {
   if (!subject || !grade || !topic) return { title: "Тема не найдена" };
 
   // Бренд в конце не дописываем — его добавляет template в корневом layout.
-  const title = `Презентация по теме «${topic.title}» · ${grade.num} класс`;
-  const description = `Готовая презентация по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topic.title}». 10 слайдов с заметками спикера в PPTX. Сгенерируйте за 30 секунд.`;
+  // Предмет в заголовке обязателен: без него у презентаций по одноимённым
+  // темам разных предметов получался один и тот же title — две страницы,
+  // которые поисковик не различал.
+  const title = `Презентация по теме «${topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef)}» · ${subject.shortTitle}, ${grade.num} класс`;
+  const description = `Готовая презентация по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef)}». 10 слайдов с заметками для учителя в PPTX. Сгенерируйте за 30 секунд.`;
 
   return {
     title,
@@ -58,7 +73,7 @@ export function generateMetadata({ params }: Props): Metadata {
       `${subject.shortTitle.toLowerCase()} ${grade.num} класс`,
       "ФГОС",
       "слайды",
-      "заметки спикера",
+      "заметки для учителя",
     ],
   };
 }
@@ -77,7 +92,7 @@ export default function PresentationTopicPage({ params }: Props) {
     "@context": "https://schema.org",
     "@type": "LearningResource",
     name: `Презентация по теме «${topic.title}»`,
-    description: `Готовая презентация по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topic.title}». 10 слайдов с заметками спикера в PPTX.`,
+    description: `Готовая презентация по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef)}». 10 слайдов с заметками для учителя в PPTX.`,
     inLanguage: "ru-RU",
     educationalLevel: `${grade.num} класс`,
     learningResourceType: ["Презентация", "Слайды"],
@@ -146,7 +161,7 @@ export default function PresentationTopicPage({ params }: Props) {
               </h1>
               <p className="mt-4 text-lg text-warm-600 text-pretty">
                 Готовая презентация по ФГОС для {grade.num} класса по предмету {subject.title.toLowerCase()}.
-                10 слайдов с заметками спикера — открывайте в PowerPoint и проводите урок.
+                10 слайдов с заметками для учителя — открывайте в PowerPoint и проводите урок.
               </p>
 
               <div className="mt-7 flex flex-wrap items-center gap-3">
@@ -226,7 +241,7 @@ export default function PresentationTopicPage({ params }: Props) {
             Что вы получите
           </h2>
           <p className="text-warm-600 mb-6">
-            Готовую презентацию с логичной структурой урока и заметками спикера — останется
+            Готовую презентацию с логичной структурой урока и заметками для учителя — останется
             только открыть файл и провести занятие.
           </p>
 
@@ -239,7 +254,7 @@ export default function PresentationTopicPage({ params }: Props) {
               },
               {
                 icon: Mic2,
-                title: "Заметки спикера",
+                title: "Заметки для учителя",
                 text: "К каждому слайду — что говорить, на что обратить внимание класса.",
               },
               {
@@ -322,7 +337,7 @@ export default function PresentationTopicPage({ params }: Props) {
               },
               {
                 q: "Есть ли заметки для учителя?",
-                a: "Да. У каждого слайда есть заметки спикера — что говорить и на чём акцентировать внимание.",
+                a: "Да. У каждого слайда есть заметки для учителя — что говорить и на чём акцентировать внимание.",
               },
             ].map((f) => (
               <Card key={f.q}>
@@ -342,7 +357,7 @@ export default function PresentationTopicPage({ params }: Props) {
               Готовы получить презентацию по теме «{topic.title}»?
             </h2>
             <p className="mt-3 text-brand-100 max-w-xl mx-auto">
-              30 секунд — и 10 слайдов в PPTX у вас. С заметками спикера, примерами и итогами.
+              30 секунд — и 10 слайдов в PPTX у вас. С заметками для учителя, примерами и итогами.
             </p>
             <div className="mt-7 flex flex-col sm:flex-row items-center justify-center gap-3">
               <Button

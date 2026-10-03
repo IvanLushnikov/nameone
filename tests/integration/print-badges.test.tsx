@@ -11,7 +11,7 @@
  * ПОЧЕМУ ДВЕ ПРОВЕРКИ, А НЕ ОДНА. Класс без правила в CSS — мёртвый
  * код: плашка всё равно напечатается. Правило без класса — тоже мёртвое.
  * Поэтому тест закрывает ОБЕ стороны:
- *   1) DOM: у бейджей и плашки «Проверено AI» реально стоит `no-print`
+ *   1) DOM: у бейджей и плашки «Проверено ИИ» реально стоит `no-print`
  *      (проверяем и `VerifiedBadge` напрямую, и полный `WorksheetPreview`);
  *   2) CSS-файл: правило `.no-print → display: none !important` реально
  *      лежит ВНУТРИ блока `@media print`, и вне его нет ни одного
@@ -77,7 +77,7 @@ const PRINT_BODY = printMediaBody(CSS);
 
 /**
  * Лист с тремя заданиями и всеми тремя статусами AI-проверки:
- * `true` → «AI-проверено», `false` → «Требует проверки», `null` → «не проверено».
+ * `true` → «ИИ-проверено», `false` → «Требует проверки», `null` → «не проверено».
  * Тексты без дробей — тест про печать, а не про KaTeX (ленивый импорт
  * katex не нужен и не должен флейкать).
  */
@@ -129,7 +129,7 @@ describe("VerifiedBadge: класс no-print", () => {
       const { unmount } = render(<VerifiedBadge verified={verified} />);
       const label =
         verified === true
-          ? "AI-проверено"
+          ? "ИИ-проверено"
           : verified === false
             ? "Требует проверки"
             : "не проверено";
@@ -142,23 +142,23 @@ describe("VerifiedBadge: класс no-print", () => {
 
   it("свой className от вызывающего не съедает no-print", () => {
     render(<VerifiedBadge verified={true} className="mt-2" />);
-    const node = noPrintNodeFor("AI-проверено");
+    const node = noPrintNodeFor("ИИ-проверено");
     expect(node.className).toContain("mt-2");
   });
 });
 
 describe("WorksheetPreview: бейджи на экране, но не на печати", () => {
-  it("плашка «Проверено AI» и все VerifiedBadge в листе имеют no-print", () => {
+  it("плашка «Проверено ИИ» и все VerifiedBadge в листе имеют no-print", () => {
     render(
       <WorksheetPreview worksheet={WORKSHEET} withAnswers withExplanations type="worksheet" />
     );
 
     // Плашка в шапке листа — сам div несёт класс.
-    const headerChip = screen.getByText("Проверено AI");
+    const headerChip = screen.getByText("Проверено ИИ");
     expect(headerChip.className).toContain("no-print");
 
     // Бейджи у заданий: по одному на каждое, все три состояния.
-    for (const label of ["AI-проверено", "Требует проверки", "не проверено"]) {
+    for (const label of ["ИИ-проверено", "Требует проверки", "не проверено"]) {
       expect(noPrintNodeFor(label).textContent).toContain(label);
     }
   });

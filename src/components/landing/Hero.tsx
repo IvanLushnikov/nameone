@@ -72,8 +72,8 @@ export function Hero() {
 
           <div className="mt-12 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm animate-fade-in" style={{ animationDelay: "0.4s", animationFillMode: "both" }}>
             <Stat icon={<Timer className="w-4 h-4" />} label="Среднее время" value="~30 сек" />
-            <Stat icon={<FileCheck className="w-4 h-4" />} label="С&nbsp;ответами и&nbsp;пояснениями" value="100%" />
-            <Stat icon={<Sparkles className="w-4 h-4" />} label="Тем в&nbsp;каталоге" value={`${CATALOG_TOPICS}+`} />
+            <Stat icon={<FileCheck className="w-4 h-4" />} label="с&nbsp;ответами и&nbsp;пояснениями" value="Все листы" />
+            <Stat icon={<Sparkles className="w-4 h-4" />} label="Тем в&nbsp;каталоге" value={`${CATALOG_TOPICS}`} />
           </div>
         </div>
 
@@ -212,7 +212,7 @@ function HeroMockup() {
           </div>
 
           <div className="absolute top-3 right-3 -rotate-12 px-3 py-1 rounded-full border-2 border-accent-500 text-accent-600 text-[10px] font-bold uppercase tracking-wider bg-white/80 animate-fade-in" style={{ animationDelay: "1.8s", animationFillMode: "both" }}>
-            Проверено AI
+            Проверено ИИ
           </div>
 
           <div className="absolute right-3 bottom-3 flex items-center gap-1 text-[10px] text-warm-500">
@@ -265,7 +265,7 @@ function HeroMockup() {
                   aria-label="Скачать рабочий лист"
                 >
                   {pendingHref === DOWNLOAD_HREF ? (
-                    "Открываю..."
+                    "Открываю…"
                   ) : (
                     <>
                       Скачать
@@ -289,7 +289,7 @@ function HeroMockup() {
                   leftIcon={<Play className="w-3 h-3" />}
                   aria-label="Новый вариант рабочего листа"
                 >
-                  {pendingHref === REGEN_HREF ? "Открываю..." : "Новый вариант"}
+                  {pendingHref === REGEN_HREF ? "Открываю…" : "Новый вариант"}
                 </Button>
               </div>
             </div>

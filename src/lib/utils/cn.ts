@@ -106,3 +106,21 @@ export function pluralizeMinutes(n: number): string {
 export function pluralizeFiles(n: number): string {
   return plural(n, "файл", "файла", "файлов");
 }
+/**
+ * Заголовок темы с указанием УМК — только когда в одном классе есть
+ * одноимённые темы под разные учебники («Квадратные корни» по Мерзляку
+ * и по Алимову). Без автора УМК такие страницы делили один title, и
+ * поисковик не мог их различить.
+ *
+ * Автор берётся из `fgosRef` («Мерзляк Гл. 2 §13-19» → «Мерзляк»).
+ * Одинарные темы возвращаются без изменений — там суффикс только шумит.
+ */
+export function topicTitleWithUmk(
+  title: string,
+  sameNameCount: number,
+  fgosRef?: string,
+): string {
+  if (sameNameCount < 2) return title;
+  const author = fgosRef?.trim().split(/[\s,]+/)[0];
+  return author ? `${title} (${author})` : title;
+}

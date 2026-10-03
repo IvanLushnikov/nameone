@@ -28,7 +28,7 @@ const cols = [
       { href: "/legal/offer", label: "Публичная оферта" },
       { href: "/legal/privacy", label: "Политика конфиденциальности" },
       { href: "/legal/terms", label: "Пользовательское соглашение" },
-      { href: "/legal/cookies", label: "Использование cookies" },
+      { href: "/legal/cookies", label: "Использование cookie-файлов" },
     ],
   },
 ];
@@ -41,7 +41,7 @@ export function Footer() {
           <div className="col-span-2">
             <Logo />
             <p className="mt-4 text-sm text-warm-600 max-w-xs leading-relaxed">
-              AI-генератор рабочих листов, КТП и презентаций по&nbsp;ФГОС для учителей 1–11&nbsp;класса. PDF и&nbsp;DOCX с&nbsp;ответами — за&nbsp;30&nbsp;секунд.
+              ИИ-генератор рабочих листов, КТП и презентаций по&nbsp;ФГОС для учителей 1–11&nbsp;классов. PDF и&nbsp;DOCX с&nbsp;ответами — за&nbsp;30&nbsp;секунд.
             </p>
             <div className="mt-5 flex gap-2">
               <a
@@ -81,7 +81,7 @@ export function Footer() {
 
         <div className="mt-10 pt-6 border-t border-warm-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-warm-500">
           <p>© 2026 УчЛист. Все права защищены. Сделано с ❤ для учителей.</p>
-          <p>Листы в формате A4 · PDF и DOCX</p>
+          <p>Листы в формате A4 · PDF · DOCX · PPTX</p>
         </div>
       </div>
     </footer>

@@ -28,6 +28,10 @@ import { InteractivesView } from "./InteractivesView";
 
 export const metadata: Metadata = {
   title: "Интерактивы — личный кабинет",
+  // Свой description: без него страница наследовала описание кабинета,
+  // и в выдаче два раздела выглядели как одна страница.
+  description:
+    "Интерактивы, выданные классу: сводка по темам, классам и результатам учеников.",
   robots: { index: false, follow: false },
 };
 

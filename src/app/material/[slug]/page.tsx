@@ -31,7 +31,9 @@ export function generateMetadata({ params }: Props): Metadata {
   if (!material) return { title: "Материал не найден" };
 
   const subject = getSubject(material.subject);
-  const title = `${material.title} — УчЛист`;
+  // «· УчЛист» дописывает шаблон из корневого layout. Раньше он был ещё и
+  // в самом title, и в заголовок попадало «… — УчЛист · УчЛист».
+  const title = material.title;
   const description = material.description;
   const canonical = `${SITE_URL}/material/${material.slug}/`;
 
@@ -143,7 +145,7 @@ export default function MaterialPage({ params }: Props) {
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <Star className="w-4 h-4 fill-accent-400 text-accent-400" aria-hidden />
-                <strong className="font-semibold text-warm-900">{material.rating.toFixed(1)}</strong>
+                <strong className="font-semibold text-warm-900">{material.rating.toFixed(1).replace(".", ",")}</strong>
                 по оценке {material.ratingCount} учителей
               </span>
               <span className="text-[color:var(--text-muted)]">Обновлён {material.updatedAt}</span>

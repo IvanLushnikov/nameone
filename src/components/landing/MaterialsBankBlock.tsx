@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { plural } from "@/lib/utils/cn";
 import { ArrowRight, Layers, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { MaterialCard } from "@/components/materials/MaterialCard";
@@ -49,7 +50,9 @@ export function MaterialsBankBlock() {
           <Layers className="w-4 h-4 text-warm-400" aria-hidden />
           {counts.map(({ purpose, count }) => (
             <Badge key={purpose} tone="warm">
-              {MATERIAL_PURPOSE_LABELS[purpose]} — {count}
+              {/* Без единицы «Проверить — 30» ничего не значило. */}
+              {MATERIAL_PURPOSE_LABELS[purpose]} — {count}{" "}
+              {plural(count, "материал", "материала", "материалов")}
             </Badge>
           ))}
         </div>

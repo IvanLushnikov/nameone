@@ -17,6 +17,7 @@ import {
   ListChecks,
   FileText,
 } from "lucide-react";
+import { topicTitleWithUmk } from "@/lib/utils/cn";
 import {
   getTopic,
   getSubject,
@@ -39,6 +40,17 @@ export function generateStaticParams() {
   return params;
 }
 
+/**
+ * Сколько одноимённых тем в этом классе. В 7–9 классах алгебры есть темы,
+ * заведённые под разные УМК («Квадратные корни» по Мерзляку и по Алимову):
+ * без автора учебника их заголовки совпадали, и поисковик не различал
+ * страницы друг друга.
+ */
+function sameNameCount(subject: string, grade: number, title: string): number {
+  const found = getGrade(subject, grade);
+  return (found?.topics ?? []).filter((t) => t.title.trim() === title).length;
+}
+
 export function generateMetadata({ params }: Props): Metadata {
   const subject = getSubject(params.subject);
   const grade = getGrade(params.subject, Number(params.grade));
@@ -46,8 +58,11 @@ export function generateMetadata({ params }: Props): Metadata {
   if (!subject || !grade || !topic) return { title: "Тема не найдена" };
 
   // Бренд в конце не дописываем — его добавляет template в корневом layout.
-  const title = `План урока по теме «${topic.title}» · ${grade.num} класс`;
-  const description = `Готовый план урока по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topic.title}». Конспект на 45 минут с этапами, целями и домашним заданием. Сгенерируйте DOCX за 30 секунд.`;
+  // Предмет в заголовке обязателен: без него у планов урока по одноимённым
+  // темам разных предметов («Числа от 1 до 10» — математика и английский)
+  // получался один и тот же title, и поисковик видел две одинаковые страницы.
+  const title = `План урока по теме «${topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef)}» · ${subject.shortTitle}, ${grade.num} класс`;
+  const description = `Готовый план урока по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef)}». Конспект на 45 минут с этапами, целями и домашним заданием. Сгенерируйте DOCX за 30 секунд.`;
 
   return {
     title,
@@ -77,7 +92,7 @@ export default function LessonPlanTopicPage({ params }: Props) {
     "@context": "https://schema.org",
     "@type": "LearningResource",
     name: `План урока по теме «${topic.title}»`,
-    description: `Готовый план урока по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topic.title}». Конспект на 45 минут с этапами, целями и домашним заданием.`,
+    description: `Готовый план урока по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef)}». Конспект на 45 минут с этапами, целями и домашним заданием.`,
     inLanguage: "ru-RU",
     educationalLevel: `${grade.num} класс`,
     learningResourceType: ["План урока", "Конспект", "Технологическая карта"],
@@ -311,7 +326,7 @@ export default function LessonPlanTopicPage({ params }: Props) {
             {[
               {
                 q: "Подойдёт ли план для школы с углублённым изучением?",
-                a: "Да. AI учитывает тему и класс. Если нужен профильный уровень — укажите это в комментариях к генерации, и план будет расширен.",
+                a: "Да. ИИ учитывает тему и класс. Если нужен профильный уровень — укажите это в комментариях к генерации, и план будет расширен.",
               },
               {
                 q: "Можно ли редактировать готовый план?",

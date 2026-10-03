@@ -12,6 +12,18 @@ import {
   SparklesIllustration,
 } from "@/components/shared/Illustrations";
 import { ArrowRight } from "lucide-react";
+import * as React from "react";
+
+/**
+ * Появление карточек включается только после монтирования на клиенте:
+ * `opacity: inView ? 1 : 0` попадал в статический HTML, и без JS (и у
+ * поисковика) секция выглядела пустой. В разметке теперь всегда opacity 1.
+ */
+function useReveal(inView: boolean) {
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+  return !mounted || inView;
+}
 
 const features = [
   {
@@ -25,21 +37,21 @@ const features = [
     Illustration: ShieldIllustration,
     title: "Проверка ответов",
     description:
-      "Каждый ответ проверяется отдельно. Если задача сходится с ответом — лист идёт в выдачу. Если нет — перегенерируется.",
+      "Каждый ответ проверяется отдельно. Если ответ сошёлся — задание проходит проверку. Если нет — заменяем другим.",
     accent: "from-accent-400 to-accent-600",
   },
   {
     Illustration: FileCheckIllustration,
     title: "Подходит для ФГОС",
     description:
-      "Таксономия: ФГОС 2021 для 1–9, ФГОС СОО с 01.09.2027 для 10–11. Задания под уровень ученика.",
+      "Задания распределены по уровням сложности (таксономия Блума), для 1–9 классов — по ФГОС 2021, для 10–11 классов — по ФГОС СОО с 01.09.2027. Задания — по уровню ученика.",
     accent: "from-warm-400 to-warm-600",
   },
   {
     Illustration: LayersIllustration,
     title: "Несколько вариантов",
     description:
-      "Делайте 2-3 варианта одной темы, чтобы дать разным ученикам разные задания. Контрольные на 2 варианта — в один клик.",
+      "Делайте 2–3 варианта одной темы, чтобы дать разным ученикам разные задания. Два варианта — в один клик.",
     accent: "from-brand-400 to-brand-600",
   },
   {
@@ -60,21 +72,21 @@ const features = [
     Illustration: TimerIllustration,
     title: "План урока по ФГОС за минуту",
     description:
-      "Конспект на 45 минут: цели, ход урока, домашнее задание. Готово для проверки методистом и администрацией школы.",
+      "Конспект на 45 минут: цели, ход урока, домашнее задание. Готов для проверки методистом и администрацией школы.",
     accent: "from-accent-400 to-accent-600",
   },
   {
     Illustration: ShieldIllustration,
     title: "Презентация к уроку",
     description:
-      "5–20 слайдов с заметками спикера. Скачивайте в PPTX и редактируйте в PowerPoint.",
+      "5–20 слайдов с заметками для учителя. Скачивайте в PPTX и редактируйте в PowerPoint.",
     accent: "from-warm-400 to-warm-600",
   },
   {
     Illustration: LayersIllustration,
     title: "КТП на год",
     description:
-      "Календарно-тематическое планирование 1–11 класс. Готовая таблица для администрации.",
+      "Календарно-тематическое планирование для 1–11 классов. Готовая таблица для администрации.",
     accent: "from-brand-400 to-brand-600",
   },
   {
@@ -89,6 +101,7 @@ const features = [
 
 export function Features() {
   const [ref, inView] = useInView<HTMLDivElement>();
+  const show = useReveal(inView);
 
   return (
     <section ref={ref} className="py-20 sm:py-28">
@@ -98,16 +111,22 @@ export function Features() {
             Почему УчЛист
           </p>
           <h2 className="text-3xl sm:text-4xl font-display font-bold tracking-tight">
-            Точно по&nbsp;программе. Быстро. Без&nbsp;ошибок в&nbsp;ответах.
+            Точно по&nbsp;программе. Быстро. Проверяем ответы&nbsp;— отсеиваем явные ошибки.
           </h2>
           <p className="mt-4 text-lg text-warm-600">
-            Десять вещей, которые отличают УчЛист от&nbsp;шаблонов и&nbsp;ручной&nbsp;работы.
+            Десять причин выбрать УчЛист вместо шаблонов и&nbsp;ручной&nbsp;работы.
+          </p>
+          {/* Один раз расшифровываем сокращение: дальше по сайту — «ИИ». */}
+          <p className="mt-3 text-sm text-warm-500">
+            ИИ&nbsp;(AI) — здесь это компьютерная программа, которая собирает
+            задания по&nbsp;программе. Называем её «ИИ», чтобы было понятно
+            школьникам.
           </p>
         </div>
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           {features.map((f, i) => (
-            <FeatureCard key={f.title} feature={f} index={i} inView={inView} />
+            <FeatureCard key={f.title} feature={f} index={i} show={show} />
           ))}
         </div>
       </div>
@@ -118,11 +137,11 @@ export function Features() {
 function FeatureCard({
   feature,
   index,
-  inView,
+  show,
 }: {
   feature: typeof features[number];
   index: number;
-  inView: boolean;
+  show: boolean;
 }) {
   const { Illustration, title, description, accent, href } = feature;
   return (
@@ -130,8 +149,8 @@ function FeatureCard({
       hover
       className="h-full relative overflow-hidden group transition-all duration-500"
       style={{
-        opacity: inView ? 1 : 0,
-        transform: inView ? "translateY(0)" : "translateY(20px)",
+        opacity: show ? 1 : 0,
+        transform: show ? "translateY(0)" : "translateY(20px)",
         transitionDelay: `${index * 80}ms`,
         transitionProperty: "opacity, transform",
       }}

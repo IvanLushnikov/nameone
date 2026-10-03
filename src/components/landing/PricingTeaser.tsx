@@ -24,9 +24,21 @@ import {
 
 const teaserPlans = Object.values(PLANS).filter((p) => p.inTeaser);
 
+/**
+ * Появление карточек включается только после монтирования на клиенте:
+ * `opacity: inView ? 1 : 0` попадал в статический HTML, и без JS (и у
+ * поисковика) тарифы выглядели пустыми. В разметке теперь всегда opacity 1.
+ */
+function useReveal(inView: boolean) {
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+  return !mounted || inView;
+}
+
 export function PricingTeaser({ headingLevel: Heading = "h2" }: { headingLevel?: "h1" | "h2" }) {
   const [ref, inView] = useInView<HTMLDivElement>({ once: true });
   const [period, setPeriod] = React.useState<PeriodId>(DEFAULT_PERIOD);
+  const show = useReveal(inView);
 
   return (
     <section
@@ -72,7 +84,7 @@ export function PricingTeaser({ headingLevel: Heading = "h2" }: { headingLevel?:
                   {p.label}
                   {id === "academicYear" && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-bold whitespace-nowrap">
-                      −{maxAcademicYearDiscount()}%
+                      − {maxAcademicYearDiscount()} %
                     </span>
                   )}
                 </button>
@@ -90,13 +102,15 @@ export function PricingTeaser({ headingLevel: Heading = "h2" }: { headingLevel?:
               key={p.id}
               plan={p}
               index={i}
-              inView={inView}
+              show={show}
               period={period}
             />
           ))}
         </div>
 
         <p className="mt-8 text-center text-sm text-warm-500">
+          {/* Точки стоят вплотную к ссылке: JSX срезает перенос строки между
+              </Link> и «.», поэтому лишнего пробела в HTML не остаётся. */}
           Все условия и скидки —{" "}
           <Link
             href="/pricing"
@@ -121,12 +135,12 @@ export function PricingTeaser({ headingLevel: Heading = "h2" }: { headingLevel?:
 function PricingCard({
   plan,
   index,
-  inView,
+  show,
   period,
 }: {
   plan: Plan;
   index: number;
-  inView: boolean;
+  show: boolean;
   period: PeriodId;
 }) {
   const reducedMotion = useReducedMotion();
@@ -138,8 +152,8 @@ function PricingCard({
     <div
       className="relative"
       style={{
-        opacity: inView ? 1 : 0,
-        transform: inView ? "translateY(0)" : "translateY(20px)",
+        opacity: show ? 1 : 0,
+        transform: show ? "translateY(0)" : "translateY(20px)",
         transitionProperty: "opacity, transform",
         transitionDuration: "500ms",
         transitionDelay: `${index * 100}ms`,
@@ -174,7 +188,7 @@ function PricingCard({
             <span className="text-3xl font-bold text-warm-950 whitespace-nowrap">
               {formatRub(price.amount)}
             </span>
-            <span className="text-sm text-warm-500">/ {price.unit}</span>
+            <span className="text-sm text-warm-500">{price.unit}</span>
           </div>
           {saving && (
             <p className="mt-1.5 text-xs font-medium text-emerald-700">{saving}</p>

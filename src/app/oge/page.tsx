@@ -50,6 +50,7 @@ import {
   Scale,
   Languages,
   Monitor,
+  Globe2,
   BookMarked,
   AlertTriangle,
   CheckCircle2,
@@ -117,6 +118,8 @@ const SUBJECTS_BY_SLUG: Record<string, string> = {
   social: "Обществознание",
   english: "Английский язык",
   informatics: "Информатика",
+  geography: "География",
+  german: "Немецкий язык",
   literature: "Литература",
 };
 
@@ -145,6 +148,8 @@ const examSubjects: Array<{
   { slug: "social", name: "Обществознание", Icon: Scale, color: "info", popular: true },
   { slug: "english", name: "Английский язык", Icon: Languages, color: "warm", popular: false },
   { slug: "informatics", name: "Информатика", Icon: Monitor, color: "info", popular: false },
+  { slug: "geography", name: "География", Icon: Globe2, color: "info", popular: false },
+  { slug: "german", name: "Немецкий язык", Icon: Languages, color: "warm", popular: false },
   { slug: "literature", name: "Литература", Icon: BookMarked, color: "accent", popular: false },
 ];
 
@@ -501,7 +506,7 @@ export default function OgeHubInner() {
           {
             icon: Timer,
             title: "Таймер как на экзамене",
-            text: "Реальные 3-4 часа. По окончании — автоматическая проверка.",
+            text: "Реальные 3–4 часа. По окончании — автоматическая проверка.",
           },
           {
             icon: TrendingUp,
@@ -511,7 +516,7 @@ export default function OgeHubInner() {
           {
             icon: Sparkles,
             title: "Разбор каждого задания",
-            text: "Не просто «правильно/неправильно», а пошаговое объяснение от AI.",
+            text: "Не просто «правильно/неправильно», а пошаговое объяснение от ИИ.",
           },
         ].map((f) => (
           <div key={f.title} className="flex flex-col items-center text-center">
@@ -528,8 +533,7 @@ export default function OgeHubInner() {
       <div className="text-center mt-12">
         <p className="text-sm text-warm-600">
           Бесплатно доступно{" "}
-          {FREE_LIMIT} {plural(FREE_LIMIT, "вариант", "варианта", "вариантов")} — не каждый день,
-          а на весь период. Безлимит — на тарифе Плюс ({priceLabel("plus", "month")}).
+          {FREE_LIMIT} {plural(FREE_LIMIT, "вариант", "варианта", "вариантов")} бесплатно — на весь период, а не на день. Безлимит — на тарифе Плюс ({priceLabel("plus", "month")}).
         </p>
         <Link
           href="/pricing"

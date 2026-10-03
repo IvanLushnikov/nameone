@@ -165,9 +165,17 @@ export const INTERVIEW_QUOTA_PER_MONTH: Record<
   plus: 200,
 };
 
-/** «5 вопросов для беседы в месяц» — одна строка на тарифную карточку. */
+/**
+ * «Вопросы для беседы по фото: 50 наборов в месяц» — строка на тарифную карточку.
+ *
+ * Раньше строка была «50 наборов вопросов для беседы в месяц» — без привязки
+ * к функции выглядела как остаток чужого прайса. Квота реальная (зеркалит
+ * `INTERVIEW_QUESTION_LIMITS` в backend/src/routes/f06.ts), поэтому в названии
+ * строки сказано, к чему она относится. Подменять её на «листов в месяц» нельзя:
+ * числа листов в тарифе нет, а обещание без проверки — это то, что здесь чиним.
+ */
 export function interviewQuotaLabel(planId: "free" | "base" | "plus"): string {
-  return `${INTERVIEW_QUOTA_PER_MONTH[planId]} наборов вопросов для беседы в месяц`;
+  return `Вопросы для беседы по фото: ${INTERVIEW_QUOTA_PER_MONTH[planId]} наборов в месяц`;
 }
 
 /**
@@ -197,16 +205,22 @@ export function formatTokens(n: number): string {
   return String(n);
 }
 
-/** «Использовано 128 400 из 1 440 000 токенов» — для дашборда. */
+/**
+ * Норма тарифа для интерфейса и FAQ.
+ *
+ * Токены идут ВТОРОЙ строкой, а не единственной: учитель не обязан понимать
+ * внутреннюю единицу, а «1,44 млн токенов» без перевода выглядит как
+ * «лимит закончится на второй неделе». Сначала — понятные листы.
+ */
 export function normLabel(planId: PlanId): string {
   const norm = PLANS[planId].normPerMonth;
   if (norm == null) return "Без ограничения по объёму";
-  return `${formatTokens(norm)} токенов в месяц`;
+  return `${tokensToWorksheetsLabel(norm)} в месяц (это ${formatTokens(norm)} токенов)`;
 }
 
-/** «≈ 80 листов» — понятная подпись к токенам. */
+/** «≈ 900 рабочих листов» — понятная подпись к токенам. */
 export function tokensToWorksheetsLabel(tokens: number): string {
-  return `≈ ${Math.round(tokens / TOKENS_PER_WORKSHEET)} листов`;
+  return `до ${Math.round(tokens / TOKENS_PER_WORKSHEET)} рабочих листов`;
 }
 
 const ACADEMIC_YEAR_UNIT = `за учебный год (${ACADEMIC_YEAR_MONTHS} мес)`;
@@ -221,7 +235,7 @@ export const PLANS: Record<PlanId, Plan> = {
     shortDescription: `${FREE_QUOTA_LABEL}, без карты`,
     features: [
       FREE_QUOTA_LABEL,
-      "Все предметы, 1-11 класс",
+      "Все предметы, 1–11 классов",
       "PDF с ответами и пояснениями",
       interviewQuotaLabel("free"),
       "Без регистрации",
@@ -251,9 +265,10 @@ export const PLANS: Record<PlanId, Plan> = {
       "Рабочие листы, тесты, карточки, планы уроков",
       "История и шаблоны",
       "Избранное и сохранённые настройки",
-      "Норма 1,44 млн токенов в месяц",
+      "Лимит: до 900 рабочих листов в месяц (внутренняя единица — 1,44 млн токенов)",
       interviewQuotaLabel("base"),
-      "Семейный доступ до 5 человек",
+      "Учеников: 5",
+      "Членов семьи: до 5 человек",
     ],
     cta: "Оформить подписку",
     href: "/pricing",
@@ -323,15 +338,15 @@ export const PLANS: Record<PlanId, Plan> = {
       "Отслеживание прогресса по темам",
       "Шаблоны для контрольных",
       "Интеграция со Сферум / Moodle",
-      "Безлимит по ученикам в классе",
+      "Без ограничения по числу учеников в классе",
       "Готовые КТП для администрации",
     ],
-    cta: "Скоро · запуск Q1 2027",
+    cta: "Скоро · запуск в I квартале 2027",
     href: "/pricing#b2b",
     highlight: false,
     accent: "from-warm-300 to-warm-500",
     inTeaser: false,
-    comingSoon: "Q1 2027",
+    comingSoon: "I квартал 2027",
     // Ориентир: 3 × базовая норма на класс. Реальное число — после пилота
     // с 2-3 школами; ученикам генерация не выдаётся, платит учитель.
     normPerMonth: 4_320_000,
@@ -390,19 +405,22 @@ export function priceSummary(planId: PlanId): string {
 }
 
 /**
- * Честная строка под скидку: обе цифры и сам процент.
- * «3800 ₽ вместо 4500 ₽ за 9 месяцев — экономия 15,5%».
+ * Честная строка под скидку — сравнение с тем, что вышло бы помесячно.
+ * «на 15,5 % дешевле, чем 500 ₽ × 9 месяцев».
+ *
+ * Раньше здесь было «3 800 ₽ вместо 4 500 ₽ за 9 месяцев»: учитель видел
+ * вторую сумму, но не понимал, откуда она. Теперь видно, что 4 500 ₽ — это
+ * ровно 9 × 500 ₽ по помесячному тарифу.
  */
 export function academicYearSaving(planId: PlanId): string | null {
   const p = priceFor(planId, "academicYear");
   if (p.fullAcademicYearAmount == null || p.academicYearDiscountPercent == null) {
     return null;
   }
-  return (
-    `${formatRub(p.amount)} вместо ${formatRub(p.fullAcademicYearAmount)} ` +
-    `за ${PERIODS.academicYear.months} месяцев — ` +
-    `экономия ${String(p.academicYearDiscountPercent).replace(".", ",")}%`
-  );
+  const months = PERIODS.academicYear.months;
+  const monthPrice = Math.round(p.fullAcademicYearAmount / months);
+  const percent = String(p.academicYearDiscountPercent).replace(".", ",");
+  return `на ${percent} % дешевле, чем ${formatRub(monthPrice)} × ${months} месяцев`;
 }
 
 /** Максимальная скидка за учебный год — для бейджа на переключателе периодов. */
@@ -422,12 +440,9 @@ export function legalPricingSentence(): string {
   const baseYear = priceLabel("base", "academicYear");
   const plusMonth = priceLabel("plus", "month");
   const plusYear = priceLabel("plus", "academicYear");
-  const school = priceLabel("school", "month");
   return (
     `Стоимость подписки: тариф «${PLANS.base.name}» — ${baseMonth} или ${baseYear}; ` +
     `тариф «${PLANS.plus.name}» — ${plusMonth} или ${plusYear}. ` +
-    `Тариф «${PLANS.school.name}» — ${school} (ориентир, запуск ${PLANS.school.comingSoon}) — ` +
-    `для образовательных учреждений. Оплата через ЮКасса, СБП или банковские карты. ` +
-    `Возврат средств в течение 7 дней.`
+    `Оплата через ЮKassa, СБП или банковские карты. Возврат средств в течение 7 дней.`
   );
 }

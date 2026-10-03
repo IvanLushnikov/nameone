@@ -13,6 +13,7 @@ import { requestMagicLink } from "@/lib/auth/api";
 import { MAGIC_LINK_READY } from "@/lib/auth/magic-link-status";
 import { DEMO_USER_NAME, enterDemoMode, isDemoLoginEnabled } from "@/lib/dev/demo-login";
 
+
 export default function LoginPage() {
   const { toast } = useToast();
   const router = useRouter();

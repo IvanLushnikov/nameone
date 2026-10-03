@@ -93,7 +93,7 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
                 <div>УчЛист</div>
                 <div className="mt-0.5">{formatDate(worksheet.createdAt)}</div>
                 <div className="mt-2 inline-block px-2 py-0.5 rounded border border-brand-300 text-brand-700 text-[10px] font-semibold no-print">
-                  Проверено AI
+                  Проверено ИИ
                 </div>
               </div>
             </header>

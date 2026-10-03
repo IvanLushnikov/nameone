@@ -53,12 +53,22 @@ export function generateMetadata({ params }: Props): Metadata {
   const subject = getSubject(params.subject);
   if (!subject) return { title: "Предмет не найден" };
   const subj = prepositionalTitle(subject.slug, subject.title);
-  const title = `Рабочие листы по ${subj} — 1-${subject.grades[subject.grades.length - 1].num} класс`;
+  // Диапазон классов предмета, а не «1-N класс»: у литературы это 5–11 классы,
+  // у алгебры 7–11 классы. Раньше строка собиралась от единицы, и предмет с
+  //_classes с 5-го класса обещал листы с 1-го.
+  const gradeNums = subject.grades.map((g: Grade) => g.num).sort((a: number, b: number) => a - b);
+  const gradeFrom = gradeNums[0];
+  const gradeTo = gradeNums[gradeNums.length - 1];
+  const gradeRange =
+    gradeFrom === gradeTo
+      ? `${gradeFrom} класс`
+      : `${gradeFrom}\u2013${gradeTo} классы`;
+  const title = `Рабочие листы по ${subj} — ${gradeRange}`;
   const gradeCount = subject.grades.length;
   const subjectTopicCount = subject.grades.reduce((s: number, g: Grade) => s + g.topics.length, 0);
   const gradeWord = plural(gradeCount, "класс", "класса", "классов");
   const topicWord = plural(subjectTopicCount, "тема", "темы", "тем");
-  const description = `AI-генератор рабочих листов и тестов по ${subj}. ${gradeCount} ${gradeWord}, ${subjectTopicCount} ${topicWord}. PDF с ответами за 30 секунд.`;
+  const description = `ИИ-генератор рабочих листов и тестов по ${subj}. ${gradeCount} ${gradeWord}, ${subjectTopicCount} ${topicWord}. PDF с ответами за 30 секунд.`;
   const base = SITE_URL;
   const canonicalUrl = `${base}/subject/${subject.slug}`;
   return {
@@ -263,7 +273,7 @@ export default function SubjectHubPage({ params }: Props) {
             Не нашли нужную тему?
           </h2>
           <p className="mt-3 text-warm-600">
-            Напишите в генераторе — AI сгенерирует лист по любой теме. Без шаблонов, под ваш уровень.
+            Напишите в генераторе — ИИ соберёт лист по любой теме. Без шаблонов, по уровню ученика.
           </p>
           <Button
             as="link"

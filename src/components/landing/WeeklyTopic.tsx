@@ -10,6 +10,15 @@ const SUBJECT_LABELS: Record<string, string> = {
 };
 
 /**
+ * «Октябрь · 1-2 неделя» → «Октябрь · 1–2-я неделя».
+ * Подпись недели приходит данными из контента, поэтому приводим её к виду
+ * с тире и порядковым числом здесь, на отображении.
+ */
+function weekLabel(raw: string): string {
+  return raw.replace(/(\d+)-(\d+) неделя/g, "$1\u2013$2-я неделя");
+}
+
+/**
  * Виджет «Что проходят сейчас в школах» — на главной.
  * Подтягивает текущий сезон и подбирает первую тему из WEEKLY_TOPICS.
  * Если совпадений нет (лето, нет данных) — рендерит null.
@@ -36,7 +45,7 @@ export function WeeklyTopicBlock() {
             {topic.title}
           </h2>
           <p className="mt-3 text-sm text-warm-500 max-w-2xl mx-auto">
-            {subjectLabel} · {topic.grade} класс · {topic.weekLabel}
+            {subjectLabel} · {topic.grade} класс · {weekLabel(topic.weekLabel)}
           </p>
         </div>
         <p className="text-sm sm:text-base text-warm-700 text-center max-w-2xl mx-auto mb-6 leading-relaxed">

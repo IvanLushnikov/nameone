@@ -1,6 +1,7 @@
 "use client";
 
 import { useInView, useCountUp } from "@/hooks/useInView";
+import * as React from "react";
 import { subjects } from "@/lib/content/subjects";
 import { plural } from "@/lib/utils/cn";
 
@@ -96,7 +97,14 @@ function StatBox({
   sub: string;
   inView: boolean;
 }) {
+  // Счётчик — только украшение. `useCountUp` отдаёт 0 до старта анимации, и
+  // это 0 уезжало в статический HTML: поисковик и учитель с отключённым JS
+  // видели «0 предмет». Теперь в разметке всегда настоящее число, а скрипт
+  // лишь перебирает его от нуля, когда блок попал в экран.
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
   const v = useCountUp(value, { start: inView });
+  const shown = mounted && inView ? v : value;
   // Склоняем по конечному числу, а не по анимированному — иначе подпись
   // дёргалась бы на каждом кадре счётчика.
   const label =
@@ -106,7 +114,7 @@ function StatBox({
   return (
     <div className="text-center">
       <div className="text-3xl sm:text-5xl font-display font-bold text-warm-950 tabular-nums">
-        {v.toLocaleString("ru-RU")}
+        {shown.toLocaleString("ru-RU")}
         <span className="text-brand-600">{suffix ?? ""}</span>
       </div>
       <div className="mt-1 text-sm font-medium text-warm-700">{label}</div>

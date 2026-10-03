@@ -72,7 +72,7 @@ export function MaterialCard({ material, compact = false }: MaterialCardProps) {
           </span>
           <span className="inline-flex items-center gap-1">
             <Star className="w-3.5 h-3.5 fill-accent-400 text-accent-400" aria-hidden />
-            {material.rating.toFixed(1)}
+            {material.rating.toFixed(1).replace(".", ",")}
             <span className="text-[color:var(--text-muted)]">({material.ratingCount})</span>
           </span>
         </div>

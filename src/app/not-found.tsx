@@ -1,5 +1,15 @@
+import type { Metadata } from "next";
 import { Button } from "@/components/ui/Button";
 import { Sparkles, ArrowLeft } from "lucide-react";
+
+/**
+ * Без своих метаданных страница «не найдено» наследовала заголовок и
+ * описание главной — в выдаче и в шарилке это выглядело как главная.
+ */
+export const metadata: Metadata = {
+  title: "Страница не найдена — УчЛист",
+  description: "Такой страницы нет. Вернитесь на главную или откройте каталог предметов и тем.",
+};
 
 export default function NotFound() {
   return (

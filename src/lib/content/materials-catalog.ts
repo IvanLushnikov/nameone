@@ -360,7 +360,6 @@ function buildDescription(ctx: {
   const opening = openings[h % openings.length];
   const detail = DESCRIPTION_DETAILS[(h >>> 4) % DESCRIPTION_DETAILS.length];
   const cta = DESCRIPTION_CTAS[(h >>> 8) % DESCRIPTION_CTAS.length];
-
   const format = (template: string): string =>
     template
       .replace(/\{a\}/g, ARTIFACT_LABELS[artifactFor(ctx)])
@@ -369,9 +368,13 @@ function buildDescription(ctx: {
       .replace(/\{g\}/g, String(grade))
       .replace(/\{n\}/g, String(count))
       .replace(/\{dw\}/g, DIFFICULTY_WORDS[difficulty])
-      .replace(/\{f\}/g, fgosRef ?? "программа ФГОС");
+      .replace(/\{f\}/g, fgosRef ?? "");
 
-  return fitDescription(`${format(opening)} ${format(detail)} ${format(cta)}`);
+  // Деталь про раздел программы показываем, только если у темы есть реальная
+  // ссылка на раздел. Раньше вместо неё подставлялась заглушка «программа
+  // ФГОС» — учитель видел её в описании материала как отсылку к программе.
+  const detailText = fgosRef ? ` ${format(detail)}` : "";
+  return fitDescription(`${format(opening)}${detailText} ${format(cta)}`);
 }
 
 /** Тип артефакта записи — нужен и заголовку, и описанию, и CTA. */

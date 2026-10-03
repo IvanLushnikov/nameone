@@ -156,6 +156,8 @@ export function UsageCard({ usage, loading }: Props) {
             Объём тарифа {PLANS[planId].name}
           </h3>
           <p className="text-sm text-warm-500 mt-0.5">
+            {/* Сначала понятная единица (листы), токены — мелким шрифтом:
+                учитель не обязан знать внутреннюю единицу биллинга. */}
             {normLabel(planId)} · {tokensToWorksheetsLabel(used)} сделано
           </p>
         </div>

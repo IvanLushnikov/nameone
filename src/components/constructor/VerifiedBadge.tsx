@@ -50,15 +50,15 @@ export function VerifiedBadge({ verified, explanation, className }: Props) {
 const STATE_CONFIG = {
   ok: {
     icon: "✓",
-    label: "AI-проверено",
+    label: "ИИ-проверено",
     classes: "bg-emerald-50 text-emerald-800 ring-emerald-200",
-    title: "AI подтвердил правильность ответа",
+    title: "ИИ подтвердил правильность ответа",
   },
   warn: {
     icon: "⚠",
     label: "Требует проверки",
     classes: "bg-amber-50 text-amber-800 ring-amber-200",
-    title: "AI обнаружил потенциальную неточность",
+    title: "ИИ обнаружил потенциальную неточность",
   },
   unknown: {
     icon: "—",

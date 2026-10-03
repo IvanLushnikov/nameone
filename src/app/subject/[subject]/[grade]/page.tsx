@@ -149,7 +149,7 @@ export default function GradeHubPage({ params }: Props) {
                     {t.examples[0]?.text}
                   </p>
                   <div className="mt-3 text-xs text-warm-500">
-                    {t.examples.length} готовых заданий · можно сгенерировать ещё
+                    {plural(t.examples.length, "готовое задание", "готовых задания", "готовых заданий")} · можно сгенерировать ещё
                   </div>
                 </Card>
               </Link>

@@ -62,6 +62,15 @@ export const englishExtra: Grade[] = [
           { text: "Вставьте: We ___ at school.", answer: "are" },
         ],
       },
+    ],
+  },
+  {
+    // В базе уже есть 5 тем 3 класса (present-simple-beginner,
+    // present-continuous, modal-can-cant, school-things, weather-vocabulary).
+    // Дописываем только новые.
+    num: 3,
+    title: "3 класс",
+    topics: [
       {
         slug: "present-simple-1",
         title: "Present Simple: глаголы 1-го лица и my / your",
@@ -72,14 +81,6 @@ export const englishExtra: Grade[] = [
           { text: "Поставьте глагол: My mum ___ (read) books.", answer: "reads" },
         ],
       },
-    ],
-  },
-  {
-    // В базе уже есть 4 темы: present-continuous, modal-can-cant,
-    // school-things, weather-vocabulary. Дописываем только новые.
-    num: 3,
-    title: "3 класс",
-    topics: [
       {
         slug: "numbers-11-100",
         title: "Числа от 11 до 100",

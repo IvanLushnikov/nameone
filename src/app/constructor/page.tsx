@@ -1338,7 +1338,7 @@ export default function ConstructorPage() {
   const handleOpenEditChat = React.useCallback(() => {
     if (typeof document === "undefined") return;
     const btn = document.querySelector<HTMLButtonElement>(
-      '[aria-label="Открыть чат с AI для правок"]',
+      '[aria-label="Открыть чат с ИИ для правок"]',
     );
     btn?.click();
   }, []);
@@ -1396,7 +1396,7 @@ export default function ConstructorPage() {
                   <div>
                     <h2 className="text-lg font-semibold text-warm-950">Сценарий</h2>
                     <p className="text-xs text-warm-500 mt-0.5">
-                      Выбраны: {getSubject(subject)?.shortTitle} · {grade} кл. Можно поменять в шаге «Что».
+                      Выбраны: {getSubject(subject)?.title} · {grade} кл. Можно поменять в шаге «Что».
                     </p>
                   </div>
                   <Button
@@ -1501,7 +1501,7 @@ export default function ConstructorPage() {
                 }}
                 summary={mode === "topic"
                   ? subjectData && grade
-                    ? `${subjectData.emoji} ${subjectData.shortTitle} · ${grade} кл${topic && gradeData?.topics.find((tt) => tt.slug === topic) ? ` · ${gradeData.topics.find((tt) => tt.slug === topic)!.title}` : ""}`
+                    ? `${subjectData.emoji} ${subjectData.title} · ${grade} кл${topic && gradeData?.topics.find((tt) => tt.slug === topic) ? ` · ${gradeData.topics.find((tt) => tt.slug === topic)!.title}` : ""}`
                     : null
                   : exam && examSubject
                     ? `${exam === "oge" ? "ОГЭ" : "ЕГЭ"} · ${getSubject(examSubject)?.shortTitle ?? examSubject}${examNumbers.length ? ` · № ${examNumbers.join(", ")}` : ""}`
@@ -1649,11 +1649,11 @@ export default function ConstructorPage() {
                             size="sm"
                             leftIcon={<Sparkles className="w-4 h-4" />}
                             onClick={handleOpenEditChat}
-                            aria-label="Открыть AI-правки"
+                            aria-label="Открыть правки через ИИ"
                             data-testid="open-edit-chat"
                           >
-                            <span className="hidden sm:inline">AI-правки</span>
-                            <span className="sm:hidden">AI</span>
+                            <span className="hidden sm:inline">Правки через ИИ</span>
+                            <span className="sm:hidden">ИИ</span>
                           </Button>
                         )}
                         <Button
@@ -2037,7 +2037,7 @@ function SelectStep({
     <Card>
       <div className="flex items-baseline justify-between mb-3">
         <h2 className="text-lg font-semibold text-warm-950">Что и для кого</h2>
-        <span className="text-xs text-warm-500">Темы по ФГОС, 1-11 класс</span>
+        <span className="text-xs text-warm-500">Темы по ФГОС, 1–11 классов</span>
       </div>
 
       {/* Секция 1: КЛАСС — поднял наверх для видимости без скролла. */}
@@ -2111,6 +2111,15 @@ function SelectStep({
           </section>
         ))}
       </div>
+
+      {/* Сокращения предметов в школе и в каталоге — разные. Без этой строки
+          учитель, который ищет «ОБЗР» или «Окр. мир», не находит свой предмет. */}
+      <p className="text-[11px] leading-snug text-warm-500">
+        Сокращения: ОБЖ — основы безопасности жизнедеятельности (в документах —
+        ОБЗР), Окр. мир — окружающий мир, Фин. грамотность — финансовая
+        грамотность, Физ-ра — физическая культура, ИЗО — изобразительное
+        искусство.
+      </p>
 
       {/* CTA: «Далее» доступен только когда оба выбраны. Sticky снизу. */}
       <div className="mt-1.5 pt-1.5 border-t border-warm-100 flex items-center justify-end gap-3 sticky bottom-0 bg-white/85 backdrop-blur -mx-5 px-5 -mb-5 pb-3 rounded-b-2xl">
@@ -2683,7 +2692,7 @@ function EmptyPreview({
             ? "Завершите выбор номеров и параметров. Сгенерируем рабочий лист по выбранным заданиям ФИПИ."
             : subject
               ? "Завершите выбор темы и параметров, и через 30 секунд у вас будет готовый PDF."
-              : "AI создаст рабочий лист, проверит ответы сам и пришлёт готовый файл."}
+              : "ИИ создаст рабочий лист, проверит ответы сам и пришлёт готовый файл."}
         </p>
         {!isExam && (
           <Button variant="primary" size="lg" onClick={onPickPopular} leftIcon={<Sparkles className="w-4 h-4" />}>
@@ -2717,7 +2726,7 @@ function EmptyPreview({
         </div>
         <div>
           <div className="text-2xl font-bold text-brand-600">100%</div>
-          <div className="text-xs text-warm-500 mt-0.5">Проверено AI</div>
+          <div className="text-xs text-warm-500 mt-0.5">Проверено ИИ</div>
         </div>
         <div>
           <div className="text-2xl font-bold text-brand-600">PDF A4</div>
@@ -2734,8 +2743,8 @@ const PROGRESS_STEPS: Array<{
   label: string;
   hint: string;
 }> = [
-  { id: "selecting", label: "Подбираю задания по программе", hint: "Читаем ФГОС и подбираем задания под уровень" },
-  { id: "verifying", label: "Решаю и проверяю каждое задание", hint: "AI прогоняет каждый ответ, чтобы не было мусора" },
+  { id: "selecting", label: "Подбираю задания по программе", hint: "Читаем ФГОС и подбираем задания по уровню ученика" },
+  { id: "verifying", label: "Решаю и проверяю каждое задание", hint: "ИИ прогоняет каждый ответ, чтобы не было мусора" },
   { id: "formatting", label: "Оформляю в PDF с ответами", hint: "Собираем аккуратный A4 с местом для решений" },
 ];
 

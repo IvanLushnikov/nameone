@@ -84,17 +84,21 @@ describe("generateKtp — edge-case: циклический обход тем", 
     }
   });
 
-  it("entry № 1 имеет fgosRef первой темы, entry № 8 (цикл) — той же первой темы", async () => {
+  it("entry № 1 имеет fgosRef первой темы, следующий цикл — той же первой темы", async () => {
     const ktp = await generateKtp(req({}));
     const allEntries = ktp.weeks.flatMap((w) => w.entries);
-    const e1 = allEntries.find((e) => e.num === 1);
-    const e8 = allEntries.find((e) => e.num === 8);
     const topics = getGrade("russian", 5)!.topics;
+    // Число тем класса меняется при переносе тем между классами, поэтому
+    // длину цикла берём из данных, а не из константы.
+    const cycleEntry = topics.length + 1;
+    const e1 = allEntries.find((e) => e.num === 1);
+    const eCycle = allEntries.find((e) => e.num === cycleEntry);
+    expect(cycleEntry).toBeLessThanOrEqual(allEntries.length);
     expect(e1!.topic).toBe(topics[0].title);
-    expect(e8!.topic).toBe(topics[0].title); // (8-1) % 7 === 0
+    expect(eCycle!.topic).toBe(topics[0].title); // (cycleEntry - 1) % topics.length === 0
     if (topics[0].fgosRef) {
       expect(e1!.fgosRef).toBe(topics[0].fgosRef);
-      expect(e8!.fgosRef).toBe(topics[0].fgosRef);
+      expect(eCycle!.fgosRef).toBe(topics[0].fgosRef);
     }
   });
 });
