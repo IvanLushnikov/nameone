@@ -14,38 +14,15 @@
  *   - network error → «Не получилось подтвердить вход» + retry-кнопка.
  *   - 200 → success-стейт ~600мс → redirect.
  *
- * Важно: Next.js 14 при `output: "export"` требует обернуть useSearchParams()
- * в <Suspense>, иначе пререндер падает. Поэтому клиентская логика вынесена
- * в AuthCallbackInner, а page.tsx — server-component с <Suspense fallback>.
+ * Страница сразу отдаёт разметку и гидратируется: токен читается из
+ * `window.location.search` в useEffect внутри AuthCallbackInner. Раньше
+ * здесь стоял <Suspense> — Next.js 14 при `output: "export"` требовал его
+ * ради useSearchParams(), и fallback («Подтверждаем вход…») заменял собой
+ * страницу на всё время загрузки JS.
  */
 
-import * as React from "react";
-import { Card } from "@/components/ui/Card";
-import { Loader2 } from "lucide-react";
 import { AuthCallbackInner } from "./AuthCallbackInner";
 
-function LoadingFallback() {
-  return (
-    <div className="container-tight py-12 sm:py-20 max-w-md mx-auto">
-      <Card>
-        <div className="text-center">
-          <div className="w-12 h-12 rounded-xl bg-brand-500 text-white grid place-items-center mx-auto mb-4 shadow-brand">
-            <Loader2 className="w-6 h-6 animate-spin" />
-          </div>
-          <h1 className="text-xl font-semibold text-warm-950">
-            Подтверждаем вход…
-          </h1>
-          <p className="text-sm text-warm-500 mt-2">Это занимает пару секунд.</p>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
 export default function AuthCallbackPage() {
-  return (
-    <React.Suspense fallback={<LoadingFallback />}>
-      <AuthCallbackInner />
-    </React.Suspense>
-  );
+  return <AuthCallbackInner />;
 }

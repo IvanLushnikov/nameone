@@ -17,10 +17,13 @@
  * Ссылка «назад к списку» — это удаление `id` из query через `router.replace`,
  * а не `router.back()`: ученик мог открыть прямую ссылку, и «назад» увёл бы
  * его на чужой сайт.
+ *
+ * Обёртка `<Suspense>` была нужна только ради `useSearchParams()` во
+ * `InteractivesView`; её fallback закрывал страницу до гидратации. Сейчас
+ * `?id` читается из `window.location.search` в useEffect.
  */
 
 import type { Metadata } from "next";
-import * as React from "react";
 import { InteractivesView } from "./InteractivesView";
 
 export const metadata: Metadata = {
@@ -28,18 +31,6 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-function LoadingFallback() {
-  return (
-    <div className="container-tight py-12 max-w-md mx-auto text-center">
-      <h1 className="text-xl font-semibold text-warm-950">Загружаем интерактивы…</h1>
-    </div>
-  );
-}
-
 export default function InteractivesPage() {
-  return (
-    <React.Suspense fallback={<LoadingFallback />}>
-      <InteractivesView />
-    </React.Suspense>
-  );
+  return <InteractivesView />;
 }

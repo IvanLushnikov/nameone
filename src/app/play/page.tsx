@@ -9,10 +9,10 @@
  * вариант 5 «отклонено»). Поэтому ровно та же схема, что у TZ-12 для форм:
  * одна статическая страница + токен в query `?t=<token>` + клиентский fetch.
  *
- * Обёртка `<Suspense>` обязательна: Next 14 не пререндерит клиентский компонент
- * с `useSearchParams()` без границы (при `output: "export"` это deopt-предупреждение,
- * а с включённым strict — ошибка). Копируем приём из `src/app/form/page.tsx`,
- * второй раз не изобретаем.
+ * Обёртка `<Suspense>` была обязательна только ради `useSearchParams()` в
+ * `PlayRunner`. Хук при `output: "export"` требует границы, а её fallback
+ * закрывал собой страницу до гидратации. Теперь токен читается из
+ * `window.location.search` в useEffect, поэтому страница рендерится сразу.
  *
  * Заголовки приватности (как у `/form/`):
  *   - `robots: { index: false, follow: false }` — страница прохождения не должна
@@ -21,7 +21,6 @@
  *     должен утекать в `Referer`, когда ученик уходит с нашего сайта.
  */
 
-import * as React from "react";
 import type { Metadata } from "next";
 import { PlayRunner } from "./PlayRunner";
 
@@ -31,24 +30,6 @@ export const metadata: Metadata = {
   other: { referrer: "no-referrer" },
 };
 
-function LoadingFallback() {
-  return (
-    <div className="container-tight py-12 sm:py-20 max-w-md mx-auto text-center">
-      <div className="w-12 h-12 rounded-xl bg-brand-500 text-white grid place-items-center mx-auto mb-4 shadow-brand animate-pulse">
-        <span className="text-xl font-bold" aria-hidden>
-          ?
-        </span>
-      </div>
-      <h1 className="text-xl font-semibold text-warm-950">Загружаем игру…</h1>
-      <p className="text-sm text-warm-500 mt-2">Это занимает пару секунд.</p>
-    </div>
-  );
-}
-
 export default function PlayPage() {
-  return (
-    <React.Suspense fallback={<LoadingFallback />}>
-      <PlayRunner />
-    </React.Suspense>
-  );
+  return <PlayRunner />;
 }
