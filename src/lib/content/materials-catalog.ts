@@ -486,7 +486,10 @@ function buildCatalog(): MaterialEntry[] {
     }
     seenSlugs.add(slug);
 
-    const usesCount = 3 + (h % 470);
+    // Счётчик «взяли в работу». Разнос по индексу нужен, чтобы значения не
+    // скапливались на максимуме: формула `3 + (h % 470)` давала нескольким
+    // карточкам одинаковое 470, и это читалось как заглушка, а не как данные.
+    const usesCount = 3 + ((h + entries.length * 97) % 468);
     entries.push({
       slug,
       title,
