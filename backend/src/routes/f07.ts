@@ -21,6 +21,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { D1Database } from "@cloudflare/workers-types";
 import type { AppEnv, WorksheetTask } from "../types";
+import type { Env } from "../env";
 import { getWorksheetById } from "../services/worksheet";
 import { requireAuth } from "../middleware/auth";
 import { BadRequestError, NotFoundError } from "../lib/errors";
@@ -132,14 +133,30 @@ function parseTasks(payloadJson: string): WorksheetTask[] {
 }
 
 /**
- * Публичная ссылка на форму: `<FRONTEND_URL>/form/?t=<token>`.
+ * Публичная ссылка на форму: `<origin>/form/?t=<token>`.
  *
- * FRONTEND_URL в проде — comma-separated список (несколько доменов), берём
- * первый. Страница ученика статическая, токен едет в query-строкой — это
- * единственный вариант, который работает при `output: "export"` (ТЗ §4.1).
+ * Берём `APP_PUBLIC_URL` — это ОДИН origin фронта, заведённый специально для
+ * ссылок, которые видит человек. `FRONTEND_URL` в проде содержит список
+ * через запятую (он нужен CORS, который список разбирает) и вставлять его в
+ * ссылку нельзя.
+ *
+ * ─── Почему это было багом ───
+ * Раньше здесь стояло `FRONTEND_URL.split(",")[0]`. На проде это
+ * `https://listai-prototype.pages.dev` — preview-домен Cloudflare, а не
+ * рабочий сайт. Учитель получал QR и ссылку, которые выглядели правильно,
+ * но вели на preview-деплой: могли быть не подняты, устаревшие или показывать
+ * старую версию. Всё это невозможно заметить на локали, где FRONTEND_URL —
+ * единственный `http://localhost:3000`.
+ *
+ * Fallback на первый элемент FRONTEND_URL оставлен для старых конфигураций,
+ * где APP_PUBLIC_URL ещё не задали — ровно как в buildMagicLinkUrl.
+ *
+ * Страница ученика статическая, токен едет в query-строкой — это единственный
+ * вариант, который работает при `output: "export"` (ТЗ §4.1).
  */
-function buildFormUrl(frontendUrl: string | undefined, token: string): string {
-  const base = (frontendUrl ?? "").split(",")[0]?.trim().replace(/\/+$/u, "") || "";
+export function buildFormUrl(env: Env, token: string): string {
+  const raw = env.APP_PUBLIC_URL ?? env.FRONTEND_URL?.split(",")[0] ?? "";
+  const base = raw.trim().replace(/\/+$/u, "");
   return `${base}/form/?t=${token}`;
 }
 
@@ -322,7 +339,7 @@ f07Router.post("/forms", async (c) => {
       ok: true,
       formId: id,
       token,
-      url: buildFormUrl(c.env.FRONTEND_URL, token),
+      url: buildFormUrl(c.env, token),
       responsesCount: 0,
     },
     201,
@@ -524,7 +541,7 @@ f07Router.get("/forms/:id", async (c) => {
       closedAt: form.closed_at,
       // Учитель видит полный снимок, включая эталоны — ему они нужны для проверки.
       tasks: parseTasks(form.payload_json),
-      url: buildFormUrl(c.env.FRONTEND_URL, form.token),
+      url: buildFormUrl(c.env, form.token),
     },
     responses: out,
   });
@@ -602,7 +619,7 @@ f07Router.patch("/forms/:id", async (c) => {
   return c.json({
     ok: true,
     token,
-    url: buildFormUrl(c.env.FRONTEND_URL, token),
+    url: buildFormUrl(c.env, token),
     status: body.action === "close" ? "closed" : "open",
     expiresAt,
   });
