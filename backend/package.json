@@ -1,9 +1,9 @@
 {
-  "name": "@rabochielisty/api",
+  "name": "@uchlist/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Backend для РабочиеЛисты AI: Hono + D1 + R2 на Cloudflare Workers.",
+  "description": "Backend для УчЛист: Hono + D1 + R2 на Cloudflare Workers.",
   "scripts": {
     "dev": "wrangler dev --local",
     "deploy": "wrangler deploy",
