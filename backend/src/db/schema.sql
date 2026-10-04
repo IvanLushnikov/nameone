@@ -518,3 +518,116 @@ CREATE TABLE IF NOT EXISTS interactive_attempts (
 
 CREATE INDEX IF NOT EXISTS idx_attempts_interactive_created ON interactive_attempts(interactive_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_attempts_interactive_score    ON interactive_attempts(interactive_id, percent);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Ручные отметки учителя после проверки по фото (ТЗ-19)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Отдельная таблица, а НЕ колонка в photo_check_items — по прямому требованию
+-- ТЗ-19 §3: «через месяц нельзя будет понять, где кончилась машина и начался
+-- человек». Строка здесь = решение УЧИТЕЛЯ, строка в photo_check_items =
+-- решение МАШИНЫ. Они не смешиваются и не перетирают друг друга.
+--
+-- model_verdict / model_points — снимок того, что сказала машина В МОМЕНТ
+-- правки. Без него через месяц нельзя понять, что именно учитель исправил:
+-- «было неуверенно → стало верно» и «было верно → стало неверно» выглядели бы
+-- одинаково.
+CREATE TABLE IF NOT EXISTS photo_check_manual_marks (
+  id            TEXT PRIMARY KEY,           -- pcmm_<12>
+  check_id      TEXT NOT NULL REFERENCES photo_checks(id) ON DELETE CASCADE,
+  task_number   INTEGER NOT NULL,
+  accepted      INTEGER NOT NULL,           -- 1 = учитель засчитал, 0 = не засчитал
+  points        INTEGER NOT NULL DEFAULT 0, -- балл учителя (может быть частичным)
+  model_verdict TEXT,                       -- снимок вердикта модели на момент правки
+  model_points  INTEGER,                    -- снимок балла модели на момент правки
+  author        TEXT NOT NULL,              -- user_id учителя
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL,
+  UNIQUE(check_id, task_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pcmm_check ON photo_check_manual_marks(check_id);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Журнал проверок (ТЗ-19 §5.1 — «отметка никуда не пишется»)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- До этой таблицы итог проверки по фото жил ТОЛЬКО в photo_checks, а сама
+-- страница проверки открывалась только сразу после загрузки фото. Закрыл
+-- вкладку — отметки пропали, и «отметка из фото-проверки не попадала никуда
+-- вообще, даже автоматическая». Здесь живёт строка на одну проверку: что
+-- показали учителю, какая отметка, и чьё это решение.
+--
+-- source — про разделение «машина / учитель» из ТЗ-19 §2:
+--   machine — всё решила модель, учитель не смотрел;
+--   teacher — учитель подтвердил/поправил хотя бы одно сомнительное задание;
+--   mixed   — часть поправлена учителем, часть осталась машинной.
+CREATE TABLE IF NOT EXISTS journal_entries (
+  id            TEXT PRIMARY KEY,           -- jrn_<12>
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  check_id      TEXT NOT NULL REFERENCES photo_checks(id) ON DELETE CASCADE,
+  subject       TEXT,
+  grade         INTEGER,
+  mark          TEXT,                       -- '5'|'4'|'3'|'2'|NULL (разбор неполный)
+  percentage    INTEGER,                    -- 0..100, NULL если неполный разбор
+  earned_points INTEGER NOT NULL DEFAULT 0,
+  total_points  INTEGER NOT NULL DEFAULT 0,
+  source        TEXT NOT NULL DEFAULT 'machine',  -- machine | teacher | mixed
+  pending_tasks INTEGER NOT NULL DEFAULT 0, -- сколько заданий всё ещё ждут учителя
+  occurred_at   INTEGER NOT NULL,           -- когда проверка закончилась
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL,
+  UNIQUE(user_id, check_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_journal_user_time ON journal_entries(user_id, occurred_at DESC);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Рекуррент: согласие учителя и сохранённый способ оплаты (ТЗ-20)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Отдельная таблица, а НЕ колонки в subscriptions, — сознательно: в этом
+-- проекте миграция = повторный прогон schema.sql, а ALTER TABLE ADD COLUMN в
+-- SQLite не идемпотентен. Схема применяется одним `npm run db:migrate:*` без
+-- ручных шагов, и это правило мы не ломаем.
+--
+-- Строка здесь = учитель ЯВНО согласился на безакцептные списания. Её нет —
+-- значит согласия не было, и cron не имеет права ничего списывать. Это и есть
+-- ответ на вопрос ТЗ-20 §5.3: переводить оплативших разово на рекуррент молча
+-- нельзя, поэтому миграции нет — есть только явное согласие, дающее строку.
+CREATE TABLE IF NOT EXISTS recurring_payment_methods (
+  id                        TEXT PRIMARY KEY,   -- rpm_<12>
+  user_id                   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subscription_id           TEXT NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+  yookassa_payment_method_id TEXT NOT NULL,     -- из payment_method.id платежа
+  plan                      TEXT NOT NULL,
+  status                    TEXT NOT NULL,     -- active | canceled | failed
+  confirmed_at              INTEGER NOT NULL,  -- момент явного согласия
+  canceled_at               INTEGER,           -- отмена автопродления
+  last_charge_at            INTEGER,           -- последнее успешное автосписание
+  created_at                INTEGER NOT NULL,
+  updated_at                INTEGER NOT NULL,
+  UNIQUE(subscription_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rpm_user ON recurring_payment_methods(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_rpm_sub  ON recurring_payment_methods(subscription_id);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Идемпотентность писем по подписке (ТЗ-20 §2.5)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Cron ходит каждый час, и повторный запуск в тот же день — норма. Без этой
+-- таблиницы «напоминание за день» ушло бы учителю два, три, семь раз.
+-- dedupe_key уникален вместе с kind: `reminder:<sub_id>:<ends_at>` — то есть
+-- напоминание привязано к КОНКРЕТНОМУ списанию, а не к подписке.
+CREATE TABLE IF NOT EXISTS billing_notifications (
+  id          TEXT PRIMARY KEY,          -- btn_<12>
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL,             -- renewal_reminder | renewal_done | renewal_failed
+  dedupe_key  TEXT NOT NULL,
+  sent_at     INTEGER NOT NULL,
+  UNIQUE(kind, dedupe_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_btn_user ON billing_notifications(user_id, sent_at DESC);

@@ -1,7 +1,18 @@
 # Cloudflare Workers config — УчЛист backend.
 #
-# Deploy:    npm run deploy
+# Deploy:    npm run deploy        → ПРОДАКШН (--env production)
+#            npm run deploy:staging → воркер из секции [vars], НЕ для боя
 # Dev local: npm run dev   (wrangler dev --local)
+#
+# ВНИМАНИЕ, и это не теория. Секция [vars] и [env.production] описывают
+# ОДИН И ТОТ ЖЕ воркер `rabochielisty-api`. Поэтому `wrangler deploy` без
+# `--env production` — это не «локальная сборка», а выкладка на боевой адрес
+# с development-переменными: ALLOW_DEV_MAGIC_URL=true, ALLOW_DEMO_PAYMENTS=true
+# и FRONTEND_URL=http://localhost:3000. Так уже случилось дважды: 02.10.2026
+# (это задеплоили, и защита по APP_ENV выключилась молча) и 04.10.2026 при
+# выкладке ТЗ-19/ТЗ-20. Поэтому `npm run deploy` жёстко указывает
+# `--env production`, а `deploy:staging` назван явно, чтобы никто не
+# запустил его, думая, что это боевой деплой.
 #
 # Secrets (.dev.vars для локала, wrangler secret put для прода):
 #   OPENAI_API_KEY, ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY,
@@ -37,6 +48,9 @@ APP_PUBLIC_URL = "http://localhost:3000"
 # APP_ENV, выключалась молча.
 ALLOW_DEV_MAGIC_URL = "true"
 ALLOW_DEMO_PAYMENTS = "true"
+# ТЗ-20: локально рекуррент проверяем, в проде он выключен до разрешения
+# менеджера ЮKassa и успешного теста на тестовой карте.
+RECURRING_BILLING_ENABLED = "true"
 
 [[d1_databases]]
 binding = "DB"
@@ -70,6 +84,9 @@ APP_PUBLIC_URL = "https://listai-prototype.pages.dev"
 # не сломает: поведение по умолчанию везде — запрет.
 ALLOW_DEV_MAGIC_URL = "false"
 ALLOW_DEMO_PAYMENTS = "false"
+# Рекуррент НЕ включаем, пока менеджер ЮKassa не разрешит автоплатежи на
+# боевом магазине и не пройдёт тест на тестовой карте (см. env.ts).
+RECURRING_BILLING_ENABLED = "false"
 
 [[env.production.d1_databases]]
 binding = "DB"
@@ -86,4 +103,7 @@ bucket_name = "rabochielisty-pdfs"
 # бессрочно. Раз в сутки в 03:00 UTC — фото удаляются воркером, даже если
 # учитель ни разу не открыл дашборд.
 [env.production.triggers]
-crons = ["0 3 * * *"]
+# Два триггера: суточная уборка (фото тетрадей, ответы учеников) и часовой
+# для биллинга — помесячная подписка не должна «протухать» на сутки после
+# даты списания. Обработчик разводит их по event.cron в src/index.ts.
+crons = ["0 3 * * *", "0 * * * *"]

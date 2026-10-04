@@ -38,6 +38,7 @@ import {
   Calendar,
   Send,
   Camera,
+  ClipboardList,
 } from "lucide-react";
 import { timeAgo } from "@/lib/utils/cn";
 import { PLANS, priceShort } from "@/lib/content/plans";
@@ -185,6 +186,30 @@ export default function DashboardPage() {
           </div>
           <Button as="link" href="/constructor?photo=1" variant="secondary" size="md">
             Проверить фото
+          </Button>
+        </div>
+      </Card>
+
+      {/* Журнал проверок (ТЗ-19). Отдельная карточка рядом с фото-проверкой,
+          а не ещё одна кнопка в той же: это другое намерение — не «проверить
+          сейчас», а «вспомнить, что я уже проверил». Без неё результаты
+          проверок остаются вкладкой, которую закрыли. */}
+      <Card className="mt-4 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-start gap-4 min-w-0">
+            <div className="w-11 h-11 rounded-xl bg-brand-50 flex items-center justify-center shrink-0">
+              <ClipboardList className="w-5 h-5 text-brand-600" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-semibold text-warm-950">Журнал проверок</h2>
+              <p className="text-sm text-warm-600 mt-1">
+                Все ранее проверенные работы с отметками — и меткой, кто их поставил: ИИ
+                или вы.
+              </p>
+            </div>
+          </div>
+          <Button as="link" href="/journal" variant="secondary" size="md">
+            Открыть журнал
           </Button>
         </div>
       </Card>

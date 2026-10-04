@@ -26,6 +26,7 @@ const cols = [
     title: "Документы",
     links: [
       { href: "/legal/offer", label: "Публичная оферта" },
+      { href: "/legal/consent", label: "Согласие на обработку персональных данных" },
       { href: "/legal/privacy", label: "Политика конфиденциальности" },
       { href: "/legal/terms", label: "Пользовательское соглашение" },
       { href: "/legal/cookies", label: "Использование cookie-файлов" },
@@ -35,7 +36,8 @@ const cols = [
 
 export function Footer() {
   return (
-    <footer className="bg-warm-100 border-t border-warm-200 mt-20">
+    // no-print: подвал с контактами и ссылками — не часть рабочего листа.
+    <footer className="no-print bg-warm-100 border-t border-warm-200 mt-20">
       <div className="container-tight py-14">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-10">
           <div className="col-span-2">
