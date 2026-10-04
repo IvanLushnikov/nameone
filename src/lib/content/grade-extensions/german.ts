@@ -151,7 +151,7 @@ export const germanExtra: Grade[] = [
         examples: [
           { text: "Как будет «я читаю» (Ich ___ Buch)?", answer: "lese" },
           { text: "Как переводится «мой друг»?", answer: "mein Freund" },
-          { text: "Вставьте: Das ist ___ Buch. (ein)", answer: "mein" },
+          { text: "Вставьте: Das ist ___ Buch. (ein)", answer: "ein" },
         ],
       },
       {
@@ -191,7 +191,7 @@ export const germanExtra: Grade[] = [
         examples: [
           { text: "ich ___ müde (sein)", answer: "bin" },
           { text: "er ___ ein Lehrer (sein)", answer: "ist" },
-          { text: "Wir ___ Hausaufgaben. (haben)", answer: "machen" },
+          { text: "Wir ___ Hausaufgaben. (machen)", answer: "machen" },
         ],
       },
       {
@@ -301,8 +301,8 @@ export const germanExtra: Grade[] = [
         title: "Сослагательное наклонение Konjunktiv I",
         fgosRef: "Грамматика: сослагательное наклонение",
         examples: [
-          { text: "ich ___ (sein) → ich sei", answer: "sei" },
-          { text: "er ___ (haben) → er habe", answer: "habe" },
+          { text: "ich ___ (sein) — Konjunktiv I, первое лицо: ___", answer: "sei" },
+          { text: "er ___ (haben) — Konjunktiv I, третье лицо: ___", answer: "habe" },
           { text: "Как будет «он, что он читает»?", answer: "dass er liest" },
         ],
       },
@@ -323,7 +323,7 @@ export const germanExtra: Grade[] = [
         examples: [
           { text: "Der Mann, ___ ich sehe, ist mein Vater. (подставь)", answer: "den" },
           { text: "Die Stadt, in ___ ich wohne, ... (подставь)", answer: "der" },
-          { text: "Das Buch, das ich lese, ... (подставь)", answer: "das ich lese" },
+          { text: "Das Buch, ___ ich lese, ist interessant. (подставь)", answer: "das" },
         ],
       },
       {
@@ -367,8 +367,8 @@ export const germanExtra: Grade[] = [
         title: "Сослагательное наклонение Konjunktiv II",
         fgosRef: "Грамматика: сослагательное наклонение",
         examples: [
-          { text: "ich ___ (haben) → ich hätte", answer: "hätte" },
-          { text: "er ___ (sein) → er wäre", answer: "wäre" },
+          { text: "ich ___ (haben) — Konjunktiv II, первое лицо: ___", answer: "hätte" },
+          { text: "er ___ (sein) — Konjunktiv II, третье лицо: ___", answer: "wäre" },
           { text: "An deiner Stelle ___ ich mehr Zeit. (haben)", answer: "hätte" },
         ],
       },

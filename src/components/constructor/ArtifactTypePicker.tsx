@@ -50,7 +50,7 @@ export const ARTIFACT_TYPE_OPTIONS: ArtifactTypeOption[] = [
   { id: "worksheet", label: "Лист", icon: FileText, hint: "5–30 заданий, A4 PDF/DOCX", group: "daily" },
   { id: "test", label: "Тест", icon: ClipboardList, hint: "С автопроверкой, ответы в конце", group: "daily" },
   { id: "cards", label: "Карточки", icon: Layers, hint: "Короткие, для запоминания", group: "daily" },
-  { id: "control", label: "Контрольная", icon: ClipboardCheck, hint: "2 варианта + критерии", group: "daily" },
+  { id: "control", label: "Контрольная", icon: ClipboardCheck, hint: "2 варианта работы", group: "daily" },
   // Группа «К уроку» — свёрнута по умолчанию. План урока — топ-1 тип группы.
   { id: "lesson-plan", label: "План урока", icon: Pencil, hint: "ФГОС-конспект на 45 мин", group: "lesson", plusOnly: true, primaryInGroup: true },
   { id: "presentation", label: "Презентация", icon: PresentationIcon, hint: "5–20 слайдов, PPTX", group: "lesson", plusOnly: true },

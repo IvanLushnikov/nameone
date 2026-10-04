@@ -10,7 +10,7 @@ import type { ExtraExamplesMap } from "./types";
 export const extraInfChemOkr: ExtraExamplesMap = {
   "informatics/5/paskaklassifikacia": [
     {
-      text: "Информация, достоверность которой не вызывает сомнений (например, «вода кипит при 100 °C»), называется:",
+      text: "Как называется информация, которая не соответствует действительности (например, слух, что вкусное отравили)? ___",
       answer: "достоверная",
     },
     {

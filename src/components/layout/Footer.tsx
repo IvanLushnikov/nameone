@@ -18,7 +18,7 @@ const cols = [
     links: [
       { href: "/subject/math", label: "Математика" },
       { href: "/subject/russian", label: "Русский язык" },
-      { href: "/subject/english", label: "Английский" },
+      { href: "/subject/english", label: "Английский язык" },
       { href: "/subject", label: "Все предметы" },
     ],
   },

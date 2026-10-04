@@ -220,7 +220,9 @@ export function normLabel(planId: PlanId): string {
 
 /** «≈ 900 рабочих листов» — понятная подпись к токенам. */
 export function tokensToWorksheetsLabel(tokens: number): string {
-  return `до ${Math.round(tokens / TOKENS_PER_WORKSHEET)} рабочих листов`;
+  // Разряд через toLocaleString: без него Плюс показывал «до 10000 рабочих
+  // листов» — слитно, в отличие от всех остальных чисел на сайте.
+  return `до ${Math.round(tokens / TOKENS_PER_WORKSHEET).toLocaleString("ru-RU")} рабочих листов`;
 }
 
 const ACADEMIC_YEAR_UNIT = `за учебный год (${ACADEMIC_YEAR_MONTHS} мес)`;
@@ -265,8 +267,6 @@ export const PLANS: Record<PlanId, Plan> = {
       "История и шаблоны",
       "Избранное и сохранённые настройки",
       "Лимит: до 900 рабочих листов в месяц",
-      "Учеников: 5",
-      "Членов семьи: до 5 человек",
     ],
     cta: "Оформить подписку",
     href: "/pricing",
@@ -298,7 +298,7 @@ export const PLANS: Record<PlanId, Plan> = {
       `${ARTIFACT_NAMES.lessonPlan} по ФГОС`,
       `${ARTIFACT_NAMES.presentation} и ${ARTIFACT_NAMES.ktp}`,
       "Варианты ОГЭ/ЕГЭ с разбором",
-      `${ARTIFACT_NAMES.control} с критериями оценивания`,
+      `${ARTIFACT_NAMES.control} в двух вариантах`,
       "Ранний доступ к новым темам и предметам",
     ],
     cta: "Выбрать Плюс",

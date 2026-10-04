@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Sparkles, BookOpen, GraduationCap } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { subjects } from "@/lib/content/subjects";
 import type { Subject as SubjectType, Grade as GradeType } from "@/lib/types";
 // GradeType retained for totalTopics aggregation
@@ -87,10 +87,10 @@ const ringColors: Record<SubjectType["color"], string> = {
 };
 
 // Bento layout configuration: size = "lg" (spans 2x2), "md" (spans 1x2), "sm" (1x1)
-const bentoConfig: Array<{ slug: string; size: "lg" | "md" | "sm"; icon?: React.ElementType }> = [
-  { slug: "math", size: "lg", icon: Sparkles },
-  { slug: "russian", size: "md", icon: BookOpen },
-  { slug: "english", size: "md", icon: GraduationCap },
+const bentoConfig: Array<{ slug: string; size: "lg" | "md" | "sm" }> = [
+  { slug: "math", size: "lg" },
+  { slug: "russian", size: "md" },
+  { slug: "english", size: "md" },
   { slug: "physics", size: "sm" },
   { slug: "chemistry", size: "sm" },
   { slug: "biology", size: "sm" },
@@ -138,7 +138,7 @@ export function Subjects() {
               {totalCount}&nbsp;{plural(totalCount, "предмет", "предмета", "предметов")} · {totalTopics}&nbsp;{plural(totalTopics, "тема", "темы", "тем")}
             </h2>
             <p className="mt-3 text-warm-600 max-w-2xl">
-              От&nbsp;окружающего мира в&nbsp;1&nbsp;классе до&nbsp;ЕГЭ по&nbsp;обществознанию. Таксономия по&nbsp;ФГОС, генерация по&nbsp;уровню ученика.
+              От&nbsp;окружающего мира в&nbsp;1&nbsp;классе до&nbsp;ЕГЭ по&nbsp;обществознанию. Задания по&nbsp;уровням сложности&nbsp;— по&nbsp;ФГОС, под&nbsp;уровень ученика.
             </p>
           </div>
           <Link
@@ -167,7 +167,6 @@ export function Subjects() {
                 size={cfg.size}
                 index={i}
                 show={show}
-                badge={cfg.icon}
               />
             );
           })}
@@ -193,13 +192,11 @@ function SubjectBentoCard({
   size,
   index,
   show,
-  badge,
 }: {
   subject: SubjectType;
   size: "lg" | "md" | "sm";
   index: number;
   show: boolean;
-  badge?: React.ElementType;
 }) {
   const Illustration = illustrationMap[subject.slug];
   const totalTopics = subject.grades.reduce((sum: number, g: GradeType) => sum + g.topics.length, 0);
@@ -248,15 +245,6 @@ function SubjectBentoCard({
         <div
           className={`absolute -top-12 -right-12 w-32 h-32 rounded-full bg-gradient-to-br ${colorGradients[subject.color]} opacity-50 blur-2xl`}
         />
-      )}
-
-      {badge && size === "lg" && (
-        <div className="absolute top-3 right-3 z-10">
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-warm-900/80 text-white text-[10px] font-semibold backdrop-blur">
-            <Sparkles className="w-3 h-3" />
-            Самый популярный
-          </span>
-        </div>
       )}
 
       <div className="relative p-4 sm:p-5 h-full flex flex-col">

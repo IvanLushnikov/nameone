@@ -7,10 +7,12 @@ import { PageTracker } from "@/components/shared/PageTracker";
 import {
   ACADEMIC_YEAR_NOTE,
   ARTIFACT_NAMES,
+  FREE_GENERATIONS,
   FREE_QUOTA_LABEL,
   PLANS,
   academicYearSaving,
   formatRub,
+  normLabel,
   priceLabel,
   priceShort,
   priceSummary,
@@ -32,7 +34,7 @@ import { SITE_URL } from "@/lib/site";
  * и это же проверяет tests/unit/plans-consistency.test.ts.
  */
 export const metadata: Metadata = {
-  title: `Тарифы — 3 генерации бесплатно, дальше от ${priceShort("base", "month")}`,
+  title: `Тарифы — ${FREE_GENERATIONS} генерации бесплатно, дальше от ${priceShort("base", "month")}`,
   description: `Базовый ${priceShort("base", "month")} или ${priceShort("base", "academicYear")}. Плюс — ${priceShort("plus", "month")}, включает ОГЭ/ЕГЭ, презентации и КТП. ${FREE_QUOTA_LABEL} — без карты и без регистрации. Оплата картой РФ и СБП.`,
   alternates: { canonical: `${SITE_URL}/pricing` },
 };
@@ -53,10 +55,10 @@ const comparison = [
   },
   {
     feature: "Бесплатные генерации",
-    free: "3",
-    base: "Безлимит",
-    plus: "Безлимит",
-    school: "Безлимит",
+    free: String(FREE_GENERATIONS),
+    base: normLabel("base"),
+    plus: normLabel("plus"),
+    school: "уточним на запуске",
   },
   {
     feature: "Предметы",
@@ -80,11 +82,11 @@ const comparison = [
     school: "✓",
   },
   {
-    feature: "История генераций",
+    feature: "История генераций и шаблоны",
     free: "—",
-    base: "30 дней",
-    plus: "Без ограничений",
-    school: "Без ограничений",
+    base: "✓",
+    plus: "✓",
+    school: "✓",
   },
   {
     feature: "Избранное и шаблоны",
@@ -108,7 +110,7 @@ const comparison = [
     school: "✓",
   },
   {
-    feature: `${ARTIFACT_NAMES.control} с критериями оценивания`,
+    feature: `${ARTIFACT_NAMES.control} в двух вариантах`,
     free: "—",
     base: "—",
     plus: "✓",

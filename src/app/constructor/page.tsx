@@ -1833,11 +1833,15 @@ export default function ConstructorPage() {
                                 ? Number.POSITIVE_INFINITY
                                 : Math.max(0, serverUsage.generationsLimit - serverUsage.generationsToday);
                               if (isUnlimited) {
-                                return `Безлимит (план ${serverUsage.plan}). Сегодня уже сгенерировано: ${serverUsage.generationsToday}.`;
+                                return `Безлимит на тарифе «${PLANS[serverUsage.plan].name}». Уже сгенерировано: ${serverUsage.generationsToday}.`;
                               }
-                              return `Осталось ${left} из ${serverUsage.generationsLimit} на сегодня. ${PLANS_TEXT}`;
+                              // Без слов «на сегодня» / «в день»: счётчик бесплатной квоты
+                              // серверный и НЕ сбрасывается (backend/src/db/queries.ts →
+                              // resetUserDailyGenerations нигде не вызывается), а лимит
+                              // платного тарифа считается за период подписки, не за сутки.
+                              return `Осталось ${left} из ${serverUsage.generationsLimit}. ${PLANS_TEXT}`;
                             }
-                            return `Осталось ${remaining} из 3 на сегодня. ${PLANS_TEXT}`;
+                            return `Осталось ${remaining} из ${FREE_GENERATIONS} — всего, счёт не сбрасывается. ${PLANS_TEXT}`;
                           })()}
                         </p>
                         <div className="mt-2 h-1.5 bg-white rounded-full overflow-hidden">
@@ -2284,7 +2288,7 @@ function TopicStep({
       >
         {topicsTotal === 0 ? (
           <div className="text-sm text-warm-500 py-6 text-center">
-            Для выбранного учебника нет тем. Попробуйте сбросить выбор УМК — кнопка «Назад».
+            Для выбранного учебника нет тем. Попробуйте сбросить выбор учебника — кнопка «Назад».
           </div>
         ) : visibleTopics.map((t) => (
           <button
@@ -2654,7 +2658,7 @@ function EmptyPreview({
     },
     test: {
       label: "Тест",
-      desc: "Все задания — multiple-choice, легко проверить по шифру ответов.",
+      desc: "Все задания с выбором ответа из нескольких вариантов — легко проверить по шифру ответов.",
     },
     cards: {
       label: "Карточки",
@@ -2662,7 +2666,7 @@ function EmptyPreview({
     },
     control: {
       label: "Контрольная",
-      desc: "Два варианта одной работы плюс критерии оценивания.",
+      desc: "Два варианта одной работы, чтобы сравнить результат класса.",
     },
     "lesson-plan": {
       label: "План урока",
@@ -2670,7 +2674,7 @@ function EmptyPreview({
     },
     presentation: {
       label: "Презентация",
-      desc: "5–20 слайдов в PPTX. Иллюстрации и тезисы подобраны LLM.",
+      desc: "5–20 слайдов в PPTX. Иллюстрации и тезисы подбираются автоматически.",
     },
     ktp: {
       label: "КТП",
