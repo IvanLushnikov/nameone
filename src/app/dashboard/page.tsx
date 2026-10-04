@@ -425,7 +425,7 @@ function HistoryCard({
         >
           <Heart
             className={`w-4 h-4 ${
-              item.isFavorite ? "fill-accent-500 text-accent-500" : "text-warm-400"
+              item.isFavorite ? "fill-accent-500 text-accent-500" : "text-warm-600"
             }`}
           />
         </button>
@@ -452,7 +452,7 @@ function HistoryCard({
           <button
             type="button"
             onClick={onRemove}
-            className="shrink-0 w-8 h-8 rounded-lg grid place-items-center text-warm-400 hover:text-rose-500 hover:bg-rose-50 transition-colors"
+            className="shrink-0 w-8 h-8 rounded-lg grid place-items-center text-warm-600 hover:text-rose-500 hover:bg-rose-50 transition-colors"
             aria-label="Удалить"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -483,7 +483,7 @@ function FavoriteCard({
         <button
           type="button"
           onClick={onRemove}
-          className="w-7 h-7 rounded-lg grid place-items-center text-warm-400 hover:text-rose-500 hover:bg-rose-50 transition-colors"
+          className="w-7 h-7 rounded-lg grid place-items-center text-warm-600 hover:text-rose-500 hover:bg-rose-50 transition-colors"
           aria-label="Удалить"
         >
           <Trash2 className="w-3.5 h-3.5" />
@@ -577,7 +577,7 @@ function TemplateCard({
           <button
             type="button"
             onClick={onRemove}
-            className="shrink-0 w-8 h-8 rounded-lg grid place-items-center text-warm-400 hover:text-rose-500 hover:bg-rose-50 transition-colors"
+            className="shrink-0 w-8 h-8 rounded-lg grid place-items-center text-warm-600 hover:text-rose-500 hover:bg-rose-50 transition-colors"
             aria-label="Удалить"
           >
             <Trash2 className="w-3.5 h-3.5" />

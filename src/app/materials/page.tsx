@@ -145,7 +145,7 @@ export default function MaterialsHubPage() {
                       href={`/subject/${s.slug}?umk=${entry.id}`}
                       className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-warm-200 bg-white hover:border-brand-300 hover:bg-brand-50 transition-colors text-sm text-warm-700"
                     >
-                      <BookOpen className="w-4 h-4 text-warm-400 shrink-0" />
+                      <BookOpen className="w-4 h-4 text-warm-600 shrink-0" />
                       {umkEntryLabel(entry)}
                     </Link>
                   ))}
@@ -235,7 +235,7 @@ export default function MaterialsHubPage() {
                 href={`/subject/${t.subject}/${t.grade}/${t.topicSlug}/`}
                 className="group inline-flex items-center gap-2 rounded-full border border-warm-200 bg-white px-4 h-9 text-sm text-warm-800 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-800"
               >
-                <Layers className="w-3.5 h-3.5 text-warm-400 group-hover:text-brand-500" aria-hidden />
+                <Layers className="w-3.5 h-3.5 text-warm-600 group-hover:text-brand-500" aria-hidden />
                 {t.topicTitle}
                 <span className="text-[color:var(--text-muted)]">{t.grade} класс</span>
               </Link>

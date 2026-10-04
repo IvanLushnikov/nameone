@@ -60,7 +60,9 @@ export function Header() {
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 transition-all duration-200",
+        // no-print: шапка с меню и кнопкой «Создать лист» не должна попадать
+        // на напечатанный рабочий лист. Обнаружено 03.10 при печати демо-заготовки.
+        "no-print sticky top-0 z-40 transition-all duration-200",
         scrolled
           ? "bg-warm-50/85 backdrop-blur-md border-b border-warm-100"
           : "bg-transparent"

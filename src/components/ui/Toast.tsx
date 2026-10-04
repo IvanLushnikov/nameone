@@ -93,7 +93,7 @@ export function Toaster({ children }: { children?: React.ReactNode }) {
                 <button
                   type="button"
                   onClick={() => remove(t.id)}
-                  className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-full text-warm-400 hover:text-warm-700 hover:bg-warm-100"
+                  className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-full text-warm-600 hover:text-warm-700 hover:bg-warm-100"
                   aria-label="Закрыть"
                 >
                   <X className="w-3.5 h-3.5" />

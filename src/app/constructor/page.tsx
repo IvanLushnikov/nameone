@@ -18,6 +18,7 @@ import { MaterialsPreview } from "@/components/constructor/MaterialsPreview";
 import { LessonBundlePreview } from "@/components/constructor/LessonBundlePreview";
 import { PaywallModal } from "@/components/shared/PaywallModal";
 import { ArtifactTypePicker } from "@/components/constructor/ArtifactTypePicker";
+import { PrintWatermark } from "@/components/constructor/PrintWatermark";
 import { ArtifactTypePreview } from "@/components/constructor/ArtifactTypePreview";
 import {
   PresetGrid,
@@ -82,7 +83,7 @@ import { generateMaterialsZip, materialsZipFilename } from "@/lib/utils/material
 import { generateBundleZip, bundleZipFilename, bundleReadyCount } from "@/lib/utils/bundle-zip";
 import { generateKtpDocx } from "@/lib/utils/ktp-docx";
 import { generatePptx, pptxFilename } from "@/lib/utils/pptx";
-import { canGenerate, consume, getRemaining, refund } from "@/lib/utils/limit";
+import { canGenerate, getRemaining, refund, settleGeneration } from "@/lib/utils/limit";
 import { isTouchDevice, subscribeToDeviceChange } from "@/lib/utils/device";
 import { ACADEMIC_YEAR_MONTHS, FREE_GENERATIONS, PLANS, priceLabel, priceShort } from "@/lib/content/plans";
 import { plural } from "@/lib/utils/cn";
@@ -329,6 +330,12 @@ export default function ConstructorPage() {
   const [count, setCount] = React.useState<number>(10);
   const [withAnswers, setWithAnswers] = React.useState(true);
   const [withExplanations, setWithExplanations] = React.useState(true);
+
+  // Номер варианта для подписи результата. Раньше здесь стоял Math.random() прямо в JSX —
+  // число менялось при каждом рендере, и учитель видел «Вариант 7», вводил текст,
+  // а после ререндера видел «Вариант 3». Читается как глюк и подрывает доверие к материалу.
+  // Нужен один раз на загрузку страницы, поэтому useRef с ленивой инициализацией.
+  const variantNoRef = React.useRef<number>(Math.floor(Math.random() * 9) + 1);
 
   // F-02 (Q4 2026): режим выбора параметров на шаге 1.
   // template = сетка из 5 preset-карточек, custom = пойти к теме и настроить параметры вручную.
@@ -940,7 +947,9 @@ export default function ConstructorPage() {
       })();
 
       // З2: списание квоты — только здесь, уже после успешного `await`.
-      const counter = consume();
+      // Правило «демо-заготовка тоже стоит попытки» живёт в settleGeneration(),
+      // а не здесь: раньше каждый экран решал это по-своему и /oge не списывал.
+      const counter = settleGeneration({ isDemo: result.isDemo });
       quotaConsumed = true;
       const left = Math.max(0, FREE_GENERATIONS - counter.count);
 
@@ -962,7 +971,7 @@ export default function ConstructorPage() {
 
       switch (result.kind) {
         case "lesson-plan": {
-          const lp = result.payload as LessonPlan;
+          const lp = { ...(result.payload as LessonPlan), isDemo: result.isDemo };
           setLessonPlan(lp);
           artifactTitle = lp.title;
           artifactId = lp.id;
@@ -972,7 +981,7 @@ export default function ConstructorPage() {
           break;
         }
         case "presentation": {
-          const p = result.payload as Presentation;
+          const p = { ...(result.payload as Presentation), isDemo: result.isDemo };
           setPresentation(p);
           artifactTitle = p.title;
           artifactId = p.id;
@@ -982,7 +991,7 @@ export default function ConstructorPage() {
           break;
         }
         case "ktp": {
-          const k = result.payload as Ktp;
+          const k = { ...(result.payload as Ktp), isDemo: result.isDemo };
           setKtp(k);
           artifactTitle = k.title;
           artifactId = k.id;
@@ -992,7 +1001,7 @@ export default function ConstructorPage() {
           break;
         }
         case "worksheet": {
-          const ws = result.payload as Worksheet;
+          const ws = { ...(result.payload as Worksheet), isDemo: result.isDemo };
           setWorksheet(ws);
           artifactTitle = ws.title;
           artifactId = ws.id;
@@ -1002,7 +1011,7 @@ export default function ConstructorPage() {
         }
         // TZ-16 §3.1: у CardSet есть свои subject/grade — берём из артефакта.
         case "cards": {
-          const cs = result.payload as CardSet;
+          const cs = { ...(result.payload as CardSet), isDemo: result.isDemo };
           setCardSet(cs);
           artifactTitle = cs.title;
           artifactId = cs.id;
@@ -1013,7 +1022,7 @@ export default function ConstructorPage() {
         }
         // TZ-16 §3.2: у MaterialBundle — тоже свои subject/grade.
         case "materials": {
-          const mb = result.payload as MaterialBundle;
+          const mb = { ...(result.payload as MaterialBundle), isDemo: result.isDemo };
           setMaterialBundle(mb);
           artifactTitle = mb.title;
           artifactId = mb.id;
@@ -1026,7 +1035,7 @@ export default function ConstructorPage() {
         // неполным (часть слотов в `failed`) — это не ошибка генерации,
         // поэтому провала тут не делаем: превью само покажет статусы слотов.
         case "lesson-bundle": {
-          const lb = result.payload as LessonBundle;
+          const lb = { ...(result.payload as LessonBundle), isDemo: result.isDemo };
           setLessonBundle(lb);
           artifactTitle = lb.title;
           artifactId = lb.id;
@@ -1394,7 +1403,7 @@ export default function ConstructorPage() {
               <Card>
                 <div className="flex items-center justify-between mb-3">
                   <div>
-                    <h2 className="text-lg font-semibold text-warm-950">Сценарий</h2>
+                    <h1 className="text-lg font-semibold text-warm-950">Сценарий</h1>
                     <p className="text-xs text-warm-500 mt-0.5">
                       Выбраны: {getSubject(subject)?.shortTitle} · {grade} кл. Можно поменять в шаге «Что».
                     </p>
@@ -1578,7 +1587,7 @@ export default function ConstructorPage() {
 
               const subtitle =
                 kind === "worksheet"
-                  ? `${worksheet!.tasks.length} ${pluralizeTasks(worksheet!.tasks.length)} · ${type === "control" ? "Контрольная" : "Рабочий лист"} · вариант ${Math.floor(Math.random() * 9) + 1}`
+                  ? `${worksheet!.tasks.length} ${pluralizeTasks(worksheet!.tasks.length)} · ${type === "control" ? "Контрольная" : "Рабочий лист"} · вариант ${variantNoRef.current}`
                   : kind === "lesson-plan"
                     ? `План урока · ${lessonPlan!.stages.length} этапов · ~${lessonPlan!.stages.reduce((s, x) => s + x.durationMin, 0)} мин`
                     : kind === "presentation"
@@ -1748,6 +1757,12 @@ export default function ConstructorPage() {
                     </div>
                   )}
 
+                  {/* Водяной знак на печатный лист. Экранная плашка выше помечена
+                      `no-print` и на бумаге исчезает, а `fixed` в режиме печати
+                      повторяется на каждой странице. На настоящем листе знака нет:
+                      условие связано с тем же флагом, что и плашка. */}
+                  {isDemoResult && <PrintWatermark />}
+
                   {kind === "worksheet" && (
                     <WorksheetPreview
                       worksheet={worksheet!}
@@ -1910,6 +1925,11 @@ function StepHeader({
   examLabel?: string | null;
 }) {
   const subjectData = subject ? getSubject(subject) : null;
+  // Экран «Сценарий» (выбор типа материала) живёт внутри step="select", поэтому
+  // раньше прогресс-бар показывал «Шаг 1 из 3 · ЧТО» и на нём, хотя это отдельный
+  // значимый выбор. Разворачиваем его в отдельный пункт, когда он на экране.
+  const scenarioVisible =
+    mode === "topic" && step === "select" && Boolean(subject) && grade !== null;
   const items: Array<{ id: Step; label: string }> = mode === "exam"
     ? [
         { id: "exam-select", label: "Экзамен" },
@@ -1917,12 +1937,19 @@ function StepHeader({
         { id: "exam-number", label: "Номера" },
         { id: "configure", label: "Параметры" },
       ]
-    : [
-        { id: "select", label: "Что" },
-        { id: "topic", label: "Тема" },
-        { id: "configure", label: "Параметры" },
-      ];
-  const currentIdx = items.findIndex((i) => i.id === step);
+    : scenarioVisible
+      ? [
+          { id: "select", label: "Что" },
+          { id: "select", label: "Сценарий" },
+          { id: "topic", label: "Тема" },
+          { id: "configure", label: "Параметры" },
+        ]
+      : [
+          { id: "select", label: "Что" },
+          { id: "topic", label: "Тема" },
+          { id: "configure", label: "Параметры" },
+        ];
+  const currentIdx = scenarioVisible ? 1 : items.findIndex((i) => i.id === step);
 
   return (
     <div>
@@ -2036,7 +2063,7 @@ function SelectStep({
   return (
     <Card>
       <div className="flex items-baseline justify-between mb-3">
-        <h2 className="text-lg font-semibold text-warm-950">Что и для кого</h2>
+        <h1 className="text-lg font-semibold text-warm-950">Что и для кого</h1>
         <span className="text-xs text-warm-500">Темы по ФГОС, 1-11 класс</span>
       </div>
 
@@ -2062,7 +2089,7 @@ function SelectStep({
                 title={subjectData ? `${g} класс` : "Сначала выберите предмет"}
                 className={`h-6 w-6 rounded-full grid place-items-center text-[10px] font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 ${
                   disabled
-                    ? "bg-warm-50 text-warm-300 border border-warm-100 cursor-not-allowed"
+                    ? "bg-warm-50 text-warm-500 border border-warm-100 cursor-not-allowed"
                     : isSelected
                       ? "bg-brand-500 text-white border border-brand-500"
                       : "bg-white text-warm-950 border border-warm-200 hover:border-brand-400 hover:bg-brand-50"
@@ -2196,7 +2223,7 @@ function TopicStep({
   return (
     <Card>
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-xl font-semibold text-warm-950">Выберите тему</h2>
+        <h1 className="text-xl font-semibold text-warm-950">Выберите тему</h1>
         <Button variant="ghost" size="sm" onClick={onBack} leftIcon={<ArrowLeft className="w-3.5 h-3.5" />}>
           Назад
         </Button>
@@ -2266,7 +2293,7 @@ function TopicStep({
                   <div className="text-xs text-warm-500 mt-0.5">ФГОС {t.fgosRef}</div>
                 )}
               </div>
-              <ArrowRight className="w-4 h-4 text-warm-400 group-hover:text-brand-500 transition-colors shrink-0 mt-0.5" />
+              <ArrowRight className="w-4 h-4 text-warm-600 group-hover:text-brand-500 transition-colors shrink-0 mt-0.5" />
             </div>
             {t.examples[0] && (
               <div className="mt-1.5 text-xs text-warm-500 line-clamp-1 font-mono">
@@ -2417,7 +2444,7 @@ function ConfigureStep({
             </span>
           </button>
         ) : (
-          <h2 className="mt-1 text-lg font-semibold text-warm-950">Параметры</h2>
+          <h1 className="mt-1 text-lg font-semibold text-warm-950">Параметры</h1>
         )}
       </div>
 
@@ -2818,7 +2845,7 @@ function GeneratingState({
               />
               {step.label}
               {isActive && (
-                <span className="inline-block w-4 text-left text-warm-400 animate-pulse">…</span>
+                <span className="inline-block w-4 text-left text-warm-600 animate-pulse">…</span>
               )}
             </div>
           );
@@ -2883,7 +2910,7 @@ function ExamSelectStep({
 }) {
   return (
     <Card>
-      <h2 className="text-xl font-semibold text-warm-950 mb-1">Выберите экзамен</h2>
+      <h1 className="text-xl font-semibold text-warm-950 mb-1">Выберите экзамен</h1>
       <p className="text-sm text-warm-500 mb-5">Формат и нумерация заданий по ФИПИ</p>
       <div className="grid grid-cols-2 gap-3">
         {([
@@ -2929,7 +2956,7 @@ function ExamSubjectStep({
   return (
     <Card>
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-xl font-semibold text-warm-950">Выберите предмет</h2>
+        <h1 className="text-xl font-semibold text-warm-950">Выберите предмет</h1>
         <Button variant="ghost" size="sm" onClick={onBack} leftIcon={<ArrowLeft className="w-3.5 h-3.5" />}>
           Назад
         </Button>
@@ -3010,7 +3037,7 @@ function ExamNumberStep({
   return (
     <Card>
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-xl font-semibold text-warm-950">Выберите номера</h2>
+        <h1 className="text-xl font-semibold text-warm-950">Выберите номера</h1>
         <Button variant="ghost" size="sm" onClick={onBack} leftIcon={<ArrowLeft className="w-3.5 h-3.5" />}>
           Назад
         </Button>

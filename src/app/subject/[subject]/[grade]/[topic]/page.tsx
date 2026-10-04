@@ -21,6 +21,7 @@ import {
 } from "@/lib/content/subjects";
 import type { Topic, TopicExample } from "@/lib/types";
 import { SITE_URL } from "@/lib/site";
+import { Breadcrumb } from "@/components/seo";
 import { AnswerToggle } from "./AnswerToggle";
 
 type Props = { params: { subject: string; grade: string; topic: string } };
@@ -152,16 +153,17 @@ export default function TopicPage({ params }: Props) {
       <section className="relative bg-gradient-to-b from-warm-50 to-white pt-8 sm:pt-12 pb-10">
         <div className="absolute inset-0 -z-10 bg-grid opacity-50" />
         <div className="container-tight">
-          {/* TZ-10 §9.4: BreadcrumbList JSON-LD откатил вместе с компонентом — таймауты static generation. Подключим позже. */}
-          <nav aria-label="breadcrumb" className="mb-5 flex flex-wrap items-center text-sm text-warm-600">
-            <Link href="/" className="hover:text-warm-900">Главная</Link>
-            <span aria-hidden className="mx-1">›</span>
-            <Link href={`/subject/${subject.slug}`} className="hover:text-warm-900">{subject.title}</Link>
-            <span aria-hidden className="mx-1">›</span>
-            <Link href={`/subject/${subject.slug}/${grade.num}`} className="hover:text-warm-900">{grade.num} класс</Link>
-            <span aria-hidden className="mx-1">›</span>
-            <span aria-current="page" className="text-warm-700 font-medium">{topic.title}</span>
-          </nav>
+          {/* Хлебные крошки — единый компонент (BreadcrumbList JSON-LD для поиска). */}
+          <Breadcrumb
+            className="flex flex-wrap items-center text-sm mb-5"
+            items={[
+              { name: "Главная", url: "/" },
+              { name: subject.title, url: `/subject/${subject.slug}` },
+              { name: `${grade.num} класс`, url: `/subject/${subject.slug}/${grade.num}` },
+              // Последний уровень — текущая страница, без ссылки.
+              { name: topic.title, url: "" },
+            ]}
+          />
 
           <div className="grid lg:grid-cols-[1fr_400px] gap-8 items-start">
             <div>

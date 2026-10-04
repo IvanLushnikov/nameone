@@ -72,12 +72,15 @@ compatibility_flags = ["nodejs_compat"]
 [env.production.vars]
 APP_ENV = "production"
 APP_BASE_URL = "https://rabochielisty-api.ivanlusnikov159.workers.dev"
-# TODO: после регистрации uchlist.ru и переключения DNS CNAME — заменить listai-prototype.pages.dev
-# на https://uchlist.ru,https://www.uchlist.ru. До тех пор держим ОБА, чтобы и старый
-# preview-домен (listai-prototype.pages.dev), и новый прод-домен (uchlist.ru) ходили в API.
-FRONTEND_URL = "https://listai-prototype.pages.dev,https://www.listai-prototype.pages.dev,https://uchlist.ru,https://www.uchlist.ru"
-# Прод-домен ОДНИМ значением — в magic-link письма уходит именно он.
-# TODO: поменять на https://uchlist.ru сразу после переключения DNS.
+# Домен uchlist.ru выбран владельцем 2026-10-03 (docs/tz/18-money-and-trust.md §7).
+# Он ещё не куплен, поэтому в списке держим и его, и старые хосты: так переход
+# не сломает попутно. После делегирования uchlist.ru и переключения DNS CNAME —
+# убрать listai-* и rabochielisty.* из списка.
+FRONTEND_URL = "https://listai-prototype.pages.dev,https://www.listai-prototype.pages.dev,https://uchlist.ru,https://www.uchlist.ru,https://rabochielisty.ru,https://www.rabochielisty.ru"
+# Прод-домен ОДНИМ значением — в magic-link письмо уходит именно он.
+# ⚠️ uchlist.ru ещё не делегирован: пока он не куплен, оставляем рабочий pages.dev,
+# иначе письма для входа уйдут на нерезолвящийся хост и учитель не войдёт в кабинет.
+# TODO: заменить на https://uchlist.ru сразу после покупки домена.
 APP_PUBLIC_URL = "https://listai-prototype.pages.dev"
 # В проде оба опасных режима выключены ЯВНО, а не «по умолчанию из коробки».
 # Если кто-то добавит новую секцию окружения, отсутствие этих строк ничего

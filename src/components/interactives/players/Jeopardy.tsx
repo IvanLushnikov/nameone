@@ -238,7 +238,7 @@ export function Jeopardy({ config, initial, onChange, onFinish }: PlayerProps) {
                   <button
                     type="button"
                     onClick={() => setDraft(draft.filter((n) => n !== name))}
-                    className="text-warm-400 hover:text-rose-500"
+                    className="text-warm-600 hover:text-rose-500"
                     aria-label={`Убрать ${name}`}
                   >
                     ✕

@@ -80,7 +80,7 @@ export function FaqBlock({
                   <span className="flex-1">{f.question}</span>
                   <span
                     aria-hidden
-                    className="mt-1 text-warm-400 text-xs transition-transform group-open:rotate-180 shrink-0"
+                    className="mt-1 text-warm-600 text-xs transition-transform group-open:rotate-180 shrink-0"
                   >
                     ▼
                   </span>

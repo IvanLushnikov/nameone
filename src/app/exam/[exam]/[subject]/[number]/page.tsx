@@ -17,6 +17,7 @@ import {
   ListChecks,
 } from "lucide-react";
 import { EXAM_SUBJECTS, getExamNumber, type ExamKind } from "@/lib/content/exam-taxonomy";
+import { Breadcrumb } from "@/components/seo";
 
 /**
  * F-04-B: SEO-страницы по конкретным номерам ОГЭ/ЕГЭ.
@@ -144,28 +145,19 @@ export default function ExamNumberPage({ params }: Props) {
       <section className="relative bg-gradient-to-b from-warm-50 to-white pt-8 sm:pt-12 pb-10">
         <div className="absolute inset-0 -z-10 bg-grid opacity-50" />
         <div className="container-tight">
-          {/* Breadcrumbs */}
-          <nav
-            aria-label="breadcrumb"
-            className="flex flex-wrap items-center gap-2 mb-5 text-sm"
-          >
-            <Link href="/" className="text-warm-500 hover:text-warm-900">
-              Главная
-            </Link>
-            <span className="text-warm-300">/</span>
-            <Link href="/oge" className="text-warm-500 hover:text-warm-900">
-              {examLabel.full}
-            </Link>
-            <span className="text-warm-300">/</span>
-            <Link
-              href={`/oge#${item.subject}`}
-              className="text-warm-500 hover:text-warm-900"
-            >
-              {subjectLabel}
-            </Link>
-            <span className="text-warm-300">/</span>
-            <span className="text-warm-700">Задание {item.number}</span>
-          </nav>
+          {/* Хлебные крошки — единый компонент (BreadcrumbList JSON-LD для поиска). */}
+          <Breadcrumb
+            className="flex flex-wrap items-center text-sm mb-5"
+            items={[
+              { name: "Главная", url: "/" },
+              // Ссылка на /oge для обоих экзаменов — как было вручную: подборки
+              // ОГЭ и ЕГЭ живут на одной странице /oge с якорями по предметам.
+              { name: examLabel.full, url: "/oge" },
+              { name: subjectLabel, url: `/oge#${item.subject}` },
+              // Последний уровень — текущая страница, без ссылки.
+              { name: `Задание ${item.number}`, url: "" },
+            ]}
+          />
 
           <div className="grid lg:grid-cols-[1fr_400px] gap-8 items-start">
             <div>
