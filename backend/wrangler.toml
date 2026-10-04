@@ -37,6 +37,9 @@ APP_PUBLIC_URL = "http://localhost:3000"
 # APP_ENV, выключалась молча.
 ALLOW_DEV_MAGIC_URL = "true"
 ALLOW_DEMO_PAYMENTS = "true"
+# ТЗ-20: локально рекуррент проверяем, в проде он выключен до разрешения
+# менеджера ЮKassa и успешного теста на тестовой карте.
+RECURRING_BILLING_ENABLED = "true"
 
 [[d1_databases]]
 binding = "DB"
@@ -70,6 +73,9 @@ APP_PUBLIC_URL = "https://listai-prototype.pages.dev"
 # не сломает: поведение по умолчанию везде — запрет.
 ALLOW_DEV_MAGIC_URL = "false"
 ALLOW_DEMO_PAYMENTS = "false"
+# Рекуррент НЕ включаем, пока менеджер ЮKassa не разрешит автоплатежи на
+# боевом магазине и не пройдёт тест на тестовой карте (см. env.ts).
+RECURRING_BILLING_ENABLED = "false"
 
 [[env.production.d1_databases]]
 binding = "DB"
@@ -86,4 +92,7 @@ bucket_name = "rabochielisty-pdfs"
 # бессрочно. Раз в сутки в 03:00 UTC — фото удаляются воркером, даже если
 # учитель ни разу не открыл дашборд.
 [env.production.triggers]
-crons = ["0 3 * * *"]
+# Два триггера: суточная уборка (фото тетрадей, ответы учеников) и часовой
+# для биллинга — помесячная подписка не должна «протухать» на сутки после
+# даты списания. Обработчик разводит их по event.cron в src/index.ts.
+crons = ["0 3 * * *", "0 * * * *"]

@@ -170,6 +170,44 @@ export async function loadPhotoCheck(
   return json;
 }
 
+/**
+ * POST /photo-checks/:id/manual-marks — сохранить ручные отметки учителя.
+ *
+ * Вызывается ТОЛЬКО по явному нажатию кнопки. Автосейва на каждый чекбокс здесь
+ * быть не должно: клик мимоходом не должен означать согласие с чужой оценкой.
+ *
+ * Ответ — тот же DTO проверки, что у GET, но уже с пересчитанным итогом:
+ * учитель сразу видит отметку и то, кто её поставил.
+ */
+export async function saveManualMarks(
+  checkId: string,
+  marks: Array<{ taskNumber: number; accepted: boolean; points: number }>,
+): Promise<PhotoCheckResult | PhotoCheckApiError> {
+  if (!API_URL) return fail("no_api_url");
+
+  let res: Response;
+  try {
+    res = await fetch(
+      `${API_URL}${BASE}/${encodeURIComponent(checkId)}/manual-marks`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        cache: "no-store",
+        body: JSON.stringify({ marks }),
+      },
+    );
+  } catch {
+    return fail("network");
+  }
+
+  const json = (await res.json().catch(() => null)) as PhotoCheckResult | null;
+  const err = parseResult(res, json);
+  if (err) return err;
+  if (!json || json.ok !== true) return fail("http");
+  return json;
+}
+
 /** GET /photo-checks/usage — остаток месячной квоты. */
 export async function loadPhotoCheckQuota(): Promise<
   { ok: true; quota: Quota } | PhotoCheckApiError

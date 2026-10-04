@@ -258,6 +258,195 @@ export function gradePhotoCheck(rawModelOutput: string, tasks: ExpectedTask[]): 
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Слияние машинного результата с ручными отметками учителя (ТЗ-19 §2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Задание проверки в том виде, в каком оно лежит в `photo_check_items` —
+ * то есть РЕШЕНИЕ МАШИНЫ. Ручные отметки учителя в эту таблицу не пишутся
+ * никогда (прямое требование ТЗ-19 §3), поэтому исходный вердикт всегда цел.
+ */
+export interface StoredCheckItem {
+  number: number;
+  verdict: PhotoVerdict;
+  pointsAwarded: number;
+  maxPoints: number;
+  needsReview: boolean;
+}
+
+/** Отметка учителя по одному заданию — как её прислали с фронта. */
+export interface ManualMarkInput {
+  taskNumber: number;
+  accepted: boolean;
+  /** Может прийти мусором (строка, NaN) — чистит `normalizeTeacherPoints`. */
+  points: number | null;
+}
+
+/** Чьё решение лежит в строке. Обязательное поле выгрузки (ТЗ-19 §2). */
+export type MarkSource = "model" | "teacher";
+
+/** Строка результата после слияния: итог + снимок того, что было до него. */
+export interface MergedItem extends StoredCheckItem {
+  /** Итоговый вердикт: отметка учителя ПОБЕЖДАЕТ вердикт модели. */
+  verdict: PhotoVerdict;
+  /** Итоговый балл. */
+  pointsAwarded: number;
+  /** Задание всё ещё ждёт учителя (модель не разобрала, отметки нет). */
+  needsReview: boolean;
+  decidedBy: MarkSource;
+  /** Снимок машины. Через месяц по нему видно, что именно исправил человек. */
+  modelVerdict: PhotoVerdict;
+  modelPoints: number;
+  /** Отметка учителя, если она была. null = учитель не смотрел. */
+  teacherAccepted: boolean | null;
+  teacherPoints: number | null;
+}
+
+export interface MergedCheck {
+  items: MergedItem[];
+  /** Всегда полный: неразобранные задания в него входят. */
+  totalPoints: number;
+  /** По объединённым данным. */
+  earnedPoints: number;
+  /** null, пока есть неразобранные задания (тот же гейт, что CONFIDENCE_THRESHOLD). */
+  percentage: number | null;
+  gradeMark: "5" | "4" | "3" | "2" | null;
+  /** Сколько сомнительных заданий ещё без ручного решения. */
+  pendingReview: number;
+  /** true, если учителю есть что смотреть. */
+  needsReview: boolean;
+}
+
+/**
+ * Привести балл учителя к целому числу в диапазоне 0..maxPoints.
+ *
+ * Мусор на входе (строка, NaN, null, объект) — это 0, а НЕ исключение наружу:
+ * интерфейс учителя не должен падать из-за одного кривого поля. `accepted:false`
+ * даёт 0 вне зависимости от присланного балла — иначе «не засчитано, но 2 балла»
+ * противоречило бы самому себе.
+ */
+export function normalizeTeacherPoints(raw: unknown, maxPoints: number): number {
+  const max = Number.isFinite(maxPoints) && maxPoints > 0 ? Math.max(1, Math.trunc(maxPoints)) : 1;
+  let n: number;
+  if (typeof raw === "number") n = raw;
+  else if (typeof raw === "string" && raw.trim() !== "") n = Number(raw);
+  else n = NaN;
+  if (!Number.isFinite(n)) return 0;
+  // Дробный балл округляем, а не отбрасываем: половинный балл в школьном
+  // листе — обычное дело, и колонка INTEGER его всё равно примет только целым.
+  return Math.max(0, Math.min(max, Math.round(n)));
+}
+
+/**
+ * Наложить ручные отметки учителя на машинный результат.
+ *
+ * Правила, из-за которых функция отдельная, а не флаг в существующей:
+ *   1) отметка учителя ПОБЕЖДАЕТ, но не затирает машину молча — в ответе остаётся
+ *      `decidedBy` и снимок `modelVerdict`/`modelPoints`;
+ *   2) неразобранное задание без отметки учителя НЕ ТЯНЕТ ИТОГ ВНИЗ и не
+ *      превращается в «неправильно»: пока такие есть, `percentage` и `gradeMark`
+ *      равны null. Итог появляется только когда учитель закрыл все сомнительные;
+ *   3) `totalPoints` всегда полный — включая неразобранные, иначе процент
+ *      прыгал бы вверх по мере разбора и учитель видел бы рост балла из-за
+ *      того, что модель что-то не прочитала.
+ */
+export function mergeManualMarks(items: StoredCheckItem[], marks: ManualMarkInput[]): MergedCheck {
+  const byNumber = new Map<number, ManualMarkInput>();
+  for (const m of marks) {
+    if (!byNumber.has(m.taskNumber)) byNumber.set(m.taskNumber, m);
+  }
+
+  const merged: MergedItem[] = items.map((item) => {
+    const mark = byNumber.get(item.number);
+    const modelVerdict = item.verdict;
+    const modelPoints = item.pointsAwarded;
+
+    if (!mark) {
+      // Учитель сюда не вступился: показываем машинное решение как есть.
+      return {
+        ...item,
+        decidedBy: "model",
+        modelVerdict,
+        modelPoints,
+        teacherAccepted: null,
+        teacherPoints: null,
+      };
+    }
+
+    const points = mark.accepted ? normalizeTeacherPoints(mark.points, item.maxPoints) : 0;
+    return {
+      ...item,
+      verdict: mark.accepted ? ("correct" as PhotoVerdict) : ("incorrect" as PhotoVerdict),
+      pointsAwarded: points,
+      // Учитель посмотрел — задание больше не ждёт. Даже если ответил «неверно».
+      needsReview: false,
+      decidedBy: "teacher",
+      modelVerdict,
+      modelPoints,
+      teacherAccepted: mark.accepted,
+      teacherPoints: points,
+    };
+  });
+
+  const totalPoints = merged.reduce((s, i) => s + i.maxPoints, 0);
+  const earnedPoints = merged.reduce((s, i) => s + i.pointsAwarded, 0);
+  const pendingReview = merged.filter((i) => i.needsReview).length;
+
+  const rawPercentage = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : null;
+  // Неполный разбор — это не ноль и не тройка. Молчаливый ноль в журнале учителя
+  // хуже, чем отсутствие отметки, поэтому отметки просто нет.
+  const complete = pendingReview === 0;
+  const percentage = complete ? rawPercentage : null;
+
+  return {
+    items: merged,
+    totalPoints,
+    earnedPoints,
+    percentage,
+    gradeMark: complete ? gradeFromPercentage(percentage) : null,
+    pendingReview,
+    needsReview: pendingReview > 0,
+  };
+}
+
+/**
+ * Итог, который дала МАШИНА, до ручных правок.
+ *
+ * Считается из `photo_check_items` на лету, а не хранится отдельной колонкой:
+ * строки items никогда не переписываются ручными отметками, поэтому машинный
+ * результат восстанавливается из них всегда и не может «поехать» от того, что
+ * учитель что-то поправил.
+ *
+ * ВНИМАНИЕ, здесь процент и отметка считаются ДАЖЕ при неразобранных заданиях —
+ * в отличие от `mergeManualMarks`. Это не противоречие: `modelResult` —
+ * буквально «что предложила машина», то есть ровно то, что она сказала сразу
+ * после распознавания. Итог для учителя жив в mergeManualMarks.
+ */
+export function machineResultOf(items: StoredCheckItem[]): {
+  totalPoints: number;
+  earnedPoints: number;
+  percentage: number | null;
+  gradeMark: "5" | "4" | "3" | "2" | null;
+} {
+  const totalPoints = items.reduce((s, i) => s + i.maxPoints, 0);
+  const earnedPoints = items.reduce((s, i) => s + i.pointsAwarded, 0);
+  const percentage = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : null;
+  return { totalPoints, earnedPoints, percentage, gradeMark: gradeFromPercentage(percentage) };
+}
+
+/**
+ * Источник решения для журнала.
+ *
+ * machine — учитель не смотрел ни одного задания;
+ * teacher — смотрел и закрыл все сомнительные;
+ * mixed  — правил, но часть сомнительных ещё ждёт.
+ */
+export function journalSourceFor(manualCount: number, pendingReview: number): "machine" | "teacher" | "mixed" {
+  if (manualCount === 0) return "machine";
+  return pendingReview === 0 ? "teacher" : "mixed";
+}
+
 function safeParse(raw: string): { items?: unknown[] } | null {
   const json = extractJson(raw);
   if (!json) return null;
