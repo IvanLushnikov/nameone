@@ -214,7 +214,7 @@ export const englishExtra: Grade[] = [
       },
       {
         slug: "ege-topic-environment",
-        title: "Лексика по теме «Окружающая среда» (ЕГЭ)",
+        title: "Лексика: окружающая среда (ЕГЭ)",
         fgosRef: "Лексика: тематические блоки ЕГЭ",
         examples: [
           { text: "Как переводится «загрязнение воздуха»?", answer: "air pollution" },
