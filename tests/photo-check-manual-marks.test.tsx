@@ -180,7 +180,13 @@ describe("ManualMarksEditor — отметки учителя (ТЗ-19)", () => 
   it("без изменений кнопка неактивна — учитель не отправляет пустоту", () => {
     renderEditor();
     expect((screen.getByTestId("manual-marks-save") as HTMLButtonElement).disabled).toBe(true);
-    expect(document.body.textContent).toContain("остаются только на этом экране");
+    // Подсказка называет ПОСЛЕДСТВИЕ и действие, а не беспомощность: старая
+    // формулировка «остаются только на этом экране» стояла рядом с кнопкой,
+    // которая как раз и решает эту проблему, и читалась как «зачем тогда
+    // кнопка». Возврат старой фразы — регресс, поэтому проверяем и новую,
+    // и то, что старая не вернулась.
+    expect(document.body.textContent).toContain("пропадут, когда закроете вкладку");
+    expect(document.body.textContent).not.toContain("остаются только на этом экране");
   });
 });
 
