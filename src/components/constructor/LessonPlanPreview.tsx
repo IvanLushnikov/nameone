@@ -100,7 +100,7 @@ export function LessonPlanPreview({ plan }: Props) {
                 </h2>
                 <ul className="text-[13px] text-warm-700 leading-snug flex flex-wrap gap-x-4 gap-y-1">
                   {plan.equipment.map((line, i) => (
-                    <li key={i} className="before:content-['•'] before:mr-1.5 before:text-warm-400">
+                    <li key={i} className="before:content-['•'] before:mr-1.5 before:text-warm-600">
                       {line}
                     </li>
                   ))}
@@ -178,7 +178,7 @@ export function LessonPlanPreview({ plan }: Props) {
                 {plan.homework.alternatives && plan.homework.alternatives.length > 0 && (
                   <div className="mt-2 text-warm-600">
                     <span className="font-semibold text-warm-700">Альтернативы:</span>
-                    <ul className="mt-1 space-y-0.5 list-disc list-inside marker:text-warm-400">
+                    <ul className="mt-1 space-y-0.5 list-disc list-inside marker:text-warm-600">
                       {plan.homework.alternatives.map((alt, i) => (
                         <li key={i}>{alt}</li>
                       ))}
@@ -225,7 +225,7 @@ function GoalColumn({
       ) : (
         <ul className="space-y-1 text-warm-800">
           {items.map((g, i) => (
-            <li key={i} className="pl-3 relative before:absolute before:left-0 before:top-0 before:text-warm-400 before:content-['—']">
+            <li key={i} className="pl-3 relative before:absolute before:left-0 before:top-0 before:text-warm-600 before:content-['—']">
               {g}
             </li>
           ))}

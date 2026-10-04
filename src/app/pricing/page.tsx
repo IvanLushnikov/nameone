@@ -188,7 +188,7 @@ const comparison = [
 
 const renderCell = (v: string) => {
   if (v === "✓") return <Check className="w-4 h-4 text-brand-500 mx-auto" />;
-  if (v === "—") return <X className="w-4 h-4 text-warm-300 mx-auto" />;
+  if (v === "—") return <X className="w-4 h-4 text-warm-500 mx-auto" />;
   return <span className="text-sm">{v}</span>;
 };
 
@@ -375,7 +375,7 @@ export default function PricingPage() {
               >
                 <summary className="cursor-pointer list-none flex items-center justify-between gap-4 font-medium text-warm-950">
                   {it.q}
-                  <span className="text-warm-400 group-open:rotate-45 transition-transform text-2xl leading-none">
+                  <span className="text-warm-600 group-open:rotate-45 transition-transform text-2xl leading-none">
                     +
                   </span>
                 </summary>

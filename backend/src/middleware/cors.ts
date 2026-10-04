@@ -22,13 +22,20 @@ import type { AppEnv } from "../types";
  * Origins, которые мы всегда готовы считать "своими".
  *
  * listai-prototype.pages.dev — текущий preview-домен фронта (Pages).
- * uchlist.ru — будущий прод-домен (после переезда с listai-*).
+ * rabochielisty.ru — старый прод-домен (не делегирован, резолвится в пустоту).
+ * uchlist.ru — действующий прод-домен (решение владельца 2026-10-03,
+ * docs/tz/18-money-and-trust.md §7). Старый оставлен в списке, чтобы переход
+ * не ломал попутно: удалить вместе с делегированием нового домена.
+
  *
  * Оба с www- и без — Pages иногда отдаёт и так и так.
  */
 const DEFAULT_ALLOWED_ORIGINS: readonly string[] = [
   "https://listai-prototype.pages.dev",
   "https://www.listai-prototype.pages.dev",
+  "https://rabochielisty.ru",
+  "https://www.rabochielisty.ru",
+
   "https://uchlist.ru",
   "https://www.uchlist.ru",
 ];

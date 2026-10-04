@@ -50,7 +50,9 @@ test.describe("ЛК: magic-link login flow", () => {
     ).toBeVisible();
 
     await page.getByLabel(/Email/i).fill("teacher@school.ru");
-    // Согласие на обработку ПДн обязательно — без отметки magic link не уходит.
+    // Кнопка заблокирована, пока не стоит согласие на обработку ПДн
+    // (156-ФЗ, ч. 4 ст. 9 152-ФЗ). Без отметки magic link не отправляется.
+
     await page.getByTestId("login-consent-pdn").check();
     await page.getByRole("button", { name: /Получить ссылку/i }).click();
 
@@ -59,8 +61,10 @@ test.describe("ЛК: magic-link login flow", () => {
       page.getByRole("heading", { name: /Проверьте почту/i }),
     ).toBeVisible({ timeout: 5_000 });
 
-    // Подтверждение что email отображается.
-    // exact обязателен: без него цепляет и <strong>, и абзац «Проверьте ...».
+    // Подтверждение что email отображается. exact: true обязателен — без него
+    // getByText цепляет и <strong>, и абзац «Проверьте teacher@school.ru»,
+    // и Playwright падает на strict mode violation.
+
     await expect(page.getByText("teacher@school.ru", { exact: true })).toBeVisible();
 
     // Если фронт уже на новой логике — mock был вызван. Если нет — не падаем.
@@ -90,7 +94,8 @@ test.describe("ЛК: magic-link login flow", () => {
 
     await page.goto(BASE + "/login");
     await page.getByLabel(/Email/i).fill("teacher@school.ru");
-    // Согласие на обработку ПДн обязательно — без отметки magic link не уходит.
+    // Согласие на обработку ПДн обязательно — иначе запрос до API не дойдёт.
+
     await page.getByTestId("login-consent-pdn").check();
     await page.getByRole("button", { name: /Получить ссылку/i }).click();
 

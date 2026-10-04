@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { Card } from "@/components/ui/Card";
@@ -24,7 +23,8 @@ import {
   getGrade,
   subjects,
 } from "@/lib/content/subjects";
-import { JsonLd } from "@/components/seo";
+import { JsonLd, Breadcrumb } from "@/components/seo";
+import { prepositionalTitle } from "@/lib/content/subject-cases";
 
 type Props = { params: { subject: string; grade: string; topic: string } };
 
@@ -114,25 +114,17 @@ export default function LessonPlanTopicPage({ params }: Props) {
       <section className="relative bg-gradient-to-b from-warm-50 to-white pt-8 sm:pt-12 pb-10">
         <div className="absolute inset-0 -z-10 bg-grid opacity-50" />
         <div className="container-tight">
-          {/* Breadcrumbs */}
-          <nav className="flex flex-wrap items-center gap-2 mb-5 text-sm">
-            <Link href="/" className="text-warm-500 hover:text-warm-900">
-              Главная
-            </Link>
-            <span className="text-warm-300">/</span>
-            <Link href={`/subject/${subject.slug}`} className="text-warm-500 hover:text-warm-900">
-              {subject.title}
-            </Link>
-            <span className="text-warm-300">/</span>
-            <Link
-              href={`/subject/${subject.slug}/${grade.num}`}
-              className="text-warm-500 hover:text-warm-900"
-            >
-              {grade.num} класс
-            </Link>
-            <span className="text-warm-300">/</span>
-            <span className="text-warm-700">План урока · {topic.title}</span>
-          </nav>
+          {/* Хлебные крошки — единый компонент (BreadcrumbList JSON-LD для поиска). */}
+          <Breadcrumb
+            className="flex flex-wrap items-center text-sm mb-5"
+            items={[
+              { name: "Главная", url: "/" },
+              { name: subject.title, url: `/subject/${subject.slug}` },
+              { name: `${grade.num} класс`, url: `/subject/${subject.slug}/${grade.num}` },
+              // Последний уровень — текущая страница, без ссылки.
+              { name: `План урока · ${topic.title}`, url: "" },
+            ]}
+          />
 
           <div className="grid lg:grid-cols-[1fr_400px] gap-8 items-start">
             <div>
@@ -160,7 +152,8 @@ export default function LessonPlanTopicPage({ params }: Props) {
                 План урока по теме «{topic.title}»
               </h1>
               <p className="mt-4 text-lg text-warm-600 text-pretty">
-                Готовый план урока по ФГОС для {grade.num} класса по предмету {subject.title.toLowerCase()}.
+                Готовый план урока по ФГОС для {grade.num} класса по предмету{" "}
+                {prepositionalTitle(subject.slug, subject.title)}.
                 Конспект на 45 минут с этапами, целями, оборудованием и домашним заданием.
               </p>
 

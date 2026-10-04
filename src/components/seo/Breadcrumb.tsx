@@ -81,7 +81,7 @@ export function Breadcrumb({
                 className="inline-flex items-center gap-x-1"
               >
                 {idx > 0 && (
-                  <span aria-hidden className="text-warm-300 select-none">
+                  <span aria-hidden className="text-warm-500 select-none">
                     ›
                   </span>
                 )}

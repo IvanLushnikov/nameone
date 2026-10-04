@@ -201,7 +201,7 @@ export function SortSequence({ config, initial, onChange, onFinish }: PlayerProp
 
                   <div className="shrink-0 flex flex-col items-center justify-center gap-1">
                     <span
-                      className="px-1.5 py-1 text-warm-300 select-none"
+                      className="px-1.5 py-1 text-warm-500 select-none"
                       aria-hidden
                       data-interactive-handle={id}
                       {...drag.handleProps(id)}
@@ -212,7 +212,7 @@ export function SortSequence({ config, initial, onChange, onFinish }: PlayerProp
                       type="button"
                       onClick={() => shift(id, -1)}
                       disabled={index === 0}
-                      className="w-7 h-7 rounded-lg text-warm-400 hover:text-warm-800 hover:bg-warm-100 disabled:opacity-30"
+                      className="w-7 h-7 rounded-lg text-warm-600 hover:text-warm-800 hover:bg-warm-100 disabled:opacity-30"
                       aria-label={`Поднять «${item.prompt}»`}
                       data-interactive-up={id}
                     >
@@ -222,7 +222,7 @@ export function SortSequence({ config, initial, onChange, onFinish }: PlayerProp
                       type="button"
                       onClick={() => shift(id, 1)}
                       disabled={index === state.order.length - 1}
-                      className="w-7 h-7 rounded-lg text-warm-400 hover:text-warm-800 hover:bg-warm-100 disabled:opacity-30"
+                      className="w-7 h-7 rounded-lg text-warm-600 hover:text-warm-800 hover:bg-warm-100 disabled:opacity-30"
                       aria-label={`Опустить «${item.prompt}»`}
                       data-interactive-down={id}
                     >

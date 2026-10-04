@@ -258,7 +258,7 @@ export function SortBaskets({ config, initial, onChange, onFinish }: PlayerProps
                     )}
                   </button>
                   <span
-                    className="shrink-0 px-2 grid place-items-center text-warm-300 select-none"
+                    className="shrink-0 px-2 grid place-items-center text-warm-500 select-none"
                     aria-hidden
                     data-interactive-handle={item.id}
                     {...drag.handleProps(item.id)}

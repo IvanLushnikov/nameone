@@ -8,6 +8,8 @@ import { ArrowRight, Sparkles, BookOpen } from "lucide-react";
 import { subjects, getSubject } from "@/lib/content/subjects";
 import { getUMK } from "@/lib/content/umk";
 import { umkEntryLabel } from "@/lib/content/landing-seo";
+import { prepositionalTitle } from "@/lib/content/subject-cases";
+import { Breadcrumb } from "@/components/seo";
 import { SITE_URL } from "@/lib/site";
 import { plural } from "@/lib/utils/cn";
 import type { Grade, Subject as SubjectType } from "@/lib/types";
@@ -18,36 +20,9 @@ export function generateStaticParams() {
   return subjects.map((s) => ({ subject: s.slug }));
 }
 
-// TZ-6 (QA-аудит 2026-09-30): склоняем название предмета в предложный падеж
-// для SEO-заголовка и H1 — «по математике», а не «по математика».
-// Сокращения (ОБЖ) и непереводимые названия — fallback на именительный.
-const SUBJECT_PREPOSITIONAL: Record<string, string> = {
-  math: "математике",
-  algebra: "алгебре",
-  geometry: "геометрии",
-  russian: "русскому языку",
-  literature: "литературе",
-  english: "английскому языку",
-  informatics: "информатике",
-  physics: "физике",
-  chemistry: "химии",
-  biology: "биологии",
-  geography: "географии",
-  history: "истории",
-  social: "обществознанию",
-  okruzhaet: "окружающему миру",
-  german: "немецкому языку",
-  obzh: "ОБЖ",
-  technology: "технологии",
-  finance: "финансовой грамотности",
-  music: "музыке",
-  art: "изобразительному искусству",
-  pe: "физической культуре",
-};
-
-function prepositionalTitle(slug: string, fallback: string): string {
-  return SUBJECT_PREPOSITIONAL[slug] ?? fallback.toLowerCase();
-}
+// TZ-6 (QA-аудит 2026-09-30): склонение названия предмета в предложный падеж
+// («по математике», а не «по математика») живёт в общем файле — карта нужна
+// не только здесь, но и на /ktp и /lesson-plan страницах.
 
 export function generateMetadata({ params }: Props): Metadata {
   const subject = getSubject(params.subject);
@@ -124,13 +99,15 @@ export default function SubjectHubPage({ params }: Props) {
         <div className="absolute inset-0 -z-10 bg-grid opacity-50" />
         <div className="container-tight">
           <div className="max-w-3xl">
-            <div className="flex items-center gap-2 mb-4">
-              <Link href="/" className="text-sm text-warm-500 hover:text-warm-900">
-                Главная
-              </Link>
-              <span className="text-warm-300">/</span>
-              <span className="text-sm text-warm-700">{subject.title}</span>
-            </div>
+            {/* Хлебные крошки — единый компонент (BreadcrumbList JSON-LD для поиска). */}
+            <Breadcrumb
+              className="flex flex-wrap items-center text-sm mb-4"
+              items={[
+                { name: "Главная", url: "/" },
+                // Последний уровень — текущая страница, без ссылки.
+                { name: subject.title, url: "" },
+              ]}
+            />
             <Badge tone="brand" className="mb-4">
               <Sparkles className="w-3 h-3" />
               {subject.grades.length} {plural(subject.grades.length, "класс", "класса", "классов")} · {subject.grades.reduce((s: number, g: Grade) => s + g.topics.length, 0)} {plural(subject.grades.reduce((s: number, g: Grade) => s + g.topics.length, 0), "тема", "темы", "тем")}
@@ -209,7 +186,7 @@ export default function SubjectHubPage({ params }: Props) {
                   href={`/subject/${subject.slug}?umk=${entry.id}`}
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-warm-200 bg-white hover:border-brand-300 hover:bg-brand-50 transition-colors text-sm text-warm-800"
                 >
-                  <BookOpen className="w-4 h-4 text-warm-400 shrink-0" />
+                  <BookOpen className="w-4 h-4 text-warm-600 shrink-0" />
                   {umkEntryLabel(entry)}
                 </Link>
               ))}

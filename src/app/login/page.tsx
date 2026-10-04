@@ -168,7 +168,6 @@ export default function LoginPage() {
                 </p>
               </div>
             )}
-
             <div className="my-6 flex items-center gap-3">
               <div className="flex-1 h-px bg-warm-100" />
               <span className="text-xs uppercase tracking-wider text-[color:var(--text-muted)]">
@@ -201,8 +200,7 @@ export default function LoginPage() {
 
             <p className="mt-6 text-xs text-warm-500 text-center">
               {MAGIC_LINK_READY ? "Оформляя вход" : "Используя сервис"}, вы
-              принимаете{" "}
-              <Link href="/legal/offer" className="text-brand-600 hover:text-brand-700">
+              принимаете{" "}              <Link href="/legal/offer" className="text-brand-600 hover:text-brand-700">
                 публичную оферту
               </Link>{" "}
               и{" "}
@@ -211,8 +209,7 @@ export default function LoginPage() {
               </Link>
               . Согласие на обработку персональных данных даётся отдельной
               отметкой в форме входа — это самостоятельный документ, а не часть
-              оферты.
-            </p>
+              оферты.            </p>
 
             {/* Пока входа нет, это главное действие страницы — поэтому кнопка
                 во всю ширину, а не мелкая ссылка внизу. */}

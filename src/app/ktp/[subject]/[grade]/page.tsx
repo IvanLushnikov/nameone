@@ -1,9 +1,9 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { Breadcrumb } from "@/components/seo";
 import { plural } from "@/lib/utils/cn";
 import {
   Sparkles,
@@ -22,6 +22,7 @@ import {
   getGrade,
   subjects,
 } from "@/lib/content/subjects";
+import { prepositionalTitle } from "@/lib/content/subject-cases";
 
 type Props = { params: { subject: string; grade: string } };
 
@@ -43,7 +44,8 @@ export function generateMetadata({ params }: Props): Metadata {
   if (!subject || !grade) return { title: "Класс не найден" };
 
   // Бренд в конце не дописываем — его добавляет template в корневом layout.
-  const title = `КТП по ${subject.title} · ${grade.num} класс · ${SCHOOL_YEAR}`;
+  // Название предмета в предложном падеже — «по математике», а не «по Математика».
+  const title = `КТП по ${prepositionalTitle(subject.slug, subject.title)} · ${grade.num} класс · ${SCHOOL_YEAR}`;
   const description = `Календарно-тематическое планирование для ${grade.num} класса по предмету «${subject.title}» на ${SCHOOL_YEAR} учебный год по ФГОС. Скачивайте готовый DOCX с merged cells — все темы курса, контрольные и тесты.`;
 
   return {
@@ -77,25 +79,17 @@ export default function KtpGradePage({ params }: Props) {
       <section className="relative bg-gradient-to-b from-warm-50 to-white pt-8 sm:pt-12 pb-10">
         <div className="absolute inset-0 -z-10 bg-grid opacity-50" />
         <div className="container-tight">
-          {/* Breadcrumbs */}
-          <nav className="flex flex-wrap items-center gap-2 mb-5 text-sm">
-            <Link href="/" className="text-warm-500 hover:text-warm-900">
-              Главная
-            </Link>
-            <span className="text-warm-300">/</span>
-            <Link href={`/subject/${subject.slug}`} className="text-warm-500 hover:text-warm-900">
-              {subject.title}
-            </Link>
-            <span className="text-warm-300">/</span>
-            <Link
-              href={`/subject/${subject.slug}/${grade.num}`}
-              className="text-warm-500 hover:text-warm-900"
-            >
-              {grade.num} класс
-            </Link>
-            <span className="text-warm-300">/</span>
-            <span className="text-warm-700">КТП</span>
-          </nav>
+          {/* Хлебные крошки — единый компонент (BreadcrumbList JSON-LD для поиска). */}
+          <Breadcrumb
+            className="flex flex-wrap items-center text-sm mb-5"
+            items={[
+              { name: "Главная", url: "/" },
+              { name: subject.title, url: `/subject/${subject.slug}` },
+              { name: `${grade.num} класс`, url: `/subject/${subject.slug}/${grade.num}` },
+              // Последний уровень — текущая страница, без ссылки.
+              { name: "КТП", url: "" },
+            ]}
+          />
 
           <div className="grid lg:grid-cols-[1fr_400px] gap-8 items-start">
             <div>
@@ -114,7 +108,8 @@ export default function KtpGradePage({ params }: Props) {
                 </Badge>
               </div>
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold tracking-tight text-balance">
-                Календарно-тематическое планирование по {subject.title} · {grade.num} класс
+                Календарно-тематическое планирование по{" "}
+                {prepositionalTitle(subject.slug, subject.title)} · {grade.num} класс
               </h1>
               <p className="mt-4 text-lg text-warm-600 text-pretty">
                 Готовое КТП на {totalHours} ч ({weeks} недель) по ФГОС. Скачивайте в DOCX с merged cells —

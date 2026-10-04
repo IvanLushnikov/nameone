@@ -19,7 +19,7 @@
 
 import * as React from "react";
 import { Button } from "@/components/ui/Button";
-import type { PhotoCheckResult } from "@/lib/photo-check/types";
+import type { PhotoCheckItem, PhotoCheckResult } from "@/lib/photo-check/types";
 import type { InterviewQuestion, InterviewState } from "@/lib/photo-check/interview";
 import {
   generateInterviewQuestions,
@@ -51,11 +51,22 @@ function escapeHtml(text: string): string {
 }
 
 /**
+ * Задания для панели: полный список, если он есть.
+ *
+ * Панель проверки убирает сомнительные задания из `result.items` в блок
+ * «Проверьте сами» (ТЗ-18 В2), но именно по ним учителю и нужно задавать
+ * вопросы — поэтому берём `allItems`, который кладёт туда панель.
+ */
+function selectableItems(result: PhotoCheckResult): PhotoCheckItem[] {
+  return result.allItems ?? result.items;
+}
+
+/**
  * Отбор по умолчанию: задания, где модель не разобрала почерк или где ответ
  * неверный. Это ДЕФОЛТ, а не запрет — учитель вправе спросить про любое.
  */
 function defaultSelection(result: PhotoCheckResult): number[] {
-  return result.items
+  return selectableItems(result)
     .filter((i) => i.verdict !== "correct")
     .slice(0, MAX_QUESTIONS)
     .map((i) => i.number);
@@ -101,7 +112,7 @@ export function InterviewQuestions({ result, checkId }: InterviewQuestionsProps)
       prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n],
     );
 
-  const allNumbers = result.items.map((i) => i.number);
+  const allNumbers = selectableItems(result).map((i) => i.number);
 
   const run = async (regenerate: boolean) => {
     setState("pending");
@@ -214,7 +225,7 @@ export function InterviewQuestions({ result, checkId }: InterviewQuestionsProps)
             где модель не разобрала почерк или где ответ неверный.
           </p>
           <ul className="space-y-1.5 max-h-64 overflow-y-auto">
-            {result.items.map((item) => (
+            {selectableItems(result).map((item) => (
               <li key={item.number}>
                 <label className="flex items-start gap-2.5 cursor-pointer text-sm">
                   <input

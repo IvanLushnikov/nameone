@@ -27,7 +27,12 @@
 import * as React from "react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { plural, type ReviewPartition } from "@/lib/photo-check/confidence";
+import {
+  confidencePercent,
+  confidenceState,
+  plural,
+  type ReviewPartition,
+} from "@/lib/photo-check/confidence";
 import type { PhotoCheckItem, PhotoCheckManualMark } from "@/lib/photo-check/types";
 
 export interface ManualMarkDraft {
@@ -180,6 +185,18 @@ export function ManualMarksEditor({
                     <p className="text-xs text-warm-500 mt-0.5">Ответ ученика не распознан</p>
                   )}
 
+                  {/* Почему задание здесь и что именно модель нашла. Без этого
+                      учитель гадает, откуда взялось «перепроверьте сами», и
+                      сверять ему не с чем. Порог уверенности — для показа;
+                      то, что задание попало сюда, решил сервер. */}
+                  <p className="text-xs text-warm-500 mt-1">
+                    {confidenceState(item) === "unrecognized"
+                      ? "Модель не нашла здесь ответа — сверьте по тетради."
+                      : `Уверенность чтения: ${confidencePercent(item.confidence)}`}
+                    {item.expected ? ` · Эталон: ${item.expected}` : ""}
+                    {item.maxPoints ? ` · ${item.maxPoints} б.` : ""}
+                  </p>
+
                   <div className="flex items-center gap-2 mt-2">
                     <label
                       htmlFor={`points-${item.number}`}
@@ -189,6 +206,7 @@ export function ManualMarksEditor({
                     </label>
                     <input
                       id={`points-${item.number}`}
+                    data-testid={`manual-points-${item.number}`}
                       type="number"
                       min={0}
                       max={item.maxPoints}

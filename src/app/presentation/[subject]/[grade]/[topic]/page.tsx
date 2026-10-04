@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { Card } from "@/components/ui/Card";
@@ -24,7 +23,7 @@ import {
   getGrade,
   subjects,
 } from "@/lib/content/subjects";
-import { JsonLd } from "@/components/seo";
+import { JsonLd, Breadcrumb } from "@/components/seo";
 
 type Props = { params: { subject: string; grade: string; topic: string } };
 
@@ -114,25 +113,22 @@ export default function PresentationTopicPage({ params }: Props) {
       <section className="relative bg-gradient-to-b from-warm-50 to-white pt-8 sm:pt-12 pb-10">
         <div className="absolute inset-0 -z-10 bg-grid opacity-50" />
         <div className="container-tight">
-          {/* Breadcrumbs */}
-          <nav className="flex flex-wrap items-center gap-2 mb-5 text-sm">
-            <Link href="/" className="text-warm-500 hover:text-warm-900">
-              Главная
-            </Link>
-            <span className="text-warm-300">/</span>
-            <Link href={`/subject/${subject.slug}`} className="text-warm-500 hover:text-warm-900">
-              {subject.title}
-            </Link>
-            <span className="text-warm-300">/</span>
-            <Link
-              href={`/subject/${subject.slug}/${grade.num}`}
-              className="text-warm-500 hover:text-warm-900"
-            >
-              {grade.num} класс
-            </Link>
-            <span className="text-warm-300">/</span>
-            <span className="text-warm-700">Презентация · {topic.title}</span>
-          </nav>
+          {/* Хлебные крошки: ручную разметку заменили на общий компонент —
+              он же рендерит BreadcrumbList JSON-LD (id ld-breadcrumb).
+              На странице он должен быть ровно один, иначе id продублируется.
+              className повторяет прежний отступ (mb-5) — внешний вид не меняем. */}
+          <Breadcrumb
+            className="flex flex-wrap items-center text-sm mb-5"
+            items={[
+              { name: "Главная", url: "/" },
+              { name: subject.title, url: `/subject/${subject.slug}` },
+              {
+                name: `${grade.num} класс`,
+                url: `/subject/${subject.slug}/${grade.num}`,
+              },
+              { name: `Презентация · ${topic.title}`, url: "" },
+            ]}
+          />
 
           <div className="grid lg:grid-cols-[1fr_400px] gap-8 items-start">
             <div>
@@ -297,18 +293,26 @@ export default function PresentationTopicPage({ params }: Props) {
             Структура презентации
           </h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            {/* Название слайда — только по-русски. Раньше над ним в бейдже
+                выводилось служебное поле kind (title / bullets / definition /
+                example / summary) — учитель видел английские слова.
+                Русское название рядом уже было, поэтому бейдж убран,
+                а kind из данных удалён: он нигде в файле больше не читался. */}
             {[
-              { name: "Титульный", kind: "title" },
-              { name: "Цели урока", kind: "bullets" },
-              { name: "Определение", kind: "definition" },
-              { name: "Примеры", kind: "example" },
-              { name: "Итоги", kind: "summary" },
-            ].map((slide) => (
+              { name: "Титульный" },
+              { name: "Цели урока" },
+              { name: "Определение" },
+              { name: "Примеры" },
+              { name: "Итоги" },
+            ].map((slide, i) => (
               <Card key={slide.name} padded>
-                <div className="flex flex-col gap-2">
-                  <Badge tone="warm">{slide.kind}</Badge>
-                  <h3 className="font-medium text-warm-950 text-sm">{slide.name}</h3>
+                {/* Номер слайда заменил удалённый бейдж с английским kind.
+                    Без него карточка осталась почти пустой, а учителю номер
+                    полезен: по нему он ориентируется, на каком слайде остановиться. */}
+                <div className="text-xs font-semibold text-brand-700 mb-1.5">
+                  Слайд {i + 1}
                 </div>
+                <h3 className="font-medium text-warm-950 text-sm">{slide.name}</h3>
               </Card>
             ))}
           </div>

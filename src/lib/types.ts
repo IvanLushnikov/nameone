@@ -147,6 +147,15 @@ export interface Worksheet {
    * В мок-генераторе заполняется из `chart-fixtures.ts`.
    */
   chartSpec?: import("@/lib/llm/svg-renderer").ChartSpec;
+
+  /**
+   * Помечает артефакт как заготовку: сервис был недоступен, задания типовые.
+   * Ставится в момент генерации и едет вместе с артефактом в избранное,
+   * предпросмотр и ЛК. Нужна для водяного знака на печатном листе —
+   * экранная плашка помечена `no-print` и на бумаге исчезает.
+   * См. docs/tz/18-money-and-trust.md, блок Б.
+   */
+  isDemo?: boolean;
 }
 
 export interface ExamProblem {
@@ -264,6 +273,8 @@ export interface LessonPlan {
   createdAt: string;
   /** Время генерации в мс (для UI/аналитики). */
   generationMs?: number;
+  /** Помечает артефакт как заготовку — см. `Worksheet.isDemo`. */
+  isDemo?: boolean;
 }
 
 export type SlideKind = "title" | "bullets" | "definition" | "example" | "summary";
@@ -290,6 +301,8 @@ export interface Presentation {
   theme: "default" | "modern" | "school" | "minimal";
   createdAt: string;
   generationMs?: number;
+  /** Помечает артефакт как заготовку — см. `Worksheet.isDemo`. */
+  isDemo?: boolean;
 }
 
 /** Тип урока в КТП — урок / контрольная / повторение / резерв. */
@@ -324,6 +337,8 @@ export interface Ktp {
   weeks: Array<{ weekNum: number; entries: KtpEntry[] }>;
   createdAt: string;
   generationMs?: number;
+  /** Помечает артефакт как заготовку — см. `Worksheet.isDemo`. */
+  isDemo?: boolean;
 }
 
 // =========================================================================
@@ -358,6 +373,8 @@ export interface CardSet {
   cards: FlashCard[];
   createdAt: string;
   generationMs?: number;
+  /** Помечает артефакт как заготовку — см. `Worksheet.isDemo`. */
+  isDemo?: boolean;
 }
 
 /** Тип файла внутри комплекта материалов. */
@@ -387,6 +404,8 @@ export interface MaterialBundle {
   files: MaterialFile[];
   createdAt: string;
   generationMs?: number;
+  /** Помечает артефакт как заготовку — см. `Worksheet.isDemo`. */
+  isDemo?: boolean;
 }
 
 /** Слот в пакете «урок целиком» — 4 слота, заполняются частично. */
@@ -414,4 +433,6 @@ export interface LessonBundle {
   /** Итоговое время генерации в мс. */
   totalMs: number;
   createdAt: string;
+  /** Помечает артефакт как заготовку — см. `Worksheet.isDemo`. */
+  isDemo?: boolean;
 }

@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { JsonLd } from "@/components/seo";
+import { JsonLd, Breadcrumb } from "@/components/seo";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { subjects } from "@/lib/content/subjects";
 import { SITE_URL } from "@/lib/site";
@@ -109,14 +109,17 @@ export default function SubjectsIndexPage() {
       <section className="relative overflow-hidden bg-gradient-to-b from-warm-50 to-white pt-12 sm:pt-16 pb-12">
         <div className="absolute inset-0 -z-10 bg-grid opacity-50" />
         <div className="container-tight">
+          {/* Крошки — общий компонент, как на остальных страницах каталога.
+              Раньше здесь была седьмая ручная копия с разделителем «/»,
+      из-за чего на /subject крошки выглядели иначе, чем на /subject/... . */}
           <div className="max-w-3xl">
-            <nav className="flex items-center gap-2 mb-4">
-              <Link href="/" className="text-sm text-warm-500 hover:text-warm-900">
-                Главная
-              </Link>
-              <span className="text-warm-300">/</span>
-              <span className="text-sm text-warm-700">Все предметы</span>
-            </nav>
+            <Breadcrumb
+              className="flex flex-wrap items-center text-sm mb-4"
+              items={[
+                { name: "Главная", url: "/" },
+                { name: "Все предметы", url: "" },
+              ]}
+            />
             <Badge tone="brand" className="mb-4">
               <Sparkles className="w-3 h-3" />
               {subjects.length} {subjectWord} · {totalTopics}+ {topicWord}
@@ -169,7 +172,7 @@ export default function SubjectsIndexPage() {
                         {s.title}
                       </h3>
                     </div>
-                    <ArrowRight className="w-4 h-4 text-warm-400 group-hover:text-brand-500 transition-colors shrink-0 mt-2.5" />
+                    <ArrowRight className="w-4 h-4 text-warm-600 group-hover:text-brand-500 transition-colors shrink-0 mt-2.5" />
                   </div>
                   <p className="mt-3 text-sm text-warm-600 leading-relaxed line-clamp-2">
                     {s.description}

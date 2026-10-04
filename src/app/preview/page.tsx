@@ -4,6 +4,7 @@ import * as React from "react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { WorksheetPreview } from "@/components/constructor/WorksheetPreview";
+import { PrintWatermark } from "@/components/constructor/PrintWatermark";
 import { InteractiveCta } from "@/components/worksheet/InteractiveCta";
 import { LessonPlanPreview } from "@/components/constructor/LessonPlanPreview";
 import { PresentationPreview } from "@/components/constructor/PresentationPreview";
@@ -286,10 +287,25 @@ export default function PreviewPage() {
 }
 
 /**
- * F-06 B-4: рендер тела превью по типу артефакта.
- * Discriminator: уникальное поле каждого типа (`tasks`, `stages`, `slides`, `weeks`).
+ * F-06 B-4: тело превью + водяной знак заготовки.
  */
 function ArtifactBody({ artifact }: { artifact: FavoriteArtifact }) {
+  // Заготовка помечается водяным знаком на печати и здесь: сюда учитель
+  // приходит из «Избранного», где экранной плашки конструктора уже нет,
+  // а флаг `isDemo` едет вместе с артефактом (см. `Worksheet.isDemo`).
+  return (
+    <>
+      {artifact.isDemo && <PrintWatermark />}
+      <ArtifactBodyInner artifact={artifact} />
+    </>
+  );
+}
+
+/**
+ * Рендер тела превью по типу артефакта.
+ * Discriminator: уникальное поле каждого типа (`tasks`, `stages`, `slides`, `weeks`).
+ */
+function ArtifactBodyInner({ artifact }: { artifact: FavoriteArtifact }) {
   if ("tasks" in artifact) {
     if (artifact.tasks.length === 0) {
       return <EmptyWorksheetState title={artifact.title} />;
