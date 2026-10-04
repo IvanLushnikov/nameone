@@ -1,7 +1,18 @@
 # Cloudflare Workers config — УчЛист backend.
 #
-# Deploy:    npm run deploy
+# Deploy:    npm run deploy        → ПРОДАКШН (--env production)
+#            npm run deploy:staging → воркер из секции [vars], НЕ для боя
 # Dev local: npm run dev   (wrangler dev --local)
+#
+# ВНИМАНИЕ, и это не теория. Секция [vars] и [env.production] описывают
+# ОДИН И ТОТ ЖЕ воркер `rabochielisty-api`. Поэтому `wrangler deploy` без
+# `--env production` — это не «локальная сборка», а выкладка на боевой адрес
+# с development-переменными: ALLOW_DEV_MAGIC_URL=true, ALLOW_DEMO_PAYMENTS=true
+# и FRONTEND_URL=http://localhost:3000. Так уже случилось дважды: 02.10.2026
+# (это задеплоили, и защита по APP_ENV выключилась молча) и 04.10.2026 при
+# выкладке ТЗ-19/ТЗ-20. Поэтому `npm run deploy` жёстко указывает
+# `--env production`, а `deploy:staging` назван явно, чтобы никто не
+# запустил его, думая, что это боевой деплой.
 #
 # Secrets (.dev.vars для локала, wrangler secret put для прода):
 #   OPENAI_API_KEY, ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY,

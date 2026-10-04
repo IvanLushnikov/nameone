@@ -257,25 +257,40 @@ app.notFound(notFoundHandler);
  * зарезервированное имя события воркера, поэтому навешиваем его вручную.
  */
 app.fire = ((event: ScheduledEvent, env: AppEnv["Bindings"], ctx: ExecutionContext) => {
+  // ── Какой это триггер ────────────────────────────────────────────────────
+  // В `wrangler.toml` их два: суточный (уборка) и часовой (биллинг, ТЗ-20).
+  // Без разведения уборка ездила бы раз в час — 24 полных обхода таблиц в
+  // сутки ради работы, которую достаточно делать раз в день.
+  //
+  // Неизвестная строка триггера означает «сделать всё»: лучше лишний проход
+  // по таблице, чем молча пропущенное удаление персональных данных. Обратная
+  // осторожность здесь недопустима.
+  const HOURLY_CRON = "0 * * * *";
+  const DAILY_CRON = "0 3 * * *";
+  const isHourly = event.cron === HOURLY_CRON;
+  const isDaily = event.cron === DAILY_CRON || !isHourly;
+
   ctx.waitUntil(
     (async () => {
-      // 1) Фото тетрадей — ПДн, 7 дней (TZ-11 §5.2).
-      try {
-        const result = await purgeExpiredPhotos(env.DB, env.PDFS);
-        console.info("[cron] purgeExpiredPhotos", JSON.stringify(result));
-      } catch (e) {
-        // Cron-ошибка не должна ронять воркер: логируем, следующий прогон
-        // заберёт просроченное (batch ограничен, `delete_at` не сгорает).
-        console.error("[cron] purgeExpiredPhotos failed", e);
-      }
+      if (isDaily) {
+        // 1) Фото тетрадей — ПДн, 7 дней (TZ-11 §5.2).
+        try {
+          const result = await purgeExpiredPhotos(env.DB, env.PDFS);
+          console.info("[cron] purgeExpiredPhotos", JSON.stringify(result));
+        } catch (e) {
+          // Cron-ошибка не должна ронять воркер: логируем, следующий прогон
+          // заберёт просроченное (batch ограничен, `delete_at` не сгорает).
+          console.error("[cron] purgeExpiredPhotos failed", e);
+        }
 
-      // 2) Ответы учеников в онлайн-формах — ПДн, 90 дней (TZ-12 §5.4).
-      //    САМИ формы не удаляются: учитель должен видеть список выданного.
-      try {
-        const result = await purgeExpiredForms(env.DB);
-        console.info("[cron] purgeExpiredForms", JSON.stringify(result));
-      } catch (e) {
-        console.error("[cron] purgeExpiredForms failed", e);
+        // 2) Ответы учеников в онлайн-формах — ПДн, 90 дней (TZ-12 §5.4).
+        //    САМИ формы не удаляются: учитель должен видеть список выданного.
+        try {
+          const result = await purgeExpiredForms(env.DB);
+          console.info("[cron] purgeExpiredForms", JSON.stringify(result));
+        } catch (e) {
+          console.error("[cron] purgeExpiredForms failed", e);
+        }
       }
 
       // 3) Биллинг (ТЗ-20) — отдельный триггер, раз в час. Подписку нельзя
