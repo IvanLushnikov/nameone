@@ -215,7 +215,7 @@ export function formatTokens(n: number): string {
 export function normLabel(planId: PlanId): string {
   const norm = PLANS[planId].normPerMonth;
   if (norm == null) return "Без ограничения по объёму";
-  return `${tokensToWorksheetsLabel(norm)} в месяц (это ${formatTokens(norm)} токенов)`;
+  return `${tokensToWorksheetsLabel(norm)} в месяц`;
 }
 
 /** «≈ 900 рабочих листов» — понятная подпись к токенам. */
@@ -237,7 +237,6 @@ export const PLANS: Record<PlanId, Plan> = {
       FREE_QUOTA_LABEL,
       "Все предметы, 1–11 классов",
       "PDF с ответами и пояснениями",
-      interviewQuotaLabel("free"),
       "Без регистрации",
     ],
     cta: "Начать бесплатно",
@@ -265,8 +264,7 @@ export const PLANS: Record<PlanId, Plan> = {
       "Рабочие листы, тесты, карточки, планы уроков",
       "История и шаблоны",
       "Избранное и сохранённые настройки",
-      "Лимит: до 900 рабочих листов в месяц (внутренняя единица — 1,44 млн токенов)",
-      interviewQuotaLabel("base"),
+      "Лимит: до 900 рабочих листов в месяц",
       "Учеников: 5",
       "Членов семьи: до 5 человек",
     ],
@@ -301,7 +299,6 @@ export const PLANS: Record<PlanId, Plan> = {
       `${ARTIFACT_NAMES.presentation} и ${ARTIFACT_NAMES.ktp}`,
       "Варианты ОГЭ/ЕГЭ с разбором",
       `${ARTIFACT_NAMES.control} с критериями оценивания`,
-      interviewQuotaLabel("plus"),
       "Ранний доступ к новым темам и предметам",
     ],
     cta: "Выбрать Плюс",
