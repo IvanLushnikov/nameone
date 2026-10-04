@@ -46,7 +46,7 @@ export function MaterialsBankBlock() {
         </div>
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
-          <Layers className="w-4 h-4 text-warm-400" aria-hidden />
+          <Layers className="w-4 h-4 text-warm-600" aria-hidden />
           {counts.map(({ purpose, count }) => (
             <Badge key={purpose} tone="warm">
               {MATERIAL_PURPOSE_LABELS[purpose]} — {count}

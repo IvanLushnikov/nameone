@@ -262,7 +262,7 @@ function SubjectBentoCard({
           </span>
         </div>
 
-        <ArrowRight className="absolute bottom-4 right-4 w-4 h-4 text-warm-400 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all text-brand-600" />
+        <ArrowRight className="absolute bottom-4 right-4 w-4 h-4 text-warm-600 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all text-brand-600" />
       </div>
     </Link>
   );

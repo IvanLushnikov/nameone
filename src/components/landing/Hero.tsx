@@ -47,9 +47,23 @@ export function Hero() {
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-display font-bold tracking-tight text-balance text-warm-950">
             Не&nbsp;тратьте вечер на&nbsp;рабочий&nbsp;лист.
             <br />
-            <span className="relative inline-block mt-2">
-              <span className="relative z-10 text-brand-600">Сделайте его за&nbsp;30&nbsp;секунд</span>
-              <span className="absolute bottom-1 left-0 right-0 h-3 bg-accent-200/70 -z-0 rounded-full" aria-hidden />
+            {/* Подсветка задаётся фоном самого текста, а не отдельной полосой.
+                Раньше здесь был absolute-блок `bottom-1 h-3` внутри inline-block:
+                текст переносится на две строки, полоса рисовалась по нижней границе
+                последней строки, но по ширине самой широкой — на мобильном она шла
+                прямо по буквам. `box-decoration-break: clone` заставляет фон
+                повторяться на каждой строке, а градиент в стиле ограничивает его
+                нижней третью строки — получается штрих маркера, а не заливка блока. */}
+            <span className="mt-2 block">
+              <span
+                className="text-brand-600 rounded-[0.3em] px-[0.12em] -mx-[0.12em] [-webkit-box-decoration-break:clone] [box-decoration-break:clone]"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(to top, rgba(255,202,184,0.9) 0 34%, rgba(255,202,184,0) 34%)",
+                }}
+              >
+                Сделайте его за&nbsp;30&nbsp;секунд
+              </span>
             </span>
           </h1>
 
@@ -249,7 +263,7 @@ function HeroMockup() {
           <div className="bg-warm-900 text-white rounded-2xl p-4 relative overflow-hidden">
             <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-brand-500/20 blur-2xl" />
             <div className="relative">
-              <div className="text-xs text-warm-300 mb-2">Что дальше</div>
+              <div className="text-xs text-warm-500 mb-2">Что дальше</div>
               <div className="text-sm font-semibold leading-snug">
                 Скачайте в&nbsp;PDF или&nbsp;DOCX, или&nbsp;сделайте ещё&nbsp;вариант
               </div>

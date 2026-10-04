@@ -248,7 +248,7 @@ export function InteractiveDetail({ id }: { id: string }) {
       {/* Топ-3 проваленных вопросов — то, ради чего открывают этот экран. */}
       <Card>
         <div className="flex items-center gap-2 mb-3">
-          <TrendingDown className="w-4 h-4 text-warm-400" aria-hidden />
+          <TrendingDown className="w-4 h-4 text-warm-600" aria-hidden />
           <h3 className="font-semibold text-warm-950">Топ-3 вопроса, которые не зашли</h3>
         </div>
         {hardest.length === 0 ? (

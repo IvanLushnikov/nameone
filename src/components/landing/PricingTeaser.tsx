@@ -136,7 +136,7 @@ function PricingCard({
 
   return (
     <div
-      className="relative"
+      className="relative h-full"
       style={{
         opacity: inView ? 1 : 0,
         transform: inView ? "translateY(0)" : "translateY(20px)",
@@ -156,12 +156,17 @@ function PricingCard({
         />
       )}
       <Card
-        className={`relative h-full transition-all duration-300 hover:-translate-y-1 ${
+        className={`relative h-full flex flex-col transition-all duration-300 hover:-translate-y-1 ${
           isHighlight ? "ring-2 ring-brand-400 shadow-soft-lg" : ""
         }`}
       >
+        {/* Плашка «Популярный» — только в фирменной гамме. Раньше была
+            градиентом brand→accent, и коралловый край на зелёной карточке
+            читался как предупреждение, а не как рекомендация.
+            Шаги 600/700 выбраны по контрасту: белый на них даёт 4,03:1 и 5,75:1
+            (brand-500 давал 2,69:1). */}
         {isHighlight && (
-          <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-gradient-to-r from-brand-500 to-accent-500 text-white text-xs font-semibold flex items-center gap-1 shadow-accent z-10">
+          <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-gradient-to-r from-brand-700 to-brand-600 text-white text-xs font-semibold flex items-center gap-1 shadow-accent z-10">
             <Sparkles className="w-3 h-3" />
             Популярный
           </div>
@@ -198,12 +203,16 @@ function PricingCard({
           ))}
         </ul>
 
+        {/* mt-auto прижимает кнопку к низу карточки: без него у тарифа с коротким
+            списком кнопка висела выше, чем у соседей, и ряд читался как три
+            разных предложения, а не как один тарифный ряд. */}
         <Button
           as="link"
           href={plan.href}
           variant={isHighlight ? "primary" : "secondary"}
           size="md"
           fullWidth
+          className="mt-auto"
         >
           {plan.cta}
         </Button>

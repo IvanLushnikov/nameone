@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Sparkles, ArrowRight, Star, Users, FileText, Layers } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { JsonLd } from "@/components/seo";
+import { JsonLd, Breadcrumb } from "@/components/seo";
 import { MaterialCard } from "@/components/materials/MaterialCard";
 import {
   MATERIALS_CATALOG,
@@ -107,17 +106,16 @@ export default function MaterialPage({ params }: Props) {
 
       <section className="relative bg-gradient-to-b from-warm-50 to-white pt-8 sm:pt-12 pb-10">
         <div className="container-tight">
-          <nav className="flex flex-wrap items-center gap-2 mb-4 text-sm">
-            <Link href="/materials/" className="text-warm-500 hover:text-warm-900">
-              Банк материалов
-            </Link>
-            <span className="text-warm-300">/</span>
-            <Link href={`/subject/${material.subject}/`} className="text-warm-500 hover:text-warm-900">
-              {subject?.title ?? material.subject}
-            </Link>
-            <span className="text-warm-300">/</span>
-            <span className="text-warm-700">{material.grade} класс</span>
-          </nav>
+          {/* Хлебные крошки — единый компонент (BreadcrumbList JSON-LD для поиска). */}
+          <Breadcrumb
+            className="flex flex-wrap items-center text-sm mb-4"
+            items={[
+              { name: "Банк материалов", url: "/materials/" },
+              { name: subject?.title ?? material.subject, url: `/subject/${material.subject}/` },
+              // Последний уровень — текущая страница, без ссылки.
+              { name: `${material.grade} класс`, url: "" },
+            ]}
+          />
 
           <div className="max-w-3xl">
             <div className="flex flex-wrap items-center gap-2">

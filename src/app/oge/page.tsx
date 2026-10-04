@@ -59,7 +59,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { plural } from "@/lib/utils/cn";
-import { consume, getRemaining, FREE_LIMIT } from "@/lib/utils/limit";
+import { getRemaining, FREE_LIMIT, settleGeneration } from "@/lib/utils/limit";
 import { priceLabel } from "@/lib/content/plans";
 import {
   generateExam,
@@ -206,14 +206,19 @@ export default function OgeHubInner() {
         setPhase((cur) => (cur.kind === "generating" ? { ...cur, stage: 2 } : cur));
 
         clearPending();
-        // Списываем оптимистичный счётчик только за настоящий вариант: демо и
-        // отказ бэка учителя не должны стоить ему попытки.
-        consume();
+        // Правило «генерация всегда стоит попытки, включая демо» живёт в
+        // settleGeneration() — см. src/lib/utils/limit.ts. Здесь раньше стоял
+        // прямой consume() с исключением для демо, из-за чего два экрана решали
+        // одно и то же по-разному.
+        settleGeneration({ isDemo: false });
         setRemaining(getRemaining());
         setPhase({ kind: "ready", variant, demo: false, target });
       } catch (err) {
         const failure = toFailure(err);
         if (failure.reason === "unavailable") {
+          // Демо тоже стоит бесплатной попытки — см. settleGeneration().
+          settleGeneration({ isDemo: true });
+          setRemaining(getRemaining());
           // Сервис недоступен — показываем демо, но честно и с повтором.
           // pending из sessionStorage НЕ чистим: после F5 попробуем собрать
           // настоящий вариант снова, и учителю не придётся начинать заново.

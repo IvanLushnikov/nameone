@@ -9,6 +9,7 @@ import { Sparkles, ArrowRight } from "lucide-react";
 import { plural } from "@/lib/utils/cn";
 import { getSubject, subjects } from "@/lib/content/subjects";
 import { FREE_QUOTA_LABEL } from "@/lib/content/plans";
+import { Breadcrumb } from "@/components/seo";
 import { SITE_URL } from "@/lib/site";
 import type { Grade, Topic } from "@/lib/types";
 
@@ -36,7 +37,8 @@ export function generateMetadata({ params }: Props): Metadata {
   // В типах Subject нет поля с предложным падежом (`nameInCase`/`instrumental`),
   // поэтому после предлога «по» название предмета берём в кавычки — иначе в
   // сниппете выходит «по математика». Если добавим такое поле в таксономию,
-  // заменим на `по ${subj}` (см. карту SUBJECT_PREPOSITIONAL в /subject/[subject]).
+  // заменим на `по ${subj}` (см. карту SUBJECT_PREPOSITIONAL в
+  // `@/lib/content/subject-cases`).
   const subjectName = `предмету «${subject.title}»`;
   const title = `Рабочие листы по ${subjectName} для ${gradeNum} класса — ${grade.topics.length} ${topicWord}`;
   const description = `Рабочие листы, тесты и карточки по ${subjectName} для ${gradeNum} класса. ${grade.topics.length} ${plural(grade.topics.length, "тема", "темы", "тем")} по ФГОС. PDF с ответами за 30 секунд. Бесплатно — ${FREE_QUOTA_LABEL.toLowerCase()}.`;
@@ -88,18 +90,16 @@ export default function GradeHubPage({ params }: Props) {
     <>
       <section className="bg-gradient-to-b from-warm-50 to-white pt-8 sm:pt-12 pb-10">
         <div className="container-tight">
-          {/* Breadcrumbs */}
-          <nav className="flex items-center gap-2 mb-5 text-sm">
-            <Link href="/" className="text-warm-500 hover:text-warm-900">
-              Главная
-            </Link>
-            <span className="text-warm-300">/</span>
-            <Link href={`/subject/${subject.slug}`} className="text-warm-500 hover:text-warm-900">
-              {subject.title}
-            </Link>
-            <span className="text-warm-300">/</span>
-            <span className="text-warm-700">{gradeNum} класс</span>
-          </nav>
+          {/* Хлебные крошки — единый компонент (BreadcrumbList JSON-LD для поиска). */}
+          <Breadcrumb
+            className="flex flex-wrap items-center text-sm mb-5"
+            items={[
+              { name: "Главная", url: "/" },
+              { name: subject.title, url: `/subject/${subject.slug}` },
+              // Последний уровень — текущая страница, без ссылки.
+              { name: `${gradeNum} класс`, url: "" },
+            ]}
+          />
 
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
             <div>
@@ -141,7 +141,7 @@ export default function GradeHubPage({ params }: Props) {
                     <h3 className="font-medium text-warm-950 group-hover:text-brand-700 transition-colors">
                       {t.title}
                     </h3>
-                    <ArrowRight className="w-4 h-4 text-warm-400 group-hover:text-brand-500 transition-colors shrink-0 mt-0.5" />
+                    <ArrowRight className="w-4 h-4 text-warm-600 group-hover:text-brand-500 transition-colors shrink-0 mt-0.5" />
                   </div>
                   {/* P0-01: компактная ФГОС-плашка на листинге (null-рендер если fgosRef нет) */}
                   <FgosBadge fgosRef={t.fgosRef} size="sm" className="mb-2" />

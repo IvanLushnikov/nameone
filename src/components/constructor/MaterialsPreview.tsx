@@ -72,7 +72,7 @@ export function MaterialsPreview({ bundle, onDownload }: Props) {
   if (bundle.files.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-warm-300 bg-warm-50 p-8 text-center">
-        <FolderOpen className="w-8 h-8 mx-auto text-warm-400" />
+        <FolderOpen className="w-8 h-8 mx-auto text-warm-600" />
         <h2 className="text-base font-semibold text-warm-900 mt-3">Файлы не собрались</h2>
         <p className="text-sm text-warm-600 mt-1 max-w-md mx-auto">
           Тема «{bundle.topic}» не найдена в списке тем предмета, поэтому комплект собрать не из чего.

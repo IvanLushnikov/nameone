@@ -78,7 +78,7 @@ export function Select({
         </span>
         <ChevronDown
           className={cn(
-            "w-4 h-4 text-warm-400 shrink-0 transition-transform",
+            "w-4 h-4 text-warm-600 shrink-0 transition-transform",
             open && "rotate-180"
           )}
         />

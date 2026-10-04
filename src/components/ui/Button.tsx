@@ -11,11 +11,15 @@ type ButtonVariant =
 
 type ButtonSize = "sm" | "md" | "lg" | "xl";
 
+// Контраст текста на заливке — WCAG AA (4.5:1 для текста до 18px, 3:1 для крупного).
+// Раньше было `bg-brand-500` (#22B37C) + белый = 2,69:1 и `bg-accent-500` (#FF5E2E) + белый
+// = 3,05:1 — главная кнопка на каждой странице и кнопка оплаты в paywall были нечитаемыми.
+// brand-700 (#107456) даёт 5,75:1, accent-700 (#C73213) — 5,39:1.
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    "bg-brand-500 text-white shadow-brand hover:bg-brand-600 active:bg-brand-700",
+    "bg-brand-700 text-white shadow-brand hover:bg-brand-800 active:bg-brand-900",
   accent:
-    "bg-accent-500 text-white shadow-accent hover:bg-accent-600 active:bg-accent-700",
+    "bg-accent-700 text-white shadow-accent hover:bg-accent-800 active:bg-accent-900",
   secondary:
     "bg-white text-warm-900 border border-warm-200 hover:bg-warm-50 hover:border-warm-300",
   ghost:
