@@ -50,8 +50,8 @@ export const extraInfChemOkr: ExtraExamplesMap = {
   ],
   "okruzhaet/1/zhivotnye-i-rasteniya": [
     {
-      text: "Приведите пример домашнего животного:",
-      answer: "корова, кошка, лошадь, курица",
+      text: "Какое из этих животных домашнее: корова, ворона, олень?",
+      answer: "корова",
     },
     {
       text: "Яблоко, груша и вишня растут на:",
