@@ -152,20 +152,6 @@ const comparison = [
     school: "PDF · DOCX · PPTX",
   },
   {
-    feature: "Учеников",
-    free: "—",
-    base: "5",
-    plus: "20",
-    school: "Без ограничений",
-  },
-  {
-    feature: "Членов семьи",
-    free: "—",
-    base: "До 5 человек",
-    plus: "До 5 человек",
-    school: "До 5 человек",
-  },
-  {
     feature: "Админка учителя",
     free: "—",
     base: "—",
