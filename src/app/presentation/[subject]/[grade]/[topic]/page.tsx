@@ -16,7 +16,7 @@ import {
   FileText,
   Lightbulb,
 } from "lucide-react";
-import { topicTitleWithUmk } from "@/lib/utils/cn";
+import { topicTitleWithUmk, quotedTopic } from "@/lib/utils/cn";
 import {
   getTopic,
   getSubject,
@@ -60,8 +60,8 @@ export function generateMetadata({ params }: Props): Metadata {
   // Предмет в заголовке обязателен: без него у презентаций по одноимённым
   // темам разных предметов получался один и тот же title — две страницы,
   // которые поисковик не различал.
-  const title = `Презентация по теме «${topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef)}» · ${subject.shortTitle}, ${grade.num} класс`;
-  const description = `Готовая презентация по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef)}». 10 слайдов с заметками для учителя в PPTX. Сгенерируйте за 30 секунд.`;
+  const title = `Презентация по теме ${quotedTopic(topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef))} · ${subject.shortTitle}, ${grade.num} класс`;
+  const description = `Готовая презентация по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему ${quotedTopic(topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef))}. 10 слайдов с заметками для учителя в PPTX. Сгенерируйте за 30 секунд.`;
 
   return {
     title,
@@ -90,8 +90,8 @@ export default function PresentationTopicPage({ params }: Props) {
   const jsonLd: Record<string, unknown> = {
     "@context": "https://schema.org",
     "@type": "LearningResource",
-    name: `Презентация по теме «${topic.title}»`,
-    description: `Готовая презентация по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef)}». 10 слайдов с заметками для учителя в PPTX.`,
+    name: `Презентация по теме ${quotedTopic(topic.title)}`,
+    description: `Готовая презентация по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему ${quotedTopic(topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef))}. 10 слайдов с заметками для учителя в PPTX.`,
     inLanguage: "ru-RU",
     educationalLevel: `${grade.num} класс`,
     learningResourceType: ["Презентация", "Слайды"],
@@ -153,7 +153,7 @@ export default function PresentationTopicPage({ params }: Props) {
                 </Badge>
               </div>
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold tracking-tight text-balance">
-                Презентация по теме «{topic.title}»
+                Презентация по теме {quotedTopic(topic.title)}
               </h1>
               <p className="mt-4 text-lg text-warm-600 text-pretty">
                 Готовая презентация по ФГОС для {grade.num} класса по предмету {subject.title.toLowerCase()}.
@@ -358,7 +358,7 @@ export default function PresentationTopicPage({ params }: Props) {
         <div className="container-tight">
           <Card className="bg-gradient-to-br from-brand-500 to-brand-700 text-white border-0 text-center py-10 sm:py-14">
             <h2 className="text-2xl sm:text-4xl font-display font-bold tracking-tight">
-              Готовы получить презентацию по теме «{topic.title}»?
+              Готовы получить презентацию по теме {quotedTopic(topic.title)}?
             </h2>
             <p className="mt-3 text-brand-100 max-w-xl mx-auto">
               30 секунд — и 10 слайдов в PPTX у вас. С заметками для учителя, примерами и итогами.

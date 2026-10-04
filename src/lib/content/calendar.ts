@@ -14,7 +14,7 @@ export type Season =
   | 'summer';
 
 export function getCurrentSeason(date: Date = new Date()): Season {
-  const m = date.getMonth() + 1; // 1-12
+  const m = date.getMonth() + 1; // 1–12
   const d = date.getDate();
 
   // Каникулы

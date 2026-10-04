@@ -4,6 +4,7 @@ import { Sparkles, ArrowRight, Star, Users, FileText, Layers } from "lucide-reac
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { JsonLd, Breadcrumb } from "@/components/seo";
+import { quotedTopic } from "@/lib/utils/cn";
 import { MaterialCard } from "@/components/materials/MaterialCard";
 import {
   MATERIALS_CATALOG,
@@ -176,7 +177,7 @@ export default function MaterialPage({ params }: Props) {
               <div className="mt-6 border-t border-warm-100 pt-5">
                 <p className="text-sm font-semibold text-warm-900 mb-3">Что вы получите</p>
                 <ul className="space-y-2 text-sm text-warm-700">
-                  <li>• {material.count} заданий по теме «{material.topicTitle}»</li>
+                  <li>• {material.count} заданий по теме {quotedTopic(material.topicTitle)}</li>
                   <li>• Ответы с разбором — для самопроверки и проверки дома</li>
                   <li>• По программе {material.grade} класса{topic?.fgosRef ? `, раздел «${topic.fgosRef}»` : ""}</li>
                   <li>• Готовый PDF за 30 секунд — без Word и шаблонов</li>

@@ -34,7 +34,7 @@ export interface ExamSubject {
   numbers: ExamNumber[];
 }
 
-// ====================== ОГЭ МАТЕМАТИКА (1-19) ======================
+// ====================== ОГЭ МАТЕМАТИКА (1–19) ======================
 
 const ogeMathNumbers: ExamNumber[] = [
   { exam: "oge", subject: "math", number: 1, slug: "lineynye-uravneniya", title: "Линейные уравнения", fgosRef: "Раздел 2.1 · Алгебраические выражения", description: "Решение линейного уравнения с одной переменной. Проверяется умение применять правила переноса слагаемых и раскрытия скобок." },
@@ -58,7 +58,7 @@ const ogeMathNumbers: ExamNumber[] = [
   { exam: "oge", subject: "math", number: 19, slug: "geometricheskie-zadachi", title: "Прикладные геометрические задачи", fgosRef: "Раздел 4.5 · Прикладная геометрия", description: "Задачи с геометрическим содержанием из практики. Проверяется умение строить математическую модель реальной ситуации." },
 ];
 
-// ====================== ОГЭ РУССКИЙ ЯЗЫК (1-9) ======================
+// ====================== ОГЭ РУССКИЙ ЯЗЫК (1–9) ======================
 
 const ogeRussianNumbers: ExamNumber[] = [
   { exam: "oge", subject: "russian", number: 1, slug: "szhatoe-izlozhenie", title: "Сжатое изложение", fgosRef: "Раздел 5.1 · Речь и текст", description: "Аудирование и письменное сжатие текста. Проверяется умение выделять главную мысль и сохранять микротемы." },
@@ -72,7 +72,7 @@ const ogeRussianNumbers: ExamNumber[] = [
   { exam: "oge", subject: "russian", number: 9, slug: "sochinenie-rassuzhdenie", title: "Сочинение-рассуждение", fgosRef: "Раздел 5.8 · Сочинение", description: "Сочинение-рассуждение на лингвистическую тему: тезис, аргументы, вывод. Проверяется умение строить связный текст." },
 ];
 
-// ====================== ОГЭ ФИЗИКА (1-25) ======================
+// ====================== ОГЭ ФИЗИКА (1–25) ======================
 
 const ogePhysicsNumbers: ExamNumber[] = [
   { exam: "oge", subject: "physics", number: 1, slug: "mekhanicheskoe-dvizhenie", title: "Механическое движение", fgosRef: "Раздел 1.1 · Кинематика", description: "Равномерное и равнопеременное движение. Скорость, путь, время. Проверяется умение читать графики движения." },
@@ -102,7 +102,7 @@ const ogePhysicsNumbers: ExamNumber[] = [
   { exam: "oge", subject: "physics", number: 25, slug: "opticheskie-pribory", title: "Оптические приборы", fgosRef: "Раздел 6.2 · Оптика", description: "Линзы, фокусное расстояние, оптическая сила. Проверяется умение применять формулу тонкой линзы." },
 ];
 
-// ====================== ОГЭ ИНФОРМАТИКА (1-15) ======================
+// ====================== ОГЭ ИНФОРМАТИКА (1–15) ======================
 
 const ogeInformaticsNumbers: ExamNumber[] = [
   { exam: "oge", subject: "informatics", number: 1, slug: "predstavlenie-informatsii", title: "Представление информации", fgosRef: "Раздел 1.1 · Информация", description: "Виды информации, единицы измерения. Проверяется знание базовых понятий информатики." },
@@ -122,7 +122,7 @@ const ogeInformaticsNumbers: ExamNumber[] = [
   { exam: "oge", subject: "informatics", number: 15, slug: "bazy-dannykh-oge", title: "Базы данных", fgosRef: "Раздел 4.2 · Базы данных", description: "Таблицы, запросы, ключи. Проверяется понимание реляционной модели данных." },
 ];
 
-// ====================== ОГЭ ОБЩЕСТВОЗНАНИЕ (1-24) ======================
+// ====================== ОГЭ ОБЩЕСТВОЗНАНИЕ (1–24) ======================
 
 const ogeSocialNumbers: ExamNumber[] = [
   { exam: "oge", subject: "social", number: 1, slug: "chelovek-i-obshchestvo", title: "Человек и общество", fgosRef: "Раздел 1.1 · Введение", description: "Понятия «человек», «личность», «общество». Проверяется знание базовых категорий обществознания." },
@@ -151,7 +151,7 @@ const ogeSocialNumbers: ExamNumber[] = [
   { exam: "oge", subject: "social", number: 24, slug: "nalogi-i-byudzhet", title: "Налоги и бюджет", fgosRef: "Раздел 4.5 · Бюджет", description: "Виды налогов, бюджетная система. Проверяется знание налоговой политики государства." },
 ];
 
-// ====================== ЕГЭ МАТЕМАТИКА ПРОФИЛЬНАЯ (1-19) ======================
+// ====================== ЕГЭ МАТЕМАТИКА ПРОФИЛЬНАЯ (1–19) ======================
 
 const egeMathPNumbers: ExamNumber[] = [
   { exam: "ege", subject: "math-p", number: 1, slug: "prosteyshie-uravneniya-p", title: "Простейшие уравнения", fgosRef: "Раздел 2.1 · Уравнения", description: "Линейные, квадратные, рациональные уравнения. Проверяется умение решать стандартные уравнения." },
@@ -175,7 +175,7 @@ const egeMathPNumbers: ExamNumber[] = [
   { exam: "ege", subject: "math-p", number: 19, slug: "chisla-i-svoystva", title: "Числа и их свойства", fgosRef: "Раздел 1.1 · Числа", description: "Задачи на делимость, остатки, признаки делимости. Проверяется теоретико-числовая интуиция." },
 ];
 
-// ====================== ЕГЭ МАТЕМАТИКА БАЗОВАЯ (1-21) ======================
+// ====================== ЕГЭ МАТЕМАТИКА БАЗОВАЯ (1–21) ======================
 
 const egeMathBNumbers: ExamNumber[] = [
   { exam: "ege", subject: "math-b", number: 1, slug: "tselye-drobnye-chisla", title: "Целые и дробные числа", fgosRef: "Раздел 1.1 · Числа", description: "Действия с целыми и дробными числами. Проверяется арифметическая грамотность." },
@@ -201,7 +201,7 @@ const egeMathBNumbers: ExamNumber[] = [
   { exam: "ege", subject: "math-b", number: 21, slug: "finansovaya-matematika", title: "Финансовая математика", fgosRef: "Раздел 6.3 · Финансы", description: "Проценты по вкладам, кредитам, инфляция. Проверяется финансовая грамотность." },
 ];
 
-// ====================== ЕГЭ РУССКИЙ ЯЗЫК (1-27) ======================
+// ====================== ЕГЭ РУССКИЙ ЯЗЫК (1–27) ======================
 
 const egeRussianNumbers: ExamNumber[] = [
   { exam: "ege", subject: "russian", number: 1, slug: "informatsionnaya-obrabotka", title: "Информационная обработка текста", fgosRef: "Раздел 5.1 · Речь и текст", description: "Главная мысль, микротемы, способы сжатия. Проверяется умение работать с текстом." },
@@ -233,7 +233,7 @@ const egeRussianNumbers: ExamNumber[] = [
   { exam: "ege", subject: "russian", number: 27, slug: "publitsisticheskiy-stil", title: "Публицистический стиль", fgosRef: "Раздел 5.27 · Публицистика", description: "Жанры публицистики: статья, эссе, очерк. Проверяется умение анализировать публицистический текст." },
 ];
 
-// ====================== ЕГЭ ФИЗИКА (1-32) ======================
+// ====================== ЕГЭ ФИЗИКА (1–32) ======================
 
 const egePhysicsNumbers: ExamNumber[] = [
   { exam: "ege", subject: "physics", number: 1, slug: "kinematika-ege", title: "Кинематика", fgosRef: "Раздел 1.1 · Кинематика", description: "Равномерное, равнопеременное движение. Графики v(t), x(t). Проверяется владение кинематическими понятиями." },
@@ -270,7 +270,7 @@ const egePhysicsNumbers: ExamNumber[] = [
   { exam: "ege", subject: "physics", number: 32, slug: "elektromagnitnye-volny-ege", title: "Электромагнитные волны", fgosRef: "Раздел 5.3 · Волны", description: "Свойства электромагнитных волн, шкала электромагнитных излучений. Проверяется знание теории Максвелла." },
 ];
 
-// ====================== ЕГЭ ИНФОРМАТИКА (1-27) ======================
+// ====================== ЕГЭ ИНФОРМАТИКА (1–27) ======================
 
 const egeInformaticsNumbers: ExamNumber[] = [
   { exam: "ege", subject: "informatics", number: 1, slug: "predstavlenie-informatsii-ege", title: "Представление информации", fgosRef: "Раздел 1.1 · Информация", description: "Виды информации, носители, единицы измерения. Проверяется знание основ информатики." },

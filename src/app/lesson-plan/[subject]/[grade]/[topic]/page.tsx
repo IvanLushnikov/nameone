@@ -16,7 +16,7 @@ import {
   ListChecks,
   FileText,
 } from "lucide-react";
-import { topicTitleWithUmk } from "@/lib/utils/cn";
+import { topicTitleWithUmk, quotedTopic } from "@/lib/utils/cn";
 import {
   getTopic,
   getSubject,
@@ -61,8 +61,8 @@ export function generateMetadata({ params }: Props): Metadata {
   // Предмет в заголовке обязателен: без него у планов урока по одноимённым
   // темам разных предметов («Числа от 1 до 10» — математика и английский)
   // получался один и тот же title, и поисковик видел две одинаковые страницы.
-  const title = `План урока по теме «${topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef)}» · ${subject.shortTitle}, ${grade.num} класс`;
-  const description = `Готовый план урока по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef)}». Конспект на 45 минут с этапами, целями и домашним заданием. Сгенерируйте DOCX за 30 секунд.`;
+  const title = `План урока по теме ${quotedTopic(topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef))} · ${subject.shortTitle}, ${grade.num} класс`;
+  const description = `Готовый план урока по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему ${quotedTopic(topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef))}. Конспект на 45 минут с этапами, целями и домашним заданием. Сгенерируйте DOCX за 30 секунд.`;
 
   return {
     title,
@@ -91,8 +91,8 @@ export default function LessonPlanTopicPage({ params }: Props) {
   const jsonLd: Record<string, unknown> = {
     "@context": "https://schema.org",
     "@type": "LearningResource",
-    name: `План урока по теме «${topic.title}»`,
-    description: `Готовый план урока по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef)}». Конспект на 45 минут с этапами, целями и домашним заданием.`,
+    name: `План урока по теме ${quotedTopic(topic.title)}`,
+    description: `Готовый план урока по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему ${quotedTopic(topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef))}. Конспект на 45 минут с этапами, целями и домашним заданием.`,
     inLanguage: "ru-RU",
     educationalLevel: `${grade.num} класс`,
     learningResourceType: ["План урока", "Конспект", "Технологическая карта"],
@@ -149,7 +149,7 @@ export default function LessonPlanTopicPage({ params }: Props) {
                 </Badge>
               </div>
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold tracking-tight text-balance">
-                План урока по теме «{topic.title}»
+                План урока по теме {quotedTopic(topic.title)}
               </h1>
               <p className="mt-4 text-lg text-warm-600 text-pretty">
                 Готовый план урока по ФГОС для {grade.num} класса по предмету{" "}
@@ -348,7 +348,7 @@ export default function LessonPlanTopicPage({ params }: Props) {
         <div className="container-tight">
           <Card className="bg-gradient-to-br from-brand-500 to-brand-700 text-white border-0 text-center py-10 sm:py-14">
             <h2 className="text-2xl sm:text-4xl font-display font-bold tracking-tight">
-              Готовы получить план урока по теме «{topic.title}»?
+              Готовы получить план урока по теме {quotedTopic(topic.title)}?
             </h2>
             <p className="mt-3 text-brand-100 max-w-xl mx-auto">
               30 секунд — и конспект на 45 минут у вас в DOCX. Можно редактировать, печатать, отправить коллеге.

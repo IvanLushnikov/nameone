@@ -133,7 +133,13 @@ describe("Банк материалов: каталог", () => {
       // description идёт в meta description — 300–800 символов.
       expect(m.description.length, `description ${m.slug}: ${m.description.length}`).toBeGreaterThanOrEqual(300);
       expect(m.description.length, `description ${m.slug}: ${m.description.length}`).toBeLessThanOrEqual(800);
-      expect(m.description).toContain(m.topicTitle);
+      // Описание обязано быть про ту же тему. Сравниваем без кавычек:
+      // в описаниях внутренние кавычки приводятся к „лапкам“, а в
+      // topicTitle стоят «ёлочки» — форма отличается, а текст один.
+      const bare = (v: string) => v.replace(/[«»„“]/g, "").replace(/\s+/g, " ");
+      expect(bare(m.description), `description про другую тему: ${m.slug}`).toContain(
+        bare(m.topicTitle),
+      );
 
       // Счётчики правдоподобные: не нули и не абсурд.
       expect(m.usesCount).toBeGreaterThan(0);

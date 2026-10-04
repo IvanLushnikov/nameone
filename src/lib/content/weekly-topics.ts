@@ -25,7 +25,7 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "drobi-5-oktyabr-w1",
     season: "autumn-1",
-    weekLabel: "Октябрь · 1-2 неделя",
+    weekLabel: "Октябрь · 1–2 неделя",
     subject: "math",
     grade: 5,
     topicSlug: "drobi-obyknovennye",
@@ -59,7 +59,7 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "smeshannye-5-noyabr",
     season: "autumn-2",
-    weekLabel: "Ноябрь · 1-2 неделя",
+    weekLabel: "Ноябрь · 1–2 неделя",
     subject: "math",
     grade: 5,
     topicSlug: "smeshannye-chisla",
@@ -81,18 +81,18 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "lineynye-7-dekabr",
     season: "autumn-2",
-    weekLabel: "Декабрь · 1-2 неделя",
+    weekLabel: "Декабрь · 1–2 неделя",
     subject: "algebra",
     grade: 7,
     topicSlug: "m-lin-uravn-7",
     title: "Линейные уравнения в 7 классе",
-    whyText: "Конец четверти — учителя закрывают тему линейных уравнений. Карточки на 10-12 уравнений с ответами.",
+    whyText: "Конец четверти — учителя закрывают тему линейных уравнений. Карточки на 10–12 уравнений с ответами.",
     seoSlug: "lineynye-uravneniya-7-klass-dekabr",
   },
   {
     slug: "protsenty-5-fevral",
     season: "spring-1",
-    weekLabel: "Февраль · 1-2 неделя",
+    weekLabel: "Февраль · 1–2 неделя",
     subject: "math",
     grade: 5,
     topicSlug: "protsenty-5",
@@ -125,7 +125,7 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "kvadratnye-8-aprel",
     season: "spring-2",
-    weekLabel: "Апрель · 1-2 неделя",
+    weekLabel: "Апрель · 1–2 неделя",
     subject: "algebra",
     grade: 8,
     topicSlug: "m-kvadratnye-uravn-8",
@@ -136,7 +136,7 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "treugolniki-7-may",
     season: "spring-2",
-    weekLabel: "Май · 1-2 неделя",
+    weekLabel: "Май · 1–2 неделя",
     subject: "geometry",
     grade: 7,
     topicSlug: "treugolnik",
@@ -147,7 +147,7 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "sistemy-lineynye-7-may",
     season: "spring-2",
-    weekLabel: "Май · 3-4 неделя",
+    weekLabel: "Май · 3–4 неделя",
     subject: "algebra",
     grade: 7,
     topicSlug: "m-sistemy-lineynye-7",

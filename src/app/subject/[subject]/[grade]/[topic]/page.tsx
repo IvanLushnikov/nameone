@@ -21,7 +21,7 @@ import {
 } from "@/lib/content/subjects";
 import type { Topic, TopicExample } from "@/lib/types";
 import { SITE_URL } from "@/lib/site";
-import { plural, topicTitleWithUmk } from "@/lib/utils/cn";
+import { plural, topicTitleWithUmk, quotedTopic } from "@/lib/utils/cn";
 import { Breadcrumb } from "@/components/seo";
 import { AnswerToggle } from "./AnswerToggle";
 
@@ -70,7 +70,7 @@ export function generateMetadata({ params }: Props): Metadata {
   // В типах Subject нет поля с предложным падежом, поэтому после «по» название
   // предмета берём в кавычки — иначе в сниппете выходит «по математика».
   const subjectName = `предмету «${subject.title}»`;
-  const description = `Скачайте готовые рабочие листы и тесты по теме «${topicTitleWithUmk(topic.title, countTitles(params.subject, Number(params.grade)).get(topic.title.trim()) ?? 1, topic.fgosRef)}» для ${grade.num} класса по ${subjectName}. ${examplesPhrase(topic.examples.length)} с ответами. Сгенерируйте свой вариант за 30 секунд.`;
+  const description = `Скачайте готовые рабочие листы и тесты по теме ${quotedTopic(topicTitleWithUmk(topic.title, countTitles(params.subject, Number(params.grade)).get(topic.title.trim()) ?? 1, topic.fgosRef))} для ${grade.num} класса по ${subjectName}. ${examplesPhrase(topic.examples.length)} с ответами. Сгенерируйте свой вариант за 30 секунд.`;
 
   // TZ-10 §5.1 / §9.7: canonical + og:type=article + publishedTime/modifiedTime.
   // В таксономии (Topic) нет полей createdAt/updatedAt — ставим текущую дату;
@@ -146,8 +146,8 @@ export default function TopicPage({ params }: Props) {
   const jsonLd: Record<string, unknown> = {
     "@context": "https://schema.org",
     "@type": "LearningResource",
-    name: `Рабочий лист по теме «${topic.title}»`,
-    description: `Готовые рабочие листы и тесты по теме «${topic.title}» для ${grade.num} класса по предмету «${subject.title}».`,
+    name: `Рабочий лист по теме ${quotedTopic(topic.title)}`,
+    description: `Готовые рабочие листы и тесты по теме ${quotedTopic(topic.title)} для ${grade.num} класса по предмету «${subject.title}».`,
     inLanguage: "ru-RU",
     educationalLevel: `${grade.num} класс`,
     about: { "@type": "Thing", name: subject.title },
@@ -198,7 +198,7 @@ export default function TopicPage({ params }: Props) {
                 <FgosBadge fgosRef={topic.fgosRef} />
               </div>
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold tracking-tight text-balance">
-                Рабочий лист по теме «{topic.title}»
+                Рабочий лист по теме {quotedTopic(topic.title)}
               </h1>
               <p className="mt-4 text-lg text-warm-600 text-pretty">
                 Готовые задания по ФГОС с ответами и пояснениями. Сгенерируйте свой вариант за 30 секунд — ИИ подстроится по уровню ученика.
@@ -389,7 +389,7 @@ export default function TopicPage({ params }: Props) {
         <div className="container-tight">
           <Card className="bg-gradient-to-br from-brand-500 to-brand-700 text-white border-0 text-center py-10 sm:py-14">
             <h2 className="text-2xl sm:text-4xl font-display font-bold tracking-tight">
-              Готовы сгенерировать лист по теме «{topic.title}»?
+              Готовы сгенерировать лист по теме {quotedTopic(topic.title)}?
             </h2>
             <p className="mt-3 text-brand-100 max-w-xl mx-auto">
               30 секунд — и PDF у вас. Можно скачать, распечатать или отправить ученику.

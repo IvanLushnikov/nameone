@@ -10,7 +10,7 @@ import { EXTRA_EXAMPLES } from "./topic-examples-extra";
 
 export type { Subject, Topic, Grade };
 
-// ====================== МАТЕМАТИКА (1-6) + АЛГЕБРА + ГЕОМЕТРИЯ ======================
+// ====================== МАТЕМАТИКА (1–6) + АЛГЕБРА + ГЕОМЕТРИЯ ======================
 
 const mathGrades: Grade[] = [
   {
@@ -452,14 +452,14 @@ const mathGrades: Grade[] = [
   },
 ];
 
-// ====================== АЛГЕБРА (7-9) ======================
+// ====================== АЛГЕБРА (7–9) ======================
 
 const algebraGrades: Grade[] = [
   {
     num: 7,
     title: "7 класс · Алгебра",
     topics: [
-      // === МЕРЗЛЯК 7 (Главы 1-4) ===
+      // === МЕРЗЛЯК 7 (Главы 1–4) ===
       {
         slug: "m-lin-uravn-7",
         title: "Линейное уравнение с одной переменной",
@@ -485,7 +485,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-stepen-natural-7",
         title: "Степень с натуральным показателем и её свойства",
-        fgosRef: "Мерзляк Гл. 2 §7-9",
+        fgosRef: "Мерзляк Гл. 2 §7–9",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "2⁴ = __", answer: "16" },
@@ -497,7 +497,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-odnochleny-7",
         title: "Одночлены. Операции с одночленами (умножение, возведение в степень)",
-        fgosRef: "Мерзляк Гл. 2 §10-12",
+        fgosRef: "Мерзляк Гл. 2 §10–12",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "3a²b × 2ab³ = __", answer: "6a³b⁴" },
@@ -508,7 +508,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-mnogochleny-7",
         title: "Многочлены. Сложение, вычитание и умножение многочленов",
-        fgosRef: "Мерзляк Гл. 2 §13-18",
+        fgosRef: "Мерзляк Гл. 2 §13–18",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "(3x² + 2x) + (5x² − 4x) = __", answer: "8x² − 2x" },
@@ -519,7 +519,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-fsu-7",
         title: "Формулы сокращённого умножения: a²−b², (a±b)², a³±b³",
-        fgosRef: "Мерзляк Гл. 2 §19-22",
+        fgosRef: "Мерзляк Гл. 2 §19–22",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "(a + b)² = __", answer: "a² + 2ab + b²" },
@@ -530,7 +530,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-funktsiya-7",
         title: "Функции. Область определения и значения. Графики y = kx + b",
-        fgosRef: "Мерзляк Гл. 3 §23-26",
+        fgosRef: "Мерзляк Гл. 3 §23–26",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "Какой график у функции y = 3x?", answer: "прямая через начало координат" },
@@ -549,7 +549,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-sistemy-lineynye-7",
         title: "Системы линейных уравнений с двумя переменными",
-        fgosRef: "Мерзляк Гл. 4 §28-33",
+        fgosRef: "Мерзляк Гл. 4 §28–33",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "Решите: x + y = 7, x − y = 1. (x, y) = __", answer: "(4, 3)" },
@@ -560,7 +560,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-mat-yazyk-7",
         title: "Математический язык. Числовые и алгебраические выражения",
-        fgosRef: "Мордкович Гл. 1 §1-5",
+        fgosRef: "Мордкович Гл. 1 §1–5",
         umk: ["morozovich"],
         examples: [
           { text: "Запишите в виде выражения: удвоенное произведение a и b", answer: "2ab" },
@@ -570,7 +570,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-lineynaya-funktsiya-7",
         title: "Линейная функция y = kx + m и её график",
-        fgosRef: "Мордкович Гл. 2 §6-11",
+        fgosRef: "Мордкович Гл. 2 §6–11",
         umk: ["morozovich"],
         examples: [
           { text: "График y = kx + m при k < 0:", answer: "сверху вниз слева направо" },
@@ -580,7 +580,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-stepen-natural-7",
         title: "Степень с натуральным показателем. Таблица степеней",
-        fgosRef: "Мордкович Гл. 3 §15-19",
+        fgosRef: "Мордкович Гл. 3 §15–19",
         umk: ["morozovich"],
         examples: [
           { text: "2⁷ = __", answer: "128" },
@@ -591,7 +591,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-odnochleny-7",
         title: "Одночлены. Стандартный вид. Умножение и возведение в степень",
-        fgosRef: "Мордкович Гл. 4 §20-23",
+        fgosRef: "Мордкович Гл. 4 §20–23",
         umk: ["morozovich"],
         examples: [
           { text: "Стандартный вид 5x · 2x² = __", answer: "10x³" },
@@ -602,7 +602,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-mnogochleny-arifmet-7",
         title: "Многочлены. Сложение, вычитание, умножение, приведение подобных",
-        fgosRef: "Мордкович Гл. 5 §24-29",
+        fgosRef: "Мордкович Гл. 5 §24–29",
         umk: ["morozovich"],
         examples: [
           { text: "(2x + 1)(3x − 4) = __", answer: "6x² − 5x − 4" },
@@ -612,7 +612,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-fsu-7",
         title: "Формулы сокращённого умножения — разбор всех случаев",
-        fgosRef: "Мордкович Гл. 6 §32-38",
+        fgosRef: "Мордкович Гл. 6 §32–38",
         umk: ["morozovich"],
         examples: [
           { text: "(a − b)(a² + ab + b²) = __", answer: "a³ − b³" },
@@ -622,7 +622,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-funktsii-grafiki-7",
         title: "Функции y = x², y = x³, y = x, y = |x| и их графики",
-        fgosRef: "Мордкович Гл. 7 §39-44",
+        fgosRef: "Мордкович Гл. 7 §39–44",
         umk: ["morozovich"],
         examples: [
           { text: "График y = x² — это:", answer: "парабола, вершина в начале координат" },
@@ -632,7 +632,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-sistemy-lineynye-7",
         title: "Системы линейных уравнений: графический, подстановки, сложения",
-        fgosRef: "Мордкович Гл. 8 §45-48",
+        fgosRef: "Мордкович Гл. 8 §45–48",
         umk: ["morozovich"],
         examples: [
           { text: "Решите систему: 2x + 3y = 5, x − y = 1. (x, y) = __", answer: "(1.6, 0.6)" },
@@ -642,8 +642,8 @@ const algebraGrades: Grade[] = [
       // === АЛИМОВ 7 ===
       {
         slug: "a-povtorenie-7",
-        title: "Повторение курса 5-6 классов. Числовые и алгебраические выражения",
-        fgosRef: "Алимов Гл. 1 §1-3",
+        title: "Повторение курса 5–6 классов. Числовые и алгебраические выражения",
+        fgosRef: "Алимов Гл. 1 §1–3",
         umk: ["alimov"],
         examples: [
           { text: "Раскройте скобки: 3 · (a + 2) = __", answer: "3a + 6" },
@@ -653,7 +653,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-uravneniya-7",
         title: "Уравнения с одним неизвестным. Линейные уравнения",
-        fgosRef: "Алимов Гл. 2 §4-7",
+        fgosRef: "Алимов Гл. 2 §4–7",
         umk: ["alimov"],
         examples: [
           { text: "Решите: 3x − 7 = 2x + 5, x = __", answer: "12" },
@@ -663,7 +663,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-funktsii-7",
         title: "Функция и её график. Линейная функция y = kx + b",
-        fgosRef: "Алимов Гл. 3 §8-13",
+        fgosRef: "Алимов Гл. 3 §8–13",
         umk: ["alimov"],
         examples: [
           { text: "Что такое аргумент функции?", answer: "независимая переменная (обычно x)" },
@@ -673,7 +673,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-stepen-natural-7",
         title: "Степень с натуральным показателем и её свойства",
-        fgosRef: "Алимов Гл. 4 §14-17",
+        fgosRef: "Алимов Гл. 4 §14–17",
         umk: ["alimov"],
         examples: [
           { text: "aᵐ · aⁿ = __", answer: "aᵐ⁺ⁿ" },
@@ -684,7 +684,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-odnochleny-7",
         title: "Одночлены и операции над ними",
-        fgosRef: "Алимов Гл. 5 §18-21",
+        fgosRef: "Алимов Гл. 5 §18–21",
         umk: ["alimov"],
         examples: [
           { text: "Приведите к стандартному виду 4x²y · (−2xy²):", answer: "−8x³y³" },
@@ -694,7 +694,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-mnogochleny-7",
         title: "Многочлены. Алгебраическая сумма. Стандартный вид",
-        fgosRef: "Алимов Гл. 6 §22-25",
+        fgosRef: "Алимов Гл. 6 §22–25",
         umk: ["alimov"],
         examples: [
           { text: "Подобные члены в 3x² − 5x + 2x² + 7:", answer: "3x² и 2x² (сумма 5x²)" },
@@ -704,7 +704,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-fsu-7",
         title: "Формулы сокращённого умножения. Применение для разложения на множители",
-        fgosRef: "Алимов Гл. 7 §26-31",
+        fgosRef: "Алимов Гл. 7 §26–31",
         umk: ["alimov"],
         examples: [
           { text: "Разложите на множители: a² − 9 = __", answer: "(a − 3)(a + 3)" },
@@ -714,7 +714,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-sistemy-lineynye-7",
         title: "Системы линейных уравнений с двумя неизвестными",
-        fgosRef: "Алимов Гл. 8 §32-35",
+        fgosRef: "Алимов Гл. 8 §32–35",
         umk: ["alimov"],
         examples: [
           { text: "Решите систему: x + 2y = 7, 3x − y = 4. (x, y) = __", answer: "(3, 2)" },
@@ -725,7 +725,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "statistika-7",
         title: "Статистические характеристики: среднее, медиана, мода, размах",
-        fgosRef: "статистика в курсе 7-9 классов",
+        fgosRef: "статистика в курсе 7–9 классов",
         umk: ["merzlyak-alg", "morozovich", "alimov"],
         examples: [
           { text: "Ряд: 3, 7, 7, 12, 5. Мода = __", answer: "7" },
@@ -744,7 +744,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-rats-drobi-8",
         title: "Рациональные дроби. Сложение и вычитание (одинаковые знаменатели)",
-        fgosRef: "Мерзляк Гл. 1 §1-7",
+        fgosRef: "Мерзляк Гл. 1 §1–7",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "3/x + 5/x = __", answer: "8/x" },
@@ -754,7 +754,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-rats-drobi-umn-del-8",
         title: "Умножение и деление рациональных дробей. Возведение в степень",
-        fgosRef: "Мерзляк Гл. 1 §8-12",
+        fgosRef: "Мерзляк Гл. 1 §8–12",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "(a/b) · (c/d) = __", answer: "ac / bd" },
@@ -765,7 +765,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-kvadratnye-korni-8",
         title: "Квадратные корни. Арифметический квадратный корень и его свойства",
-        fgosRef: "Мерзляк Гл. 2 §13-19",
+        fgosRef: "Мерзляк Гл. 2 §13–19",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "√144 = __", answer: "12" },
@@ -776,7 +776,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-deystvitelnye-chisla-8",
         title: "Действительные числа. Числовые промежутки. Иррациональные числа",
-        fgosRef: "Мерзляк Гл. 2 §20-21",
+        fgosRef: "Мерзляк Гл. 2 §20–21",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "√2 — это:", answer: "иррациональное число" },
@@ -786,7 +786,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-kvadratnye-uravn-8",
         title: "Квадратные уравнения. Дискриминант и теорема Виета",
-        fgosRef: "Мерзляк Гл. 3 §22-26",
+        fgosRef: "Мерзляк Гл. 3 §22–26",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "x² − 5x + 6 = 0. D, x = __", answer: "D = 1; x = 2 и x = 3" },
@@ -796,7 +796,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-drobnye-rats-uravn-8",
         title: "Дробные рациональные уравнения",
-        fgosRef: "Мерзляк Гл. 3 §27-30",
+        fgosRef: "Мерзляк Гл. 3 §27–30",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "Решите 2/(x − 1) = 3/(x + 2). x = __", answer: "7" },
@@ -806,7 +806,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-neravenstva-8",
         title: "Числовые неравенства и их свойства. Неравенства с одной переменной",
-        fgosRef: "Мерзляк Гл. 4 §31-36",
+        fgosRef: "Мерзляк Гл. 4 §31–36",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "Если a < b и c > 0, то a + c", answer: "< b + c" },
@@ -818,7 +818,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-algebraicheskie-drobi-8",
         title: "Алгебраические дроби: допустимые значения, сокращение",
-        fgosRef: "Мордкович Гл. 1 §1-5",
+        fgosRef: "Мордкович Гл. 1 §1–5",
         umk: ["morozovich"],
         examples: [
           { text: "Сократите дробь (x² − 9)/(x − 3):", answer: "x + 3" },
@@ -828,7 +828,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-deystviya-drobey-8",
         title: "Сложение, вычитание, умножение и деление алгебраических дробей",
-        fgosRef: "Мордкович Гл. 1 §6-11",
+        fgosRef: "Мордкович Гл. 1 §6–11",
         umk: ["morozovich"],
         examples: [
           { text: "(a/b) + (c/b) = __", answer: "(a + c)/b" },
@@ -838,7 +838,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-funktsiya-koren-8",
         title: "Функция y = √x, её свойства и график",
-        fgosRef: "Мордкович Гл. 2 §12-16",
+        fgosRef: "Мордкович Гл. 2 §12–16",
         umk: ["morozovich"],
         examples: [
           { text: "Область определения y = √x:", answer: "x ≥ 0" },
@@ -848,7 +848,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-kvadratichnaya-funk-8",
         title: "Квадратичная функция y = ax² + bx + c, её парабола",
-        fgosRef: "Мордкович Гл. 3 §17-25",
+        fgosRef: "Мордкович Гл. 3 §17–25",
         umk: ["morozovich"],
         examples: [
           { text: "y = −x² + 4. Ветви параболы:", answer: "вниз (a < 0)" },
@@ -868,7 +868,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-kvadratnye-uravn-8",
         title: "Квадратные уравнения. Дискриминант, теорема Виета",
-        fgosRef: "Мордкович Гл. 4 §27-33",
+        fgosRef: "Мордкович Гл. 4 §27–33",
         umk: ["morozovich"],
         examples: [
           { text: "x² − 9 = 0: x = __", answer: "±3" },
@@ -888,7 +888,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-neravenstva-8",
         title: "Неравенства с одной переменной. Числовые промежутки",
-        fgosRef: "Мордкович Гл. 5 §35-39",
+        fgosRef: "Мордкович Гл. 5 §35–39",
         umk: ["morozovich"],
         examples: [
           { text: "x > 3 — это:", answer: "луч (3; +∞)" },
@@ -899,7 +899,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-neravenstva-8",
         title: "Числовые неравенства и их свойства. Линейные неравенства с одной переменной",
-        fgosRef: "Алимов Гл. 1 §1-12",
+        fgosRef: "Алимов Гл. 1 §1–12",
         umk: ["alimov"],
         examples: [
           { text: "Если a > b, то a − b", answer: "> 0" },
@@ -910,7 +910,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-kvadratnye-korni-8",
         title: "Квадратные корни. Арифметический квадратный корень и его свойства",
-        fgosRef: "Алимов Гл. 2 §13-22",
+        fgosRef: "Алимов Гл. 2 §13–22",
         umk: ["alimov"],
         examples: [
           { text: "√(a · b) = __", answer: "√a · √b" },
@@ -921,7 +921,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-preobrazovaniya-korney-8",
         title: "Преобразования выражений с корнями. Вынесение и внесение множителя",
-        fgosRef: "Алимов Гл. 2 §23-28",
+        fgosRef: "Алимов Гл. 2 §23–28",
         umk: ["alimov"],
         examples: [
           { text: "√75 = __ в виде", answer: "5√3" },
@@ -931,7 +931,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-kvadratnye-uravn-8",
         title: "Квадратные уравнения. Дискриминант, теорема Виета",
-        fgosRef: "Алимов Гл. 3 §29-37",
+        fgosRef: "Алимов Гл. 3 §29–37",
         umk: ["alimov"],
         examples: [
           { text: "x² − 5x + 6 = 0: x = __", answer: "2; 3" },
@@ -942,7 +942,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-rats-uravn-8",
         title: "Рациональные и дробные рациональные уравнения",
-        fgosRef: "Алимов Гл. 3 §38-40",
+        fgosRef: "Алимов Гл. 3 §38–40",
         umk: ["alimov"],
         examples: [
           { text: "x/(x − 2) = 5/(x + 1): x = __", answer: "−1" },
@@ -952,7 +952,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-kvadratichnaya-8",
         title: "Квадратичная функция y = ax² + bx + c. График и свойства",
-        fgosRef: "Алимов Гл. 4 §41-50",
+        fgosRef: "Алимов Гл. 4 §41–50",
         umk: ["alimov"],
         examples: [
           { text: "y = x² − 4x + 3. Нули функции:", answer: "x = 1; x = 3" },
@@ -962,7 +962,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-kvadratnye-neravenstva-8",
         title: "Квадратные неравенства. Метод параболы",
-        fgosRef: "Алимов Гл. 5 §51-55",
+        fgosRef: "Алимов Гл. 5 §51–55",
         umk: ["alimov"],
         examples: [
           { text: "(x − 2)(x + 5) > 0: x ∈ __", answer: "(−∞; −5) ∪ (2; +∞)" },
@@ -1001,7 +1001,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-neravenstva-9",
         title: "Числовые неравенства. Свойства. Неравенства с одной переменной",
-        fgosRef: "Мерзляк Гл. 1 §1-8",
+        fgosRef: "Мерзляк Гл. 1 §1–8",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "Какое из чисел больше: −7 или −10?", answer: "−7 (ближе к нулю)" },
@@ -1012,7 +1012,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-kvadratichnaya-9",
         title: "Квадратичная функция и её график. Неравенства второй степени",
-        fgosRef: "Мерзляк Гл. 2 §9-19",
+        fgosRef: "Мерзляк Гл. 2 §9–19",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "Вершина y = x² − 6x + 5:", answer: "(3, −4)" },
@@ -1023,7 +1023,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-uravneniya-dve-perem-9",
         title: "Уравнения с двумя переменными и их системы",
-        fgosRef: "Мерзляк Гл. 3 §20-26",
+        fgosRef: "Мерзляк Гл. 3 §20–26",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "График xy = 12 — это:", answer: "гипербола" },
@@ -1033,7 +1033,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-arifm-progressiya-9",
         title: "Арифметическая прогрессия: формулы, характеристическое свойство",
-        fgosRef: "Мерзляк Гл. 4 §27-30",
+        fgosRef: "Мерзляк Гл. 4 §27–30",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "a₁ = 3, d = 5. a₆ = __", answer: "3 + 5·5 = 28" },
@@ -1044,7 +1044,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-geom-progressiya-9",
         title: "Геометрическая прогрессия: формулы, сумма n членов",
-        fgosRef: "Мерзляк Гл. 4 §31-34",
+        fgosRef: "Мерзляк Гл. 4 §31–34",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "b₁ = 2, q = 3. b₄ = __", answer: "2·3³ = 54" },
@@ -1054,7 +1054,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-mnozhestva-9",
         title: "Множества и операции над ними",
-        fgosRef: "Мерзляк Гл. 5 §35-37",
+        fgosRef: "Мерзляк Гл. 5 §35–37",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "A = {1, 2, 3, 4}, B = {3, 4, 5, 6}. A ∩ B = __", answer: "{3, 4}" },
@@ -1065,7 +1065,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-kombinatorika-9",
         title: "Комбинаторика: правило умножения, перестановки, размещения, сочетания",
-        fgosRef: "Мерзляк Гл. 5 §38-42",
+        fgosRef: "Мерзляк Гл. 5 §38–42",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "P₅ = 5! = __", answer: "120" },
@@ -1076,7 +1076,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-veroyatnost-9",
         title: "Случайные события и их вероятность. Классическое определение",
-        fgosRef: "Мерзляк Гл. 5 §43-46",
+        fgosRef: "Мерзляк Гл. 5 §43–46",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "P(орла при бросании монеты):", answer: "1/2" },
@@ -1087,7 +1087,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "m-statistika-9",
         title: "Статистические данные. Средние значения. Дисперсия",
-        fgosRef: "Мерзляк Гл. 5 §47-49",
+        fgosRef: "Мерзляк Гл. 5 §47–49",
         umk: ["merzlyak-alg"],
         examples: [
           { text: "Среднее арифметическое 3, 5, 8, 4:", answer: "5" },
@@ -1099,7 +1099,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-ratsionalnye-neravenstva-9",
         title: "Рациональные неравенства и их системы. Метод интервалов",
-        fgosRef: "Мордкович Гл. 1 §1-6",
+        fgosRef: "Мордкович Гл. 1 §1–6",
         umk: ["morozovich"],
         examples: [
           { text: "(x − 1)(x + 4) > 0: x ∈ __", answer: "(−∞; −4) ∪ (1; +∞)" },
@@ -1110,7 +1110,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-sistemy-uravneniy-9",
         title: "Системы уравнений с двумя переменными",
-        fgosRef: "Мордкович Гл. 2 §7-15",
+        fgosRef: "Мордкович Гл. 2 §7–15",
         umk: ["morozovich"],
         examples: [
           { text: "Решите {x² + y² = 25, x − y = 1}: решения", answer: "(4, 3) и (−3, −4)" },
@@ -1120,7 +1120,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-chislovye-funkcii-9",
         title: "Числовые функции: определение, D(y), свойства, графики",
-        fgosRef: "Мордкович Гл. 3 §16-22",
+        fgosRef: "Мордкович Гл. 3 §16–22",
         umk: ["morozovich"],
         examples: [
           { text: "y = √(x − 4): D(y) = __", answer: "x ≥ 4" },
@@ -1131,7 +1131,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-kvadratichnaya-9",
         title: "Квадратичная функция y = ax² + bx + c. Преобразования графика",
-        fgosRef: "Мордкович Гл. 3 §23-26",
+        fgosRef: "Мордкович Гл. 3 §23–26",
         umk: ["morozovich"],
         examples: [
           { text: "График y = (x − 2)² + 3 — это парабола с вершиной:", answer: "(2, 3), ветви вверх" },
@@ -1161,7 +1161,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-arifm-progressiya-9",
         title: "Арифметическая прогрессия. Формулы aₙ и Sₙ",
-        fgosRef: "Мордкович Гл. 4 §29-31",
+        fgosRef: "Мордкович Гл. 4 §29–31",
         umk: ["morozovich"],
         examples: [
           { text: "a₁ = 7, d = −2. a₅ = __", answer: "7 + (−2)·4 = −1" },
@@ -1172,7 +1172,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-geom-progressiya-9",
         title: "Геометрическая прогрессия. Сумма бесконечной геометрической прогрессии",
-        fgosRef: "Мордкович Гл. 4 §32-36",
+        fgosRef: "Мордкович Гл. 4 §32–36",
         umk: ["morozovich"],
         examples: [
           { text: "bₙ = b₁·qⁿ⁻¹. b₁=3, q=2. b₅ = __", answer: "48" },
@@ -1182,7 +1182,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "md-elementy-komb-9",
         title: "Элементы комбинаторики, статистики и теории вероятностей",
-        fgosRef: "Мордкович Гл. 5 §37-42",
+        fgosRef: "Мордкович Гл. 5 §37–42",
         umk: ["morozovich"],
         examples: [
           { text: "Число способов выбрать 2 из 8:", answer: "C₈² = 28" },
@@ -1194,7 +1194,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-stepen-rats-9",
         title: "Степень с рациональным показателем. Определение и свойства",
-        fgosRef: "Алимов Гл. 2 §1-9",
+        fgosRef: "Алимов Гл. 2 §1–9",
         umk: ["alimov"],
         examples: [
           { text: "8^(1/3) = __", answer: "2" },
@@ -1206,7 +1206,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-stepennaya-funkciya-9",
         title: "Степенная функция y = xⁿ (n ∈ Z). График и свойства",
-        fgosRef: "Алимов Гл. 3 §10-14",
+        fgosRef: "Алимов Гл. 3 §10–14",
         umk: ["alimov"],
         examples: [
           { text: "При чётном n > 0 функция y = xⁿ:", answer: "чётная, возрастает при x > 0" },
@@ -1216,7 +1216,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-korni-n-9",
         title: "Арифметический корень n-й степени (n ∈ N)",
-        fgosRef: "Алимов Гл. 3 §15-21",
+        fgosRef: "Алимов Гл. 3 §15–21",
         umk: ["alimov"],
         examples: [
           { text: "⁴√81 = __", answer: "3" },
@@ -1227,7 +1227,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-arifm-progressiya-9",
         title: "Арифметическая прогрессия. Формулы aₙ и Sₙ",
-        fgosRef: "Алимов Гл. 4 §22-26",
+        fgosRef: "Алимов Гл. 4 §22–26",
         umk: ["alimov"],
         examples: [
           { text: "a₁ = 5, d = −3. a₄ = __", answer: "5 + (−3)·3 = −4" },
@@ -1238,7 +1238,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-geom-progressiya-9",
         title: "Геометрическая прогрессия. Формулы bₙ и Sₙ. Бесконечная",
-        fgosRef: "Алимов Гл. 4 §27-30",
+        fgosRef: "Алимов Гл. 4 §27–30",
         umk: ["alimov"],
         examples: [
           { text: "b₁ = 2, q = 3. b₄ = __", answer: "54" },
@@ -1249,7 +1249,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-neravenstva-dva-perem-9",
         title: "Неравенства с двумя переменными. Линейные и дробные",
-        fgosRef: "Алимов Гл. 5 §31-35",
+        fgosRef: "Алимов Гл. 5 §31–35",
         umk: ["alimov"],
         examples: [
           { text: "y > 2x + 1 на плоскости:", answer: "полуплоскость выше прямой y = 2x + 1" },
@@ -1259,7 +1259,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-perestanovki-razmeschenia-9",
         title: "Перестановки, размещения, сочетания (комбинаторика)",
-        fgosRef: "Алимов Гл. 6 §36-40",
+        fgosRef: "Алимов Гл. 6 §36–40",
         umk: ["alimov"],
         examples: [
           { text: "P₄ = __", answer: "24" },
@@ -1270,7 +1270,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-veroyatnost-sobytie-9",
         title: "Вероятность случайного события. Сложение и умножение вероятностей",
-        fgosRef: "Алимов Гл. 7 §41-49",
+        fgosRef: "Алимов Гл. 7 §41–49",
         umk: ["alimov"],
         examples: [
           { text: "P(A и B) = P(A)·P(B) при:", answer: "независимых" },
@@ -1282,7 +1282,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-trigon-ugly-9",
         title: "Определение sin, cos, tg, ctg. Зависимости sin² + cos² = 1",
-        fgosRef: "Алимов Гл. 8 §50-55",
+        fgosRef: "Алимов Гл. 8 §50–55",
         umk: ["alimov"],
         examples: [
           { text: "Определение sin α:", answer: "противолежащий катет / гипотенуза" },
@@ -1295,7 +1295,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-formuly-privedeniya-9",
         title: "Формулы приведения. Знаки по четвертям",
-        fgosRef: "Алимов Гл. 8 §56-60",
+        fgosRef: "Алимов Гл. 8 §56–60",
         umk: ["alimov"],
         examples: [
           { text: "sin(90° − α) = __", answer: "cos α" },
@@ -1307,7 +1307,7 @@ const algebraGrades: Grade[] = [
       {
         slug: "a-trig-formuly-9",
         title: "Тригонометрические формулы сложения",
-        fgosRef: "Алимов Гл. 8 §61-66",
+        fgosRef: "Алимов Гл. 8 §61–66",
         umk: ["alimov"],
         examples: [
           { text: "sin(α + β) = __", answer: "sin α cos β + cos α sin β" },
@@ -1318,8 +1318,8 @@ const algebraGrades: Grade[] = [
       // === ОБЩИЕ ===
       {
         slug: "povtorenie-9",
-        title: "Итоговое повторение курса алгебры 7-9 классов",
-        fgosRef: "Мерзляк §49-50; Мордкович §43; Алимов §67",
+        title: "Итоговое повторение курса алгебры 7–9 классов",
+        fgosRef: "Мерзляк §49–50; Мордкович §43; Алимов §67",
         umk: ["merzlyak-alg", "morozovich", "alimov"],
         examples: [
           { text: "Упростите (a − 3)² − a(a − 6):", answer: "9" },
@@ -1329,7 +1329,7 @@ const algebraGrades: Grade[] = [
     ],
   },
 ];
-// ====================== ГЕОМЕТРИЯ (7-9) ======================
+// ====================== ГЕОМЕТРИЯ (7–9) ======================
 
 const geometryGrades: Grade[] = [
   {
@@ -2218,7 +2218,7 @@ const literatureGrades: Grade[] = [
   },
 ];
 
-// ====================== АНГЛИЙСКИЙ ЯЗЫК (2-9, Школа России / Spotlight) ======================
+// ====================== АНГЛИЙСКИЙ ЯЗЫК (2–9, Школа России / Spotlight) ======================
 
 const englishGrades: Grade[] = [
   {
@@ -2243,7 +2243,7 @@ const englishGrades: Grade[] = [
       },
       {
         slug: "colors-and-numbers",
-        title: "Цвета и числа 1-10",
+        title: "Цвета и числа 1–10",
         examples: [
           { text: "Переведите: красный, синий, зелёный", answer: "red, blue, green" },
           { text: "Запишите по-английски: 1, 5, 10", answer: "one, five, ten" },
@@ -2878,7 +2878,7 @@ const informaticsGrades: Grade[] = [
   },
 ];
 
-// ====================== ФИЗИКА (7-9, Школа России / Перышкин) ======================
+// ====================== ФИЗИКА (7–9, Школа России / Перышкин) ======================
 
 const physicsGrades: Grade[] = [
   {
@@ -4720,7 +4720,7 @@ const peGrades: Grade[] = [
  *  - класс с номером, которого нет в базе, → добавляется целиком;
  *  - класс, который в базе уже есть, → его темы ДОПИСЫВАЮТСЯ
  *    (а не заменяются), чтобы расширение могло «дозаполнить» класс
- *    с 2-3 темами до нормального покрытия;
+ *    с 2–3 темами до нормального покрытия;
  *  - результат сортируется по номеру класса: навигация по предмету и
  *    sitemap идут в порядке `grades`.
  *
@@ -4786,7 +4786,7 @@ export const subjects: Subject[] = [
     shortTitle: "Алгебра",
     emoji: "🧮",
     color: "brand",
-    description: "Уравнения, неравенства, функции, прогрессии. Для 7-9 классов.",
+    description: "Уравнения, неравенства, функции, прогрессии. Для 7–9 классов.",
     grades: withExtensions("algebra", algebraGrades),
   },
   {
@@ -4795,7 +4795,7 @@ export const subjects: Subject[] = [
     shortTitle: "Геометрия",
     emoji: "📐",
     color: "brand",
-    description: "Треугольники, четырёхугольники, окружности, теоремы. Для 7-9 классов.",
+    description: "Треугольники, четырёхугольники, окружности, теоремы. Для 7–9 классов.",
     grades: withExtensions("geometry", geometryGrades),
   },
   {
@@ -4895,7 +4895,7 @@ export const subjects: Subject[] = [
     shortTitle: "Окр. мир",
     emoji: "🌍",
     color: "warm",
-    description: "Природа, тело человека, времена года, природные зоны. 1-4 классы.",
+    description: "Природа, тело человека, времена года, природные зоны. 1–4 классы.",
     grades: withExtensions("okruzhaet", okruzhaetGrades),
   },
   {
@@ -4913,7 +4913,7 @@ export const subjects: Subject[] = [
     shortTitle: "ОБЖ",
     emoji: "🚨",
     color: "accent",
-    description: "Безопасность на дороге, пожарная безопасность, военная служба. 5-11 классы.",
+    description: "Безопасность на дороге, пожарная безопасность, военная служба. 5–11 классы.",
     grades: withExtensions("obzh", obzhGrades),
   },
   {
@@ -4922,7 +4922,7 @@ export const subjects: Subject[] = [
     shortTitle: "Технология",
     emoji: "🛠️",
     color: "warm",
-    description: "Труд, кулинария, материаловедение. 5-9 классы.",
+    description: "Труд, кулинария, материаловедение. 5–9 классы.",
     grades: withExtensions("technology", technologyGrades),
   },
   {
@@ -4931,7 +4931,7 @@ export const subjects: Subject[] = [
     shortTitle: "Фин. грамотность",
     emoji: "💰",
     color: "brand",
-    description: "Бюджет, кредиты, депозиты, налоги. 7-11 классы.",
+    description: "Бюджет, кредиты, депозиты, налоги. 7–11 классы.",
     grades: withExtensions("finance", financeGrades),
   },
   {
@@ -4940,7 +4940,7 @@ export const subjects: Subject[] = [
     shortTitle: "Музыка",
     emoji: "🎵",
     color: "accent",
-    description: "Ноты, ритм, мелодия, композиторы. 1-8 классы.",
+    description: "Ноты, ритм, мелодия, композиторы. 1–8 классы.",
     grades: withExtensions("music", musicGrades),
   },
   {
@@ -4949,7 +4949,7 @@ export const subjects: Subject[] = [
     shortTitle: "ИЗО",
     emoji: "🎨",
     color: "accent",
-    description: "Цвет, композиция, рисунок, перспектива. 1-8 классы.",
+    description: "Цвет, композиция, рисунок, перспектива. 1–8 классы.",
     grades: withExtensions("art", artGrades),
   },
   {
