@@ -86,7 +86,8 @@ authRouter.post("/callback", async (c) => {
       plan: result.user.plan,
       generationsTotal: result.user.generations_total,
       generationsToday: result.user.generations_today,
-      generationsLimit: result.user.plan === "plus" ? -1 : result.user.plan === "base" ? -1 : 3,
+      // Платным считается всё, что не «free» (ТЗ-21 п.4).
+      generationsLimit: result.user.plan === "free" ? 3 : -1,
       createdAt: new Date(result.user.created_at * 1000).toISOString(),
     },
   });

@@ -20,7 +20,7 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
-  plan: "free" | "base" | "plus";
+  plan: "free" | "base" | "standard" | "plus";
   generationsToday?: number;
   generationsLimit?: number;
   generationsTotal?: number;
@@ -44,7 +44,7 @@ export interface UsageInfo {
  * но НЕ «генерация заблокирована»: порог мягкий, генерация продолжается.
  */
 export interface UsagePayload {
-  plan: "free" | "base" | "plus";
+  plan: "free" | "base" | "standard" | "plus";
   /** Норма за окно в взвешенных токенах. null = тариф без нормы (free). */
   norm: number | null;
   weightedTokensUsed: number;

@@ -45,7 +45,7 @@ import {
   type FraudSignals,
 } from "../lib/antifraud";
 
-export type RateLimitKind = "anonymous" | "free" | "base" | "plus";
+export type RateLimitKind = "anonymous" | "free" | "base" | "standard" | "plus";
 
 /**
  * Старые суточные лимиты удалены намеренно.

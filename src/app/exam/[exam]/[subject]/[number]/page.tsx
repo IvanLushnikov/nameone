@@ -17,7 +17,8 @@ import {
   ListChecks,
 } from "lucide-react";
 import { EXAM_SUBJECTS, getExamNumber, type ExamKind } from "@/lib/content/exam-taxonomy";
-import { Breadcrumb } from "@/components/seo";
+import { Breadcrumb, JsonLd } from "@/components/seo";
+import { absoluteUrl, clipDescription, ogImages, twitterCard } from "@/lib/seo/metadata";
 
 /**
  * F-04-B: SEO-страницы по конкретным номерам ОГЭ/ЕГЭ.
@@ -51,6 +52,20 @@ const SUBJECT_LABELS: Record<string, string> = {
 
 function getSubjectLabel(subject: string): string {
   return SUBJECT_LABELS[subject] ?? subject;
+}
+
+/**
+ * Ключ предмета экзамена → слаг предмета в таксономии (для og:image).
+ *
+ * В `exam-taxonomy.ts` у математики три варианта уровня — `math`,
+ * `math-p` (профильная) и `math-b` (базовая), — а картинка в `public/og/`
+ * одна, `math.png`. Поэтому оба среза отображаются на неё: разные картинки
+ * на «профильную» и «базовую» математику отличались бы только цифрой, и
+ * разницы в сниппете это не даёт.
+ */
+function ogSlugForExamSubject(subject: string): string {
+  if (subject === "math-p" || subject === "math-b") return "math";
+  return subject;
 }
 
 function getExamLabel(exam: string) {
@@ -89,24 +104,37 @@ export function generateMetadata({ params }: Props): Metadata {
 
   const subjectLabel = getSubjectLabel(item.subject);
   const fullTitle = `Задание ${item.number}: ${item.title} · ${subjectLabel} ${examLabel.full}`;
-  const description = `${item.title} — задание ${item.number} ${examLabel.full}, предмет «${subjectLabel}». ${item.description} Сгенерируйте лист по этому номеру за 30 секунд.`;
+  // ТЗ-21 п.14: было 190+ знаков (описание задания отдавалось целиком).
+  // Обрезаем по границе слова — в сниппете всё равно видно первые ~160.
+  const description = clipDescription(
+    `${item.title} — задание ${item.number} ${examLabel.full}, предмет «${subjectLabel}». ${item.description} Сгенерируйте лист по этому номеру за 30 секунд.`,
+  );
+  const url = absoluteUrl(`/exam/${item.exam}/${item.subject}/${item.number}`);
 
   return {
     title: fullTitle,
     description,
-    keywords: [
-      `${item.title} ${subjectLabel.toLowerCase()} ${examLabel.full}`,
-      `задание ${item.number} ${examLabel.full}`,
-      `задание ${item.number} ${subjectLabel.toLowerCase()}`,
-      "ФИПИ",
-      examLabel.full,
-    ],
+    // ТЗ-21 п.14: canonical на всех 218 страницах номеров экзамена (было 0).
+    alternates: { canonical: url },
     robots: { index: true, follow: true },
     openGraph: {
       title: fullTitle,
       description,
+      url,
+      siteName: "УчЛист",
       locale: "ru_RU",
       type: "article",
+      // Картинка по предмету: у экзамена нет своей визуальной схемы, а
+      // предметная карточка из public/og/ — честный и уместный fallback.
+      images: ogImages(
+        ogSlugForExamSubject(item.subject),
+        `Задание ${item.number} ${examLabel.full}: ${item.title}`,
+      ),
+    },
+    twitter: {
+      ...twitterCard(ogSlugForExamSubject(item.subject)),
+      title: fullTitle,
+      description,
     },
   };
 }
@@ -139,8 +167,34 @@ export default function ExamNumberPage({ params }: Props) {
 
   const ctaHref = `/constructor?exam=${item.exam}&subject=${item.subject}&number=${item.number}`;
 
+  const url = absoluteUrl(`/exam/${item.exam}/${item.subject}/${item.number}`);
+
+  // ТЗ-21 п.14 / SEO-аудит P1-8: на 218 страницах номеров экзамена была
+  // только BreadcrumbList. LearningResource нужен, чтобы задание ОГЭ/ЕГЭ
+  // попало в расширенный сниппет вместе с классом и предметом — по запросу
+  // «задание 19 ОГЭ математика» это заметно сильнее голой строки сниппета.
+  const examJsonLd: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "LearningResource",
+    name: `Задание ${item.number} ${examLabel.full} по предмету «${subjectLabel}»: ${item.title}`,
+    description: item.description,
+    inLanguage: "ru-RU",
+    educationalLevel: examLabel.classHint,
+    learningResourceType: ["Экзаменационное задание", "Вариант ОГЭ", "Вариант ЕГЭ"],
+    about: { "@type": "Thing", name: subjectLabel },
+  };
+  if (item.fgosRef) {
+    examJsonLd.educationalAlignment = {
+      "@type": "AlignmentObject",
+      alignmentType: "educationalFramework",
+      targetName: item.fgosRef,
+      educationalFramework: "ФИПИ",
+    };
+  }
+
   return (
     <>
+      <JsonLd data={examJsonLd} id="ld-exam-number" />
       {/* Hero */}
       <section className="relative bg-gradient-to-b from-warm-50 to-white pt-8 sm:pt-12 pb-10">
         <div className="absolute inset-0 -z-10 bg-grid opacity-50" />

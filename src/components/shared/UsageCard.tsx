@@ -46,7 +46,7 @@ import { syncFromServer } from "@/lib/utils/limit";
 
 /** Форма ответа /api/users/usage (backend/src/routes/users.ts). */
 export interface UsagePayload {
-  plan: "free" | "base" | "plus";
+  plan: "free" | "base" | "standard" | "plus";
   norm: number | null;
   weightedTokensUsed: number;
   over: boolean;

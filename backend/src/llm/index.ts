@@ -47,7 +47,7 @@ import type { GenerationRequest, Worksheet, ExamVariant, SubjectSlug, GenerateWo
 
 export interface GenerateWorksheetArgs {
   request: GenerationRequest;
-  plan: "free" | "base" | "plus";
+  plan: "free" | "base" | "standard" | "plus";
   bypassCache?: boolean;
   userId: string | null;
   ip: string;
@@ -237,7 +237,7 @@ export interface GenerateExamArgs {
   exam: "oge" | "ege";
   subject: SubjectSlug;
   variantNumber: number;
-  plan: "free" | "base" | "plus";
+  plan: "free" | "base" | "standard" | "plus";
   userId: string | null;
   ip: string;
 }
@@ -446,7 +446,7 @@ export interface ValidateWorksheetArgs {
    * платным LLM-вызовом. Нужны оба поля: userId для счёта по человеку, ip —
    * для анонимов.
    */
-  plan?: "free" | "base" | "plus";
+  plan?: "free" | "base" | "standard" | "plus";
   userId?: string | null;
   ip?: string;
 }
@@ -586,7 +586,7 @@ export interface CheckPhotoArgs {
   grade?: number;
   /** `low` — черновик/массовая проверка, `high` — финальная сверка. */
   detail?: "low" | "high";
-  plan: "free" | "base" | "plus";
+  plan: "free" | "base" | "standard" | "plus";
   userId: string | null;
   ip: string;
 }

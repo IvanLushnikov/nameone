@@ -24,6 +24,7 @@ import {
   subjects,
 } from "@/lib/content/subjects";
 import { JsonLd, Breadcrumb } from "@/components/seo";
+import { absoluteUrl, clipDescription, ogImages, topicTitleSuffix, twitterCard } from "@/lib/seo/metadata";
 
 type Props = { params: { subject: string; grade: string; topic: string } };
 
@@ -57,23 +58,42 @@ export function generateMetadata({ params }: Props): Metadata {
   if (!subject || !grade || !topic) return { title: "Тема не найдена" };
 
   // Бренд в конце не дописываем — его добавляет template в корневом layout.
-  // Предмет в заголовке обязателен: без него у презентаций по одноимённым
-  // темам разных предметов получался один и тот же title — две страницы,
-  // которые поисковик не различал.
-  const title = `Презентация по теме ${quotedTopic(topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef))} · ${subject.shortTitle}, ${grade.num} класс`;
-  const description = `Готовая презентация по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему ${quotedTopic(topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef))}. 10 слайдов с заметками для учителя в PPTX. Сгенерируйте за 30 секунд.`;
+  // Предмет и УМК в хвосте — ТЗ-21 п.22 (см. topicTitleSuffix): без них
+  // страницы презентаций по одноимённым темам разных предметов давали один
+  // и тот же title, и поисковик не мог их различить.
+  const title = `Презентация по теме «${topic.title}» · ${topicTitleSuffix(
+    subject.slug,
+    subject.shortTitle,
+    grade.num,
+    topic.umk,
+  )}`;
+  // Обрезка — по theirs (ТЗ-21 п.14), текст — из main: «заметками для учителя»
+  // вместо «заметками спикера» (копирайт-аудит, аудитория — учитель).
+  const description = clipDescription(
+    `Готовая презентация по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему ${quotedTopic(topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef))}. 10 слайдов с заметками для учителя в PPTX. Сгенерируйте за 30 секунд.`,
+  );
+  const url = absoluteUrl(`/presentation/${subject.slug}/${grade.num}/${topic.slug}`);
 
   return {
     title,
     description,
-    keywords: [
-      `презентация ${topic.title.toLowerCase()} ${grade.num} класс`,
-      `pptx ${topic.title.toLowerCase()}`,
-      `${subject.shortTitle.toLowerCase()} ${grade.num} класс`,
-      "ФГОС",
-      "слайды",
-      "заметки для учителя",
-    ],
+    // ТЗ-21 п.14: тег `keywords` убран (см. SEO-аудит P1-4 в корневом layout),
+    // вместо него — canonical на всех 1 070 страницах презентаций (было 0).
+    alternates: { canonical: url },
+    openGraph: {
+      type: "article",
+      title,
+      description,
+      url,
+      siteName: "УчЛист",
+      locale: "ru_RU",
+      images: ogImages(subject.slug, `Презентация: ${topic.title}`),
+    },
+    twitter: {
+      ...twitterCard(subject.slug),
+      title,
+      description,
+    },
   };
 }
 

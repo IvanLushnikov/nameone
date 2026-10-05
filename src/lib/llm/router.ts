@@ -17,7 +17,7 @@ export interface RouterPick {
   reason: string;
 }
 
-export function pickModelByPlan(task: 'worksheet-gen' | 'validate' | 'embed' | 'image-gen', plan: 'free' | 'base' | 'plus'): RouterPick {
+export function pickModelByPlan(task: 'worksheet-gen' | 'validate' | 'embed' | 'image-gen', plan: 'free' | 'base' | 'standard' | 'plus'): RouterPick {
   if (task === 'validate') {
     const v = MODELS.find((m) => m.role === 'validator')!;
     return { primary: v, fallbacks: [], reason: 'validator — всегда deepseek-v4-flash' };

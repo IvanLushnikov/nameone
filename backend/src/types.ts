@@ -174,7 +174,7 @@ export interface SessionUser {
   id: string;
   email: string;
   name: string;
-  plan: "free" | "base" | "plus";
+  plan: "free" | "base" | "standard" | "plus";
   generationsTotal: number;
   generationsToday: number;
   generationsLimit: number;
@@ -236,7 +236,7 @@ export interface HistoryItem {
 /** Активная подписка (или null). */
 export interface SubscriptionView {
   id: string;
-  plan: "base" | "plus";
+  plan: "base" | "standard" | "plus";
   status: string;
   /** `academicYear` = 9 месяцев от даты оплаты, НЕ календарный год. */
   period: "monthly" | "academicYear";
@@ -253,7 +253,7 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string | null;
-  plan: "free" | "base" | "plus";
+  plan: "free" | "base" | "standard" | "plus";
   isAdmin: boolean;
   /**
    * Роль. `student` генерировать контент не может — только решать выданное
@@ -279,7 +279,7 @@ export interface AppEnv {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface CreatePaymentRequest {
-  plan: "base" | "plus";
+  plan: "base" | "standard" | "plus";
   /** `academicYear` = 9 месяцев от даты оплаты, НЕ календарный год. */
   period: "monthly" | "academicYear";
 }
@@ -313,7 +313,7 @@ export type AdminGenerationTask = "worksheet-gen" | "exam-gen" | "validate" | "e
 /** Текущая конфигурация раскладки моделей. Одна запись = (task, plan). */
 export interface ModelRoutingEntry {
   task: AdminGenerationTask;
-  plan: string; // "free" | "base" | "plus" | "*"
+  plan: string; // "free" | "base" | "standard" | "plus" | "*"
   primaryProvider: string;
   primaryModel: string;
   fallback: Array<{ provider: string; model: string }>;
@@ -445,7 +445,7 @@ export interface AdminUserRow {
   id: string;
   email: string;
   name: string | null;
-  plan: "free" | "base" | "plus";
+  plan: "free" | "base" | "standard" | "plus";
   generationsTotal: number;
   createdAt: string;
   isAdmin: boolean;

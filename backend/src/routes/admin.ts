@@ -37,6 +37,9 @@ const adminRouter = new Hono<AppEnv>();
 /** Выручка тарифа в копейках за месяц — из billing, чтобы не расходилось. */
 const MONTHLY_REVENUE_RUB: Record<string, number> = {
   base: 500,
+  // Тариф «Оптимальный» (ТЗ-21 п.4). Без него предохранитель COGS считал бы
+  // выручку по платящему пользователю равной нулю и поднимал ложную тревогу.
+  standard: 990,
   plus: 1_500,
   school: 3_000,
   free: 0,
@@ -140,7 +143,7 @@ adminRouter.get("/usage", async (c) => {
     const plan = (r.plan ?? "free") as keyof typeof MONTHLY_REVENUE_RUB;
     const revenue = MONTHLY_REVENUE_RUB[plan] ?? 0;
     const cost = r.costUsd * rubToUsd;
-    const norm = PLAN_NORM_PER_MONTH[plan as "base" | "plus"];
+    const norm = PLAN_NORM_PER_MONTH[plan as "base" | "standard" | "plus"];
     return {
       userId: r.userId,
       plan,
@@ -196,7 +199,7 @@ adminRouter.get("/usage/:userId", async (c) => {
   const status = await getUsageStatus(
     c.env.DB,
     user.id,
-    (user.plan as "free" | "base" | "plus") ?? "free",
+    (user.plan as "free" | "base" | "standard" | "plus") ?? "free",
   );
   return c.json({ ok: true, user: { id: user.id, plan: user.plan }, usage: status });
 });

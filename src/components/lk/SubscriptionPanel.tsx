@@ -235,7 +235,9 @@ function paymentMethodLabel(s: SubscriptionView): string {
  * Смена тарифа
  * ──────────────────────────────────────────────────────────────────────────── */
 
-const SELLABLE: PlanId[] = ["base", "plus"];
+// «Оптимальный» (standard) продаётся на /pricing, значит обязан быть и здесь:
+// иначе учитель, который его купил, не сможет перейти на другой тариф из панели.
+const SELLABLE: PlanId[] = ["base", "standard", "plus"];
 
 function PlanChangeDialog({
   open,

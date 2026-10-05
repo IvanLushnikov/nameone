@@ -62,7 +62,7 @@ const worksheetsRouter = new Hono<AppEnv>();
  * Это не косметика: `plan` определял модель LLM, то есть стоимость обслуживания.
  * Правило простое — план живёт на сервере, клиент про него только уведомлён.
  */
-function resolvePlan(c: Context<AppEnv>): "free" | "base" | "plus" {
+function resolvePlan(c: Context<AppEnv>): "free" | "base" | "standard" | "plus" {
   return c.get("user")?.plan ?? "free";
 }
 
@@ -536,11 +536,11 @@ worksheetsRouter.post("/save", async (c) => {
   // 8) Читаем свежие значения для ответа.
   const fresh = await getUserById(c.env.DB, user.id);
   const generationsToday = fresh?.generations_today ?? 0;
-  const generationsLimit = fresh
-    ? fresh.plan === "plus" || fresh.plan === "base"
-      ? -1
-      : 3
-    : 3;
+  // Платным считается ВСЁ, что не «free». Перечислять тарифы списком здесь
+  // было ошибкой на каждый новый тариф: «Оптимальный» (ТЗ-21 п.4) попал бы
+  // в ветку бесплатного и получил бы 3 генерации вместо безлимита.
+  // -1 = лимита генераций нет.
+  const generationsLimit = fresh ? (fresh.plan === "free" ? 3 : -1) : 3;
 
   // 9) Audit-event (легковесный console-info). Полный event-pipeline через
   // POST /api/track на фронте, но бэк логирует минимальный контекст для дебага.

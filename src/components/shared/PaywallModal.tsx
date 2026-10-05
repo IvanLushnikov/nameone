@@ -36,7 +36,10 @@ interface Props {
  * иконки замка на платном тарифе: показываем вред и стоимость, решение
  * оставляем учителю.
  */
-const planIds: PlanId[] = ["base", "plus"];
+// ТЗ-21 п.4: между base и plus появился тариф «Оптимальный». Он в списке
+// обязателен — иначе учитель с 3–4 предметами в модалке увидит только два
+// крайних варианта и решит, что промежуточного нет.
+const planIds: PlanId[] = ["base", "standard", "plus"];
 
 export function PaywallModal({ open, onClose, remaining }: Props) {
   // Трекаем только переход `false -> true` (не повторно при каждом ререндере).
@@ -79,7 +82,10 @@ export function PaywallModal({ open, onClose, remaining }: Props) {
       }
       description={`Бесплатные генерации закончились (${FREE_GENERATIONS} на весь период). Подписка продолжит работу без ограничения по суткам. Отменить можно в любой момент.`}
     >
-      <div className="grid sm:grid-cols-2 gap-3 mb-4">
+      {/* sm:grid-cols-3, а не 2: с добавлением «Оптимального» тарифов стало
+          три, и в двухколоночной сетке третий уезжал на вторую строку один,
+          ломая ряд. */}
+      <div className="grid sm:grid-cols-3 gap-3 mb-4">
         {planIds.map((id) => {
           const plan = PLANS[id];
           const month = priceFor(id, "month");
@@ -135,6 +141,14 @@ export function PaywallModal({ open, onClose, remaining }: Props) {
           onClick={handlePlanClick("base")}
         >
           Оформить Базовый · {priceShort("base", "month")}
+        </Button>
+        <Button
+          variant="secondary"
+          size="lg"
+          fullWidth
+          onClick={handlePlanClick("standard")}
+        >
+          Оформить Оптимальный · {priceShort("standard", "month")}
         </Button>
         <Button
           variant="accent"

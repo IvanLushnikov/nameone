@@ -721,6 +721,7 @@ function ProfileHeader({
     {
       free: { tone: "neutral" as const, label: "Бесплатный план" },
       base: { tone: "brand" as const, label: `${PLANS.base.name} · ${priceShort("base", "month")}` },
+      standard: { tone: "brand" as const, label: `${PLANS.standard.name} · ${priceShort("standard", "month")}` },
       plus: { tone: "accent" as const, label: `${PLANS.plus.name} · ${priceShort("plus", "month")}` },
     }[profile.plan];
 

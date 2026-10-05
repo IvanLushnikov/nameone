@@ -96,7 +96,11 @@ export function PricingTeaser({ headingLevel: Heading = "h2" }: { headingLevel?:
           </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-4 sm:gap-5 max-w-5xl mx-auto">
+        {/* ТЗ-21 п.4: с добавлением «Оптимального» карточек стало четыре.
+            Сетка 2×2 на планшете и десктопе: в три колонки четвёртая уезжала
+            на вторую строку одна и ряд читался как «три тарифа + ошибка»,
+            а именно на этом блоке учитель выбирает тариф. */}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 max-w-6xl mx-auto">
           {teaserPlans.map((p, i) => (
             <PricingCard
               key={p.id}

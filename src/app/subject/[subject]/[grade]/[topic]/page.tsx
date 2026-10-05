@@ -12,7 +12,10 @@ import {
   Lightbulb,
   FileText,
   GraduationCap,
+  Presentation,
+  ClipboardList,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   getTopic,
   getSubject,
@@ -22,6 +25,7 @@ import {
 import type { Topic, TopicExample } from "@/lib/types";
 import { SITE_URL } from "@/lib/site";
 import { plural, topicTitleWithUmk, quotedTopic } from "@/lib/utils/cn";
+import { clipDescription } from "@/lib/seo/metadata";
 import { Breadcrumb } from "@/components/seo";
 import { AnswerToggle } from "./AnswerToggle";
 
@@ -70,7 +74,12 @@ export function generateMetadata({ params }: Props): Metadata {
   // В типах Subject нет поля с предложным падежом, поэтому после «по» название
   // предмета берём в кавычки — иначе в сниппете выходит «по математика».
   const subjectName = `предмету «${subject.title}»`;
-  const description = `Скачайте готовые рабочие листы и тесты по теме ${quotedTopic(topicTitleWithUmk(topic.title, countTitles(params.subject, Number(params.grade)).get(topic.title.trim()) ?? 1, topic.fgosRef))} для ${grade.num} класса по ${subjectName}. ${examplesPhrase(topic.examples.length)} с ответами. Сгенерируйте свой вариант за 30 секунд.`;
+  // Описание — текст из main (тема в «ёлочках», «по предмету «…»» без падежной
+  // ошибки, `examplesPhrase` вместо жёсткого «заданий-образцов»), обрезанный
+  // по theirs (ТЗ-21 п.14): хвост за 160 знаков в сниппете не виден, режется
+  // хвост, а не начало — начало описания и есть ключевые слова запроса.
+  const rawDescription = `Скачайте готовые рабочие листы и тесты по теме ${quotedTopic(topicTitleWithUmk(topic.title, countTitles(params.subject, Number(params.grade)).get(topic.title.trim()) ?? 1, topic.fgosRef))} для ${grade.num} класса по ${subjectName}. ${examplesPhrase(topic.examples.length)} с ответами. Сгенерируйте свой вариант за 30 секунд.`;
+  const description = clipDescription(rawDescription);
 
   // TZ-10 §5.1 / §9.7: canonical + og:type=article + publishedTime/modifiedTime.
   // В таксономии (Topic) нет полей createdAt/updatedAt — ставим текущую дату;
@@ -82,15 +91,11 @@ export function generateMetadata({ params }: Props): Metadata {
   return {
     title,
     description,
-    keywords: [
-      `${topic.title} ${grade.num} класс`,
-      `рабочий лист ${topic.title.toLowerCase()}`,
-      `${subject.shortTitle.toLowerCase()} ${grade.num} класс`,
-      "ФГОС",
-      "задания",
-      "карточки",
-      "тест",
-    ],
+    // ТЗ-21 п.14 / SEO-аудит P1-4: тег `keywords` убран. Google не учитывает
+    // его с 2009 года, Яндекс официально не использует, а переспамленный список
+    // из 7 слов на каждой из 1 070 страниц тем выглядит как спам-сигнал.
+    // Ключевые слова остались в заголовке, описании и в разметке
+    // LearningResource, где они работают по назначению.
     alternates: {
       canonical: canonicalUrl,
     },
@@ -139,6 +144,54 @@ export default function TopicPage({ params }: Props) {
   if (!subject || !grade || !topic) return notFound();
 
   const otherTopics = grade.topics.filter((t: Topic) => t.slug !== topic.slug);
+
+  // ТЗ-21 п.6 / SEO-аудит P0-6: перелинковка артефактов.
+  //
+  // ПРОБЛЕМА, которую это чинит. Проверено на собранном сайте: ссылок вида
+  // href="/lesson-plan/..." в разметке НОЛЬ. Все CTA со страницы темы вели
+  // в конструктор с query-параметрами, а страницы артефактов оставались
+  // «сиротами» — ноль входящих ссылок при 2140 страницах в индексе. Для
+  // поисковика это два несвязанных набора URL: страницы не входят в
+  // «граф знаний» темы, обходятся хуже и не передают вес.
+  //
+  // ПОЧЕМУ ИМЕННО ЗДЕСЬ. Страница темы — единственное место, где известны
+  // все три параметра (предмет, класс, тема) и где учитель гарантированно
+  // думает именно об этой теме. Отсюда самый релевантный исходящий контекст.
+  //
+  // ССЫЛКИ ВЕДУТ НА САМИ СТРАНИЦЫ, А НЕ НА КОНСТРУКТОР: конструктор без
+  // параметров — это «сгенерируй что угодно» и для ссылки бесполезно. Здесь
+  // каждая ссылка — на конкретный, уже существующий (collectible через
+  // generateStaticParams во всех трёх роутах) артефакт этой же темы.
+  //
+  // СМ. ТАКЖЕ комментарий к `otherTopics` ниже: блок соседних тем «Смотрите
+  // также» уже существует в этой странице отдельной секцией, поэтому второго
+  // такого блока не делаем — одинаковые списки дублей на одной странице.
+  const artifactLinks: Array<{
+    href: string;
+    icon: LucideIcon;
+    title: string;
+    text: string;
+  }> = [
+    {
+      href: `/lesson-plan/${subject.slug}/${grade.num}/${topic.slug}`,
+      icon: FileText,
+      title: "План урока по этой теме",
+      text: "Ход занятия, цели и задания с ответами — готовая структура урока.",
+    },
+    {
+      href: `/presentation/${subject.slug}/${grade.num}/${topic.slug}`,
+      icon: Presentation,
+      title: "Презентация по этой теме",
+      text: "Слайды к теме с заданиями: можно показать на уроке и раздать ученикам.",
+    },
+    {
+      href: `/ktp/${subject.slug}/${grade.num}`,
+      icon: ClipboardList,
+      title: `КТП по предмету «${subject.shortTitle}», ${grade.num} класс`,
+      // КТП — на весь год, а не на тему: тема в URL не входит, роут /ktp/[subject]/[grade].
+      text: "Календарно-тематическое планирование на год — все темы предмета списком.",
+    },
+  ];
 
 
   // P0-01: SEO — пробрасываем раздел ФГОС в JSON-LD для поисковиков.
@@ -355,7 +408,40 @@ export default function TopicPage({ params }: Props) {
         </div>
       </section>
 
-      {/* Other topics */}
+      {/* ТЗ-21 п.6: перелинковка на артефакты этой же темы. Идёт перед блоком
+          соседних тем — учитель доходит до сюда уже решив, что ему нужно, и здесь
+          получает готовый материал, а не уходит в конструктор. */}
+      <section className="py-12 sm:py-16">
+        <div className="container-tight">
+          <h2 className="text-2xl sm:text-3xl font-display font-bold mb-2">
+            Готовые материалы по этой теме
+          </h2>
+          <p className="text-warm-600 mb-6">
+            Не нужно ничего придумывать: заполните только своими данными и распечатайте.
+          </p>
+          <div className="grid sm:grid-cols-3 gap-4">
+            {artifactLinks.map((a) => (
+              <Link key={a.href} href={a.href} className="group">
+                <Card hover className="h-full">
+                  <div className="w-10 h-10 rounded-xl bg-brand-500 text-white grid place-items-center mb-3">
+                    <a.icon className="w-5 h-5" />
+                  </div>
+                  <h3 className="font-semibold text-warm-950 group-hover:text-brand-700 transition-colors flex items-start gap-1.5">
+                    {a.title}
+                    <ArrowRight className="w-4 h-4 mt-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </h3>
+                  <p className="mt-1.5 text-sm text-warm-600 leading-relaxed">
+                    {a.text}
+                  </p>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Other topics — это и есть блок «Смотрите также»: соседние темы того же
+          предмета и класса. Отдельный второй блок не делаем (ТЗ-21 п.6). */}
       {otherTopics.length > 0 && (
         <section className="py-12 sm:py-16">
           <div className="container-tight">

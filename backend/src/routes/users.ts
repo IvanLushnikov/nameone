@@ -100,7 +100,9 @@ usersRouter.get("/me", async (c) => {
       plan: user.plan,
       generationsTotal: user.generations_total,
       generationsToday: user.generations_today,
-      generationsLimit: user.plan === "plus" || user.plan === "base" ? -1 : 3,
+      // Платным считается всё, что не «free» — иначе новый тариф молча
+      // получает бесплатную квоту (см. ТЗ-21 п.4, тариф «Оптимальный»).
+      generationsLimit: user.plan === "free" ? 3 : -1,
       createdAt: new Date(user.created_at * 1000).toISOString(),
     },
   });
@@ -231,7 +233,7 @@ usersRouter.get("/usage", async (c) => {
   const user = await getUserById(c.env.DB, auth.id);
   if (!user) throw new NotFoundError("User not found");
 
-  const plan = user.plan as "free" | "base" | "plus";
+  const plan = user.plan as "free" | "base" | "standard" | "plus";
   const status = await getUsageStatus(c.env.DB, user.id, plan);
 
   // Бесплатная квота — в штуках генераций, а не в токенах.
