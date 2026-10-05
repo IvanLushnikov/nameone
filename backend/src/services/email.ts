@@ -380,3 +380,70 @@ export async function sendPeriodEndingEmail(
     footnote: "После окончания периода личные материалы и история генераций останутся в кабинете.",
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Смена почты (ТЗ-21, блок 5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Письмо с подтверждением смены почты.
+ *
+ * В отличие от писем выше, здесь деградация «в консоль» НЕДОПУСТИМА. Остальные
+ * письма приходят уже после события (деньги списаны, подписка активирована) —
+ * и «доставка в лог» там означает «событие обработано, а письмо не дошло».
+ * Здесь всё наоборот: письмо с подтверждением ЕСТЬ подтверждение. Сказать
+ * учителю «мы отправили письмо на новый адрес», не отправив его, — значит
+ * оставить его с настройкой, которая не сработает никогда.
+ *
+ * Поэтому возвращаем честный результат: `sent: false` с причиной, и вызывающий
+ * код говорит учителю правду и НЕ применяет смену почты.
+ */
+export interface EmailChangeMailResult {
+  sent: boolean;
+  /** Человекочитаемая причина, если письмо не отправлено. */
+  reason?: "not_configured" | "provider_error";
+  error?: string;
+}
+
+export async function sendEmailChangeEmail(
+  env: Env,
+  to: string,
+  url: string,
+): Promise<EmailChangeMailResult> {
+  if (!env.RESEND_API_KEY) {
+    return { sent: false, reason: "not_configured" };
+  }
+
+  const resend = new Resend(env.RESEND_API_KEY);
+  const html =
+    `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px">` +
+    `<h2 style="margin:0 0 12px">Подтвердите новую почту</h2>` +
+    `<p style="margin:0 0 12px">Вы попросили сменить почту в «УчЛисте» на этот адрес.</p>` +
+    `<p style="margin:0 0 16px">Пока вы не подтвердите смену, вход останется на старом адресе, а все материалы — на прежнем аккаунте.</p>` +
+    `<p style="margin:0 0 20px"><a href="${escapeHtml(url)}" style="display:inline-block;background:#107456;color:#fff;padding:12px 24px;border-radius:12px;text-decoration:none;font-weight:600">Подтвердить смену почты</a></p>` +
+    `<p style="margin:0;color:#666;font-size:13px">Если это не вы — просто проигнорируйте письмо, ничего не изменится.</p>` +
+    `</div>`;
+
+  try {
+    const { data, error } = await resend.emails.send({
+      from: FROM,
+      to,
+      subject: "Подтвердите новую почту в УчЛисте",
+      html,
+      text:
+        "Подтвердите смену почты в «УчЛисте»: " +
+        `${url}\n\nПока вы не подтвердите смену, вход останется на старом адресе.`,
+    });
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.warn(`[email] смена почты: Resend не принял письмо to=${to} error=${JSON.stringify(error)}`);
+      return { sent: false, reason: "provider_error", error: error.message };
+    }
+    return { sent: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // eslint-disable-next-line no-console
+    console.warn(`[email] смена почты: исключение to=${to} error=${msg}`);
+    return { sent: false, reason: "provider_error", error: msg };
+  }
+}

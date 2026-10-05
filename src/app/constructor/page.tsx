@@ -39,6 +39,7 @@ import {
   X,
   Camera,
   Send,
+  LayoutTemplate,
 } from "lucide-react";
 import { subjects, getSubject, getGrade } from "@/lib/content/subjects";
 import { getUMK } from "@/lib/content/umk";
@@ -76,6 +77,7 @@ import {
 } from "@/lib/client/llm";
 import { generateWorksheetDocx, downloadBlob } from "@/lib/utils/docx";
 import { trackEvent } from "@/lib/track";
+import { saveTemplate } from "@/lib/lk/templates";
 import { generateLessonPlanDocx } from "@/lib/utils/lesson-plan-docx";
 import { generateCardsDocx } from "@/lib/utils/cards-docx";
 import { printCards } from "@/lib/utils/cards-print";
@@ -1338,6 +1340,31 @@ export default function ConstructorPage() {
   };
 
   /**
+   * ТЗ-21, блок 2: сохранить текущий артефакт как шаблон прямо в конструкторе.
+   *
+   * Пишет на устройство всегда, на сервер — когда есть сессия, поэтому
+   * анонимный учитель получает рабочий шаблон без всяких условий, а
+   * залогиненный — ещё и переезд на другое устройство.
+   */
+  const handleSaveTemplate = async () => {
+    const target = worksheet ?? lessonPlan ?? presentation ?? ktp;
+    if (!target) return;
+    const res = await saveTemplate(target);
+    trackEvent("dashboard_template_saved", { from: "constructor" });
+    if (res.synced) {
+      toast({ tone: "success", title: "Сохранено как шаблон", description: "Доступен на всех устройствах" });
+      return;
+    }
+    toast({
+      tone: res.serverFailed ? "info" : "success",
+      title: "Сохранено как шаблон",
+      description: res.serverFailed
+        ? "Сохранено на этом устройстве — на сервер не попало"
+        : undefined,
+    });
+  };
+
+  /**
    * F-08: открыть floating-панель AI-правок из тулбара.
    * EditChat — uncontrolled-компонент со своим fixed-кнопкой в правом нижнем углу.
    * Чтобы тулбар-кнопка могла открывать ту же панель — программно кликаем по
@@ -1643,6 +1670,22 @@ export default function ConstructorPage() {
                     <Button variant="secondary" size="sm" leftIcon={<Heart className="w-4 h-4" />} onClick={handleSaveFavorite}>
                       <span className="hidden sm:inline">В избранное</span>
                       <span className="sm:hidden">Избранное</span>
+                    </Button>
+                    {/* ТЗ-21, блок 2: кнопка «Как шаблон» сразу после генерации.
+                        Раньше `addTemplate` вызывался только со страницы превью,
+                        а попасть в превью можно было лишь из избранного — то
+                        есть входной точки у функции не было вообще. Теперь
+                        учитель сохраняет настройки одним кликом, не выходя из
+                        конструктора. */}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      leftIcon={<LayoutTemplate className="w-4 h-4" />}
+                      onClick={handleSaveTemplate}
+                      data-testid="save-as-template"
+                    >
+                      <span className="hidden sm:inline">Как шаблон</span>
+                      <span className="sm:hidden">Шаблон</span>
                     </Button>
                     <Button variant="secondary" size="sm" leftIcon={<RotateCcw className="w-4 h-4" />} onClick={handleNewVariant} loading={generating}>
                       <span className="hidden sm:inline">Новый вариант</span>
