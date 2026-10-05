@@ -10,21 +10,25 @@ import { LessonPlanPreview } from "@/components/constructor/LessonPlanPreview";
 import { PresentationPreview } from "@/components/constructor/PresentationPreview";
 import { KtpPreview } from "@/components/constructor/KtpPreview";
 import {
-  getFavorites,
   saveFavorite,
   removeFavorite,
-  addTemplate,
   isFavorited,
   type FavoriteArtifact,
 } from "@/lib/utils/storage";
+import { saveTemplate } from "@/lib/lk/templates";
+import { findArtifact } from "@/lib/lk/artifact";
 import { generateWorksheetDocx, downloadBlob } from "@/lib/utils/docx";
 import { generateLessonPlanDocx } from "@/lib/utils/lesson-plan-docx";
+import { getSubject } from "@/lib/content/subjects";
+import { pluralizeTasks } from "@/lib/utils/cn";
 import { generateKtpDocx } from "@/lib/utils/ktp-docx";
 import { generatePptx, pptxFilename } from "@/lib/utils/pptx";
+import { trackEvent } from "@/lib/track";
 import type { Difficulty, SubjectSlug } from "@/lib/types";
 import {
   ArrowLeft,
   Heart,
+  History,
   RotateCcw,
   Download,
   Sparkles,
@@ -33,17 +37,23 @@ import {
 import { useToast } from "@/components/ui/Toast";
 
 /**
- * F-06 B-1 / B-2 / B-4 fix:
- *   - B-1: `id` читается через `useSearchParams().get("id")` — теперь согласовано с дашбордом (query, не path).
- *   - B-2: ищем артефакт в `getFavorites()`. История (`KEY_HISTORY`) хранит только метаданные и не годится
- *     для рендера — `UserHistoryItem` не содержит `tasks/stages/slides/weeks`. Поэтому при отсутствии в
- *     favorites показываем понятное сообщение с CTA «Открыть из избранного».
- *   - B-4: рендерим через discriminated union — 4 типа артефактов, 4 превью-компонента.
+ * Страница превью материала (`/preview?id=<id>`).
+ *
+ * ТЗ-21, блок 2 — главная кнопка кабинета не работала: карточка истории
+ * вела сюда, а артефакт искался ТОЛЬКО в избранном (`getFavorites()`).
+ * История и избранное — два разных хранилища, поэтому лист, который учитель
+ * не добавил в избранное, не открывался вообще.
+ *
+ * Теперь поиск идёт по четырём шагам (`findArtifact` в `src/lib/lk/artifact.ts`):
+ *   сервер → история устройства → избранное устройства → «Лист не найден».
+ * Проверка сессии — ДО запроса, поэтому анонимный учитель не видит ни 401,
+ * ни мигания загрузки. Клик по листу старше пятого в истории тоже открывает
+ * его: у таких записей в localStorage есть только метаданные, но на сервере
+ * лежит полный артефакт.
  *
  * `?id` читается из `window.location.search` в useEffect, а не через
  * `useSearchParams()`: хук при `output: "export"` требовал границы <Suspense>,
- * а её fallback («Загрузка…») закрывал собой страницу до гидратации. Пока
- * эффект не отработал, рендерится тот же скелетон, что и раньше по `!artifact`.
+ * а её fallback («Загрузка…») закрывал собой страницу до гидратации.
  */
 export default function PreviewPage() {
   const { toast } = useToast();
@@ -52,6 +62,10 @@ export default function PreviewPage() {
   const [artifact, setArtifact] = React.useState<FavoriteArtifact | null>(null);
   const [isFav, setIsFav] = React.useState(false);
   const [notFound, setNotFound] = React.useState(false);
+  /** true = ищем артефакт (сервер/устройство). Скелетон, не «не найден». */
+  const [searching, setSearching] = React.useState(false);
+  /** Счётчик повторов: кнопка «Попробовать ещё раз» на экране «не найден». */
+  const [retry, setRetry] = React.useState(0);
 
   React.useEffect(() => {
     setId(new URLSearchParams(window.location.search).get("id") ?? "");
@@ -62,17 +76,34 @@ export default function PreviewPage() {
     if (id === null) return;
     if (!id) {
       setNotFound(true);
+      setSearching(false);
       return;
     }
-    const all = getFavorites();
-    const found = all.find((a) => a.id === id);
-    if (found) {
-      setArtifact(found);
-      setIsFav(isFavorited(id));
-      return;
-    }
-    setNotFound(true);
-  }, [id]);
+
+    let cancelled = false;
+    setSearching(true);
+    void findArtifact(id).then((found) => {
+      if (cancelled) return;
+      setSearching(false);
+      if (found) {
+        setArtifact(found.artifact);
+        setIsFav(isFavorited(id));
+        setNotFound(false);
+        // Откуда открыли — нужно, чтобы доказать, что кабинет востребован.
+        trackEvent("dashboard_artifact_opened", {
+          origin: found.origin,
+          from: "preview",
+        });
+        return;
+      }
+      setArtifact(null);
+      setNotFound(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, retry]);
 
   const handleToggleFav = () => {
     if (!artifact) return;
@@ -87,44 +118,26 @@ export default function PreviewPage() {
     }
   };
 
-  const handleSaveTemplate = () => {
+  const handleSaveTemplate = async () => {
     if (!artifact) return;
-    // Параметры шаблона выводим из любого типа артефакта.
-    // Для Worksheet это точное соответствие; для остальных — best-effort fallback
-    // на стандартные значения, которые шаблон всё равно позволяет поменять.
-    let difficulty: Difficulty = "medium";
-    let count = 0;
-    // У Ktp нет `topic` (есть schoolYear) — для шаблона используем title как fallback.
-    let topic = artifact.title;
-    if ("tasks" in artifact) {
-      difficulty = artifact.difficulty;
-      count = artifact.tasks.length;
-      topic = artifact.topic;
-    } else if ("stages" in artifact) {
-      count = artifact.stages.length;
-      topic = artifact.topic;
-    } else if ("slides" in artifact) {
-      count = artifact.slides.length;
-      topic = artifact.topic;
-    } else if ("weeks" in artifact) {
-      count = artifact.totalHours;
-      // Ktp.topic отсутствует — используем title.
+    const res = await saveTemplate(artifact);
+    trackEvent("dashboard_template_saved", { from: "preview" });
+    if (res.synced) {
+      toast({ tone: "success", title: "Сохранено как шаблон", description: "Доступен на всех устройствах" });
+      return;
     }
-
-    addTemplate({
-      id: Math.random().toString(36).slice(2),
-      name: artifact.title,
-      subject: artifact.subject as SubjectSlug,
-      grade: artifact.grade,
-      topic,
-      difficulty,
-      count,
+    toast({
+      tone: res.serverFailed ? "info" : "success",
+      title: "Сохранено как шаблон",
+      description: res.serverFailed
+        ? "Сохранено на этом устройстве — на сервер не попало"
+        : undefined,
     });
-    toast({ tone: "success", title: "Сохранено как шаблон" });
   };
 
   const handlePrint = () => {
     if (typeof window !== "undefined") window.print();
+    trackEvent("dashboard_artifact_downloaded", { from: "preview", format: "pdf" });
   };
 
   const handleDownload = async () => {
@@ -172,12 +185,16 @@ export default function PreviewPage() {
       <div className="container-tight py-20 max-w-md mx-auto text-center">
         <h1 className="text-2xl font-bold text-warm-950">Лист не найден</h1>
         <p className="text-warm-600 mt-2">
-          Этот материал не сохранён в избранном на этом устройстве. Сначала
-          откройте лист из конструктора и нажмите «В избранное».
+          Не нашли его ни в истории, ни в избранном — ни на этом устройстве, ни
+          в аккаунте. Если вы открываете ссылку с другого устройства, проверьте
+          интернет; если лист был удалён из истории, восстановить его уже нельзя.
         </p>
-        <div className="mt-6 flex gap-2 justify-center">
+        <div className="mt-6 flex flex-wrap gap-2 justify-center">
           <Button as="link" href="/dashboard" variant="secondary" leftIcon={<ArrowLeft className="w-4 h-4" />}>
             В кабинет
+          </Button>
+          <Button variant="secondary" onClick={() => setRetry((n) => n + 1)}>
+            Попробовать ещё раз
           </Button>
           <Button as="link" href="/constructor" variant="primary" leftIcon={<Sparkles className="w-4 h-4" />}>
             Создать лист
@@ -187,9 +204,10 @@ export default function PreviewPage() {
     );
   }
 
-  if (!artifact) {
-    // Скелетон на время чтения localStorage — тот же текст, что был в Suspense
-    // fallback, но он больше не блокирует гидратацию самой страницы.
+  if (!artifact || searching) {
+    // Скелетон на время поиска артефакта (сервер или устройство) — тот же
+    // текст, что был в Suspense fallback, но он больше не блокирует
+    // гидратацию самой страницы.
     return (
       <div className="container-tight py-20 text-center text-warm-500">
         Загрузка…
@@ -206,8 +224,8 @@ export default function PreviewPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6 no-print">
           <div>
             <Badge tone="brand" className="mb-2">
-              <Heart className="w-3 h-3" />
-              Из избранного
+              {isFav ? <Heart className="w-3 h-3" /> : <History className="w-3 h-3" />}
+              {isFav ? "Из избранного" : "Из истории"}
             </Badge>
             <h1 className="text-xl font-semibold text-warm-950">{artifact.title}</h1>
             <p className="text-sm text-warm-500 mt-0.5">{subtitle}</p>
@@ -327,9 +345,17 @@ function ArtifactBodyInner({ artifact }: { artifact: FavoriteArtifact }) {
 }
 
 /** Подзаголовок в шапке превью (тип-специфичный). */
+/**
+ * Подпись под названием: предмет по-русски и число со склонением.
+ *
+ * Раньше здесь было `a.subject` — английский слаг из хранилища («math»,
+ * «russian»), и учитель читал в шапке листа «math · 5 класс». Плюс жёстко
+ * зашитое «заданий», из-за чего один лист подписывался «1 заданий».
+ */
 function artifactSubtitle(a: FavoriteArtifact): string {
   if ("tasks" in a) {
-    return `${a.subject} · ${a.grade} класс · ${a.tasks.length} заданий`;
+    const subject = getSubject(a.subject);
+    return `${subject?.shortTitle ?? a.subject} · ${a.grade} класс · ${a.tasks.length} ${pluralizeTasks(a.tasks.length)}`;
   }
   if ("stages" in a) {
     const total = a.stages.reduce((s, st) => s + st.durationMin, 0);
