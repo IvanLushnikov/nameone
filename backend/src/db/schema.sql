@@ -631,3 +631,40 @@ CREATE TABLE IF NOT EXISTS billing_notifications (
 );
 
 CREATE INDEX IF NOT EXISTS idx_btn_user ON billing_notifications(user_id, sent_at DESC);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Настройки профиля учителя (ТЗ-21, блок 5)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- «Мои классы»: ["5А","5Б","7А"]. Учитель — один человек с 5–6 параллельными
+-- классами, и это самый дешёвый способ вернуть кабинету фильтр по классу.
+-- Строка на пользователя, а не на класс: список классов меняется одним запросом
+-- и не должен плодить строки при каждом касании фильтра.
+--
+-- Имя и почта НЕ дублируются здесь: они уже есть в `users`, и вторая копия
+-- расходилась бы с первой при первом же рассинхроне.
+CREATE TABLE IF NOT EXISTS teacher_classes (
+  user_id      TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  classes_json TEXT NOT NULL DEFAULT '[]',  -- JSON-массив строк, напр. ["5А","5Б"]
+  updated_at   INTEGER NOT NULL
+);
+
+-- Смена почты — ТОЛЬКО через подтверждение на новом адресе.
+--
+-- Почему отдельная таблица, а не флаг в users: незавершённый запрос не должен
+-- выглядеть как смена почты. Учитель запросил новый адрес → мы отправили письмо
+-- туда → он не открыл → почта прежняя, а в таблице висит pending, который честно
+-- показывается в настройках и чистится по сроку.
+CREATE TABLE IF NOT EXISTS email_change_requests (
+  id          TEXT PRIMARY KEY,           -- ecr_<12>
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  old_email   TEXT NOT NULL,
+  new_email   TEXT NOT NULL,
+  token       TEXT NOT NULL UNIQUE,
+  status      TEXT NOT NULL DEFAULT 'pending',  -- pending | applied | expired
+  created_at  INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL,           -- 24 часа на подтверждение
+  applied_at  INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_ecr_user ON email_change_requests(user_id, status);

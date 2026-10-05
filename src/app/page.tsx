@@ -14,6 +14,7 @@ import { PageTracker } from "@/components/shared/PageTracker";
 import { JsonLd } from "@/components/seo";
 import { faqItems, stripMarkdown } from "@/lib/content/landing-seo";
 import { SITE_URL, SUPPORT_EMAIL } from "@/lib/site";
+import { absoluteUrl, ogImages, twitterCard } from "@/lib/seo/metadata";
 
 // TZ-10 §9.2: JSON-LD Organization + WebSite с SearchAction (для sitelinks-searchbox в Яндексе).
 // Базовый URL берётся из общего модуля, а не из литерала здесь: локальная копия
@@ -25,17 +26,15 @@ import { SITE_URL, SUPPORT_EMAIL } from "@/lib/site";
 // Edge route `src/app/og/[...slug]/route.tsx` остаётся для будущей миграции на
 // OpenNext / @cloudflare/next-on-pages, но в `output: "export"` не работает —
 // поэтому при static-export og:image идёт на готовый PNG из public/og/.
+// ТЗ-21 п.14: заодно главная получила canonical — без него адрес главной
+// считался поисковиком дублем /constructor, /login и /preview, которые
+// наследовали её заголовок (SEO-аудит P1-5).
 export const metadata: Metadata = {
+  alternates: { canonical: absoluteUrl("/") },
   openGraph: {
-    images: [
-      {
-        url: `${SITE_URL}/og/default.png`,
-        width: 1200,
-        height: 630,
-        alt: "УчЛист — рабочие листы по ФГОС",
-      },
-    ],
+    images: ogImages(undefined, "УчЛист — рабочие листы по ФГОС"),
   },
+  twitter: twitterCard(undefined),
 };
 
 const homeJsonLd = [
@@ -48,7 +47,10 @@ const homeJsonLd = [
       "Генератор рабочих листов по ФГОС для учителей 1-11 классов",
     // logo: закомментировано — public/logo.png пока не залит (TZ-10 §5.2 P0).
     // logo: `${SITE_URL}/logo.png`,
-    sameAs: [],
+    // ТЗ-21: пустой `sameAs: []` убран. ПолеsameAs — это ссылка на профиль
+    // компании в соцсетях; пустой массив не сообщает поисковику ничего, но
+    // выглядит как незаполненная разметка. Профилей у нас пока нет — когда
+    // появятся, добавить сюда реальные URL.
     contactPoint: {
       "@type": "ContactPoint",
       contactType: "customer support",

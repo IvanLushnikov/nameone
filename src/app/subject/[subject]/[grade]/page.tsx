@@ -11,6 +11,7 @@ import { getSubject, subjects } from "@/lib/content/subjects";
 import { FREE_QUOTA_LABEL } from "@/lib/content/plans";
 import { Breadcrumb } from "@/components/seo";
 import { SITE_URL } from "@/lib/site";
+import { clipDescription } from "@/lib/seo/metadata";
 import type { Grade, Topic } from "@/lib/types";
 
 type Props = { params: { subject: string; grade: string } };
@@ -41,7 +42,13 @@ export function generateMetadata({ params }: Props): Metadata {
   // `@/lib/content/subject-cases`).
   const subjectName = `предмету «${subject.title}»`;
   const title = `Рабочие листы по ${subjectName} для ${gradeNum} класса — ${grade.topics.length} ${topicWord}`;
-  const description = `Рабочие листы, тесты и карточки по ${subjectName} для ${gradeNum} класса. ${grade.topics.length} ${plural(grade.topics.length, "тема", "темы", "тем")} по ФГОС. PDF с ответами за 30 секунд. Бесплатно — ${FREE_QUOTA_LABEL.toLowerCase()}.`;
+  // ТЗ-21 п.14: описание обрезано по границе слова до 150–160 знаков. На
+  // длинных названиях предметов («Финансовая грамотность», «Изобразительное
+  // искусство») исходные 162–165 знаков целиком уходили за лимит сниппета,
+  // и обрезанным оказывался хвост с обещанием «за 30 секунд».
+  const description = clipDescription(
+    `Рабочие листы, тесты и карточки по ${subjectName} для ${gradeNum} класса. ${grade.topics.length} ${plural(grade.topics.length, "тема", "темы", "тем")} по ФГОС. PDF с ответами за 30 секунд. Бесплатно — ${FREE_QUOTA_LABEL.toLowerCase()}.`,
+  );
   const base = SITE_URL;
   const canonicalUrl = `${base}/subject/${subject.slug}/${gradeNum}`;
 

@@ -24,6 +24,7 @@ import {
 } from "@/lib/content/subjects";
 import { JsonLd, Breadcrumb } from "@/components/seo";
 import { prepositionalTitle } from "@/lib/content/subject-cases";
+import { absoluteUrl, clipDescription, ogImages, topicTitleSuffix, twitterCard } from "@/lib/seo/metadata";
 
 type Props = { params: { subject: string; grade: string; topic: string } };
 
@@ -46,20 +47,41 @@ export function generateMetadata({ params }: Props): Metadata {
   if (!subject || !grade || !topic) return { title: "Тема не найдена" };
 
   // Бренд в конце не дописываем — его добавляет template в корневом layout.
-  const title = `План урока по теме «${topic.title}» · ${grade.num} класс`;
-  const description = `Готовый план урока по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topic.title}». Конспект на 45 минут с этапами, целями и домашним заданием. Сгенерируйте DOCX за 30 секунд.`;
+  // Предмет и УМК в хвосте — ТЗ-21 п.22: тема «Степень с натуральным
+  // показателем» есть у Мерзляка и у Алимова, и без разведения 1 070 страниц
+  // конспектов собирали 17 групп одинаковых заголовков.
+  const title = `План урока по теме «${topic.title}» · ${topicTitleSuffix(
+    subject.slug,
+    subject.shortTitle,
+    grade.num,
+    topic.umk,
+  )}`;
+  // ТЗ-21 п.14: описание обрезано до 150–160 знаков по границе слова
+  // (было 194 — хвост с «Сгенерируйте DOCX за 30 секунд» в сниппет не попадал).
+  const description = clipDescription(
+    `Готовый план урока по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topic.title}». Конспект на 45 минут с этапами, целями и домашним заданием. Сгенерируйте DOCX за 30 секунд.`,
+  );
 
   return {
     title,
     description,
-    keywords: [
-      `план урока ${topic.title.toLowerCase()} ${grade.num} класс`,
-      `конспект урока ${topic.title.toLowerCase()}`,
-      `${subject.shortTitle.toLowerCase()} ${grade.num} класс`,
-      "ФГОС",
-      "технологическая карта",
-      "45 минут",
-    ],
+    // ТЗ-21 п.14: canonical на всех 1 070 страницах конспектов (было 0).
+    alternates: { canonical: absoluteUrl(`/lesson-plan/${subject.slug}/${grade.num}/${topic.slug}`) },
+    openGraph: {
+      type: "article",
+      title,
+      description,
+      url: absoluteUrl(`/lesson-plan/${subject.slug}/${grade.num}/${topic.slug}`),
+      siteName: "УчЛист",
+      locale: "ru_RU",
+      // Картинка по предмету: per-topic PNG не генерим (1 070 тем × N вариантов).
+      images: ogImages(subject.slug, `План урока: ${topic.title}`),
+    },
+    twitter: {
+      ...twitterCard(subject.slug),
+      title,
+      description,
+    },
   };
 }
 

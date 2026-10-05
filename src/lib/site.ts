@@ -1,11 +1,24 @@
 /** Базовый URL сайта.
  *
  *  Домен — `uchlist.ru` (решение владельца 2026-10-03, см. docs/tz/18-money-and-trust.md §7).
- *  ⚠️ Домен ещё не куплен и не резолвится. До его делегирования в сборке обязательно
- *  должен быть задан `NEXT_PUBLIC_SITE_URL` (например на pages.dev), иначе
- *  sitemap, robots, canonical и JSON-LD укажут на нерезолвящийся хост —
- *  это уже случалось с предыдущим доменом. */
-export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://listai-prototype.pages.dev").replace(/\/+$/, "");
+ *
+ *  ТЗ-21 п.1 / SEO-аудит P0-1: дефолтом стоял временный `listai-prototype.pages.dev`,
+ *  и в этот дефолт попадали все 3901 URL карты сайта, canonical-теги и `url` в
+ *  JSON-LD. То есть весь SEO-вес копился на адресе, который после переезда
+ *  планируется выключить. Теперь дефолт — продовый домен, и временный адрес
+ *  не может «молча» вернуться в сборку.
+ *
+ *  ⚠️ ЧТО ДЕЛАТЬ ВЛАДЕЛЬЦУ (сам домен купить агент не может):
+ *  1) купить `uchlist.ru` и привязать его как custom domain к Pages-проекту
+ *     (`listai-prototype`), 2) выставить `NEXT_PUBLIC_SITE_URL=https://uchlist.ru`
+ *     в `.env` и в `.github/workflows/deploy.yml` (там то же значение), 3)
+ *     пересобрать и задеплоить, 4) раскомментировать блок 301 в
+ *     `public/_redirects`.
+ *
+ *  Если `NEXT_PUBLIC_SITE_URL` задан (в CI он задаётся всегда) — он и
+ *  побеждает. Пока домен не делегирован, в CI стоит pages.dev явно, чтобы
+ *  поисковик не получил карту сайта с мёртвого хоста. */
+export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://uchlist.ru").replace(/\/+$/, "");
 
 /** SITE_URL без схемы — для мест, где нужен голый домен (подписи в печатных листах). */
 export const SITE_HOST = SITE_URL.replace(/^https?:\/\//, "");

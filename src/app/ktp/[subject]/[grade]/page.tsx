@@ -3,8 +3,9 @@ import type { Metadata } from "next";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Breadcrumb } from "@/components/seo";
+import { Breadcrumb, JsonLd } from "@/components/seo";
 import { plural } from "@/lib/utils/cn";
+import { absoluteUrl, clipDescription, ogImages, twitterCard } from "@/lib/seo/metadata";
 import {
   Sparkles,
   ArrowRight,
@@ -46,19 +47,31 @@ export function generateMetadata({ params }: Props): Metadata {
   // Бренд в конце не дописываем — его добавляет template в корневом layout.
   // Название предмета в предложном падеже — «по математике», а не «по Математика».
   const title = `КТП по ${prepositionalTitle(subject.slug, subject.title)} · ${grade.num} класс · ${SCHOOL_YEAR}`;
-  const description = `Календарно-тематическое планирование для ${grade.num} класса по предмету «${subject.title}» на ${SCHOOL_YEAR} учебный год по ФГОС. Скачивайте готовый DOCX с merged cells — все темы курса, контрольные и тесты.`;
+  // ТЗ-21 п.14: было 189 знаков, обрезано по границе слова до 150–160.
+  const description = clipDescription(
+    `Календарно-тематическое планирование для ${grade.num} класса по предмету «${subject.title}» на ${SCHOOL_YEAR} учебный год по ФГОС. Скачивайте готовый DOCX с merged cells — все темы курса, контрольные и тесты.`,
+  );
+  const url = absoluteUrl(`/ktp/${subject.slug}/${grade.num}`);
 
   return {
     title,
     description,
-    keywords: [
-      `КТП ${subject.shortTitle.toLowerCase()} ${grade.num} класс`,
-      `календарно-тематическое планирование ${grade.num} класс`,
-      `тематическое планирование ${subject.shortTitle.toLowerCase()} ${grade.num} класс`,
-      `${SCHOOL_YEAR}`,
-      "ФГОС",
-      "DOCX",
-    ],
+    // ТЗ-21 п.14: canonical на всех 141 странице КТП (было 0).
+    alternates: { canonical: url },
+    openGraph: {
+      type: "article",
+      title,
+      description,
+      url,
+      siteName: "УчЛист",
+      locale: "ru_RU",
+      images: ogImages(subject.slug, `КТП: ${subject.title}, ${grade.num} класс`),
+    },
+    twitter: {
+      ...twitterCard(subject.slug),
+      title,
+      description,
+    },
   };
 }
 
@@ -73,8 +86,31 @@ export default function KtpGradePage({ params }: Props) {
   const totalHours = 34 * hoursPerWeek;
   const weeks = 34;
 
+  // ТЗ-21 п.14 / SEO-аудит P1-8: на 141 странице КТП была только
+  // BreadcrumbList — на своих картах сортования это не попадает в
+  // расширенные сниппеты. По образцу конспектов и презентаций добавляем
+  // LearningResource: КТП — это учебный материал, и тип «Календарно-
+  // тематическое планирование» в learningResourceType честно его описывает.
+  const ktpJsonLd: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "LearningResource",
+    name: `КТП по предмету «${subject.title}», ${grade.num} класс, ${SCHOOL_YEAR} учебный год`,
+    description: `Календарно-тематическое планирование для ${grade.num} класса по предмету «${subject.title}» на ${SCHOOL_YEAR} учебный год по ФГОС: все темы курса, контрольные и тесты, ${totalHours} часов.`,
+    inLanguage: "ru-RU",
+    educationalLevel: `${grade.num} класс`,
+    learningResourceType: ["Календарно-тематическое планирование", "КТП", "Рабочая программа"],
+    about: { "@type": "Thing", name: subject.title },
+    educationalAlignment: {
+      "@type": "AlignmentObject",
+      alignmentType: "educationalFramework",
+      targetName: `ФГОС 2021, ${subject.title}, ${grade.num} класс`,
+      educationalFramework: "ФГОС 2021",
+    },
+  };
+
   return (
     <>
+      <JsonLd data={ktpJsonLd} id="ld-ktp" />
       {/* Hero */}
       <section className="relative bg-gradient-to-b from-warm-50 to-white pt-8 sm:pt-12 pb-10">
         <div className="absolute inset-0 -z-10 bg-grid opacity-50" />

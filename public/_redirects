@@ -5,3 +5,28 @@
 # См. docs/tz/10-taxonomy-completeness.md.
 /subject/physics/8/ispарение-kipeniye  /subject/physics/8/isparenie-kipenie  301
 /subject/physics/9/reakтивnoe-dvizhenie  /subject/physics/9/reaktivnoe-dvizhenie  301
+
+# ТЗ-21 п.1: переезд на канонический домен uchlist.ru.
+# Cloudflare Pages умеет отдавать 301 на ВНЕШНИЙ адрес — это единственный способ
+# перелить вес с временного `listai-prototype.pages.dev` на `uchlist.ru`: правило
+# живёт в проекте Pages, поэтому ставится на старый хост и срабатывает именно там.
+# `:splat` сохраняет путь и query, чтобы старые ссылки не превратились в 404.
+#
+# ⚠️ НАМЕРЕННО ЗАКОММЕНТИРОВАНО. На момент правки uchlist.ru ещё не куплен и не
+# резолвится: раскомментированная строка уронила бы живой сайт — редирект на
+# несуществующий хост отдаёт 301 в никуда, и сайт перестаёт открываться вообще.
+#
+# ВЛАДЕЛЕЦУ, в день покупки домена (порядок важен):
+# 1) купить uchlist.ru, привязать как custom domain к Pages-проекту listai-prototype
+#    и убедиться, что https://uchlist.ru открывается (сертификат выпустился);
+# 2) поменять NEXT_PUBLIC_SITE_URL на https://uchlist.ru в .github/workflows/deploy.yml
+#    и в .env.example, пересобрать и задеплоить — тогда canonical, sitemap.xml и
+#    robots.txt переедут на новый домен;
+# 3) раскомментировать строки ниже и задеплоить ещё раз — старый pages.dev начнёт
+#    отдавать 301;
+# 4) держать fallback 30–60 дней для старых закладок, потом отключить старый домен
+#    в Pages Dashboard.
+#
+# www-поддомен: Cloudflare Pages сам привязывает apex + www к одному проекту,
+# отдельное правило для www не нужно.
+#/* https://uchlist.ru/:splat  301
