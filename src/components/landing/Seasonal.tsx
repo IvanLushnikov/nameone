@@ -80,7 +80,7 @@ export function Seasonal() {
               Что проходят в&nbsp;школах сейчас
             </h2>
             <p className="mt-3 text-warm-600 max-w-2xl">
-              Актуальные темы по&nbsp;классам на&nbsp;<span className="font-semibold text-warm-950">{monthName}</span>. Откройте любую&nbsp;— генератор сразу подхватит.
+              Актуальные темы по&nbsp;классам на&nbsp;<span className="font-semibold text-warm-950">{monthName}</span>. Выберите тему&nbsp;— конструктор откроется с&nbsp;ней.
             </p>
           </div>
           <Link

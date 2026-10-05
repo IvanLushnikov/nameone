@@ -66,7 +66,7 @@ export function RealStats() {
           <StatBox
             value={m.topics}
             labelForms={["тема", "темы", "тем"]}
-            sub="растёт"
+            sub="и добавляются"
             inView={inView}
           />
           <StatBox

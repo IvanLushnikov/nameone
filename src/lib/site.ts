@@ -32,11 +32,18 @@ export const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "hello@uch
  * считается тот, кто определяет цели и средства обработки: при самозанятости
  * это ФИО самозанятого, при ИП — наименование и адрес ИП.
  */
-export const OPERATOR_NAME =
-  process.env.NEXT_PUBLIC_OPERATOR_NAME ?? "ИП Лушников Иван (уточняется)";
+export const OPERATOR_NAME = process.env.NEXT_PUBLIC_OPERATOR_NAME ?? "ИП Лушников Иван";
 
-export const OPERATOR_ADDRESS =
-  process.env.NEXT_PUBLIC_OPERATOR_ADDRESS ?? "адрес регистрации (уточняется)";
+/**
+ * Адрес оператора. Раньше здесь стояла подставная строка
+ * «(уточняется)», и она попадала в текст согласия на обработку ПДн —
+ * то есть прямо в юридический документ. Плейсхолдер в таком документе
+ * делает согласие неполным, поэтому его убрали: при незаданной переменной
+ * показываем нейтральную формулировку и отсылку к письму, а не слово
+ * «уточняется». Полные реквизиты (ИНН, ОГРНИП, адрес) проставляются через
+ * NEXT_PUBLIC_OPERATOR_* перед запуском.
+ */
+export const OPERATOR_ADDRESS = process.env.NEXT_PUBLIC_OPERATOR_ADDRESS ?? "";
 
 /** Домен оператора — для блока «кто обрабатывает данные» в согласии. */
 export const OPERATOR_SITE = SITE_HOST;

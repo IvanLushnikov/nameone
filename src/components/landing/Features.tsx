@@ -111,7 +111,7 @@ export function Features() {
             Почему УчЛист
           </p>
           <h2 className="text-3xl sm:text-4xl font-display font-bold tracking-tight">
-            Точно по&nbsp;программе. Быстро. Проверяем ответы&nbsp;— отсеиваем явные ошибки.
+            Листы точно по&nbsp;программе. Делаются за&nbsp;30&nbsp;секунд. Проверяем ответы и&nbsp;отсеиваем явные ошибки.
           </h2>
           <p className="mt-4 text-lg text-warm-600">
             Десять причин выбрать УчЛист вместо шаблонов и&nbsp;ручной&nbsp;работы.

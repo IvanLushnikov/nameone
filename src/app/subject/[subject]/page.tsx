@@ -176,7 +176,7 @@ export default function SubjectHubPage({ params }: Props) {
           <div className="container-tight">
             <h2 className="text-2xl font-display font-bold mb-2">Рабочие листы по вашему учебнику</h2>
             <p className="text-warm-600 mb-6">
-              Задания собираются под программу конкретного УМК — не «просто по математике», а по тому
+              Задания собираются под программу конкретного УМК — не «просто по предмету», а по тому
               учебнику, по которому вы ведёте урок.
             </p>
             <div className="flex flex-wrap gap-2">

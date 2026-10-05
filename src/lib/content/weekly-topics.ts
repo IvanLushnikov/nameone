@@ -25,7 +25,7 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "drobi-5-oktyabr-w1",
     season: "autumn-1",
-    weekLabel: "Октябрь · 1–2 неделя",
+    weekLabel: "Октябрь · 1–2-я недели",
     subject: "math",
     grade: 5,
     topicSlug: "drobi-obyknovennye",
@@ -37,7 +37,7 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "otritsatelnye-6-oktyabr",
     season: "autumn-1",
-    weekLabel: "Октябрь · 3 неделя",
+    weekLabel: "Октябрь · 3-я неделя",
     subject: "math",
     grade: 6,
     topicSlug: "otritsatelnye-chisla",
@@ -48,7 +48,7 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "chereduyushchiesya-korni-5",
     season: "autumn-1",
-    weekLabel: "Октябрь · 4 неделя",
+    weekLabel: "Октябрь · 4-я неделя",
     subject: "russian",
     grade: 5,
     topicSlug: "orfografiya-korney",
@@ -59,7 +59,7 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "smeshannye-5-noyabr",
     season: "autumn-2",
-    weekLabel: "Ноябрь · 1–2 неделя",
+    weekLabel: "Ноябрь · 1–2-я недели",
     subject: "math",
     grade: 5,
     topicSlug: "smeshannye-chisla",
@@ -70,7 +70,7 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "proportsii-6-noyabr",
     season: "autumn-2",
-    weekLabel: "Ноябрь · 3 неделя",
+    weekLabel: "Ноябрь · 3-я неделя",
     subject: "math",
     grade: 6,
     topicSlug: "proportsii",
@@ -81,7 +81,7 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "lineynye-7-dekabr",
     season: "autumn-2",
-    weekLabel: "Декабрь · 1–2 неделя",
+    weekLabel: "Декабрь · 1–2-я недели",
     subject: "algebra",
     grade: 7,
     topicSlug: "m-lin-uravn-7",
@@ -92,7 +92,7 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "protsenty-5-fevral",
     season: "spring-1",
-    weekLabel: "Февраль · 1–2 неделя",
+    weekLabel: "Февраль · 1–2-я недели",
     subject: "math",
     grade: 5,
     topicSlug: "protsenty-5",
@@ -103,7 +103,7 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "koord-ploskost-6-fevral",
     season: "spring-1",
-    weekLabel: "Февраль · 3 неделя",
+    weekLabel: "Февраль · 3-я неделя",
     subject: "math",
     grade: 6,
     topicSlug: "koordinatnaya-ploskost",
@@ -114,7 +114,7 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "fsu-7-fevral",
     season: "spring-1",
-    weekLabel: "Февраль · 4 неделя",
+    weekLabel: "Февраль · 4-я неделя",
     subject: "algebra",
     grade: 7,
     topicSlug: "m-fsu-7",
@@ -125,7 +125,7 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "kvadratnye-8-aprel",
     season: "spring-2",
-    weekLabel: "Апрель · 1–2 неделя",
+    weekLabel: "Апрель · 1–2-я недели",
     subject: "algebra",
     grade: 8,
     topicSlug: "m-kvadratnye-uravn-8",
@@ -136,7 +136,7 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "treugolniki-7-may",
     season: "spring-2",
-    weekLabel: "Май · 1–2 неделя",
+    weekLabel: "Май · 1–2-я недели",
     subject: "geometry",
     grade: 7,
     topicSlug: "treugolnik",
@@ -147,7 +147,7 @@ export const WEEKLY_TOPICS: WeeklyTopic[] = [
   {
     slug: "sistemy-lineynye-7-may",
     season: "spring-2",
-    weekLabel: "Май · 3–4 неделя",
+    weekLabel: "Май · 3–4-я недели",
     subject: "algebra",
     grade: 7,
     topicSlug: "m-sistemy-lineynye-7",

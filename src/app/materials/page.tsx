@@ -71,7 +71,7 @@ export default function MaterialsHubPage() {
               {MATERIALS_CATALOG.length} материалов · редакция
             </Badge>
             <h1 className="text-4xl sm:text-5xl font-display font-bold tracking-tight text-balance">
-              Банк материалов — готовое по школьной программе
+              Банк материалов — готовые материалы по школьной программе
             </h1>
             <p className="mt-5 text-lg text-warm-600 text-pretty max-w-2xl">
               Контрольные, рабочие листы, интерактивы, конспекты уроков и презентации.
