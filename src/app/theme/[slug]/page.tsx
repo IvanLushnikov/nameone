@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { Sparkles, ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { WEEKLY_TOPICS, getWeeklyTopicBySeoSlug } from "@/lib/content/weekly-topics";
-import { SITE_URL } from "@/lib/site";
+import { absoluteUrl, clipDescription, ogImages, twitterCard } from "@/lib/seo/metadata";
 
 type Props = { params: { slug: string } };
 
@@ -18,20 +18,28 @@ export function generateMetadata({ params }: Props): Metadata {
 
   // Бренд в конце не дописываем — его добавляет template в корневом layout.
   const title = `${topic.title} — рабочие листы · ${topic.grade} класс`;
-  const description = `${topic.whyText.slice(0, 140)} Сгенерируйте рабочий лист за 30 секунд.`;
-  const canonical = `${SITE_URL}/theme/${topic.seoSlug}/`;
+  // ТЗ-21 п.14: было 140 + 46 = до 190 знаков. Режем по границе слова —
+  // «почему эта тема важна» в сниппете важнее, чем приписка про генератор.
+  const description = clipDescription(
+    `${topic.whyText} Сгенерируйте рабочий лист за 30 секунд.`,
+  );
+  const canonical = absoluteUrl(`/theme/${topic.seoSlug}`);
 
   return {
     title,
     description,
-    keywords: [
-      `${topic.title} ${topic.grade} класс`,
-      "рабочий лист",
-      "ФГОС",
-      topic.subject,
-    ],
     alternates: { canonical },
-    openGraph: { title, description, url: canonical },
+    openGraph: {
+      title,
+      description,
+      url: canonical,
+      siteName: "УчЛист",
+      locale: "ru_RU",
+      // ТЗ-21 п.14: og:image — по предмету темы (`/theme/[slug]` шёл одним
+      // из 14 маршрутов без картинки).
+      images: ogImages(topic.subject, `${topic.title} — рабочие листы`),
+    },
+    twitter: twitterCard(topic.subject),
   };
 }
 

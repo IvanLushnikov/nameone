@@ -11,11 +11,15 @@ import {
   PLANS,
   academicYearSaving,
   formatRub,
+  priceFor,
   priceLabel,
   priceShort,
   priceSummary,
+  type PlanId,
 } from "@/lib/content/plans";
 import { SITE_URL } from "@/lib/site";
+import { clipDescription, ogImages, twitterCard } from "@/lib/seo/metadata";
+import { JsonLd } from "@/components/seo";
 
 /**
  * Коммерческий поиск: «сколько стоит рабочие листы», «тарифы», «цена подписки
@@ -33,21 +37,104 @@ import { SITE_URL } from "@/lib/site";
  */
 export const metadata: Metadata = {
   title: `Тарифы — ${FREE_QUOTA_LABEL} бесплатно, дальше от ${priceShort("base", "month")}`,
-  description: `Базовый ${priceShort("base", "month")} или ${priceShort("base", "academicYear")}. Плюс — ${priceShort("plus", "month")}, включает ОГЭ/ЕГЭ, презентации и КТП. ${FREE_QUOTA_LABEL} — без карты и без регистрации. Оплата картой РФ и СБП.`,
+  // ТЗ-21 п.14: описание шло 197 знаков. Режем по границе слова до 150–160.
+  description: clipDescription(
+    `Базовый ${priceShort("base", "month")} или ${priceShort("base", "academicYear")}. Плюс — ${priceShort("plus", "month")}, включает ОГЭ/ЕГЭ, презентации и КТП. ${FREE_QUOTA_LABEL} — без карты и без регистрации.`,
+  ),
   alternates: { canonical: `${SITE_URL}/pricing` },
+  // ТЗ-21 п.14: og:image на странице тарифов не было.
+  openGraph: {
+    title: `Тарифы УчЛист — от ${priceShort("base", "month")}`,
+    description: clipDescription(
+      `Базовый ${priceShort("base", "month")}, Плюс — ${priceShort("plus", "month")}. ${FREE_QUOTA_LABEL} — без карты и без регистрации.`,
+    ),
+    url: `${SITE_URL}/pricing`,
+    siteName: "УчЛист",
+    locale: "ru_RU",
+    images: ogImages(undefined, "Тарифы УчЛист — рабочие листы по ФГОС"),
+  },
+  twitter: twitterCard(undefined),
+};
+
+/**
+ * ТЗ-21 п.15 / SEO-аудит P1-6: разметка `Product` + `Offer` на странице тарифов.
+ *
+ * Раньше в `out/pricing/index.html` не было ни одного блока JSON-LD — при том
+ * что это единственная страница сайта с прямым коммерческим интентом. Без
+ * разметки цена из выдачи не подставляется, и страница отвечает на запросы
+ * «сколько стоит рабочие листы» хуже конкурента, у которого цена стоит
+ * прямо в сниппете.
+ *
+ * ВАЖНО: ни одна цифра в разметке не зашита строкой. Все суммы берутся из
+ * `PLANS[...].prices` через `priceFor`. Причина не в аккуратности: `plans.ts`
+ * меняют вместе с экономикой (ТЗ-4 добавляет средний тариф ~990 ₽), и
+ * зашитая в разметку «3 800 ₽» разошлась бы с ценой под кнопкой. Учитель
+ * увидел бы в выдаче одну сумму, на странице — другую, и доверие к ценам
+ * после этого не восстанавливается.
+ *
+ * Про «Школу» (3 000 ₽/мес за класс) объявление не выводим: тариф ещё не
+ * запущен (`comingSoon: "Q1 2027"`). Выдавать цену на то, что нельзя купить,
+ * означает получить недовольного учителя, который не нашёл кнопки оплаты.
+ */
+const pricingJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Product",
+  name: "УчЛист — рабочие листы по ФГОС",
+  description:
+    "Генератор рабочих листов, тестов, карточек, планов урока, презентаций и КТП по ФГОС для учителей 1–11 классов.",
+  brand: { "@type": "Brand", name: "УчЛист" },
+  category: "Образовательные материалы",
+  inLanguage: "ru-RU",
+  offers: (
+    [
+      // Тариф «Бесплатно» в offers не выводим: цена 0 ₽ — это не товар, а
+      // отсутствие оплаты. По той же причине молчим про «Школу» (3 000 ₽
+      // за класс) — тариф ещё не запущен (`comingSoon: "Q1 2027"`), и цена
+      // на то, что нельзя купить, приводит к вопросу «где тут кнопка оплаты».
+      { planId: "base" as const, periodId: "academicYear" as const },
+      { planId: "base" as const, periodId: "month" as const },
+      { planId: "plus" as const, periodId: "academicYear" as const },
+      { planId: "plus" as const, periodId: "month" as const },
+    ]
+  ).map(({ planId, periodId }) => {
+    const price = priceFor(planId, periodId);
+    return {
+      "@type": "Offer",
+      name: `Тариф «${PLANS[planId].name}» — ${price.unit}`,
+      description: PLANS[planId].shortDescription,
+      price: price.amount,
+      // Цена в рублях: сайт русский, оплата картой РФ или СБП.
+      priceCurrency: "RUB",
+      availability: "https://schema.org/InStock",
+      url: `${SITE_URL}/pricing`,
+      // Период оплаты — обязательное поле для подписки: без него 11 000 ₽
+      // читались бы как разовая покупка, а это девять месяцев.
+      priceSpecification: {
+        "@type": "PriceSpecification",
+        price: price.amount,
+        priceCurrency: "RUB",
+        // Пересчёт в месяц — то, чем мы отличаемся от конкурента: учебный
+        // год у нас 9 месяцев, а не календарный (ТЗ-21 п.2.3).
+        ...(price.perMonth != null && price.perMonth !== price.amount
+          ? { description: `В пересчёте — ${formatRub(price.perMonth)} в месяц` }
+          : {}),
+      },
+    };
+  }),
 };
 
 /**
  * Строка «Цена» собирается из plans.ts — тот же источник, что и карточки
  * тарифов на лендинге. Периодов ровно два: учебный год (9 мес) и помесячно.
  */
-const priceCell = (planId: "free" | "base" | "plus" | "school") => priceSummary(planId);
+const priceCell = (planId: PlanId) => priceSummary(planId);
 
 const comparison = [
   {
     feature: "Цена",
     free: priceCell("free"),
     base: priceCell("base"),
+    standard: priceCell("standard"),
     plus: priceCell("plus"),
     school: priceCell("school"),
   },
@@ -55,6 +142,7 @@ const comparison = [
     feature: "Бесплатные генерации",
     free: "3",
     base: "Безлимит",
+    standard: "Безлимит",
     plus: "Безлимит",
     school: "Безлимит",
   },
@@ -62,6 +150,7 @@ const comparison = [
     feature: "Предметы",
     free: "Все 21+",
     base: "Все 21+",
+    standard: "Все 21+",
     plus: "Все 21+",
     school: "Все 21+",
   },
@@ -69,6 +158,7 @@ const comparison = [
     feature: "Классы",
     free: "1-11",
     base: "1-11",
+    standard: "1-11",
     plus: "1-11",
     school: "1-11",
   },
@@ -76,6 +166,7 @@ const comparison = [
     feature: "PDF с ответами и пояснениями",
     free: "✓",
     base: "✓",
+    standard: "✓",
     plus: "✓",
     school: "✓",
   },
@@ -83,6 +174,7 @@ const comparison = [
     feature: "История генераций",
     free: "—",
     base: "30 дней",
+    standard: "∞",
     plus: "∞",
     school: "∞",
   },
@@ -90,6 +182,7 @@ const comparison = [
     feature: "Избранное и шаблоны",
     free: "—",
     base: "✓",
+    standard: "✓",
     plus: "✓",
     school: "✓",
   },
@@ -97,6 +190,7 @@ const comparison = [
     feature: "Варианты ОГЭ/ЕГЭ",
     free: "—",
     base: "—",
+    standard: "—",
     plus: "✓",
     school: "✓",
   },
@@ -104,6 +198,7 @@ const comparison = [
     feature: "Разбор каждого задания",
     free: "—",
     base: "—",
+    standard: "—",
     plus: "✓",
     school: "✓",
   },
@@ -111,13 +206,7 @@ const comparison = [
     feature: `${ARTIFACT_NAMES.control} с критериями оценивания`,
     free: "—",
     base: "—",
-    plus: "✓",
-    school: "✓",
-  },
-  {
-    feature: "Ранний доступ к новым темам и предметам",
-    free: "—",
-    base: "—",
+    standard: "—",
     plus: "✓",
     school: "✓",
   },
@@ -125,6 +214,7 @@ const comparison = [
     feature: `${ARTIFACT_NAMES.lessonPlan} по ФГОС`,
     free: "—",
     base: "—",
+    standard: "—",
     plus: "✓",
     school: "✓",
   },
@@ -132,6 +222,7 @@ const comparison = [
     feature: `${ARTIFACT_NAMES.presentation} (PPTX)`,
     free: "—",
     base: "—",
+    standard: "—",
     plus: "✓",
     school: "✓",
   },
@@ -139,6 +230,7 @@ const comparison = [
     feature: `${ARTIFACT_NAMES.ktp} на год (DOCX)`,
     free: "—",
     base: "—",
+    standard: "—",
     plus: "✓",
     school: "✓",
   },
@@ -146,6 +238,7 @@ const comparison = [
     feature: "Экспорт DOCX и PPTX",
     free: "PDF",
     base: "PDF + DOCX",
+    standard: "PDF + DOCX",
     plus: "PDF + DOCX + PPTX",
     school: "PDF + DOCX + PPTX",
   },
@@ -153,6 +246,7 @@ const comparison = [
     feature: "Учеников в кабинете",
     free: "—",
     base: "5",
+    standard: "10",
     plus: "20",
     school: "∞",
   },
@@ -160,6 +254,7 @@ const comparison = [
     feature: "Админка учителя",
     free: "—",
     base: "—",
+    standard: "—",
     plus: "—",
     school: "✓",
   },
@@ -167,6 +262,7 @@ const comparison = [
     feature: "Отчёты по классу",
     free: "—",
     base: "—",
+    standard: "—",
     plus: "—",
     school: "✓",
   },
@@ -174,6 +270,7 @@ const comparison = [
     feature: "API для интеграции",
     free: "—",
     base: "—",
+    standard: "—",
     plus: "—",
     school: "по запросу",
   },
@@ -188,6 +285,8 @@ const renderCell = (v: string) => {
 export default function PricingPage() {
   return (
     <>
+      {/* ТЗ-21 п.15: Product + Offer с ценами из plans.ts. */}
+      <JsonLd data={pricingJsonLd} id="ld-pricing-product" />
 
       {/* TZ-2: убран дубль-hero «Простая экономика» — PricingTeaser ниже уже имеет
           свой eyebrow «Тарифы» + h2 «Начните бесплатно…» + описание + переключатель
@@ -226,6 +325,11 @@ export default function PricingPage() {
                   <th className="text-center text-sm font-semibold text-warm-950 px-4 py-4 bg-brand-50">
                     Базовый
                   </th>
+                  {/* ТЗ-21 п.4: колонка «Оптимальный» добавлена между Базовым и
+                      Плюсом — так тариф стоит в шкале, а не отдельным блоком. */}
+                  <th className="text-center text-sm font-semibold text-warm-700 px-4 py-4">
+                    Оптимальный
+                  </th>
                   <th className="text-center text-sm font-semibold text-warm-700 px-4 py-4">
                     Плюс
                   </th>
@@ -240,6 +344,7 @@ export default function PricingPage() {
                     <td className="text-sm text-warm-700 px-6 py-3">{row.feature}</td>
                     <td className="text-center px-4 py-3">{renderCell(row.free)}</td>
                     <td className="text-center px-4 py-3 bg-brand-50/50">{renderCell(row.base)}</td>
+                    <td className="text-center px-4 py-3">{renderCell(row.standard)}</td>
                     <td className="text-center px-4 py-3">{renderCell(row.plus)}</td>
                     <td className="text-center px-4 py-3">{renderCell(row.school)}</td>
                   </tr>
@@ -336,7 +441,7 @@ export default function PricingPage() {
               },
               {
                 q: "Что такое учебный год и почему он выгоднее?",
-                a: `Учебный год — это 9 месяцев подряд, а не 12: платить летом, когда вы не работаете, не нужно. Старт считается от даты оплаты. ${ACADEMIC_YEAR_NOTE}. ${PLANS.base.name}: ${priceLabel("base", "academicYear")} — ${academicYearSaving("base")}. ${PLANS.plus.name}: ${priceLabel("plus", "academicYear")} — ${academicYearSaving("plus")}. Можно и помесячно: ${priceLabel("base", "month")} и ${priceLabel("plus", "month")}.`,
+                a: `Учебный год — это 9 месяцев подряд, а не 12: платить летом, когда вы не работаете, не нужно. Старт считается от даты оплаты. ${ACADEMIC_YEAR_NOTE}. ${PLANS.base.name}: ${priceLabel("base", "academicYear")} — ${academicYearSaving("base")}. ${PLANS.standard.name}: ${priceLabel("standard", "academicYear")} — ${academicYearSaving("standard")}. ${PLANS.plus.name}: ${priceLabel("plus", "academicYear")} — ${academicYearSaving("plus")}. Можно и помесячно: ${priceLabel("base", "month")}, ${priceLabel("standard", "month")} и ${priceLabel("plus", "month")}.`,
               },
               {
                 q: "А если AI ошибётся в задании — деньги вернут?",

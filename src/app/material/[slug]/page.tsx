@@ -17,6 +17,7 @@ import {
 } from "@/lib/content/materials-catalog";
 import { getSubject, getTopic } from "@/lib/content/subjects";
 import { SITE_URL } from "@/lib/site";
+import { absoluteUrl, clipDescription, ogImages, twitterCard } from "@/lib/seo/metadata";
 
 type Props = { params: { slug: string } };
 
@@ -30,29 +31,28 @@ export function generateMetadata({ params }: Props): Metadata {
   if (!material) return { title: "Материал не найден" };
 
   const subject = getSubject(material.subject);
-  const title = `${material.title} — УчЛист`;
-  const description = material.description;
-  const canonical = `${SITE_URL}/material/${material.slug}/`;
+  // Бренд в конце не дописываем — его добавляет template в корневом layout.
+  const title = `${material.title} — ${subject?.shortTitle ?? material.subject}, ${material.grade} класс`;
+  // ТЗ-21 п.14: описания материалов шли по 301 знаку из каталога. Режем по
+  // границе слова до 150–160 — в сниппете дальше 160 всё равно не видно.
+  const description = clipDescription(material.description);
+  const canonical = absoluteUrl(`/material/${material.slug}`);
 
   return {
     title,
     description,
-    keywords: [
-      material.title,
-      `${subject?.shortTitle ?? material.subject} ${material.grade} класс`,
-      MATERIAL_PURPOSE_LABELS[material.purpose].toLowerCase(),
-      material.topicTitle,
-      "рабочие листы",
-      "ФГОС",
-    ],
     alternates: { canonical },
     openGraph: {
       title,
       description,
       url: canonical,
       type: "article",
+      siteName: "УчЛист",
       locale: "ru_RU",
+      // ТЗ-21 п.14: og:image по предмету материала (150 страниц шли без картинки).
+      images: ogImages(material.subject, material.title),
     },
+    twitter: twitterCard(material.subject),
   };
 }
 
