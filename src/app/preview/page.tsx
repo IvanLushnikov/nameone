@@ -19,6 +19,8 @@ import { saveTemplate } from "@/lib/lk/templates";
 import { findArtifact } from "@/lib/lk/artifact";
 import { generateWorksheetDocx, downloadBlob } from "@/lib/utils/docx";
 import { generateLessonPlanDocx } from "@/lib/utils/lesson-plan-docx";
+import { getSubject } from "@/lib/content/subjects";
+import { pluralizeTasks } from "@/lib/utils/cn";
 import { generateKtpDocx } from "@/lib/utils/ktp-docx";
 import { generatePptx, pptxFilename } from "@/lib/utils/pptx";
 import { trackEvent } from "@/lib/track";
@@ -343,9 +345,17 @@ function ArtifactBodyInner({ artifact }: { artifact: FavoriteArtifact }) {
 }
 
 /** Подзаголовок в шапке превью (тип-специфичный). */
+/**
+ * Подпись под названием: предмет по-русски и число со склонением.
+ *
+ * Раньше здесь было `a.subject` — английский слаг из хранилища («math»,
+ * «russian»), и учитель читал в шапке листа «math · 5 класс». Плюс жёстко
+ * зашитое «заданий», из-за чего один лист подписывался «1 заданий».
+ */
 function artifactSubtitle(a: FavoriteArtifact): string {
   if ("tasks" in a) {
-    return `${a.subject} · ${a.grade} класс · ${a.tasks.length} заданий`;
+    const subject = getSubject(a.subject);
+    return `${subject?.shortTitle ?? a.subject} · ${a.grade} класс · ${a.tasks.length} ${pluralizeTasks(a.tasks.length)}`;
   }
   if ("stages" in a) {
     const total = a.stages.reduce((s, st) => s + st.durationMin, 0);

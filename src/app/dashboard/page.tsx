@@ -54,6 +54,7 @@ import {
   loadHistoryPage,
   loadTemplates,
   DEVICE_ONLY_NOTE,
+  NOTE_DEGRADED,
 } from "@/lib/lk/materials-source";
 import {
   applyHistoryView,
@@ -97,7 +98,7 @@ import {
   AlertCircle,
   RotateCcw,
 } from "lucide-react";
-import { timeAgo, plural } from "@/lib/utils/cn";
+import { timeAgo, plural, pluralizeTasks } from "@/lib/utils/cn";
 import { PLANS, priceShort } from "@/lib/content/plans";
 import { getSubject } from "@/lib/content/subjects";
 import { trackEvent } from "@/lib/track";
@@ -354,10 +355,19 @@ export default function DashboardPage() {
    */
   const withUs = daysWithUs(history);
 
-  // Демо: если профиля нет, показать CTA на регистрацию
-  if (!profile) {
-    return <NoProfilePrompt />;
-  }
+  // ЗДЕСЬ БОЛЬШЕ НЕТ СТЕНЫ «ВОЙДИТЕ, ЧТОБЫ УВИДЕТЬ ИСТОРИЮ».
+  //
+  // Стену убрали целиком, а не сузили до «пока нет ни одного материала». Причина:
+  // профиль создаётся только при входе, а лист, избранное и шаблон анонимный
+  // учитель создаёт БЕЗ входа. Значит условие `if (!profile)` ловило в том числе
+  // учителя с 12 своими листами: он открывал кабинет и видел требование войти,
+  // хотя история лежала в этом же браузере. Это ровно тот дефект, который ТЗ-21
+  // запрещает — требовать вход, чтобы показать то, что уже есть.
+  //
+  // Теперь кабинет открыт всегда. Совсем новому посетителю он показывает пустые
+  // вкладки с действиями («Создать первый лист»), а не требование зарегистрироваться.
+  // Вход предлагается, но не как условие доступа. Разница между анонимом и
+  // залогиненным одна и проговаривается прямо: «хранится на этом устройстве».
 
   return (
     <div className="container-tight py-8 sm:py-12">
@@ -439,7 +449,7 @@ export default function DashboardPage() {
           </TabsTrigger>
           <TabsTrigger value="templates">
             <LayoutTemplate className="w-3.5 h-3.5 mr-1.5" />
-            Шаблонов · {templates.length}
+            Шаблоны · {templates.length}
           </TabsTrigger>
           {/* TZ-12: первая серверная вкладка. Остальные три живут в localStorage,
               формы — на сервере, поэтому вкладка своя и грузится отдельно. */}
@@ -452,7 +462,7 @@ export default function DashboardPage() {
         {/* ─── История ─────────────────────────────────────────────────────── */}
         <TabsContent value="history">
           {/* Одна ненавязчивая пометка на всю вкладку: данные только здесь. */}
-          {historyDegraded && <DeviceOnlyNote />}
+          {historyDegraded && <DeviceOnlyNote degraded onRetry={() => void loadHistory()} />}
 
           {historyState === "loading" && <TabSkeleton label="Загружаем историю…" />}
 
@@ -560,7 +570,7 @@ export default function DashboardPage() {
 
         {/* ─── Избранное ───────────────────────────────────────────────────── */}
         <TabsContent value="favorites">
-          {favDegraded && <DeviceOnlyNote />}
+          {favDegraded && <DeviceOnlyNote degraded onRetry={() => void loadFav()} />}
 
           {favState === "loading" && <TabSkeleton label="Загружаем избранное…" />}
 
@@ -606,7 +616,7 @@ export default function DashboardPage() {
 
         {/* ─── Шаблоны ─────────────────────────────────────────────────────── */}
         <TabsContent value="templates">
-          {tplDegraded && <DeviceOnlyNote />}
+          {tplDegraded && <DeviceOnlyNote degraded onRetry={() => void loadTpl()} />}
 
           {tplState === "loading" && <TabSkeleton label="Загружаем шаблоны…" />}
 
@@ -703,27 +713,37 @@ function ProfileHeader({
   profile,
   onSignOut,
 }: {
-  profile: UserProfile;
+  profile: UserProfile | null;
   onSignOut: () => void;
 }) {
-  const planBadge = {
-    free: { tone: "neutral" as const, label: "Бесплатный план" },
-    base: { tone: "brand" as const, label: `${PLANS.base.name} · ${priceShort("base", "month")}` },
-    plus: { tone: "accent" as const, label: `${PLANS.plus.name} · ${priceShort("plus", "month")}` },
-  }[profile.plan];
+  const planBadge =
+    profile &&
+    {
+      free: { tone: "neutral" as const, label: "Бесплатный план" },
+      base: { tone: "brand" as const, label: `${PLANS.base.name} · ${priceShort("base", "month")}` },
+      plus: { tone: "accent" as const, label: `${PLANS.plus.name} · ${priceShort("plus", "month")}` },
+    }[profile.plan];
+
+  // Анонимный учитель (профиля в браузере нет, но материалы есть) — не заглушка:
+  // имени у него нет, и называть его «Мария» было бы враньём. Зато у него есть его
+  // собственные листы, и кабинет их показывает.
+  const displayName = profile?.name ?? "Мои материалы";
+  const initial = profile ? profile.name.charAt(0).toUpperCase() : "?";
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-warm-200">
       <div className="flex items-center gap-4">
         <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-400 to-brand-600 text-white grid place-items-center text-xl font-bold">
-          {profile.name.charAt(0).toUpperCase()}
+          {initial}
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-display font-bold text-warm-950">{profile.name}</h1>
-            <Badge tone={planBadge.tone}>{planBadge.label}</Badge>
+            <h1 className="text-2xl font-display font-bold text-warm-950">{displayName}</h1>
+            {planBadge && <Badge tone={planBadge.tone}>{planBadge.label}</Badge>}
           </div>
-          <p className="text-sm text-warm-500 mt-0.5">{profile.email}</p>
+          <p className="text-sm text-warm-500 mt-0.5">
+            {profile ? profile.email : "хранятся на этом устройстве"}
+          </p>
         </div>
       </div>
       {/* ТЗ-21: вход в настройки. Страницу настроек делает другой разработчик,
@@ -733,9 +753,17 @@ function ProfileHeader({
         <Button as="link" href="/dashboard/settings" variant="ghost" size="md" leftIcon={<Settings className="w-4 h-4" />}>
           Настройки
         </Button>
-        <Button variant="ghost" size="md" onClick={onSignOut} leftIcon={<LogOut className="w-4 h-4" />}>
-          Выйти
-        </Button>
+        {profile ? (
+          <Button variant="ghost" size="md" onClick={onSignOut} leftIcon={<LogOut className="w-4 h-4" />}>
+            Выйти
+          </Button>
+        ) : (
+          // Не «Выйти» — анониму не из чего выходить, и кнопка с таким словом
+          // вводила бы в заблуждение. Предлагаем вход, он необязателен.
+          <Button as="link" href="/login" variant="ghost" size="md" leftIcon={<User className="w-4 h-4" />}>
+            Войти
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -1094,7 +1122,8 @@ function kindLabelOfArtifact(a: FavoriteArtifact): string {
 function describeArtifact(a: FavoriteArtifact): { line: string; preview: string } {
   if ("tasks" in a) {
     return {
-      line: `${a.tasks.length} заданий`,
+      // Склонение, а не жёсткое «заданий»: один лист читался «1 заданий».
+      line: `${a.tasks.length} ${pluralizeTasks(a.tasks.length)}`,
       preview: a.tasks[0]?.text ?? "",
     };
   }
@@ -1239,36 +1268,39 @@ function EmptyTab({
 }
 
 /** Пометка «данные только на этом устройстве» — одна на вкладку. */
-function DeviceOnlyNote() {
+/**
+ * Пометка под вкладкой. Два разных случая — и раньше это была одна строка на
+ * оба, из-за чего обе формулировки оказывались неверными.
+ *
+ * 1) `degraded` — сервер не ответил, показываем устройство. Здесь повтор
+ *    осмыслен: сеть могла вернуться.
+ * 2) обычный случай — входа нет, данные и так только на устройстве.
+ *
+ * В тексте НЕТ обещания «войдите в аккаунт»: вход по ссылке из письма сейчас
+ * выключен (нет домена), и обещать вход, которого нет, — ровно тот дефект,
+ * который ТЗ-21 запрещает. Формулировка описывает факт и ничего не сулит.
+ */
+function DeviceOnlyNote({ degraded = false, onRetry }: { degraded?: boolean; onRetry?: () => void }) {
   return (
-    <p
-      className="mb-4 text-xs text-warm-500 flex items-start gap-1.5"
+    <div
+      className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-warm-500"
       data-testid="device-only-note"
+      data-degraded={degraded ? "1" : undefined}
     >
-      <AlertCircle className="w-3.5 h-3.5 mt-px shrink-0" />
-      {DEVICE_ONLY_NOTE}
-    </p>
-  );
-}
-
-function NoProfilePrompt() {
-  return (
-    <div className="container-tight py-12 sm:py-20 max-w-md mx-auto text-center">
-      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-400 to-brand-600 text-white grid place-items-center mx-auto mb-5 shadow-brand">
-        <User className="w-8 h-8" />
-      </div>
-      <h1 className="text-3xl font-display font-bold text-warm-950">Личный кабинет</h1>
-      <p className="text-warm-600 mt-3">
-        Войдите, чтобы сохранять историю генераций, избранное и шаблоны. Без регистрации — 3 бесплатных листа уже работают.
+      <p className="flex items-start gap-1.5">
+        <AlertCircle className="w-3.5 h-3.5 mt-px shrink-0" />
+        {degraded ? NOTE_DEGRADED : DEVICE_ONLY_NOTE}
       </p>
-      <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-        <Button as="link" href="/login" variant="primary" size="lg" leftIcon={<User className="w-4 h-4" />}>
-          Войти по email
-        </Button>
-        <Button as="link" href="/constructor" variant="secondary" size="lg" leftIcon={<Sparkles className="w-4 h-4" />}>
-          Создать лист без регистрации
-        </Button>
-      </div>
+      {degraded && onRetry ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="underline underline-offset-2 hover:text-warm-800 shrink-0"
+        >
+          Попробовать снова
+        </button>
+      ) : null}
     </div>
   );
 }
+

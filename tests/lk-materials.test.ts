@@ -36,6 +36,7 @@ import {
   type FavoriteArtifact,
 } from "@/lib/utils/storage";
 import { findArtifact } from "@/lib/lk/artifact";
+import type { UserHistoryItem } from "@/lib/types";
 import {
   loadHistoryPage,
   loadFavorites,
@@ -78,7 +79,7 @@ function makeWorksheet(id: string, patch: Partial<Worksheet> = {}): Worksheet {
   } as Worksheet;
 }
 
-function makeHistoryItem(over: Partial<Parameters<typeof makeHistoryItem>[0]> = {}) {
+function makeHistoryItem(over: Partial<UserHistoryItem> = {}): UserHistoryItem {
   return {
     id: "w1",
     type: "worksheet",
@@ -88,7 +89,7 @@ function makeHistoryItem(over: Partial<Parameters<typeof makeHistoryItem>[0]> = 
     createdAt: new Date().toISOString(),
     isFavorite: false,
     ...over,
-  } as ReturnType<typeof makeHistoryItem>;
+  };
 }
 
 /** Локальный профиль = «сессия есть». Без него запросы в сеть не идут. */
@@ -97,9 +98,11 @@ const PROFILE: UserProfile = {
   name: "Иван",
   email: "ivan@example.com",
   plan: "free",
-  used: 0,
+  generationsTotal: 0,
+  generationsToday: 0,
+  generationsLimit: 3,
   createdAt: new Date().toISOString(),
-} as UserProfile;
+};
 
 const fetchMock = vi.fn();
 
@@ -287,7 +290,7 @@ describe("Блок 2 — шаблоны можно сохранить", () => {
     const res = await saveTemplate(makeWorksheet("w1") as FavoriteArtifact);
 
     expect(res.serverFailed).toBe(true);
-    // Локально шаблон есть, поэтому вкладка не уходит в «недоступно».
+    // Локально шаблон есть, поэтому вкладка показывает данные, а не пустоту.
     const t = await loadTemplates();
     expect(t.state).toBe("data");
     expect(t.items).toHaveLength(1);
@@ -395,14 +398,21 @@ describe("Блок 1 — источник данных вкладки", () => {
     expect(res.items).toHaveLength(1);
   });
 
-  it("сервер недоступен И данных нет — состояние «недоступно» с повтором", async () => {
+  // Поведение изменено при приёмке ТЗ-21. Раньше сервер молчал + локально пусто →
+  // «недоступно» с кнопкой «Попробовать ещё раз». Для учителя это была сломанная
+  // вкладка: ничего не видно, нажать нечего, повтор бессмысленен. Теперь это
+  // честная пустая вкладка, а «данные из аккаунта не загрузились»
+  // проговаривается флагом degraded — наверху это пометка с повтором.
+  it("сервер недоступен И данных нет — пусто с флагом degraded, а не ошибка", async () => {
     setProfile(PROFILE);
     fetchMock.mockResolvedValue({ ok: false, status: 503, json: async () => ({}) });
 
     const res = await loadHistoryPage();
 
-    expect(res.state).toBe("unavailable");
+    expect(res.state).toBe("empty");
     expect(res.items).toHaveLength(0);
+    // Повтор нужен и возможен: сеть могла вернуться.
+    expect(res.degraded).toBe(true);
   });
 
   it("401 от сервера не превращается в требование войти", async () => {

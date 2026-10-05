@@ -47,17 +47,19 @@ vi.mock("@/lib/auth/api", () => ({
 }));
 
 import DashboardPage from "@/app/dashboard/page";
-import { setProfile, type FavoriteArtifact } from "@/lib/utils/storage";
-import type { UserProfile, Worksheet } from "@/lib/types";
+import { setProfile, addToHistory, type FavoriteArtifact } from "@/lib/utils/storage";
+import type { UserProfile, Worksheet, SubjectSlug } from "@/lib/types";
 
 const PROFILE: UserProfile = {
   id: "u1",
   name: "Иван",
   email: "ivan@example.com",
   plan: "free",
-  used: 0,
+  generationsTotal: 0,
+  generationsToday: 0,
+  generationsLimit: 3,
   createdAt: new Date().toISOString(),
-} as UserProfile;
+};
 
 const fetchMock = vi.fn();
 
@@ -82,14 +84,13 @@ function makeWorksheet(id: string, over: Partial<Worksheet> = {}): Worksheet {
 
 /** Кладёт листы в историю устройства (последние N хранят тело артефакта). */
 function seedHistoryDevice(count: number, mk?: (i: number) => Partial<Worksheet>) {
-  const { addToHistory } = require("@/lib/utils/storage");
   for (let i = count - 1; i >= 0; i--) {
     const ws = makeWorksheet(`w${i}`, mk?.(i));
     addToHistory({
       id: ws.id,
       type: "worksheet",
       title: ws.title,
-      subject: ws.subject,
+      subject: ws.subject as SubjectSlug,
       grade: ws.grade,
       createdAt: new Date(Date.now() - i * 60_000).toISOString(),
       isFavorite: false,
@@ -109,6 +110,15 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
 });
+
+/**
+ * Тексты карточек истории. Проверять видимость названия через `getByText` нельзя:
+ * то же слово есть в выпадающем списке фильтра, и запрос находит «Дроби» там, где
+ * карточек с «Дроби» уже нет. Поэтому проверки фильтров и поиска идут по карточкам.
+ */
+function cardTexts(): string[] {
+  return screen.queryAllByTestId("history-card").map((n) => n.textContent ?? "");
+}
 
 /* ─── Анонимный путь ──────────────────────────────────────────────────────── */
 
@@ -146,11 +156,18 @@ describe("Анонимный учитель (без входа)", () => {
 
 describe("Четыре состояния вкладки", () => {
   it("состояние 1 — загрузка показывается скелетоном, а не пустотой", async () => {
+    // Профиль обязателен: скелетон — это состояние ВОЖДУЩИЙ СЕРВЕР, а запросы в
+    // сеть идут только при наличии сессии. Без профиля источник — устройство,
+    // данные появляются сразу и ждать нечего.
+    setProfile(PROFILE);
     seedHistoryDevice(1);
-    let release: (() => void) | null = null;
+    // Хранилище в объекте, а не в переменной: TypeScript не видит присваивание
+    // внутри колбэка и сужает переменную до `null`, из-за чего `release?.()`
+    // перестаёт компилироваться («Type 'never' has no call signatures»).
+    const gate: { release: (() => void) | null } = { release: null };
     fetchMock.mockImplementation(
       () => new Promise((_r, reject) => {
-        release = () => reject(new Error("offline"));
+        gate.release = () => reject(new Error("offline"));
       })
     );
     // Даже во время загрузки скелетон есть, а не «ничего не найдено».
@@ -158,19 +175,28 @@ describe("Четыре состояния вкладки", () => {
 
     expect(await screen.findByTestId("tab-loading")).toBeInTheDocument();
     expect(screen.queryByText("История пуста")).toBeNull();
-    release?.();
+    gate.release?.();
   });
 
-  it("состояние 2 — недоступно с кнопкой «Попробовать ещё раз»", async () => {
+  // Раньше здесь ждали экран «Не удалось показать историю» с кнопкой «Попробовать
+  // ещё раз». Осознанно изменено: сервер молчит, локально пусто — повторять
+  // бессмысленно, а учитель видел сломанную вкладку, в которой ничего нельзя
+  // нажать. Теперь это честная пустая вкладка с действием и пометкой, что данные
+  // из аккаунта не загрузились. Повтор остаётся — но у самой пометки.
+  it("сервер молчит и локально пусто → пустая вкладка с действием, а не ошибка", async () => {
     setProfile(PROFILE);
     render(<DashboardPage />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("tab-unavailable")).toBeInTheDocument();
+      expect(screen.getByText("История пуста")).toBeInTheDocument();
     });
-    expect(
-      screen.getByRole("button", { name: /попробовать ещё раз/i })
-    ).toBeInTheDocument();
+    expect(screen.queryByTestId("tab-unavailable")).toBeNull();
+    expect(screen.getByRole("link", { name: /создать первый лист/i })).toBeInTheDocument();
+
+    const note = screen.getByTestId("device-only-note");
+    expect(note).toHaveAttribute("data-degraded", "1");
+    expect(note).toHaveTextContent(/не загрузились/i);
+    expect(within(note).getByRole("button", { name: /попробовать снова/i })).toBeInTheDocument();
   });
 
   it("состояние 2 не появляется, если на устройстве есть данные", async () => {
@@ -199,13 +225,14 @@ describe("Четыре состояния вкладки", () => {
     expect(screen.getAllByTestId("history-card").length).toBe(3);
   });
 
-  it("кнопка повтора действительно перезапрашивает данные", async () => {
+  it("повтор в пометке действительно перезапрашивает данные", async () => {
     setProfile(PROFILE);
     render(<DashboardPage />);
-    await waitFor(() => expect(screen.getByTestId("tab-unavailable")).toBeInTheDocument());
+    await screen.findByText("История пуста");
 
     const before = fetchMock.mock.calls.length;
-    await userEvent.click(screen.getByRole("button", { name: /попробовать ещё раз/i }));
+    const note = screen.getByTestId("device-only-note");
+    await userEvent.click(within(note).getByRole("button", { name: /попробовать снова/i }));
 
     await waitFor(() => {
       expect(fetchMock.mock.calls.length).toBeGreaterThan(before);
@@ -226,19 +253,19 @@ describe("Поиск и фильтры в кабинете", () => {
 
   it("поиск сужает список", async () => {
     render(<DashboardPage />);
-    await screen.findByText("Дроби");
+    await screen.findAllByTestId("history-card");
 
     await userEvent.type(screen.getByTestId("history-search"), "времена");
 
     await waitFor(() => {
-      expect(screen.getByText("Времена")).toBeInTheDocument();
-      expect(screen.queryByText("Дроби")).toBeNull();
+      expect(cardTexts().join(" ")).toContain("Времена");
     });
+    expect(cardTexts().join(" ")).not.toContain("Дроби");
   });
 
   it("пустой результат поиска предлагает сбросить фильтры", async () => {
     render(<DashboardPage />);
-    await screen.findByText("Дроби");
+    await screen.findAllByTestId("history-card");
 
     await userEvent.type(screen.getByTestId("history-search"), "щщщ");
 
@@ -252,31 +279,31 @@ describe("Поиск и фильтры в кабинете", () => {
 
   it("фильтр по предмету", async () => {
     render(<DashboardPage />);
-    await screen.findByText("Дроби");
+    await screen.findAllByTestId("history-card");
 
     await userEvent.selectOptions(screen.getByTestId("filter-subject"), "english");
 
     await waitFor(() => {
-      expect(screen.queryByText("Дроби")).toBeNull();
-      expect(screen.getByText("Времена")).toBeInTheDocument();
+      expect(cardTexts().join(" ")).toContain("Времена");
     });
+    expect(cardTexts().join(" ")).not.toContain("Дроби");
   });
 
   it("фильтр по классу", async () => {
     render(<DashboardPage />);
-    await screen.findByText("Дроби");
+    await screen.findAllByTestId("history-card");
 
     await userEvent.selectOptions(screen.getByTestId("filter-grade"), "5");
 
     await waitFor(() => {
       expect(screen.queryByText("Времена")).toBeNull();
     });
-    expect(screen.getByText("Дроби")).toBeInTheDocument();
+    expect(screen.getAllByTestId("history-card").length).toBeGreaterThan(0);
   });
 
   it("карточка показывает тип и размер, а не только эмодзи", async () => {
     render(<DashboardPage />);
-    await screen.findByText("Дроби");
+    await screen.findAllByTestId("history-card");
 
     const card = screen.getAllByTestId("history-card")[0];
     // Тип материала текстом + размер «2 задания» из тела артефакта.
@@ -286,7 +313,7 @@ describe("Поиск и фильтры в кабинете", () => {
 
   it("карточка ведёт в превью с ?id", async () => {
     render(<DashboardPage />);
-    const card = await screen.findByTestId("history-card");
+    const card = (await screen.findAllByTestId("history-card"))[0];
     const link = within(card).getByRole("link", { name: /открыть/i });
     expect(link).toHaveAttribute("href", "/preview?id=w0");
   });
@@ -295,7 +322,7 @@ describe("Поиск и фильтры в кабинете", () => {
     const printSpy = vi.fn();
     vi.stubGlobal("print", printSpy);
     render(<DashboardPage />);
-    const card = await screen.findByTestId("history-card");
+    const card = (await screen.findAllByTestId("history-card"))[0];
 
     await userEvent.click(within(card).getByTestId("download-pdf"));
 
@@ -304,7 +331,7 @@ describe("Поиск и фильтры в кабинете", () => {
 
   it("группировка по дате: есть заголовок группы", async () => {
     render(<DashboardPage />);
-    await screen.findByText("Дроби");
+    await screen.findAllByTestId("history-card");
     expect(screen.getByText("Сегодня")).toBeInTheDocument();
   });
 });
@@ -315,10 +342,8 @@ describe("Остальные вкладки кабинета", () => {
   it("пустое избранное предлагает действие (был тупик action={null})", async () => {
     setProfile(PROFILE);
     render(<DashboardPage />);
-    await waitFor(() => expect(screen.getByTestId("tab-unavailable")).toBeInTheDocument());
+    await screen.findByText("История пуста");
 
-    fetchMock.mockReset();
-    fetchMock.mockRejectedValue(new Error("offline"));
     await userEvent.click(screen.getByRole("tab", { name: /избранное/i }));
 
     await waitFor(() => {
@@ -331,7 +356,7 @@ describe("Остальные вкладки кабинета", () => {
   it("пустые шаблоны объясняют, как их создать, и дают действие", async () => {
     setProfile(PROFILE);
     render(<DashboardPage />);
-    await waitFor(() => expect(screen.getByTestId("tab-unavailable")).toBeInTheDocument());
+    await screen.findByText("История пуста");
 
     await userEvent.click(screen.getByRole("tab", { name: /шаблоны/i }));
 
@@ -347,7 +372,7 @@ describe("Остальные вкладки кабинета", () => {
     const { saveFavorite } = await import("@/lib/utils/storage");
     saveFavorite(makeWorksheet("f1") as FavoriteArtifact);
     render(<DashboardPage />);
-    await waitFor(() => expect(screen.getByTestId("tab-loading")).toBeInTheDocument());
+    await screen.findByText("История пуста");
 
     await userEvent.click(screen.getByRole("tab", { name: /избранное/i }));
 

@@ -25,7 +25,7 @@
  */
 
 import * as React from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
@@ -38,8 +38,15 @@ import { deviceView, loadProfile, type TeacherProfileView } from "@/lib/lk/profi
 export default function SettingsPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const searchParams = useSearchParams();
-  const emailConfirmId = searchParams.get("email_confirm");
+
+  // ПОЧЕМУ НЕ useSearchParams(). При `output: "export"` хук требует границы
+  // <Suspense> над собой, иначе статическая сборка падает целиком:
+  //   «useSearchParams() should be wrapped in a suspense boundary»
+  // Обёртка с fallback работает, но её skeleton закрывает страницу до гидратации —
+  // ровно тот эффект, который в этом проекте уже убирали в /journal и /preview.
+  // Поэтому параметры читаются из window.location.search в useEffect: сборка
+  // довольна, страница не мигает.
+  const [emailConfirmId, setEmailConfirmId] = React.useState<string | null>(null);
 
   const [view, setView] = React.useState<TeacherProfileView | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -55,6 +62,8 @@ export default function SettingsPage() {
       if (res.status === "ready") setView(res.view);
       setLoading(false);
     })();
+    // Письмо подтверждения смены почты приходит по ссылке с ?email_confirm=…
+    setEmailConfirmId(new URLSearchParams(window.location.search).get("email_confirm"));
     return () => {
       cancelled = true;
     };
@@ -63,7 +72,7 @@ export default function SettingsPage() {
   // Возврат из платёжного сервиса. Честно: мы не знаем, чем закончился платёж,
   // пока сервер не подтвердит подписку, поэтому и говорим «проверяем».
   React.useEffect(() => {
-    if (searchParams.get("paid") !== "1") return;
+    if (new URLSearchParams(window.location.search).get("paid") !== "1") return;
     toast({
       tone: "info",
       title: "Проверяем оплату",
@@ -72,7 +81,7 @@ export default function SettingsPage() {
     const url = new URL(window.location.href);
     url.searchParams.delete("paid");
     window.history.replaceState(null, "", url.toString());
-  }, [searchParams, toast]);
+  }, [toast]);
 
   if (!view) {
     return (
