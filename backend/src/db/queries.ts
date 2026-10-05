@@ -21,7 +21,7 @@ export interface UserRow {
   id: string;
   email: string;
   name: string | null;
-  plan: "free" | "base" | "plus";
+  plan: "free" | "base" | "standard" | "plus";
   generations_total: number;
   generations_today: number;
   generations_reset_at: number | null;
@@ -83,7 +83,7 @@ export async function createUser(
     id: string;
     email: string;
     name?: string | null;
-    plan?: "free" | "base" | "plus";
+    plan?: "free" | "base" | "standard" | "plus";
     isAdmin?: boolean;
   },
 ): Promise<void> {
@@ -119,7 +119,7 @@ export async function setUserAdmin(
 export async function updateUserPlan(
   db: D1Database,
   id: string,
-  plan: "free" | "base" | "plus",
+  plan: "free" | "base" | "standard" | "plus",
 ): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
   await db

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>УчЛист — карта сервисов: кто за что отвечает</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f7f5f0; --card:#ffffff; --line:#e9e3d6; --line-soft:#f0ebe0;
+  --ink:#14171e; --ink-2:#3a4256; --muted:#7c7a72;
+  --primary:#2f6f5e; --primary-soft:rgba(47,111,94,.09);
+  --warn:#b06367; --warn-soft:rgba(176,99,103,.10);
+  --gold:#c97b3f; --gold-soft:rgba(201,123,63,.10);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:'Outfit',sans-serif; font-size:16px; line-height:1.6;
+}
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:
+    radial-gradient(600px 400px at 8% -5%, var(--primary-soft), transparent 70%),
+    radial-gradient(700px 500px at 100% 0%, var(--gold-soft), transparent 70%);
+}
+.wrap{max-width:1040px; margin:0 auto; padding:56px 24px 96px; position:relative; z-index:1}
+h1{font-family:'DM Serif Display',serif; font-weight:400; font-size:clamp(30px,5vw,46px); line-height:1.1; margin:0 0 12px; letter-spacing:-.01em}
+.sub{color:var(--ink-2); font-size:17px; max-width:62ch; margin:0 0 8px}
+.meta{font-family:'JetBrains Mono',monospace; font-size:12.5px; color:var(--muted); margin:0 0 44px}
+h2{font-family:'DM Serif Display',serif; font-weight:400; font-size:26px; margin:0 0 8px; display:flex; align-items:center; gap:10px; letter-spacing:-.005em}
+h2 svg{color:var(--primary); flex:none}
+.lede{color:var(--ink-2); max-width:70ch; margin:0 0 24px}
+section{margin:0 0 56px}
+
+/* статусы */
+.pill{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:500;
+  padding:3px 10px; border-radius:999px; white-space:nowrap; line-height:1.5}
+.pill.live{background:var(--primary-soft); color:var(--primary)}
+.pill.todo{background:var(--warn-soft); color:var(--warn)}
+.pill.gap{background:var(--gold-soft); color:var(--gold)}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+
+/* стек-диаграмма */
+.stack{background:var(--card); border:1px solid var(--line); border-radius:18px; padding:22px; box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.layer{border:1px solid var(--line); border-radius:13px; padding:14px 16px; margin:0 0 10px; background:#fff}
+.layer:last-child{margin-bottom:0}
+.layer-h{display:flex; align-items:center; gap:9px; font-size:12px; font-family:'JetBrains Mono',monospace;
+  text-transform:uppercase; letter-spacing:.07em; color:var(--muted); margin-bottom:11px}
+.layer-h svg{width:15px;height:15px;flex:none}
+.nodes{display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr)); gap:9px}
+.node{border:1px solid var(--line-soft); border-radius:10px; padding:10px 12px; background:var(--bg)}
+.node b{display:block; font-size:14px; font-weight:600; line-height:1.3}
+.node span{display:block; font-size:12.5px; color:var(--muted); line-height:1.4; margin-top:3px}
+.node .pill{margin-top:7px}
+.node.cf{background:#f4f8f6; border-color:#dce9e3}
+.node.third{background:#fbf6f0; border-color:#eee0d0}
+
+/* карточки-строки */
+.svc{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 18px; margin:0 0 10px;
+  display:grid; grid-template-columns:200px 1fr; gap:18px; align-items:start; box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.svc-name{font-weight:600; font-size:15.5px; line-height:1.35}
+.svc-name em{display:block; font-style:normal; font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--muted); font-weight:400; margin-top:3px; word-break:break-all}
+.svc-body{font-size:14.5px; color:var(--ink-2); line-height:1.55}
+.svc-body p{margin:0 0 7px}
+.svc-body p:last-child{margin:0}
+.svc-body code{font-family:'JetBrains Mono',monospace; font-size:12.5px; background:var(--line-soft);
+  padding:1px 6px; border-radius:5px; color:var(--ink)}
+
+/* таблица почты */
+table{width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line);
+  border-radius:14px; overflow:hidden; font-size:14.5px}
+th,td{text-align:left; padding:13px 16px; border-bottom:1px solid var(--line-soft); vertical-align:top}
+th{font-size:12px; font-family:'JetBrains Mono',monospace; text-transform:uppercase; letter-spacing:.06em;
+  color:var(--muted); font-weight:500; background:#fbf9f5}
+tr:last-child td{border-bottom:none}
+td b{font-weight:600; color:var(--ink)}
+td small{display:block; color:var(--muted); font-size:12.5px; line-height:1.4; margin-top:3px}
+
+/* шаги */
+.timeline{list-style:none; padding:0; margin:0; position:relative}
+.timeline::before{content:""; position:absolute; left:8px; top:8px; bottom:8px; width:2px; background:var(--primary); opacity:.3}
+.timeline li{position:relative; padding:0 0 22px 34px}
+.timeline li:last-child{padding-bottom:0}
+.timeline li::before{content:""; position:absolute; left:2px; top:5px; width:14px; height:14px;
+  border-radius:50%; background:#fff; border:2px solid var(--primary)}
+.timeline b{display:block; font-size:15.5px; margin-bottom:3px}
+.timeline p{margin:0; font-size:14.5px; color:var(--ink-2); line-height:1.55}
+.timeline code{font-family:'JetBrains Mono',monospace; font-size:12.5px; background:var(--line-soft); padding:1px 6px; border-radius:5px}
+
+/* callout */
+.callout{background:var(--card); border:1px solid var(--line); border-left:3px solid var(--warn);
+  border-radius:12px; padding:15px 18px; font-size:14.5px; color:var(--ink-2); line-height:1.6}
+.callout b{color:var(--ink)}
+.callout + .callout{margin-top:10px}
+.callout.gold{border-left-color:var(--gold)}
+
+footer{color:var(--muted); font-size:13px; border-top:1px solid var(--line); padding-top:20px; margin-top:8px}
+
+@media (max-width:760px){
+  .wrap{padding:36px 16px 64px}
+  .svc{grid-template-columns:1fr; gap:8px}
+  .nodes{grid-template-columns:1fr}
+  table{font-size:13.5px}
+  th,td{padding:11px 12px}
+  h1{font-size:30px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Карта сервисов УчЛист</h1>
+<p class="sub">Кто за что отвечает в проекте, что уже работает, а что ещё не куплено и не настроено. Сверил с живым состоянием аккаунта Cloudflare и с кодом репозитория на 05.10.2026.</p>
+<p class="meta">uchlist.ru ещё не зарегистрирован · сайт живёт на listai-prototype.pages.dev</p>
+
+<section>
+<h2><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>Слои: как запрос идёт от учителя</h2>
+<p class="lede">Учитель открывает сайт → Cloudflare отдаёт страницу → страница дёргает API → Worker отвечает из D1, файлы из R2, письма через Resend.</p>
+
+<div class="stack">
+  <div class="layer">
+    <div class="layer-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>Домен и DNS</div>
+    <div class="nodes">
+      <div class="node gap"><b>uchlist.ru</b><span>Имя ещё не куплено</span><span class="pill gap"><i class="dot"></i>Нет</span></div>
+      <div class="node"><b>Cloudflare DNS</b><span>NS-серверы, A, CNAME, MX, SPF, DKIM</span><span class="pill live"><i class="dot"></i>Готов</span></div>
+      <div class="node gap"><b>Госуслуги / ЕСИА</b><span>Подтверждение прав на .ru</span><span class="pill todo"><i class="dot"></i>Не сделано</span></div>
+    </div>
+  </div>
+
+  <div class="layer">
+    <div class="layer-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>Сайт (фронтенд)</div>
+    <div class="nodes">
+      <div class="node cf"><b>Cloudflare Pages</b><span>Статика 24 страниц, Next.js export</span><span class="pill live"><i class="dot"></i>Живёт</span></div>
+      <div class="node cf"><b>GitHub Actions</b><span>Сборка + деплой по коммиту</span><span class="pill live"><i class="dot"></i>Живёт</span></div>
+      <div class="node gap"><b>Яндекс.Метрика</b><span>Счётчик не задан</span><span class="pill todo"><i class="dot"></i>Пусто</span></div>
+    </div>
+  </div>
+
+  <div class="layer">
+    <div class="layer-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="m9 9 6 6-6 6"/></svg>Бэкенд и данные</div>
+    <div class="nodes">
+      <div class="node cf"><b>Worker rabochielisty-api</b><span>Hono, вся логика и авторизация</span><span class="pill live"><i class="dot"></i>Живёт</span></div>
+      <div class="node cf"><b>D1 rabochielisty</b><span>Пользователи, подписки, листы</span><span class="pill live"><i class="dot"></i>Живёт</span></div>
+      <div class="node cf"><b>R2 rabochielisty-pdfs</b><span>Сгенерированные файлы</span><span class="pill live"><i class="dot"></i>Живёт</span></div>
+      <div class="node cf"><b>Cloudflare Cron</b><span>Уборка фото в 03:00, биллинг каждый час</span><span class="pill live"><i class="dot"></i>Живёт</span></div>
+    </div>
+  </div>
+
+  <div class="layer">
+    <div class="layer-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="m4 6 8 6 8-6"/></svg>Внешние сервисы</div>
+    <div class="nodes">
+      <div class="node third"><b>Resend</b><span>Письма для входа, отправка от имени домена</span><span class="pill todo"><i class="dot"></i>Домен не верифицирован</span></div>
+      <div class="node third"><b>Polza.ai</b><span>Модели для генерации листов</span><span class="pill live"><i class="dot"></i>Живёт</span></div>
+      <div class="node third"><b>ЮKassa</b><span>Оплата подписки</span><span class="pill gap"><i class="dot"></i>Тестовый</span></div>
+      <div class="node third"><b>Cloudflare Email Routing</b><span>Входящие письма на домен</span><span class="pill todo"><i class="dot"></i>Не включали</span></div>
+    </div>
+  </div>
+</div>
+</section>
+
+<section>
+<h2><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>Cloudflare — что в нём бесплатно, а что платно</h2>
+<p class="lede">Отдельные платные сервисы Cloudflare не нужны. Весь нужный набор помещается в бесплатный тариф.</p>
+
+<div class="svc">
+  <div class="svc-name">Cloudflare Pages<em>проект listai-prototype</em></div>
+  <div class="svc-body"><p>Хостинг и CDN для сайта. Кастомный домен подключается, когда DNS домена уже в Cloudflare.</p><p>Сейчас сайт отдаётся с временного адреса <code>listai-prototype.pages.dev</code>. Как только появится <code>uchlist.ru</code> — домен добавляется в этот же проект, временный адрес остаётся как запасной.</p></div>
+</div>
+
+<div class="svc">
+  <div class="svc-name">Cloudflare Workers<em>rabochielisty-api</em></div>
+  <div class="svc-body"><p>Весь бэкенд. Одна точка входа: генерация листов, вход по ссылке из письма, оплата, кабинет учителя.</p><p>Бесплатный тариф: 100 000 запросов в сутки. Для MVP учителей это с большим запасом; упереться можно будет только при массовой публикации.</p></div>
+</div>
+
+<div class="svc">
+  <div class="svc-name">Cloudflare D1<em>rabochielisty</em></div>
+  <div class="svc-body"><p>База данных. Учителя, подписки, история генераций, сгенерированные листы, черновики биллинга.</p><p>Бесплатно 5 ГБ. С фото тетрадей база растёт быстро — учти это, когда счётчик фото уйдёт в плюс.</p></div>
+</div>
+
+<div class="svc">
+  <div class="svc-name">Cloudflare R2<em>rabochielisty-pdfs</em></div>
+  <div class="svc-body"><p>Файлы: PDF, DOCX, PPTX, ZIP с листами. R2 не берёт платы за исходящий трафик — это принципиально отличается от S3 и экономит деньги на каждой выдаче файла учителю.</p></div>
+</div>
+
+<div class="svc">
+  <div class="svc-name">Cloudflare Email Routing<em>входящие письма</em></div>
+  <div class="svc-body"><p>Бесплатно, без ограничений по объёму. Делает так, что письма на <code>hello@uchlist.ru</code> приходят в твой обычный ящик.</p><p><b>Ограничение:</b> только пересылка. Отправить письмо <i>от имени</i> домена через него нельзя. Для отправки — отдельный сервис, Resend (см. ниже).</p></div>
+</div>
+
+<div class="svc">
+  <div class="svc-name">Cloudflare Registrar<em>покупка домена</em></div>
+  <div class="svc-body"><p>Здесь важно: <b>Cloudflare не продаёт домены в зоне .ru</b> и .рф. В его списке 400+ зон, но российских национальных там нет — это ограничение на стороне реестра .ru, а не настройка аккаунта.</p><p>Покупать .ru надо в российском регистраторе, а управлять DNS — уже в Cloudflare. Это не конфликт: регистратор отвечает только за покупку и продление, все настройки сайта и почты живут в Cloudflare.</p></div>
+</div>
+</section>
+
+<section>
+<h2><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="m4 6 8 6 8-6"/></svg>Почта: три разные задачи — три разных сервиса</h2>
+<p class="lede">Самая частая ошибка — пытаться сделать всё одним сервисом. Их задачи не пересекаются, и они умеют работать вместе на одном домене.</p>
+
+<table>
+<thead>
+<tr><th style="width:26%">Задача</th><th style="width:22%">Чем решается</th><th>Что получится</th></tr>
+</thead>
+<tbody>
+<tr>
+  <td><b>Письма для входа</b><small>Учитель вводит почту → получает ссылку</small></td>
+  <td><b>Resend</b><small>уже в коде бэкенда</small></td>
+  <td>Ссылка приходит от <code>noreply@uchlist.ru</code>. Учитель не видит в спаме, потому что домен подтверждён. Нужен один раз — и сразу после покупки домена.</td>
+</tr>
+<tr>
+  <td><b>Входящие письма</b><small>Учитель пишет в поддержку</small></td>
+  <td><b>Cloudflare Email Routing</b><small>бесплатно, включается в панели</small></td>
+  <td>Письма на <code>hello@uchlist.ru</code> и другие адреса падают в твой обычный ящик на <code>gmail</code>. Отвечать можно от своего имени, но отправитель будет <code>gmail</code>, а не <code>uchlist.ru</code>.</td>
+</tr>
+<tr>
+  <td><b>Письма от домена</b><small>Ответ учителю как «УчЛист»</small></td>
+  <td><b>Отдельный сервис</b><small>Google Workspace, Яндекс 360 или Майл.ру</small></td>
+  <td>Настоящий ящик с входящими и исходящими, отправитель <code>uchlist.ru</code>. Платный, от 150 ₽/мес за одного человека. Нужен, когда захочешь отвечать учителям от бренда, а не от личной почты.</td>
+</tr>
+</tbody>
+</table>
+
+<div class="callout" style="margin-top:14px"><b>Важно про две зоны одновременно.</b> Resend и Email Routing не мешают друг другу: Resend ставит свои записи на поддомен <code>send.</code> и отвечает только за отправку, Email Routing — на корневой домен и только за приём. Общий совет: включай Email Routing первым, потом верифицируй домен в Resend.</div>
+</section>
+
+<section>
+<h2><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Что сделать, когда купишь домен</h2>
+<p class="lede">Пять шагов. Первый и самый важный — смена NS, без неё остальное не работает.</p>
+
+<ol class="timeline">
+<li><b>Купить uchlist.ru в российском регистраторе</b><p>На физлицо, с подтверждённой учёткой Госуслуг — с 1 сентября 2026 это обязательное условие для .ru и .рф. Без подтверждения регистратор вправе приостановить домен, и сайт с почтой перестанут работать.</p></li>
+<li><b>Перевести NS на Cloudflare</b><p>В панели Cloudflare добавить домен, получить два NS-сервера, вписать их в панели регистратора. Дальше <i>все</i> настройки сайта и почты делаются только в Cloudflare. Ждать активации зоны — от 15 минут до суток.</p></li>
+<li><b>Привязать домен к Pages</b><p>В проекте <code>listai-prototype</code> добавить <code>uchlist.ru</code> и <code>www.uchlist.ru</code>. Дальше переключить <code>NEXT_PUBLIC_SITE_URL</code> в <code>.env</code> и в <code>deploy.yml</code> — иначе поисковик получит карту сайта со старого адреса.</p></li>
+<li><b>Включить приём писем</b><p>В Cloudflare: Email Routing → подтвердить адрес назначения → создать <code>hello@</code> и <code>support@</code> на свой ящик. Проверить письмом с телефона.</p></li>
+<li><b>Верифицировать домен в Resend</b><p>Добавить <code>uchlist.ru</code>, вставить выданные записи SPF и DKIM в DNS, дождаться статуса verified и отправить тестовое письмо. Без этого вход по ссылке не работает в проде.</p></li>
+</ol>
+</section>
+
+<div class="callout gold"><b>Про сроки и деньги.</b> Домен .ru продаётся строго на один год — правило реестра, а не политика регистратора. Продление надо делать каждый год, поэтому включи автопродление и положи на баланс заранее. Если уезжаешь за границу — автопродление особенно важно: с иностранной карты российский регистратор может не принять оплату, и через 30 дней после конца оплаченного срока домен освободится.</div>
+
+<footer>Проверено 05.10.2026 · состояние Cloudflare-аккаунта, репозиторий <code>nameone</code> и актуальные цены регистраторов.</footer>
+
+</div>
+</body>
+</html>

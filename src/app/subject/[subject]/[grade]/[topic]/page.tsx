@@ -24,6 +24,7 @@ import {
 } from "@/lib/content/subjects";
 import type { Topic, TopicExample } from "@/lib/types";
 import { SITE_URL } from "@/lib/site";
+import { clipDescription } from "@/lib/seo/metadata";
 import { Breadcrumb } from "@/components/seo";
 import { AnswerToggle } from "./AnswerToggle";
 
@@ -51,7 +52,13 @@ export function generateMetadata({ params }: Props): Metadata {
   // В типах Subject нет поля с предложным падежом, поэтому после «по» название
   // предмета берём в кавычки — иначе в сниппете выходит «по математика».
   const subjectName = `предмету «${subject.title}»`;
-  const description = `Скачайте готовые рабочие листы и тесты по теме «${topic.title}» для ${grade.num} класса по ${subjectName}. ${topic.examples.length} заданий-образцов с ответами. Сгенерируйте свой вариант за 30 секунд.`;
+  // ТЗ-21 п.14 / SEO-аудит P1-2: описание обрезаем до 160 знаков. Длинные
+  // названия тем («Арифметическая прогрессия. Формулы aₙ и Sₙ») выносили
+  // описание за лимит на 1 070 страниц — Яндекс всё равно обрезает по ~160,
+  // поэтому хвост просто не работает. Режется хвост, а не начало: начало
+  // описания — это ключевые слова запроса.
+  const rawDescription = `Скачайте готовые рабочие листы и тесты по теме «${topic.title}» для ${grade.num} класса по ${subjectName}. ${topic.examples.length} заданий-образцов с ответами. Сгенерируйте свой вариант за 30 секунд.`;
+  const description = clipDescription(rawDescription);
 
   // TZ-10 §5.1 / §9.7: canonical + og:type=article + publishedTime/modifiedTime.
   // В таксономии (Topic) нет полей createdAt/updatedAt — ставим текущую дату;
@@ -63,15 +70,11 @@ export function generateMetadata({ params }: Props): Metadata {
   return {
     title,
     description,
-    keywords: [
-      `${topic.title} ${grade.num} класс`,
-      `рабочий лист ${topic.title.toLowerCase()}`,
-      `${subject.shortTitle.toLowerCase()} ${grade.num} класс`,
-      "ФГОС",
-      "задания",
-      "карточки",
-      "тест",
-    ],
+    // ТЗ-21 п.14 / SEO-аудит P1-4: тег `keywords` убран. Google не учитывает
+    // его с 2009 года, Яндекс официально не использует, а переспамленный список
+    // из 7 слов на каждой из 1 070 страниц тем выглядит как спам-сигнал.
+    // Ключевые слова остались в заголовке, описании и в разметке
+    // LearningResource, где они работают по назначению.
     alternates: {
       canonical: canonicalUrl,
     },

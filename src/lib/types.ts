@@ -221,7 +221,7 @@ export interface UserProfile {
   id: string;
   email: string;
   name: string;
-  plan: "free" | "base" | "plus";
+  plan: "free" | "base" | "standard" | "plus";
   generationsTotal: number;
   generationsToday: number;
   generationsLimit: number;

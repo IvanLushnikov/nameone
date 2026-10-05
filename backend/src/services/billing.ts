@@ -27,10 +27,14 @@ import { sendRenewalDoneEmail, sendRenewalFailedEmail } from "./email";
  * чтобы при включении тарифа не пришлось трогать ни бэк, ни миграции.
  * `createPayment` отдаёт 400, пока school не разрешён (см. `SELLABLE_PLANS`).
  */
-export type PaidPlan = "base" | "plus" | "school";
+export type PaidPlan = "base" | "standard" | "plus" | "school";
 
 /** Тарифы, по которым платёж создаётся прямо сейчас. */
-export const SELLABLE_PLANS: ReadonlySet<PaidPlan> = new Set<PaidPlan>(["base", "plus"]);
+export const SELLABLE_PLANS: ReadonlySet<PaidPlan> = new Set<PaidPlan>([
+  "base",
+  "standard",
+  "plus",
+]);
 /**
  * Период оплаты.
  *
@@ -66,6 +70,10 @@ export const ACADEMIC_YEAR_MONTHS = 9;
  */
 export const PRICES = {
   base: { monthly: 500_00, academicYear: 3_800_00 },
+  // Тариф «Оптимальный» (ТЗ-21 п.4): закрывает провал между «Базовым» и
+  // «Плюсом» — школьный учитель с 3–4 предметами. Норма втрое выше базовой
+  // за вдвое большую цену, маржа 83–86% (расчёт в plans.ts, NORM_STANDARD).
+  standard: { monthly: 990_00, academicYear: 7_600_00 },
   plus: { monthly: 1_500_00, academicYear: 11_000_00 },
   school: { monthly: 3_000_00, academicYear: null },
 } as const;

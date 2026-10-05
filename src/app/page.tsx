@@ -4,6 +4,7 @@ import { WeeklyTopicBlock } from "@/components/landing/WeeklyTopic";
 import { MaterialsBankBlock } from "@/components/landing/MaterialsBankBlock";
 import { RealStats } from "@/components/landing/Stats";
 import { Features } from "@/components/landing/Features";
+import { HiddenFeatures } from "@/components/landing/HiddenFeatures";
 import { Seasonal } from "@/components/landing/Seasonal";
 import { Comparison } from "@/components/landing/Comparison";
 import { Subjects } from "@/components/landing/Subjects";
@@ -105,6 +106,8 @@ export default function Home() {
       <Hero />
       <RealStats />
       <Features />
+      {/* ТЗ-21 п.3: четыре функции, которые работают, но на сайт не выведены. */}
+      <HiddenFeatures />
       <Seasonal />
       <Subjects />
       <Comparison />

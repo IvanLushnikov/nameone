@@ -15,6 +15,7 @@ import {
   priceLabel,
   priceShort,
   priceSummary,
+  type PlanId,
 } from "@/lib/content/plans";
 import { SITE_URL } from "@/lib/site";
 import { clipDescription, ogImages, twitterCard } from "@/lib/seo/metadata";
@@ -126,13 +127,14 @@ const pricingJsonLd = {
  * Строка «Цена» собирается из plans.ts — тот же источник, что и карточки
  * тарифов на лендинге. Периодов ровно два: учебный год (9 мес) и помесячно.
  */
-const priceCell = (planId: "free" | "base" | "plus" | "school") => priceSummary(planId);
+const priceCell = (planId: PlanId) => priceSummary(planId);
 
 const comparison = [
   {
     feature: "Цена",
     free: priceCell("free"),
     base: priceCell("base"),
+    standard: priceCell("standard"),
     plus: priceCell("plus"),
     school: priceCell("school"),
   },
@@ -140,6 +142,7 @@ const comparison = [
     feature: "Бесплатные генерации",
     free: "3",
     base: "Безлимит",
+    standard: "Безлимит",
     plus: "Безлимит",
     school: "Безлимит",
   },
@@ -147,6 +150,7 @@ const comparison = [
     feature: "Предметы",
     free: "Все 21+",
     base: "Все 21+",
+    standard: "Все 21+",
     plus: "Все 21+",
     school: "Все 21+",
   },
@@ -154,6 +158,7 @@ const comparison = [
     feature: "Классы",
     free: "1-11",
     base: "1-11",
+    standard: "1-11",
     plus: "1-11",
     school: "1-11",
   },
@@ -161,6 +166,7 @@ const comparison = [
     feature: "PDF с ответами и пояснениями",
     free: "✓",
     base: "✓",
+    standard: "✓",
     plus: "✓",
     school: "✓",
   },
@@ -168,6 +174,7 @@ const comparison = [
     feature: "История генераций",
     free: "—",
     base: "30 дней",
+    standard: "∞",
     plus: "∞",
     school: "∞",
   },
@@ -175,6 +182,7 @@ const comparison = [
     feature: "Избранное и шаблоны",
     free: "—",
     base: "✓",
+    standard: "✓",
     plus: "✓",
     school: "✓",
   },
@@ -182,6 +190,7 @@ const comparison = [
     feature: "Варианты ОГЭ/ЕГЭ",
     free: "—",
     base: "—",
+    standard: "—",
     plus: "✓",
     school: "✓",
   },
@@ -189,6 +198,7 @@ const comparison = [
     feature: "Разбор каждого задания",
     free: "—",
     base: "—",
+    standard: "—",
     plus: "✓",
     school: "✓",
   },
@@ -196,13 +206,7 @@ const comparison = [
     feature: `${ARTIFACT_NAMES.control} с критериями оценивания`,
     free: "—",
     base: "—",
-    plus: "✓",
-    school: "✓",
-  },
-  {
-    feature: "Ранний доступ к новым темам и предметам",
-    free: "—",
-    base: "—",
+    standard: "—",
     plus: "✓",
     school: "✓",
   },
@@ -210,6 +214,7 @@ const comparison = [
     feature: `${ARTIFACT_NAMES.lessonPlan} по ФГОС`,
     free: "—",
     base: "—",
+    standard: "—",
     plus: "✓",
     school: "✓",
   },
@@ -217,6 +222,7 @@ const comparison = [
     feature: `${ARTIFACT_NAMES.presentation} (PPTX)`,
     free: "—",
     base: "—",
+    standard: "—",
     plus: "✓",
     school: "✓",
   },
@@ -224,6 +230,7 @@ const comparison = [
     feature: `${ARTIFACT_NAMES.ktp} на год (DOCX)`,
     free: "—",
     base: "—",
+    standard: "—",
     plus: "✓",
     school: "✓",
   },
@@ -231,6 +238,7 @@ const comparison = [
     feature: "Экспорт DOCX и PPTX",
     free: "PDF",
     base: "PDF + DOCX",
+    standard: "PDF + DOCX",
     plus: "PDF + DOCX + PPTX",
     school: "PDF + DOCX + PPTX",
   },
@@ -238,6 +246,7 @@ const comparison = [
     feature: "Учеников в кабинете",
     free: "—",
     base: "5",
+    standard: "10",
     plus: "20",
     school: "∞",
   },
@@ -245,6 +254,7 @@ const comparison = [
     feature: "Админка учителя",
     free: "—",
     base: "—",
+    standard: "—",
     plus: "—",
     school: "✓",
   },
@@ -252,6 +262,7 @@ const comparison = [
     feature: "Отчёты по классу",
     free: "—",
     base: "—",
+    standard: "—",
     plus: "—",
     school: "✓",
   },
@@ -259,6 +270,7 @@ const comparison = [
     feature: "API для интеграции",
     free: "—",
     base: "—",
+    standard: "—",
     plus: "—",
     school: "по запросу",
   },
@@ -313,6 +325,11 @@ export default function PricingPage() {
                   <th className="text-center text-sm font-semibold text-warm-950 px-4 py-4 bg-brand-50">
                     Базовый
                   </th>
+                  {/* ТЗ-21 п.4: колонка «Оптимальный» добавлена между Базовым и
+                      Плюсом — так тариф стоит в шкале, а не отдельным блоком. */}
+                  <th className="text-center text-sm font-semibold text-warm-700 px-4 py-4">
+                    Оптимальный
+                  </th>
                   <th className="text-center text-sm font-semibold text-warm-700 px-4 py-4">
                     Плюс
                   </th>
@@ -327,6 +344,7 @@ export default function PricingPage() {
                     <td className="text-sm text-warm-700 px-6 py-3">{row.feature}</td>
                     <td className="text-center px-4 py-3">{renderCell(row.free)}</td>
                     <td className="text-center px-4 py-3 bg-brand-50/50">{renderCell(row.base)}</td>
+                    <td className="text-center px-4 py-3">{renderCell(row.standard)}</td>
                     <td className="text-center px-4 py-3">{renderCell(row.plus)}</td>
                     <td className="text-center px-4 py-3">{renderCell(row.school)}</td>
                   </tr>
@@ -423,7 +441,7 @@ export default function PricingPage() {
               },
               {
                 q: "Что такое учебный год и почему он выгоднее?",
-                a: `Учебный год — это 9 месяцев подряд, а не 12: платить летом, когда вы не работаете, не нужно. Старт считается от даты оплаты. ${ACADEMIC_YEAR_NOTE}. ${PLANS.base.name}: ${priceLabel("base", "academicYear")} — ${academicYearSaving("base")}. ${PLANS.plus.name}: ${priceLabel("plus", "academicYear")} — ${academicYearSaving("plus")}. Можно и помесячно: ${priceLabel("base", "month")} и ${priceLabel("plus", "month")}.`,
+                a: `Учебный год — это 9 месяцев подряд, а не 12: платить летом, когда вы не работаете, не нужно. Старт считается от даты оплаты. ${ACADEMIC_YEAR_NOTE}. ${PLANS.base.name}: ${priceLabel("base", "academicYear")} — ${academicYearSaving("base")}. ${PLANS.standard.name}: ${priceLabel("standard", "academicYear")} — ${academicYearSaving("standard")}. ${PLANS.plus.name}: ${priceLabel("plus", "academicYear")} — ${academicYearSaving("plus")}. Можно и помесячно: ${priceLabel("base", "month")}, ${priceLabel("standard", "month")} и ${priceLabel("plus", "month")}.`,
               },
               {
                 q: "А если AI ошибётся в задании — деньги вернут?",

@@ -104,12 +104,14 @@ const MIN_TASKS = 1;
  *
  *   free 5 — попробовать фичу целиком на одной домашке;
  *   base 50 — 1 класс = ~1 набор в день рабочей недели;
+ *   standard 100 — 3–4 предмета (тариф «Оптимальный», ТЗ-21 п.4);
  *   plus 200 — два класса плюс перегенерации;
  *   потолок 500 — защита от бесконечного retry, как в F-06.
  */
 const INTERVIEW_MONTHLY_LIMITS: Record<string, number> = {
   free: 5,
   base: 50,
+  standard: 100,
   plus: 200,
 };
 const INTERVIEW_ABSOLUTE_CEILING = 500;

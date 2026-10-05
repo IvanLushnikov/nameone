@@ -11,7 +11,15 @@
  */
 
 export type PeriodId = "academicYear" | "month";
-export type PlanId = "free" | "base" | "plus" | "school";
+/**
+ * Тариф «Оптимальный» (id `standard`) — ТЗ-21 п.4.
+ *
+ * Зачем он нужен: между «Базовым» (500 ₽/мес) и «Плюсом» (1 500 ₽/мес) была
+ * пустая зона, а это как раз школьный учитель с 3–4 предметами. Он не репетитор
+ * (ему «Базовый» ок, но мало) и не нужен «Плюс» с ОГЭ/ЕГЭ и КТП. Покупать
+ * «Плюс» ради объёма он не готов, а на «Базовом» не хватает нормы.
+ */
+export type PlanId = "free" | "base" | "standard" | "plus" | "school";
 
 /**
  * Длительность учебного года.
@@ -128,6 +136,30 @@ export type Plan = {
 export const TOKENS_PER_WORKSHEET = 1_600;
 
 /**
+ * Нормы в взвешенных токенах на МЕСЯЦ — вынесены в константы, потому что на
+ * них ссылаются и карточка тарифа (через подпись «≈ N листов»), и комментарии
+ * с расчётом маржи. Правится в одном месте.
+ *
+ * NORM_BASE — 1,44 млн ≈ 900 листов-домашек. Раньше в карточке стояло
+ * «1,44 млн токенов», учитель эту единицу не понимает (ТЗ-21 п.17).
+ */
+const NORM_BASE = 1_440_000;
+
+/**
+ * Норма «Оптимального» — 4,8 млн, ровно втрое «Базового».
+ *
+ * ПОЧЕМУ ТАК (расчёт, docs/04-pricing-economics-v2.md §7.1):
+ *   себестоимость = 4 800 000 × 0,00002921 ₽ = 140 ₽ на норму.
+ *   Выручка 990 ₽/мес → маржа 86%.
+ *   По учебному году 7 600 ₽ / 9 мес = 844 ₽/мес → маржа 83%.
+ *   Порог МЯГКИЙ (генерация не блокируется), поэтому даже перебор нормы
+ *   не превращается в убыток — маржа падает плавно, а не обрывается.
+ *   Для сравнения: «Плюс» при полной норме даёт 62% — «Оптимальный» заведомо
+ *   не хуже, поэтому скидку можно давать смело.
+ */
+const NORM_STANDARD = 4_800_000;
+
+/**
  * Бесплатная квота: генераций ВСЕГО, без ежедневного сброса.
  *
  * Зеркалит `FREE_TOTAL_GENERATIONS` в backend/src/services/usage.ts. Раньше
@@ -157,16 +189,22 @@ export const FREE_QUOTA_LABEL = `${FREE_GENERATIONS} бесплатные ген
  * Зеркалит `INTERVIEW_QUESTION_LIMITS` в backend/src/routes/f06.ts.
  */
 export const INTERVIEW_QUOTA_PER_MONTH: Record<
-  "free" | "base" | "plus",
+  "free" | "base" | "standard" | "plus",
   number
 > = {
   free: 5,
   base: 50,
+  // ТЗ-21 п.4: между 50 и 200. Школьный учитель с 3–4 предметами проверяет
+  // по фото больше, чем репетитор с одним, но реже, чем тот, кто готовит
+  // к ОГЭ двумя параллелями.
+  standard: 100,
   plus: 200,
 };
 
 /** «5 вопросов для беседы в месяц» — одна строка на тарифную карточку. */
-export function interviewQuotaLabel(planId: "free" | "base" | "plus"): string {
+export function interviewQuotaLabel(
+  planId: "free" | "base" | "standard" | "plus",
+): string {
   return `${INTERVIEW_QUOTA_PER_MONTH[planId]} наборов вопросов для беседы в месяц`;
 }
 
@@ -213,18 +251,30 @@ const ACADEMIC_YEAR_UNIT = `за учебный год (${ACADEMIC_YEAR_MONTHS} 
 const MONTH_UNIT = "в месяц";
 const SCHOOL_MONTH_UNIT = "в месяц за класс";
 
+/**
+ * Норма тарифа «Базовый» в месяц, в токенах. Объявлена отдельно и используется
+ * ДВАЖДЫ: в `normPerMonth` (по ней бэкенд считает расход) и в подписи для
+ * учителя. Одна константа вместо двух литералов — иначе норма в интерфейсе и
+ * норма для бэкенда рано или поздно разойдутся, а заметить это можно только
+ * по счёту клиенту.
+ *
+ * 1 440 000 × 0,00002921 ₽ = 42 ₽ себестоимости при выручке 422 ₽/мес → 90% маржа.
+ */
 export const PLANS: Record<PlanId, Plan> = {
   free: {
     id: "free",
     name: "Бесплатно",
-    description: "Попробовать и понять, нужно ли",
+    description: "Попробовать и понять, нужно ли. Без карты",
     shortDescription: `${FREE_QUOTA_LABEL}, без карты`,
     features: [
       FREE_QUOTA_LABEL,
       "Все предметы, 1-11 класс",
       "PDF с ответами и пояснениями",
       interviewQuotaLabel("free"),
-      "Без регистрации",
+      // ТЗ-21 п.12: «без карты» было только в мелкой строке и читалось как
+      // юридическая оговорка. Для учителя «без карты» — снятие риска «а вдруг
+      // спишут и будут тянуть деньги», поэтому оно в самой крупной строке.
+      "Без карты, без регистрации",
     ],
     cta: "Начать бесплатно",
     href: "/constructor",
@@ -251,7 +301,11 @@ export const PLANS: Record<PlanId, Plan> = {
       "Рабочие листы, тесты, карточки, планы уроков",
       "История и шаблоны",
       "Избранное и сохранённые настройки",
-      "Норма 1,44 млн токенов в месяц",
+      // ТЗ-21 п.17: главная строка нормы — понятная («около 90 листов»), а не
+      // «1,44 млн токенов». Токены — внутренняя единица себестоимости, учителю
+      // её понимать не нужно. normPerMonth/costPerNormRub НЕ ТРОГАЕМ: по ним
+      // бэкенд считает расход, а подпись листая норматив.
+      `${tokensToWorksheetsLabel(NORM_BASE)} в месяц`,
       interviewQuotaLabel("base"),
       "Семейный доступ до 5 человек",
     ],
@@ -260,8 +314,8 @@ export const PLANS: Record<PlanId, Plan> = {
     highlight: true,
     accent: "from-brand-400 via-brand-500 to-brand-600",
     inTeaser: true,
-    // 1 440 000 × 0,00002921 ₽ = 42 ₽ себестоимости при выручке 422 ₽/мес → 90% маржа.
-    normPerMonth: 1_440_000,
+    // Себестоимость в комментарии к NORM_BASE выше: 42 ₽ при выручке 422 ₽/мес.
+    normPerMonth: NORM_BASE,
     costPerNormRub: 42,
     prices: {
       // 9 месяцев по 500 ₽ = 4500 ₽, платим 3800 ₽ → −15,5% (обе цифры в UI).
@@ -273,6 +327,45 @@ export const PLANS: Record<PlanId, Plan> = {
         academicYearDiscountPercent: 15.5,
       },
       month: { amount: 500, unit: MONTH_UNIT, perMonth: 500 },
+    },
+  },
+  standard: {
+    id: "standard",
+    name: "Оптимальный",
+    // ТЗ-21 п.4. Название выбрано по смыслу для учителя, а не по внутренней
+    // иерархии: «Для нескольких предметов» — длинно для плашки на карточке,
+    // но именно это отличает тариф от «Базового», поэтому текст остался в
+    // описании, а в имени — то, что учитель видит на ценнике.
+    description: "Для 3–4 предметов: запас на домашку каждый день",
+    shortDescription: "Для 3–4 предметов",
+    features: [
+      "Всё из Базового",
+      // Главная строка — понятная, как и в «Базовом» (ТЗ-21 п.17).
+      `${tokensToWorksheetsLabel(NORM_STANDARD)} в месяц`,
+      interviewQuotaLabel("standard"),
+      "Учеников в кабинете — 10",
+    ],
+    cta: "Оформить подписку",
+    href: "/pricing",
+    // Подсветка остаётся на «Базовом»: переносить бейдж «Популярный» —
+    // продуктовое решение владельца, а не следствие появления тарифа.
+    highlight: false,
+    accent: "from-brand-400 to-brand-700",
+    inTeaser: true,
+    // Себестоимость: 4 800 000 × 0,00002921 ₽ = 140 ₽ при выручке 844–990 ₽/мес
+    // → маржа 83–86%. Норма втрое выше «Базового» за вдвое большую цену.
+    normPerMonth: NORM_STANDARD,
+    costPerNormRub: 140,
+    prices: {
+      // 9 × 990 ₽ = 8910 ₽, платим 7600 ₽ → −14,7% (обе цифры видны в UI).
+      academicYear: {
+        amount: 7600,
+        unit: ACADEMIC_YEAR_UNIT,
+        perMonth: Math.round(7600 / ACADEMIC_YEAR_MONTHS),
+        fullAcademicYearAmount: 8910,
+        academicYearDiscountPercent: 14.7,
+      },
+      month: { amount: 990, unit: MONTH_UNIT, perMonth: 990 },
     },
   },
   plus: {
@@ -287,7 +380,6 @@ export const PLANS: Record<PlanId, Plan> = {
       "Варианты ОГЭ/ЕГЭ с разбором",
       `${ARTIFACT_NAMES.control} с критериями оценивания`,
       interviewQuotaLabel("plus"),
-      "Ранний доступ к новым темам и предметам",
     ],
     cta: "Выбрать Плюс",
     href: "/pricing",
@@ -345,7 +437,7 @@ export const PLANS: Record<PlanId, Plan> = {
   },
 };
 
-export const PLAN_IDS: PlanId[] = ["free", "base", "plus", "school"];
+export const PLAN_IDS: PlanId[] = ["free", "base", "standard", "plus", "school"];
 
 /** 3 800 → «3 800 ₽» (неразрывный пробел, чтобы не рвалось переносом). */
 export function formatRub(amount: number): string {
@@ -420,11 +512,14 @@ export function maxAcademicYearDiscount(): string {
 export function legalPricingSentence(): string {
   const baseMonth = priceLabel("base", "month");
   const baseYear = priceLabel("base", "academicYear");
+  const standardMonth = priceLabel("standard", "month");
+  const standardYear = priceLabel("standard", "academicYear");
   const plusMonth = priceLabel("plus", "month");
   const plusYear = priceLabel("plus", "academicYear");
   const school = priceLabel("school", "month");
   return (
     `Стоимость подписки: тариф «${PLANS.base.name}» — ${baseMonth} или ${baseYear}; ` +
+    `тариф «${PLANS.standard.name}» — ${standardMonth} или ${standardYear}; ` +
     `тариф «${PLANS.plus.name}» — ${plusMonth} или ${plusYear}. ` +
     `Тариф «${PLANS.school.name}» — ${school} (ориентир, запуск ${PLANS.school.comingSoon}) — ` +
     `для образовательных учреждений. Оплата через ЮКасса, СБП или банковские карты. ` +

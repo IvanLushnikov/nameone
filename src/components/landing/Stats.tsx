@@ -2,6 +2,7 @@
 
 import { useInView, useCountUp } from "@/hooks/useInView";
 import { subjects } from "@/lib/content/subjects";
+import { MATERIALS_CATALOG } from "@/lib/content/materials-catalog";
 import { plural } from "@/lib/utils/cn";
 
 /**
@@ -28,6 +29,15 @@ export function getRealMetrics() {
     subjects: totalSubjects,
     subjectGradePairs,
     topics: totalTopics,
+    // ТЗ-21 п.9: витринных чисел на сайте не было вообще — у конкурентов
+    // «110 000 учителей», у нас молчание выглядело как пустой продукт. Показываем
+    // то, что можно посчитать в коде, а не выдуманную активность.
+    //
+    // ЧЕГО ТУТ НЕТ И ПОЧЕМУ. Счётчика «сколько листов сделали» в коде нет:
+    // worksheets считаются в БД (backend/src/db/schema.sql), на главной он был
+    // бы нулём у каждого нового посетителя. Выдумывать «10 000 листов»
+    // нельзя — это ровно тот приём, из-за которого конкуренты и не верят.
+    materials: MATERIALS_CATALOG.length,
     avgTimeSec: 30,
   };
 }
@@ -47,7 +57,10 @@ export function RealStats() {
             Что внутри
           </h2>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {/* Пять блоков: 2 колонки на телефоне, 3 на планшете, 5 в ряд на
+            десктопе. sm:grid-cols-4 при пяти блоках оставлял один сироту
+            во второй строке и ряд читался как «четыре числа + ошибка». */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {/* Подписи — формы слов, а не строки: числа считаются динамически,
               поэтому «предметов» жёстко в разметке давало «21 предметов». */}
           <StatBox
@@ -69,10 +82,19 @@ export function RealStats() {
             inView={inView}
           />
           <StatBox
+            value={m.materials}
+            labelForms={["материал", "материала", "материалов"]}
+            sub="в банке материалов"
+            inView={inView}
+          />
+          {/* «30 сек» — обещание из H1, а не измеренная метрика: замера
+              длительности генерации в коде нет. Число оставлено, но помечено
+              как оценка, чтобы владелец подтвердил его замером. */}
+          <StatBox
             value={m.avgTimeSec}
             suffix=" сек"
             labelForms={["среднее время"]}
-            sub="генерация листа"
+            sub="генерация листа · оценка"
             inView={inView}
           />
         </div>

@@ -62,8 +62,20 @@ export { ACADEMIC_YEAR_MONTHS };
  * запасом. Норма занижена не должна быть: при мягком пороге упереться в стену
  * нельзя, а вот недобрать тарифом можно.
  */
-export const PLAN_NORM_PER_MONTH: Record<"base" | "plus", number> = {
+/**
+ * Норма тарифа на месяц в взвешенных токенах.
+ *
+ * `standard` — тариф «Оптимальный», добавлен по ТЗ-21 п.4 (990 ₽/мес,
+ * норма втрое выше «Базового» за вдвое большую цену). Зеркалит
+ * `NORM_STANDARD` в `src/lib/content/plans.ts`.
+ *
+ * Ключи здесь — ровно те планы, у которых есть помесячная норма. «Школы» в
+ * таблице нет намеренно: её норма на класс живёт отдельной константой
+ * (`SCHOOL_NORM_PER_CLASS`), потому что на класс считают, а не на тариф.
+ */
+export const PLAN_NORM_PER_MONTH: Record<"base" | "standard" | "plus", number> = {
   base: 1_440_000,
+  standard: 4_800_000,
   plus: 16_000_000,
 };
 
@@ -78,7 +90,8 @@ export const TOKENS_PER_WORKSHEET = 1_600;
 
 const MONTH_SECONDS = 30 * 86400;
 
-export type UsagePlan = "free" | "base" | "plus";
+/** Тарифы, которые сервер знает по имени. `standard` — «Оптимальный» (ТЗ-21 п.4). */
+export type UsagePlan = "free" | "base" | "standard" | "plus";
 
 /** Метрики в таблице usage_counters. */
 export const METRIC_WEIGHTED = "weighted_tokens";
@@ -131,7 +144,9 @@ export async function usageWindowFor(
 
   // Помесячная оплата = окно в месяц; «учебный год» = окно на 9 месяцев.
   const months = sub.period === "academicYear" ? ACADEMIC_YEAR_MONTHS : 1;
-  const perMonth = PLAN_NORM_PER_MONTH[plan as "base" | "plus"] ?? PLAN_NORM_PER_MONTH.base;
+  // Ключ приводим к типу таблицы: `plan === "free"` уже отсечён выше, поэтому
+  // здесь остаются только платные тарифы, и все они есть в PLAN_NORM_PER_MONTH.
+  const perMonth = PLAN_NORM_PER_MONTH[plan as "base" | "standard" | "plus"] ?? PLAN_NORM_PER_MONTH.base;
   const start = new Date(sub.startsAt).getTime();
   const norm = Math.round(perMonth * months);
   return {

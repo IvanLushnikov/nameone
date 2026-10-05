@@ -152,7 +152,7 @@ export type ArtifactType =
   | "image";
 
 /** Тариф юзера. Влияет на НОРМУ и на право на премиум-типы, но НЕ на выбор модели. */
-export type Plan = "free" | "base" | "plus";
+export type Plan = "free" | "base" | "standard" | "plus";
 
 /** Pick провайдера+модели (или null — не реализовано). */
 export interface ProviderPick {

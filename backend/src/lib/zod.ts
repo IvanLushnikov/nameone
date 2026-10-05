@@ -51,7 +51,7 @@ export const taskTypeSchema = z.enum([
   "ege",
 ]);
 
-export const planSchema = z.enum(["free", "base", "plus"]);
+export const planSchema = z.enum(["free", "base", "standard", "plus"]);
 
 export const periodSchema = z.enum(["monthly", "academicYear"]);
 
@@ -97,7 +97,7 @@ export const paginationSchema = z.object({
 });
 
 export const createPaymentRequestSchema = z.object({
-  plan: z.enum(["base", "plus"]),
+  plan: z.enum(["base", "standard", "plus"]),
   period: periodSchema,
   /**
    * Согласие учителя на безакцептные списания (ТЗ-20).
