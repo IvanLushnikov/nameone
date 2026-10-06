@@ -7,6 +7,7 @@
  *  - generateWorksheet(...) → { worksheet, meta }
  *  - generateExam(...)      → { variant, meta }
  *  - validateWorksheet(...) → { score, issues, meta }
+ *  - verifySelfTask(...)    → { verified, answer, explanation, latencyMs, model }
  *  - embed(texts, env)      → { vectors, model, costUsd }
  *
  * Все вызовы автоматически:
@@ -23,7 +24,7 @@
 
 import type { D1Database } from "@cloudflare/workers-types";
 import type { Env } from "../env";
-import { BadRequestError, InternalError } from "../lib/errors";
+import { BadRequestError, InternalError, throwApiError } from "../lib/errors";
 import { logLlmEvent } from "./log";
 import { moderateGenerationRequest } from "./moderation";
 import { checkLlmRateLimit, ipHashFromHeaders } from "./ratelimit";
@@ -32,6 +33,7 @@ import { lookupCache, makeCacheKey, saveCache } from "./cache";
 import { buildWorksheetPrompt, sanitizeTextLatex } from "./prompts/worksheet-gen";
 import { buildExamPrompt } from "./prompts/exam-gen";
 import { buildValidatePrompt } from "./prompts/validate";
+import { SOLVE_PROMPT, VERIFY_PROMPT } from "./prompts/self-verify";
 import { buildPhotoCheckPrompt, type PhotoCheckTask } from "./prompts/photo-check";
 import { calcCost, estimateImageTokens } from "./cost";
 import { gradePhotoCheck, type PhotoCheckSummary } from "../services/photoCheckGrading";
@@ -532,6 +534,230 @@ export async function validateWorksheet(
   });
 
   return { score, issues, meta };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// verifySelfTask (F-05-B) — двухпроходная проверка одного задания
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface SelfVerifyTaskInput {
+  subject: string;
+  grade: number;
+  topic: string;
+  text: string;
+  expectedAnswer?: string;
+}
+
+export interface SelfVerifyArgs {
+  task: SelfVerifyTaskInput;
+  userId: string | null;
+  plan: "free" | "base" | "standard" | "plus";
+}
+
+export interface SelfVerifyResult {
+  verified: boolean;
+  answer: string;
+  explanation: string;
+  latencyMs: number;
+  /** Модель, которая ответила на verify-проход (она же решала задачу). */
+  model: string;
+}
+
+/**
+ * Проверить одно задание двумя проходами через LLM: solve → verify.
+ *
+ * Логика перенесена из отдельного воркера `worker-self-verify/` (10.10.2026),
+ * где ключа POLZA_API_KEY не было, а отсутствие ключа молча возвращало подставной
+ * `verified: true`. Здесь ключ один — тот же, что у генерации, и ПОДСТАВНОЙ
+ * ОТВЕТ НЕДОПУСТИМ: по нему решается, зачтена ли ученику работа. Нет ключа,
+ * провайдер упал или JSON не распарсился → ошибка (503/502), фронт показывает
+ * «не проверено». Ни одна ветка этого кода не отдаёт 200 без реального
+ * ответа модели.
+ *
+ * Задача роутера — существующая «validate» (deepseek-v4-flash через polza):
+ * новый GenerationKind не заводим, матрица роутинга закрыта тестами.
+ *
+ * Про `checkLlmRateLimit` здесь сознательно НЕТ, хотя он есть в llm/ratelimit.ts:
+ * он тянет бесплатную квоту «3 генерации всего», а self-verify зовётся по одному
+ * разу на КАЖДОЕ задание листа (src/lib/mock/generator.ts) — квота кончалась бы
+ * на третьем задании, и проверка молча выключалась бы на всех листах. Лимит
+ * частоты тут ставит HTTP-слой (rateLimitMiddleware в routes/llm.ts).
+ */
+export async function verifySelfTask(
+  args: SelfVerifyArgs,
+  env: Env,
+  db: D1Database,
+): Promise<SelfVerifyResult> {
+  const start = Date.now();
+  const { userId, plan } = args;
+  const task = args.task;
+
+  const decision = pickModel("validate", env);
+  if (!decision.primary) {
+    throw throwApiError(
+      503,
+      "LLM_UNAVAILABLE",
+      "Проверка ответа недоступна: не настроен POLZA_API_KEY. Ответ НЕ проверен.",
+    );
+  }
+  const model = decision.primary.model;
+
+  // ── Проход 1: решить ──────────────────────────────────────────────────────
+  const solve = await callWithFallback(
+    {
+      model,
+      messages: [
+        {
+          role: "user",
+          content: SOLVE_PROMPT({
+            subject: task.subject,
+            grade: task.grade,
+            topic: task.topic,
+            taskText: task.text,
+            expectedAnswer: task.expectedAnswer,
+          }),
+        },
+      ],
+      // Решение — свободный текст с «Ответ: …», JSON тут не нужен.
+      temperature: 0,
+      maxTokens: 800,
+    },
+    decision,
+    env,
+  );
+
+  const answer = extractSelfVerifyAnswer(solve.response.content);
+
+  // ── Проход 2: проверить ───────────────────────────────────────────────────
+  const verify = await callWithFallback(
+    {
+      model,
+      messages: [
+        {
+          role: "user",
+          content: VERIFY_PROMPT({
+            subject: task.subject,
+            grade: task.grade,
+            taskText: task.text,
+            proposedAnswer: solve.response.content,
+            expectedAnswer: task.expectedAnswer,
+          }),
+        },
+      ],
+      responseFormat: "json",
+      temperature: 0,
+      maxTokens: 800,
+    },
+    decision,
+    env,
+  );
+
+  const parsed = parseSelfVerifyJson(verify.response.content);
+  if (!parsed) {
+    // Модель ответила, но не тем форматом, который мы разобрать можем.
+    // Отвечаем 502, а НЕ `verified: false`: «не смогли разобрать» и «решение
+    // неверное» — разные вещи, и учитель должен видеть первую, а не вторую.
+    throw throwApiError(502, "LLM_BAD_RESPONSE", "Проверка ответа не выполнена: модель вернула неожиданный формат ответа", {
+      model: verify.model,
+      preview: verify.response.content.slice(0, 200),
+    });
+  }
+
+  // ── Учёт: оба вызова платные, оба и тарифицируются ───────────────────────
+  const latencyMs = Date.now() - start;
+
+  // Две строки в llm_logs — по одной на вызов: сходимость расхода с биллингом
+  // проверяется по вызовам, а не по сумме одной записи.
+  for (const step of [
+    { stage: "solve", res: solve },
+    { stage: "verify", res: verify },
+  ]) {
+    await logLlmCall(db, {
+      userId,
+      task: "validate",
+      provider: step.res.provider,
+      model: step.res.model,
+      plan,
+      tokensIn: step.res.response.tokensIn,
+      tokensOut: step.res.response.tokensOut,
+      costUsd: step.res.response.costUsd,
+      latencyMs,
+      cached: false,
+      fallback: step.res.generation === "boost",
+    });
+    logLlmEvent("info", "verifySelfTask: step done", {
+      stage: step.stage,
+      model: step.res.model,
+      provider: step.res.provider,
+      tokensIn: step.res.response.tokensIn,
+      tokensOut: step.res.response.tokensOut,
+      costUsd: step.res.response.costUsd,
+    });
+  }
+
+  await recordUsage(db, env, {
+    userId,
+    plan,
+    // Сумма взвешенных токенов обоих проходов — «изобретать свою формулу»
+    // нельзя, норма тарифа считается ровно этой единицей.
+    weightedTokens:
+      weightedTokens(solve.model, solve.response.tokensOut) +
+      weightedTokens(verify.model, verify.response.tokensOut),
+  });
+
+  return {
+    verified: parsed.verified,
+    answer,
+    explanation: parsed.reason,
+    latencyMs,
+    model: verify.model,
+  };
+}
+
+/**
+ * Извлечь финальный ответ из свободного текста решения (перенесено из воркера).
+ * Модель возвращает текст вида "...Ответ: 7/3" — берём последнее вхождение.
+ */
+export function extractSelfVerifyAnswer(solveText: string): string {
+  const lines = solveText.split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = (lines[i] ?? "").trim();
+    const match = line.match(/(?:^|\s)(?:ответ|answer)\s*[:=]\s*(.+)$/i);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+  }
+  // fallback — последняя непустая строка, обрезанная до 200 символов
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = (lines[i] ?? "").trim();
+    if (line.length > 0) {
+      return line.slice(0, 200);
+    }
+  }
+  return solveText.trim().slice(0, 200);
+}
+
+/**
+ * Разобрать JSON-ответ verify-прохода (перенесено из воркера).
+ * Допускаем обрамляющий текст и ```json fences. null = разобрать нельзя.
+ */
+export function parseSelfVerifyJson(raw: string): { verified: boolean; reason: string } | null {
+  // Убираем markdown-обрамление, если модель его добавила
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fenced ? (fenced[1] ?? raw) : raw;
+  // Ищем первый {...} блок
+  const objMatch = candidate.match(/\{[\s\S]*\}/);
+  if (!objMatch) return null;
+  try {
+    const parsed = JSON.parse(objMatch[0]) as { verified?: unknown; reason?: unknown };
+    if (typeof parsed.verified !== "boolean") return null;
+    return {
+      verified: parsed.verified,
+      reason: typeof parsed.reason === "string" ? parsed.reason : "",
+    };
+  } catch {
+    return null;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
