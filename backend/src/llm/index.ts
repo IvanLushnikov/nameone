@@ -38,6 +38,7 @@ import { buildPhotoCheckPrompt, type PhotoCheckTask } from "./prompts/photo-chec
 import { calcCost, estimateImageTokens } from "./cost";
 import { gradePhotoCheck, type PhotoCheckSummary } from "../services/photoCheckGrading";
 import { findLanguageViolation } from "./validation/language-guard";
+import { reconcileSelfVerifyVerdict } from "./validation/answer-check";
 import { callPolzaEmbedding } from "./providers/polza";
 import { isProviderEnabled, supportsPromptCache, weightedTokens } from "./config";
 import { recordUsage, getUsageStatus, type UsageStatus } from "../services/usage";
@@ -582,6 +583,14 @@ export interface SelfVerifyResult {
  * разу на КАЖДОЕ задание листа (src/lib/mock/generator.ts) — квота кончалась бы
  * на третьем задании, и проверка молча выключалась бы на всех листах. Лимит
  * частоты тут ставит HTTP-слой (rateLimitMiddleware в routes/llm.ts).
+ *
+ * Что гарантирует честность вердикта (06.10.2026):
+ *  1. Проход 1 НЕ видит эталон — иначе проверка сравнивала бы подстроенное
+ *     решение с той же подсказкой и всегда отвечала «верно».
+ *  2. Проход 2 получает извлечённый финальный ответ, а не текст решения.
+ *  3. Поверх ответа модели идёт детерминированная сверка ответа с эталоном
+ *     (validation/answer-check.ts): модель не может подтвердить заведомо
+ *     неверный ответ.
  */
 export async function verifySelfTask(
   args: SelfVerifyArgs,
@@ -614,7 +623,11 @@ export async function verifySelfTask(
             grade: task.grade,
             topic: task.topic,
             taskText: task.text,
-            expectedAnswer: task.expectedAnswer,
+            // `expectedAnswer` сюда НЕ передаётся и не должен: первый проход обязан
+            // решать независимо. С эталоном, подставленным в решающий промпт,
+            // проверка превращалась в равенство «подстроили → сравнили с тем же
+            // самым» и всегда давала verified: true. Подробности — в шапке
+            // prompts/self-verify.ts.
           }),
         },
       ],
@@ -628,6 +641,20 @@ export async function verifySelfTask(
 
   const answer = extractSelfVerifyAnswer(solve.response.content);
 
+  // Модель ответила пустотой: извлекать нечего, а отправлять пустую строку в
+  // verify-проход означало бы отдать проверяющему задачу без ответа и получить
+  // от него случайный вердикт. Это та же категория, что и неразбираемый JSON
+  // ниже: «проверка не выполнена», а не «работа неверна» → 502, фронт рисует
+  // «не проверено».
+  if (!answer) {
+    throw throwApiError(
+      502,
+      "LLM_BAD_RESPONSE",
+      "Проверка ответа не выполнена: модель не вернула финальный ответ задачи",
+      { model: solve.model, preview: solve.response.content.slice(0, 200) },
+    );
+  }
+
   // ── Проход 2: проверить ───────────────────────────────────────────────────
   const verify = await callWithFallback(
     {
@@ -639,7 +666,11 @@ export async function verifySelfTask(
             subject: task.subject,
             grade: task.grade,
             taskText: task.text,
-            proposedAnswer: solve.response.content,
+            // Именно извлечённый финальный ответ, а не весь текст решения.
+            // Раньше сюда уходил `solve.response.content` — проверяющий
+            // сравнивал формулировки («Шаг 1: складываем дроби…») вместо ответов,
+            // и это ещё один путь к безусловному `true`.
+            proposedAnswer: answer,
             expectedAnswer: task.expectedAnswer,
           }),
         },
@@ -705,10 +736,33 @@ export async function verifySelfTask(
       weightedTokens(verify.model, verify.response.tokensOut),
   });
 
+  // Страховка поверх ответа модели: если модель сказала «верно», а извлечённый
+  // ответ заведомо не совпадает с эталоном — итог всё равно «неверно».
+  // Обоснование и границы метода — в validation/answer-check.ts; там же о том,
+  // почему сверка может только ЗАПРЕТИТЬ «верно», но не выдать его.
+  const verdict = reconcileSelfVerifyVerdict({
+    modelVerified: parsed.verified,
+    proposedAnswer: answer,
+    expectedAnswer: task.expectedAnswer,
+  });
+  if (verdict.overridden) {
+    logLlmEvent("warn", "verifySelfTask: модель подтвердила расхождение с эталоном", {
+      model: verify.model,
+      proposed: answer.slice(0, 100),
+      expected: (task.expectedAnswer ?? "").slice(0, 100),
+    });
+  }
+
   return {
-    verified: parsed.verified,
+    verified: verdict.verified,
     answer,
-    explanation: parsed.reason,
+    // Пояснение дополняем заметкой сверки: по одному тексту модели непонятно,
+    // откуда взялся вердикт, а учитель видит именно строку explanation.
+    explanation: verdict.note
+      ? parsed.reason
+        ? `${parsed.reason} ${verdict.note}`
+        : verdict.note
+      : parsed.reason,
     latencyMs,
     model: verify.model,
   };
