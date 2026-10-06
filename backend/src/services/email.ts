@@ -425,7 +425,10 @@ export async function sendEmailChangeEmail(
     `</div>`;
 
   try {
-    const { data, error } = await resend.emails.send({
+    // `data` не разбираем: успех определяется отсутствием `error`, сам ответ
+    // Resend здесь ничего не добавляет. Раньше он был в деструктуризации и
+    // ронял eslint в CI — файл был сломан до этого захода.
+    const { error } = await resend.emails.send({
       from: FROM,
       to,
       subject: "Подтвердите новую почту в УчЛисте",
