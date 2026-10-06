@@ -38,9 +38,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { verifySelfTask } from "../../backend/src/llm";
-import { _resetPolzaSingleton } from "../../backend/src/llm/providers/polza";
-import type { Env } from "../../backend/src/env";
+import { verifySelfTask } from "../../src/llm";
+import { _resetPolzaSingleton } from "../../src/llm/providers/polza";
+import type { Env } from "../../src/env";
 
 const FAKE_ENV = {
   POLZA_API_KEY: "test-key",
