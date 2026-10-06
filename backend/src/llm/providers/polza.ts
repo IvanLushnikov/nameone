@@ -105,17 +105,38 @@ export function getPolzaProvider(env: Env): Provider {
         throw new InternalError(`polza HTTP ${res.status}: ${text.slice(0, 200)}`);
       }
 
+      // Разбор ответа. `finish_reason` и детали usage добавлены 06.10.2026 для
+      // диагностики пустого content — раньше они не парсились вообще, и по логу
+      // было невозможно отличить «лимит токенов съеден размышлением» от других
+      // причин пустого ответа.
+      //
+      // Все новые поля ОПЦИОНАЛЬНЫ и только читаются: провайдер, который их не
+      // отдаёт, разбирается ровно как раньше (значение станет `null`), ничего
+      // другого провайдера это не затрагивает — тип локальный для polza.ts.
       const data = (await res.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
+        choices?: Array<{ message?: { content?: string }; finish_reason?: string | null }>;
         usage?: {
           prompt_tokens?: number;
           completion_tokens?: number;
           total_tokens?: number;
           prompt_tokens_details?: { cached_tokens?: number };
+          /**
+           * Токены внутреннего размышления. OpenAI-совместимое поле — у одних
+           * провайдеров `usage.completion_tokens_details.reasoning_tokens`,
+           * у других (deepseek-подобные) — плоский `usage.reasoning_tokens`.
+           * Читаем оба, иначе причина пустого ответа снова останется невидимой.
+           */
+          completion_tokens_details?: { reasoning_tokens?: number };
+          reasoning_tokens?: number;
         };
         model?: string;
       };
       const content = data.choices?.[0]?.message?.content ?? "";
+      const finishReason = data.choices?.[0]?.finish_reason ?? null;
+      const reasoningTokens =
+        data.usage?.completion_tokens_details?.reasoning_tokens ??
+        data.usage?.reasoning_tokens ??
+        null;
       const tokensIn = data.usage?.prompt_tokens ?? 0;
       const tokensOut = data.usage?.completion_tokens ?? 0;
       const cachedTokens = data.usage?.prompt_tokens_details?.cached_tokens ?? 0;
@@ -135,9 +156,48 @@ export function getPolzaProvider(env: Env): Provider {
         outputTokens: tokensOut,
         costUsd,
         latencyMs,
+        finishReason,
       });
 
       if (!content) {
+        // ─────────────────────────────────────────────────────────────────
+        // ДИАГНОСТИКА ПУСТОГО ОТВЕТА (06.10.2026)
+        //
+        // Пустой content — это не «модель не знает ответ», это обрыв ответа:
+        // провайдер вернул 200 и usage, но текста нет. Самая частая причина,
+        // если модель с размышлением: короткий max_tokens целиком съеден
+        // внутренним «обдумыванием», на ответ не осталось ничего.
+        //
+        // Логируем ровно то, по чему эти причины различаются:
+        //   finish_reason === "length" + completion_tokens около maxTokens
+        //       → лимит токенов съеден размышлением (finish_reason=length);
+        //   finish_reason === "stop" при completion_tokens заметно меньше
+        //       → ответ дошёл до конца, пустым его сделало что-то другое
+        //         (содержание, фильтр, сбой на стороне провайдера);
+        //   finish_reason === null (поле не отдано)
+        //       → провайдер не сообщает причину, судить можно только по usage.
+        //   completion_tokens === 0 при ненулевом prompt_tokens
+        //       → модель не сгенерировала ничего вообще, reasoning не при чём.
+        //
+        // В лог идут ТОЛЬКО числа и finish_reason: ни промпта, ни ответа,
+        // ни ключа — секретов тут нет. maxTokens дублируем, чтобы по логу
+        // было видно, во что упёрся вызов (args.maxTokens может быть undefined,
+        // а тело запроса уходит с дефолтом 4096).
+        //
+        // Бросок и его текст НЕ меняем: по строке «polza вернул пустой content»
+        // в других местах ловится причина отказа (см. retry в verifySelfTask),
+        // и фронт показывает её пользователю в теле 500.
+        // ─────────────────────────────────────────────────────────────────
+        logLlmEvent("warn", "polza: пустой content в ответе", {
+          provider: "polza",
+          model: data.model ?? args.model,
+          finishReason,
+          inputTokens: tokensIn,
+          outputTokens: tokensOut,
+          reasoningTokens,
+          requestedMaxTokens: args.maxTokens ?? 4096,
+          latencyMs,
+        });
         throw new InternalError("polza вернул пустой content");
       }
 
