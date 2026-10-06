@@ -1,13 +1,20 @@
 /**
- * Regression: TZ-4 + TZ-5 (QA-аудит 2026-09-30) — ArtifactTypePicker.
+ * Regression: TZ-4 + TZ-5 (QA-аудит 2026-09-30) + BL-05 (06.10.2026) — ArtifactTypePicker.
  *
  * TZ-5: кнопки plusOnly для бесплатных юзеров должны:
  *   1. Визуально отличаться от enabled (opacity, яркий badge, lock-иконка).
  *   2. При клике НЕ вызывать onChange, а перенаправлять на /pricing/.
  *
- * TZ-4 (косвенно через TZ-5): кликабельные кнопки в enabled-режиме должны
- *   триггерить onChange (это та же prop, через которую родитель сбрасывает
- *   закэшированные артефакты при смене типа).
+ * BL-05 (2026-10-06): часть типов сервер НЕ умеет собирать — /api/lesson-plans,
+ * /api/presentations, /api/ktp, /api/cards, /api/materials, /api/bundles отдают
+ * HTTP 501. Раньше это нигде не отражалось: нажатие давало типовую заготовку,
+ * неотличимую от готового материала. Теперь такие типы помечены и не выбираются.
+ *
+ * ТЕСТЫ TZ-5 НИЖЕ ВЕДУТ СЕБЯ ПО-СТАРОМУ (проверяют доступность «Презентации»
+ * при hasPlus=true), но этот сценарий больше невозможен в жизни: наличие
+ * подписки не делает серый по серверу тип рабочим. Поэтому ожидания переписаны
+ * под фактическое поведение, а логика проверки plusOnly сохранена на типах,
+ * которые сервер умеет.
  *
  * Заметка: TZ-4 (логика `kind`-селектора в constructor/page.tsx) живёт внутри
  * `ConstructorPage` — это client component с useSearchParams + useRouter +
@@ -93,28 +100,88 @@ describe("ArtifactTypePicker — TZ-5: plusOnly без hasPlus", () => {
     await user.click(screen.getByRole("radio", { name: /Презентация/ }));
 
     expect(onChange).not.toHaveBeenCalled();
-    expect(window.location.href).toBe("/pricing/");
+    // BL-05: презентация сервер не умеет собирать, поэтому клик объясняет
+    // статус, а не уводит на тарифы — редирект здесь был бы ложью.
+    expect(window.location.href).toBe("");
   });
 
-  it("title/tooltip подсказывает тариф «Плюс»", () => {
-    render(<ArtifactTypePicker value="worksheet" onChange={vi.fn()} hasPlus={false} />);
-    const btn = screen.getByRole("radio", { name: /Презентация/ });
-    expect(btn.getAttribute("title")).toMatch(/Плюс/);
+  // Тест «title подсказывает Плюс» удалён вместе с поведением, которое он
+  // описывал: 06.10.2026 выяснилось, что ВСЕ plusOnly-типы (план урока,
+  // презентация, КТП) сервер не умеет собирать. Значит подписка никогда не
+  // делает их доступными, и подсказка «Доступно в тарифе Плюс» стала бы враньём
+  // — учитель купил бы подписку ради материала, которого всё равно нет.
+  // Проверка самой механики plusOnly осталась на типах, доступных по тарифу
+  // (см. тест выше про доступные типы).
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BL-05 (06.10.2026): типы, которые сервер не собирает
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("ArtifactTypePicker — тип, которого нет на сервере", () => {
+  const SERVER_MISSING = [
+    { name: /Карточки/, id: "cards" },
+    { name: /План урока/, id: "lesson-plan" },
+    { name: /Презентация/, id: "presentation" },
+    { name: /КТП/, id: "ktp" },
+  ] as const;
+
+  it.each(SERVER_MISSING)(
+    "$name помечен и заблокирован ДАЖЕ при действующей подписке",
+    async ({ name, id }) => {
+      const onChange = vi.fn();
+      const user = userEvent.setup();
+      // hasPlus = true: подписка не делает серый по серверу тип рабочим.
+      render(<ArtifactTypePicker value="worksheet" onChange={onChange} hasPlus={true} />);
+
+      const btn = screen.getByRole("radio", { name });
+      expect(btn).toHaveAttribute("aria-disabled", "true");
+      expect(btn.className).toMatch(/opacity-60/);
+      expect(btn.getAttribute("title")).toMatch(/пока не собирает/i);
+
+      await user.click(btn);
+      // Главное: клик НЕ выбирает тип. Раньше он выбирался, и учитель получал
+      // заготовку вместо материала.
+      expect(onChange).not.toHaveBeenCalled();
+      expect(id).toBeTruthy();
+    }
+  );
+
+  it("клик объясняет статус через событие, а не молча ничего не делает", async () => {
+    const user = userEvent.setup();
+    const events: string[] = [];
+    const handler = (e: Event) => {
+      events.push((e as CustomEvent<{ type: string }>).detail?.type ?? "");
+    };
+    window.addEventListener("uc:artifact-type-not-ready", handler);
+
+    render(<ArtifactTypePicker value="worksheet" onChange={vi.fn()} hasPlus={true} />);
+    await user.click(screen.getByRole("radio", { name: /Карточки/ }));
+
+    window.removeEventListener("uc:artifact-type-not-ready", handler);
+    expect(events).toContain("cards");
+  });
+
+  it("рабочие типы остаются доступными при подписке", () => {
+    render(<ArtifactTypePicker value="worksheet" onChange={vi.fn()} hasPlus={true} />);
+    for (const name of [/Лист/, /Тест/, /Контрольная/]) {
+      expect(screen.getByRole("radio", { name })).toHaveAttribute("aria-disabled", "false");
+    }
   });
 });
 
 describe("ArtifactTypePicker — hasPlus: всё активно", () => {
-  it("plusOnly-опции доступны и реагируют на клик", async () => {
+  it("доступные типы реагируют на клик", async () => {
     const onChange = vi.fn();
     const user = userEvent.setup();
     render(<ArtifactTypePicker value="worksheet" onChange={onChange} hasPlus={true} />);
 
-    const btn = screen.getByRole("radio", { name: /Презентация/ });
+    const btn = screen.getByRole("radio", { name: /Контрольная/ });
     expect(btn).toHaveAttribute("aria-disabled", "false");
     expect(btn.className).not.toMatch(/opacity-60/);
 
     await user.click(btn);
-    expect(onChange).toHaveBeenCalledWith("presentation");
+    expect(onChange).toHaveBeenCalledWith("control");
     expect(window.location.href).toBe(""); // не ушли на /pricing/
   });
 });

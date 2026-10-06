@@ -48,22 +48,28 @@ describe("calcCost (polza tariffs)", () => {
     expect(cost).toBeCloseTo(0.03392, 6);
   });
 
-  it("deepseek-v4-flash: 3000 input + 500 output → ~$0.00026", () => {
-    // polza: 5.54 ₽ / 11.08 ₽ за 1M → $0.065 / $0.13
+  it("deepseek-v4-flash: 3000 input + 500 output → ~$0.00024", () => {
+    // polza.ai, сверено 06.10.2026: 5.03 ₽ / 10.07 ₽ за 1M → $0.059 / $0.118.
+    // Раньше здесь стояло $0.065 / $0.13 — завышено на ~10%.
     const cost = calcCost("deepseek-v4-flash", 3000, 500);
-    expect(cost).toBeCloseTo((3000 / 1e6) * 0.065 + (500 / 1e6) * 0.13, 6);
-    // = 0.000195 + 0.000065 = 0.00026
-    expect(cost).toBeCloseTo(0.00026, 6);
+    expect(cost).toBeCloseTo((3000 / 1e6) * 0.059 + (500 / 1e6) * 0.118, 6);
+    // = 0.000177 + 0.000059 = 0.000236
+    expect(cost).toBeCloseTo(0.000236, 6);
   });
 
-  it("qwen3-embedding-8b: free embeddings", () => {
+  it("qwen3-embedding-8b: платные эмбеддинги (1.20 ₽/1M, не бесплатно)", () => {
+    // Раньше в MODEL_COSTS стоял ноль — модель считалась бесплатной при том,
+    // что polza берёт за неё деньги. Ноль в учёте означал невидимый расход.
     const cost = calcCost("qwen3-embedding-8b", 1000, 0);
-    expect(cost).toBe(0);
+    expect(cost).toBeCloseTo((1000 / 1e6) * 0.014, 8);
+    expect(cost).toBeGreaterThan(0);
   });
 
-  it("text-embedding-3-large on polza: 1000 input → ~$0.00000013", () => {
+  it("text-embedding-3-large on polza: 1000 input → ~$0.000183", () => {
+    // 15.58 ₽/1M на polza.ai (сверено 06.10.2026) = $0.183 при курсе 85 ₽/$.
+    // Раньше стояло $0.13 с пометкой «уточнить» — занижение на 41%.
     const cost = calcCost("text-embedding-3-large", 1000, 0);
-    expect(cost).toBeCloseTo((1000 / 1e6) * 0.13, 8);
+    expect(cost).toBeCloseTo((1000 / 1e6) * 0.183, 8);
   });
 
   it("unknown model → 0 (with warn)", () => {

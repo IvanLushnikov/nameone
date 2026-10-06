@@ -250,12 +250,18 @@ export const MODEL_COSTS: Record<string, ModelCost> = {
     cacheReadPer1M: 0.28,
     cacheWritePer1M: 5.56,
   },
-  // deepseek/deepseek-v4-flash: 5.54 ₽ / 11.08 ₽ за 1M (базовая цена, не cheap-tier)
-  "deepseek-v4-flash": { inputPer1M: 0.065, outputPer1M: 0.13 },
-  // qwen3-embedding-8b — open-weight, self-host placeholder
-  "qwen3-embedding-8b": { inputPer1M: 0.0, outputPer1M: 0.0 },
-  // openai/text-embedding-3-large: уточнить точную цену polza; пока берём как у прямого OpenAI
-  "text-embedding-3-large": { inputPer1M: 0.13, outputPer1M: 0.0 },
+  // deepseek/deepseek-v4-flash: 5.03 ₽ / 10.07 ₽ за 1M (сверено с polza.ai 06.10.2026;
+  // раньше стояло 5.54 / 11.08 — завышено на ~10%, что занижало вес модели в норме)
+  "deepseek-v4-flash": { inputPer1M: 0.059, outputPer1M: 0.118 },
+  // qwen/qwen3-embedding-8b: 1.20 ₽ за 1M входа (polza.ai, сверено 06.10.2026).
+  // Раньше стоял ноль — то есть модель в учёте была бесплатной при том, что
+  // провайдер берёт за неё деньги. В скобках: рабочее имя на polza — с префиксом
+  // qwen/, openai/… отдаёт 404.
+  "qwen3-embedding-8b": { inputPer1M: 0.014, outputPer1M: 0.0 },
+  // openai/text-embedding-3-large: 15.58 ₽ за 1M входа = $0.183 при курсе 85 ₽/$
+  // (polza.ai, сверено 06.10.2026). Раньше стояло $0.13 с пометкой «уточнить» —
+  // занижение на 41%, из-за чего весь учёт эмбеддингов был оптимистичным.
+  "text-embedding-3-large": { inputPer1M: 0.183, outputPer1M: 0.0 },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

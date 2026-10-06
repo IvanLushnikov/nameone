@@ -290,7 +290,20 @@ export async function checkFreeQuota(
   ownerKey: string,
 ): Promise<{ allowed: boolean; used: number; limit: number; remaining: number }> {
   const key = `freetotal:${ownerKey}`;
-  const row = await db
+  // Читаем через СЕССИЮ, привязанную к primary (`first-primary`).
+  //
+  // Почему (06.10.2026): обычный `SELECT` по D1 может уйти в реплику, и тогда
+  // счётчик отстаёт от только что записанного `consumeFreeQuota`. На проде это
+  // выглядело как «лимит работает через раз»: серия анонимных запросов сначала
+  // блокировалась, потом три запроса подряд проходили, потом снова блокировалась.
+  // С кодовой стороны объяснить зависимость от заголовка Origin было нечем —
+  // в отпечаток он не входит; объясняется она именно отставанием реплики.
+  //
+  // Сессия даёт последовательную согласованность: чтение счётчика видит все
+  // предыдущие записи. Цена — одно лишнее обращение к primary на проверку,
+  // что для квоты из 3 генераций на весь период приемлемо.
+  const session = db.withSession("first-primary");
+  const row = await session
     .prepare(`SELECT count FROM rate_limits WHERE key = ?1`)
     .bind(key)
     .first<{ count: number }>();

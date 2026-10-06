@@ -40,8 +40,15 @@ import { gradePhotoCheck, type PhotoCheckSummary } from "../services/photoCheckG
 import { findLanguageViolation } from "./validation/language-guard";
 import { reconcileSelfVerifyVerdict } from "./validation/answer-check";
 import { callPolzaEmbedding } from "./providers/polza";
-import { isProviderEnabled, supportsPromptCache, weightedTokens } from "./config";
-import { recordUsage, getUsageStatus, type UsageStatus } from "../services/usage";
+import {
+  isProviderEnabled,
+  supportsPromptCache,
+  weightedTokens,
+  MODEL_COSTS,
+  REFERENCE_MODEL_ID,
+} from "./config";
+import { recordUsage, getUsageStatus, type UsageStatus, type UsagePlan } from "../services/usage";
+import { worksheetId } from "../lib/shortid";
 import type { GenerationRequest, Worksheet, ExamVariant, SubjectSlug, GenerateWorksheetMeta } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -151,9 +158,28 @@ export async function generateWorksheet(
   let worksheet: Worksheet;
   try {
     const parsed = JSON.parse(result.response.content) as Worksheet;
-    // Гарантируем, что id/title/createdAt есть.
+    // id и createdAt — ТОЛЬКО серверные, значение от модели игнорируется
+    // полностью (не «подставляем, если пусто»).
+    //
+    // Почему именно так, а не `parsed.id ?? серверный`:
+    //
+    //  1. ПОТЕРЯ ДАННЫХ. `worksheets.id` — первичный ключ, а сохранение идёт
+    //     через `INSERT OR REPLACE` (services/worksheet.ts). Идентификатор,
+    //     придуманный моделью, детерминирован: один и тот же запрос
+    //     (предмет+класс+тема) даёт один и тот же `id`. Два учителя с
+    //     одинаковым запросом писали в одну строку — лист второго затирал
+    //     лист первого вместе с его `user_id`. Это подтверждено на проде:
+    //     три запроса подряд возвращали `ws_biology_grade7_photosynthesis_hard_01`.
+    //  2. ЧУЖИЕ ЛИСТЫ ПО УГАДАННОМУ НОМЕРУ. Номера предсказуемы, а анонимный
+    //     лист (`user_id = null`) отдаёт по `GET /api/worksheets/:id` без входа
+    //     (routes/worksheets.ts:254). Отсюда: `GET ws_math_grade5_fractions_easy_001`
+    //     без авторизации отдавал чужой анонимный лист — HTTP 200.
+    //
+    // createdAt — по той же причине: модель писала туда константу
+    // (`2025-03-08T00:00:00Z` на проде), и это значение уходило в базу как
+    // время создания листа, отстоящее на полтора года.
     worksheet = {
-      id: parsed.id ?? `ws_${Date.now().toString(36)}`,
+      id: worksheetId(),
       title: parsed.title ?? request.topic,
       subject: parsed.subject ?? request.subject,
       grade: parsed.grade ?? request.grade,
@@ -179,7 +205,7 @@ export async function generateWorksheet(
             return next as unknown as Worksheet["tasks"][number];
           })
         : [],
-      createdAt: parsed.createdAt ?? new Date().toISOString(),
+      createdAt: new Date().toISOString(),
     };
   } catch {
     throw new InternalError("LLM returned invalid JSON for worksheet");
@@ -905,6 +931,9 @@ export interface EmbedArgs {
   texts: string[];
   /** Какую модель embeddings использовать. Если не задано — берётся из routing. */
   preferredModel?: "qwen3-embedding-8b" | "text-embedding-3-large";
+  /** Кто спрашивает: для llm_logs и мягкой нормы. Аноним → null/free. */
+  userId?: string | null;
+  plan?: UsagePlan;
 }
 
 export interface EmbedResult {
@@ -921,17 +950,71 @@ export interface EmbedResult {
  * (мультиязычный, для русских текстов; точное имя на polza не подтверждено).
  *
  * Если POLZA_API_KEY не задан — бросаем InternalError. routes должен fallback на mock.
+ *
+ * УЧЁТ (06.10.2026). До этого вызов эмбеддингов не попадал НИ в llm_logs,
+ * НИ в норму: единственным его следом был `costUsd`, который ручка сразу
+ * выбрасывала. При цене text-embedding-3-large это до ~4 ₽ за запрос
+ * (100 текстов × 8000 символов ≈ 265k токенов), то есть анонимный ручкой
+ * можно было вытянуть ~250 ₽ в час с одного адреса, и в отчётах этого
+ * не было видно вообще. Теперь каждый вызов пишется в llm_logs и, для
+ * платного тарифа, списывается в мягкую норму.
  */
-export async function embed(args: EmbedArgs, env: Env): Promise<EmbedResult> {
+export async function embed(
+  args: EmbedArgs,
+  env: Env,
+  db?: D1Database,
+): Promise<EmbedResult> {
   if (!isProviderEnabled(env, "polza")) {
     throw new InternalError(
       "Embeddings: POLZA_API_KEY not configured (set it in wrangler secret put or .dev.vars)",
     );
   }
   const model = args.preferredModel ?? "text-embedding-3-large";
+  const start = Date.now();
   // callPolzaEmbedding принимает один объект-аргумент { env, model, input }.
   // Раньше здесь передавались три позиционных аргумента — не компилировалось.
-  const { vectors, costUsd } = await callPolzaEmbedding({ env, model, input: args.texts });
+  const { vectors, costUsd, tokensIn } = await callPolzaEmbedding({
+    env,
+    model,
+    input: args.texts,
+  });
+
+  if (db) {
+    const userId = args.userId ?? null;
+    const plan: UsagePlan = args.plan ?? (userId ? "base" : "free");
+    await logLlmCall(db, {
+      userId,
+      task: "embed",
+      provider: "polza",
+      model,
+      plan,
+      tokensIn,
+      tokensOut: 0,
+      costUsd,
+      latencyMs: Date.now() - start,
+      cached: false,
+      fallback: false,
+    });
+    // recordUsage сам выходит на `plan === "free"` и без userId — анонимный
+    // расход остаётся видимым в llm_logs, но не в чьей-то норме: превысить
+    // норму без аккаунта нельзя. Для платного тарифа токены идут в счётчик.
+    //
+    // Взвешиваем САМИ, а не через `weightedTokens()`: та функция считает по
+    // ВЫХОДНЫМ токенам, а у эмбеддинга выхода нет — только вход. Считаем
+    // теми же деньгами, что и в llm_logs, иначе норма и журнал разойдутся.
+    const embedCost = MODEL_COSTS[model];
+    const refCost = MODEL_COSTS[REFERENCE_MODEL_ID];
+    const weightedIn =
+      embedCost && refCost && refCost.outputPer1M > 0
+        ? Math.round(tokensIn * (embedCost.inputPer1M / refCost.outputPer1M))
+        : 0;
+    await recordUsage(db, env, {
+      userId,
+      plan,
+      weightedTokens: weightedIn,
+    });
+  }
+
   return { vectors, model, costUsd };
 }
 

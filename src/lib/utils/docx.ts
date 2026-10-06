@@ -95,11 +95,48 @@ function cellWidthPct(colIndex: number): { size: number; type: (typeof WidthType
 
 export async function generateWorksheetDocx(
   worksheet: Worksheet,
-  options: { withAnswers?: boolean; withExplanations?: boolean } = {}
+  options: { withAnswers?: boolean; withExplanations?: boolean; isDemo?: boolean } = {}
 ): Promise<Blob> {
-  const { withAnswers = true, withExplanations = true } = options;
+  const { withAnswers = true, withExplanations = true, isDemo = false } = options;
 
   const children: Array<Paragraph | Table> = [];
+
+  // Пометка заготовки — ПЕРВОЙ строкой файла (NEW-EXPORT-1, 06.10.2026).
+  //
+  // На экране демо-режим помечен плашкой, на печати — водяным знаком, а вот
+  // выгруженный DOCX выглядел ровно как обычный готовый материал: учитель
+  // отдавал его на печать или в класс, не зная, что это типовой шаблон.
+  // Заготовка обязана быть видна в самом файле — иначе пометка теряется
+  // ровно там, где файл уходит из приложения.
+  if (isDemo) {
+    children.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: "ДЕМОНСТРАЦИОННАЯ ЗАГОТОВКА",
+            bold: true,
+            size: 22,
+            color: "C0392B",
+          }),
+        ],
+        alignment: AlignmentType.LEFT,
+        spacing: { after: 60 },
+      })
+    );
+    children.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: "Это типовой шаблон, а не созданный материал. Текст заданий не учительский — не раздавайте его ученикам.",
+            size: 18,
+            color: "C0392B",
+          }),
+        ],
+        alignment: AlignmentType.LEFT,
+        spacing: { after: 240 },
+      })
+    );
+  }
 
   // Шапка листа
   children.push(
@@ -188,15 +225,19 @@ export async function generateWorksheetDocx(
   // DOCX оставалось утверждение «проверено AI» — ровно тот вопрос, который
   // задала учительница.
   const allVerified =
-    worksheet.tasks.length > 0 && worksheet.tasks.every((t) => t.verified === true);
+    !isDemo &&
+    worksheet.tasks.length > 0 &&
+    worksheet.tasks.every((t) => t.verified === true);
 
   children.push(
     new Paragraph({
       children: [
         new TextRun({
-          text: allVerified
-            ? `УчЛист · ${SITE_HOST} · проверено AI`
-            : `УчЛист · ${SITE_HOST}`,
+          text: isDemo
+            ? `УчЛист · ${SITE_HOST} · демонстрационная заготовка`
+            : allVerified
+              ? `УчЛист · ${SITE_HOST} · проверено AI`
+              : `УчЛист · ${SITE_HOST}`,
           size: 18,
           color: "999999",
         }),

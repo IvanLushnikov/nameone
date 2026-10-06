@@ -22,7 +22,7 @@
 
 import { InternalError } from "../../lib/errors";
 import { calcCost } from "../cost";
-import { getBaseUrl } from "../config";
+import { getBaseUrl, MODEL_CATALOG } from "../config";
 import { logLlmEvent } from "../log";
 import type { Env } from "../../env";
 import type { LLMResponse, Provider } from "../types";
@@ -52,6 +52,17 @@ function getState(env: Env): PolzaProviderState {
   return cached;
 }
 
+/**
+ * Имя модели для polza: `apiName` из MODEL_CATALOG.
+ *
+ * Единственное место в коде, где внутренний id превращается в имя, которое
+ * понимает провайдер. Модели нет в каталоге (кастомный override из env) —
+ * отдаём как есть: лучше отправить то, что пришло, чем упасть на ровном месте.
+ */
+export function apiNameFor(modelId: string): string {
+  return MODEL_CATALOG[modelId]?.apiName ?? modelId;
+}
+
 export function getPolzaProvider(env: Env): Provider {
   const state = getState(env);
 
@@ -61,7 +72,13 @@ export function getPolzaProvider(env: Env): Provider {
     async complete(args, _env, _opts): Promise<LLMResponse> {
       void _env;
       const body: Record<string, unknown> = {
-        model: args.model,
+        // В polza уходит apiName из MODEL_CATALOG (`openai/gpt-6-luna`), а не
+        // наш внутренний id (`gpt-6-luna`). Раньше сюда уезжал внутренний id,
+        // и поле `apiName`, объявленное в каталоге, не читалось НИГДЕ — то есть
+        // оно было мёртвым, а провайдер получал имя, которое мы ему не обещали.
+        // Сейчас оно единственный источник имени для провайдера; если модели
+        // нет в каталоге, уходит id как раньше — это лучше, чем упасть.
+        model: apiNameFor(args.model),
         // TZ-11 §4.4: content может быть строкой (все существующие задачи) или
         // массивом content-part с картинкой (photo-check). Провайдер polza
         // OpenAI-совместимый, поэтому массив уходит без преобразований —
@@ -184,21 +201,25 @@ export function getPolzaProvider(env: Env): Provider {
         // было видно, во что упёрся вызов (args.maxTokens может быть undefined,
         // а тело запроса уходит с дефолтом 4096).
         //
-        // Бросок и его текст НЕ меняем: по строке «polza вернул пустой content»
+        // Текст ошибки НЕ меняем: по строке «polza вернул пустой content»
         // в других местах ловится причина отказа (см. retry в verifySelfTask),
         // и фронт показывает её пользователю в теле 500.
-        // ─────────────────────────────────────────────────────────────────
-        logLlmEvent("warn", "polza: пустой content в ответе", {
-          provider: "polza",
-          model: data.model ?? args.model,
+        //
+        // А вот ДЕТАЛИ идут вторым аргументом: без них причина отказа жила
+        // только в console воркера (логи Workers недолговечны и без Logpush
+        // их не видно постфактум), то есть восстановить «почему провайдер
+        // вернул пустоту» было невозможно ни ретроспективно, ни по факту.
+        // `callWithFallback` перехватывает эту ошибку и кладёт детали в
+        // llm_logs.error — после этого отказ виден в базе и по нему можно
+        // построить разбор «отказы по причинам».
+        throw new InternalError("polza вернул пустой content", {
           finishReason,
           inputTokens: tokensIn,
           outputTokens: tokensOut,
           reasoningTokens,
           requestedMaxTokens: args.maxTokens ?? 4096,
-          latencyMs,
+          model: data.model ?? args.model,
         });
-        throw new InternalError("polza вернул пустой content");
       }
 
       return {
@@ -223,18 +244,32 @@ export async function callPolzaEmbedding(args: {
   env: Env;
   model: string; // например "openai/text-embedding-3-large"
   input: string[];
-}): Promise<{ vectors: number[][]; model: string; costUsd: number }> {
+}): Promise<{ vectors: number[][]; model: string; costUsd: number; tokensIn: number }> {
   const state = getState(args.env);
   const start = Date.now();
 
-  const res = await fetch(`${state.baseUrl}/embeddings`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${state.apiKey}`,
-    },
-    body: JSON.stringify({ model: args.model, input: args.input }),
-  });
+  // Сетевой сбой раньше улетал наружу сырым исключением fetch, минуя
+  // InternalError, — из-за чего верхний слой видел два разных типа ошибок
+  // от одной ручки. Обёртываем так же, как основной chat/completions.
+  let res: Response;
+  try {
+    res = await fetch(`${state.baseUrl}/embeddings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${state.apiKey}`,
+      },
+      body: JSON.stringify({ model: args.model, input: args.input }),
+    });
+  } catch (e) {
+    logLlmEvent("error", "polza embed network failure", {
+      provider: "polza",
+      model: args.model,
+      error: String(e),
+      latencyMs: Date.now() - start,
+    });
+    throw new InternalError(`polza embed network failure: ${String(e)}`);
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -247,11 +282,25 @@ export async function callPolzaEmbedding(args: {
     throw new InternalError(`polza embed HTTP ${res.status}: ${text.slice(0, 200)}`);
   }
 
-  const data = (await res.json()) as {
+  // 200 с не-JSON телом бросалось сырым SyntaxError из res.json() — тот же
+  // разнобой типов ошибок, что и выше.
+  let data: {
     data?: Array<{ embedding: number[] }>;
     model?: string;
     usage?: { prompt_tokens?: number; total_tokens?: number };
   };
+  try {
+    data = (await res.json()) as typeof data;
+  } catch (e) {
+    logLlmEvent("error", "polza embed returned non-JSON body", {
+      provider: "polza",
+      model: args.model,
+      error: String(e),
+      latencyMs: Date.now() - start,
+    });
+    throw new InternalError("polza embed returned a non-JSON body");
+  }
+
   const vectors = (data.data ?? []).map((d) => d.embedding);
   const totalTokens = data.usage?.prompt_tokens ?? data.usage?.total_tokens ?? 0;
   // Раньше было calcCost("polza", args.model, totalTokens, 0) — 4 аргумента
@@ -259,5 +308,5 @@ export async function callPolzaEmbedding(args: {
   // параметр model, MODEL_COSTS["polza"] не существует → 0 USD.
   const costUsd = calcCost(args.model, totalTokens, 0);
 
-  return { vectors, model: data.model ?? args.model, costUsd };
+  return { vectors, model: data.model ?? args.model, costUsd, tokensIn: totalTokens };
 }

@@ -20,8 +20,29 @@ import { rateLimitMiddleware } from "../middleware/ratelimit";
 // AppEnv, а не { Bindings: Env }: /verify читает тариф из сессии (c.get("user")).
 const llmRouter = new Hono<AppEnv>();
 
+/**
+ * GET /api/llm/models — что видит клиент.
+ *
+ * Раньше ручка отдавала анонимно весь MODEL_CATALOG целиком: и модели, которых
+ * нет в роутинге, и их внутренние имена, и эмбеддинги, которые клиент не
+ * выбирает. Это утечка конфигурации: посторонний видел, какие модели у нас
+ * есть и какие у них провайдерские имена (BL-13).
+ *
+ * Теперь наружу уходит только список моделей, доступных учителю как выбор, —
+ * без внутренних имён и без признаков наличия ключей. Эмбеддинги из ответа
+ * убраны: это служебные модели, клиент их не выбирает.
+ */
+const CLIENT_VISIBLE_MODELS = [
+  "gpt-6-luna",
+  "gpt-6-sol",
+  "claude-sonnet-5-5",
+] as const;
+
 llmRouter.get("/models", (c) => {
-  const models = availableModels(c.env);
+  const available = availableModels(c.env);
+  const models = CLIENT_VISIBLE_MODELS.filter((m) =>
+    available.includes(m as string)
+  );
   return c.json({ ok: true, models });
 });
 
@@ -35,11 +56,18 @@ const embedSchema = z.object({
  * Ручка анонимная — иначе фронт не сможет считать похожесть до входа в ЛК.
  * Но без лимита это готовая точка расхода: любой может дёргать платный
  * эмбеддинг-эндпоинт нашего провайдера сколько угодно раз.
- * 60 запросов в час на IP с запасом перекрывает нормальное использование
- * (кегль в UI) и не даёт опустошить счёт.
+ *
+ * 06.10.2026 лимит снижен с 60 до 20 запросов в час, потому что тело запроса
+ * ограничено 100 текстами × 8000 символов (≈265k токенов). По реальному прайсу
+ * polza это до ~4 ₽ за один запрос, то есть старые 60/час давали ~250 ₽ в час
+ * с одного адреса, и расхода этого не было видно НИГДЕ — ни в норме, ни в
+ * отчёте (см. комментарий в llm/index.ts → embed).
+ *
+ * 20/час с запасом перекрывает нормальное использование (кегль в UI) и
+ * оставляет одну явно видимую точку, где расход уже посчитан.
  */
 const embedLimit = rateLimitMiddleware({
-  limit: 60,
+  limit: 20,
   windowSec: 3600,
   bucket: "embeddings",
 });
@@ -52,14 +80,26 @@ llmRouter.post("/embeddings", embedLimit, async (c) => {
     throw new BadRequestError("Invalid JSON body");
   }
   const { texts } = embedSchema.parse(textsBody);
-  const result = await embed({ texts }, c.env);
+
+  // Тариф — из сессии, не из тела запроса (то же правило, что в /verify).
+  const user = c.get("user");
+  const result = await embed(
+    {
+      texts,
+      userId: user?.id ?? null,
+      plan: user?.plan ?? "free",
+    },
+    c.env,
+    c.env.DB,
+  );
   return c.json({
     ok: true,
     vectors: result.vectors,
     model: result.model,
     // costUsd наружу не отдаём: это внутренняя метрика расхода на провайдера,
     // наружу она ничего полезного не даёт, но показывает постороннему, сколько
-    // мы тратим и сколько он «накрутил».
+    // мы тратим и сколько он «накрутил». Внутри вызов УЖЕ записан в llm_logs
+    // и в норму платного тарифа — то есть расход стал видимым там, где нужен.
   });
 });
 

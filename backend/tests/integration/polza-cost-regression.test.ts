@@ -14,9 +14,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { MODEL_COSTS } from "../../backend/src/llm/config";
-import { getPolzaProvider, _resetPolzaSingleton } from "../../backend/src/llm/providers/polza";
-import type { Env } from "../../backend/src/env";
+import { MODEL_COSTS } from "../../src/llm/config";
+import { getPolzaProvider, _resetPolzaSingleton } from "../../src/llm/providers/polza";
+import type { Env } from "../../src/env";
 
 const FAKE_ENV = {
   POLZA_API_KEY: "test-key",

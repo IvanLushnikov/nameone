@@ -3,7 +3,6 @@ import { getTopic, getSubject } from "@/lib/content/subjects";
 import { getUMKById } from "@/lib/content/umk";
 import { shortId } from "@/lib/utils/cn";
 import { pickChartForTopic } from "./chart-fixtures";
-import { selfVerifyTask } from "@/lib/llm/self-verify";
 
 /**
  * Мок-генератор рабочих листов и вариантов экзаменов.
@@ -160,24 +159,15 @@ export async function generateWorksheet(req: GenerationRequest): Promise<Workshe
 
   const baseTasks = tasks.slice(0, req.count);
 
-  // F-05-B: self-verification — параллельный вызов Worker-а для каждой задачи.
-  // Worker может быть недоступен: selfVerifyTask вернёт {verified: null}, генерация не падает.
-  const verifiedTasks: WorksheetTask[] = await Promise.all(
-    baseTasks.map(async (t) => {
-      const r = await selfVerifyTask({
-        subject: req.subject,
-        grade: req.grade,
-        topic: topic?.slug ?? req.topic,
-        text: t.text,
-        expectedAnswer: t.answer,
-      });
-      return {
-        ...t,
-        verified: r.verified,
-        verifiedExplanation: r.explanation,
-      };
-    })
-  );
+  // F-05: заготовка НЕ проверяется — и это исправление, а не потеря (06.10.2026).
+  //
+  // Раньше здесь стоял вызов selfVerifyTask по каждому заданию заготовки, то
+  // есть бейдж «проверено» получал ПОДСТАВНОЙ контент, а настоящий лист с
+  // сервера не проверялся никогда. Проверять типовой шаблон бессмысленно (его
+  // ответы заведомо верны) и притом это 10–20 платных вызовов на демо-лист.
+  // Настоящий лист проверяет учитель кнопкой «Проверить ответы» —
+  // см. src/lib/llm/verify-sheet.ts.
+  const verifiedTasks: WorksheetTask[] = baseTasks;
 
   const titlePrefix =
     req.type === "test" ? "Тест" :
