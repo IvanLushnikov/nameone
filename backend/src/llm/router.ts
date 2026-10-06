@@ -228,6 +228,15 @@ export async function callWithFallback(
   req: LLMRequest,
   decision: RoutingDecision,
   env: Env,
+  /**
+   * Кто и что пытались сгенерировать (BL-08).
+   *
+   * Необязателен специально: добавление обязательного параметра заставило бы
+   * переписать все 12 мест вызова, а выигрыш даёт только запись об отказе.
+   * Без него отказ пишется с `task = "unknown"` и `user_id = NULL` — то есть
+   * фиксируется факт («что-то сломалось»), но не причина («где именно»).
+   */
+  context?: { task?: string; userId?: string | null; plan?: string },
 ): Promise<CallResult> {
   const allPicks: ProviderPick[] = [];
   if (decision.primary) allPicks.push(decision.primary);
@@ -307,7 +316,11 @@ export async function callWithFallback(
       //
       // Пишем best-effort: ошибка записи не должна ломать генерацию, поэтому
       // всё обёрнуто в try/catch, а детали ошибки кладутся в поле `error`.
-      await recordFailedAttempt(env, pick, e, i + 1, allPicks.length);
+      await recordFailedAttempt(env, pick, e, i + 1, allPicks.length, {
+        task: context?.task ?? "unknown",
+        userId: context?.userId ?? null,
+        plan: context?.plan ?? "free",
+      });
 
       if (isLast) break;
     }
@@ -335,6 +348,7 @@ async function recordFailedAttempt(
   error: unknown,
   attempt: number,
   totalAttempts: number,
+  context: { task: string; userId: string | null; plan: string },
 ): Promise<void> {
   const db = (env as { DB?: D1Database }).DB;
   if (!db) return;
@@ -351,12 +365,21 @@ async function recordFailedAttempt(
         `INSERT INTO llm_logs
            (id, user_id, task, provider, model, plan,
             tokens_in, tokens_out, cost_usd, latency_ms, cached, fallback, error, created_at)
-         VALUES (?1, NULL, 'unknown', ?2, ?3, 'free', 0, 0, 0, 0, 0, ?4, ?5, ?6)`,
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, 0, 0, 0, 0, ?7, ?8, ?9)`,
       )
       .bind(
         `log_fail_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+        // BL-08: раньше здесь стояли NULL и 'unknown'. То есть в базу попадало
+        // «отказ неизвестного пользователя неизвестной задачи» — по такой строке
+        // нельзя было ни построить разбор причин (где именно рвётся), ни посчитать,
+        // сколько отказов досталось конкретному типу материала. Теперь пишется
+        // реальная задача и реальный владелец, поэтому группировка по причинам
+        // («план урока ломается на 429 у 12 учителей») работает на обычном GROUP BY.
+        context.userId,
+        context.task,
         pick.provider,
         pick.model,
+        context.plan,
         attempt > 1 ? 1 : 0,
         // Ограничиваем длину: error идёт в колонку TEXT, но разбор причин
         // читают глазами, и тысячи символов там не нужны.
@@ -367,6 +390,7 @@ async function recordFailedAttempt(
     logLlmEvent("info", "callWithFallback: failed attempt recorded", {
       provider: pick.provider,
       model: pick.model,
+      task: context.task,
       attempt,
       totalAttempts,
     });

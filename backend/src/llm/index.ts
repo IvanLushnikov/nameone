@@ -99,7 +99,10 @@ export async function generateWorksheet(
   await checkLlmRateLimit(db, { userId, ipHash, plan });
 
   // 3. Cache lookup
-  const cacheKey = makeCacheKey(request);
+  // Кэш персональный по владельцу: см. NEW-COST-6 в llm/cache.ts. Анонимные
+  // запросы (userId = null) делят один адрес кэша — иначе пришлось бы либо
+  // отдавать анонимам чужое, либо не кэшировать вовсе.
+  const cacheKey = makeCacheKey({ ...request, userId });
   if (!bypassCache) {
     const cached = await lookupCache(db, cacheKey);
     if (cached && typeof cached === "object" && cached.response) {
@@ -152,6 +155,9 @@ export async function generateWorksheet(
     },
     decision,
     env,
+    // BL-08: без этого отказ писался бы как «отказ неизвестного у неизвестной
+    // задачи», и по базе было нельзя понять, какой тип материала ломается.
+    { task, userId, plan },
   );
 
   // 5. Parse JSON
@@ -523,6 +529,9 @@ export async function validateWorksheet(
     },
     decision,
     env,
+    // BL-08: задача «validate» вместо «unknown» — иначе в разборе причин
+    // проверка листа и её генерация слипались бы в одну строку.
+    { task: "validate", userId: args.userId ?? null, plan: args.plan ?? "free" },
   );
 
   let score = 1.0;
@@ -611,6 +620,31 @@ export interface SelfVerifyResult {
 function isEmptyContentFailure(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e);
   return msg.includes("вернул пустой content");
+}
+
+/**
+ * Временный отказ провайдера, при котором повтор обычно срабатывает (BL-09).
+ *
+ * Это НЕ те же отказы, что `isEmptyContentFailure`: «пустой content» — про
+ * модель, которая ответила, но ничем; здесь — про провайдера, который не
+ * ответил вовсе. Различать важно, потому что лечатся они по-разному: пустой
+ * content бывает и на устойчивом сбое модели (повтор бесполезен), а 429/503 —
+ * почти всегда про momentarily перегрузку, где повтор через пару секунд
+ * обычно проходит.
+ *
+ * Повтор делается ровно один раз, и общий бюджет не растёт: этот блок и так
+ * ограничен одной дополнительной попыткой.
+ */
+function isTransientProviderFailure(e: unknown): boolean {
+  const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
+  // 429 — лимит на стороне провайдера, 503/502 — провайдер недоступен или
+  // прокси сброснул соединение. Сетевой сбой ловится по типовым формулировкам.
+  return (
+    /http (429|500|502|503|504)\b/.test(msg) ||
+    msg.includes("all providers failed") ||
+    msg.includes("network failure") ||
+    msg.includes("fetch failed")
+  );
 }
 
 /**
@@ -733,13 +767,23 @@ export async function verifySelfTask(
   try {
     solve = await callWithFallback(solveRequest, decision, env);
   } catch (e) {
-    if (!isEmptyContentFailure(e)) throw e;
-    logLlmEvent("warn", "verifySelfTask: solve вернул пустой content, одна повторная попытка", {
+    // BL-09: повтор срабатывал ТОЛЬКО на «пустой content». То есть при 429
+    // (лимит провайдера) и 503 (провайдер недоступен) — самых частых и самых
+    // временных отказах — повтор не делался, и учитель сразу получал «не
+    // проверено». Асимметрия была обратной ожидаемому: повторяли ровно тот
+    // случай, где повтор бесполезен (модель стабильно не отвечает), и не
+    // повторяли там, где он обычно срабатывает (кратковременная перегрузка).
+    //
+    // Один повтор здесь безопасен: это максимум один лишний вызов, и он не
+    // превращается в шторм — всего одна попытка сверх первой.
+    if (!isEmptyContentFailure(e) && !isTransientProviderFailure(e)) throw e;
+    logLlmEvent("warn", "verifySelfTask: solve не ответил, одна повторная попытка", {
       model,
       attempt: 1,
       maxAttempts: 2,
+      reason: isEmptyContentFailure(e) ? "empty_content" : "transient_provider",
     });
-    // Второй вызов — вне try: если он тоже вернёт пустоту, ошибка уходит наверх
+    // Второй вызов — вне try: если он тоже не ответит, ошибка уходит наверх
     // как раньше (500), а не превращается в бесконечный повтор.
     solve = await callWithFallback(solveRequest, decision, env);
     logLlmEvent("info", "verifySelfTask: повтор solve дал ответ", {

@@ -235,13 +235,19 @@ export const MODEL_COSTS: Record<string, ModelCost> = {
   "gpt-6-luna": { inputPer1M: 0.07, outputPer1M: 0.35 },
   // openai/gpt-6-sol: 118.13 ₽ / 590.66 ₽ → $1.39 / $6.95
   "gpt-6-sol": { inputPer1M: 1.39, outputPer1M: 6.95 },
-  // anthropic/claude-sonnet-5.5: 233,72 ₽ / 1 168,58 ₽ за 1M; cache_read 23,372 ₽
-  // Ровно половина Opus по обеим позициям. Кэш записи у Anthropic = 1,25 × input.
+  // anthropic/claude-sonnet-5.5: 239,65 ₽ / 1 198,26 ₽ за 1M (polza.ai, сверено
+  // 06.10.2026); cache_read 23,965 ₽. Ровно половина Opus по обеим позициям.
+  // Кэш записи у Anthropic = 1,25 × input.
+  //
+  // Курс, по которому переводились рубли в доллары: 86,2 ₽/$ — он не
+  // придуман, а выведен из самого прайса (Sol 119,83 ₽ ÷ $1.39 и Opus
+  // 479,30 ₽ ÷ $5.56 сходятся к одному курсу). Прежние комментарии
+  // опирались на 85 ₽/$, из-за чего Sonnet был занижен на ~1,1 %.
   "claude-sonnet-5-5": {
-    inputPer1M: 2.75,
-    outputPer1M: 13.75,
-    cacheReadPer1M: 0.275,
-    cacheWritePer1M: 3.4375,
+    inputPer1M: 2.78,
+    outputPer1M: 13.9,
+    cacheReadPer1M: 0.278,
+    cacheWritePer1M: 3.475,
   },
   // anthropic/claude-opus-5.5: 472.53 ₽ / 2362.64 ₽ за 1M; cache_read 23.63 ₽
   "claude-opus-5-5": {
