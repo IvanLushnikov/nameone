@@ -71,6 +71,17 @@ interface Env {
   WORKER_NAME?: string;
   APP_ENV?: string;
   /**
+   * Разрешать ли подставной ответ, когда POLZA_API_KEY не задан.
+   *
+   * По умолчанию — НЕ разрешать. Раньше mock был единственным поведением при
+   * отсутствии ключа, и из-за этого потеря секрета была не видна: `/verify`
+   * отвечал `verified: true, model: "mock"` — неотличимо от настоящей проверки.
+   * Молчаливая подмена на бэкенде, где решается, зачтена ли ученику работа,
+   * опаснее явной ошибки. Теперь без ключа воркер отвечает 503, а mock
+   * включается только явным ALLOW_MOCK="true" (локальная разработка без ключа).
+   */
+  ALLOW_MOCK?: string;
+  /**
    * Общий секрет для server-to-server вызовов.
    *
    * ВАЖНО: пока `/verify` вызывается прямо из браузера (src/lib/llm/self-verify.ts),
@@ -472,8 +483,20 @@ async function handleVerify(request: Request, env: Env): Promise<Response> {
     ? { ...req, task: { ...req.task, text: truncation.text } }
     : req;
 
-  // 4. Mock fallback: если ключа нет — возвращаем mock без обращения к внешнему API.
+  // 4. Нет ключа — уходим в mock ТОЛЬКО при явном разрешении.
+  //
+  // Иначе 503 с понятным текстом. Молчаливый mock здесь означал, что потеря
+  // POLZA_API_KEY выглядела как «всё работает»: фронт получал verified: true
+  // с model: "mock" и показывал учителю якобы проверенную работу.
   if (!env.POLZA_API_KEY || env.POLZA_API_KEY.length === 0) {
+    if (env.ALLOW_MOCK !== "true") {
+      return errorResponse(
+        503,
+        "POLZA_API_KEY не задан в окружении воркера — проверка ответа не выполнялась. " +
+          "Задать секрет: npx wrangler secret put POLZA_API_KEY " +
+          "(для прод-конфигуции добавь --env production).",
+      );
+    }
     metrics.mock_responses++;
     const result = mockVerify(effectiveReq);
     const latency = Date.now() - startedAt;
@@ -634,6 +657,16 @@ function checkSelfVerifyExposure(env: Env): void {
       'ALLOWED_ORIGINS="*" — воркер принимает вызовы с любого сайта. ' +
         "Прод-значение живёт в [env.production.vars]; при деплое без --env " +
         "публикуется верхний [vars] с этой настройкой.",
+    );
+  }
+
+  // Отсутствие ключа — не проблема конфигурации, а просто «воркер сейчас не
+  // работает». Но если mock при этом ещё разрешён, ответы будут подставными,
+  // и это надо видеть в логе, а не выяснять по отзывам учителей.
+  if (!env.POLZA_API_KEY && env.ALLOW_MOCK === "true") {
+    problems.push(
+      "POLZA_API_KEY не задан, но ALLOW_MOCK=\"true\" — /verify отвечает подставным " +
+        "результатом (verified по совпадению с эталоном), реальная модель не вызывается.",
     );
   }
 

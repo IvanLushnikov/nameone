@@ -24,6 +24,9 @@ POLZA_MODEL = "deepseek/deepseek-v4-flash"
 # Fallback если primary упал (network/HTTP/empty): GPT-6 Luna — самый дешёвый.
 # (если не задать, код возьмёт DEFAULT_POLZA_FALLBACK_MODEL из src/index.ts)
 POLZA_FALLBACK_MODEL = "openai/gpt-6-luna"
+# Без ключа воркер отвечает 503, а не подставным результатом. Локально без
+# ключа можно временно поставить "true" — тогда /verify вернёт заглушку.
+ALLOW_MOCK = "false"
 
 # Продакшн-окружение: суженные CORS, тот же воркер.
 [env.production]
@@ -37,6 +40,10 @@ APP_ENV = "production"
 ALLOWED_ORIGINS = "https://listai-prototype.pages.dev,https://www.listai-prototype.pages.dev"
 POLZA_MODEL = "deepseek/deepseek-v4-flash"
 POLZA_FALLBACK_MODEL = "openai/gpt-6-luna"
+# Живой воркер отвечает env:"production" на GET / — то есть прод задеплоен именно
+# с --env production. Секрет POLZA_API_KEY поэтому ставится с --env production.
+# Без ключа — 503 вместо подставного ответа (см. ALLOW_MOCK выше).
+ALLOW_MOCK = "false"
 
 # ── Ограничение нагрузки (в коде: 20 запросов в минуту на IP) ────────────────
 # Лимит в коде, менять здесь нечего. Он нужен потому, что воркер не требует
