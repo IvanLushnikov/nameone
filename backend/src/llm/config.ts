@@ -235,13 +235,19 @@ export const MODEL_COSTS: Record<string, ModelCost> = {
   "gpt-6-luna": { inputPer1M: 0.07, outputPer1M: 0.35 },
   // openai/gpt-6-sol: 118.13 ₽ / 590.66 ₽ → $1.39 / $6.95
   "gpt-6-sol": { inputPer1M: 1.39, outputPer1M: 6.95 },
-  // anthropic/claude-sonnet-5.5: 233,72 ₽ / 1 168,58 ₽ за 1M; cache_read 23,372 ₽
-  // Ровно половина Opus по обеим позициям. Кэш записи у Anthropic = 1,25 × input.
+  // anthropic/claude-sonnet-5.5: 239,65 ₽ / 1 198,26 ₽ за 1M (polza.ai, сверено
+  // 06.10.2026); cache_read 23,965 ₽. Ровно половина Opus по обеим позициям.
+  // Кэш записи у Anthropic = 1,25 × input.
+  //
+  // Курс, по которому переводились рубли в доллары: 86,2 ₽/$ — он не
+  // придуман, а выведен из самого прайса (Sol 119,83 ₽ ÷ $1.39 и Opus
+  // 479,30 ₽ ÷ $5.56 сходятся к одному курсу). Прежние комментарии
+  // опирались на 85 ₽/$, из-за чего Sonnet был занижен на ~1,1 %.
   "claude-sonnet-5-5": {
-    inputPer1M: 2.75,
-    outputPer1M: 13.75,
-    cacheReadPer1M: 0.275,
-    cacheWritePer1M: 3.4375,
+    inputPer1M: 2.78,
+    outputPer1M: 13.9,
+    cacheReadPer1M: 0.278,
+    cacheWritePer1M: 3.475,
   },
   // anthropic/claude-opus-5.5: 472.53 ₽ / 2362.64 ₽ за 1M; cache_read 23.63 ₽
   "claude-opus-5-5": {
@@ -250,12 +256,18 @@ export const MODEL_COSTS: Record<string, ModelCost> = {
     cacheReadPer1M: 0.28,
     cacheWritePer1M: 5.56,
   },
-  // deepseek/deepseek-v4-flash: 5.54 ₽ / 11.08 ₽ за 1M (базовая цена, не cheap-tier)
-  "deepseek-v4-flash": { inputPer1M: 0.065, outputPer1M: 0.13 },
-  // qwen3-embedding-8b — open-weight, self-host placeholder
-  "qwen3-embedding-8b": { inputPer1M: 0.0, outputPer1M: 0.0 },
-  // openai/text-embedding-3-large: уточнить точную цену polza; пока берём как у прямого OpenAI
-  "text-embedding-3-large": { inputPer1M: 0.13, outputPer1M: 0.0 },
+  // deepseek/deepseek-v4-flash: 5.03 ₽ / 10.07 ₽ за 1M (сверено с polza.ai 06.10.2026;
+  // раньше стояло 5.54 / 11.08 — завышено на ~10%, что занижало вес модели в норме)
+  "deepseek-v4-flash": { inputPer1M: 0.059, outputPer1M: 0.118 },
+  // qwen/qwen3-embedding-8b: 1.20 ₽ за 1M входа (polza.ai, сверено 06.10.2026).
+  // Раньше стоял ноль — то есть модель в учёте была бесплатной при том, что
+  // провайдер берёт за неё деньги. В скобках: рабочее имя на polza — с префиксом
+  // qwen/, openai/… отдаёт 404.
+  "qwen3-embedding-8b": { inputPer1M: 0.014, outputPer1M: 0.0 },
+  // openai/text-embedding-3-large: 15.58 ₽ за 1M входа = $0.183 при курсе 85 ₽/$
+  // (polza.ai, сверено 06.10.2026). Раньше стояло $0.13 с пометкой «уточнить» —
+  // занижение на 41%, из-за чего весь учёт эмбеддингов был оптимистичным.
+  "text-embedding-3-large": { inputPer1M: 0.183, outputPer1M: 0.0 },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

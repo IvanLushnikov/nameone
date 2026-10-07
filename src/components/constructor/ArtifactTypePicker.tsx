@@ -43,19 +43,43 @@ export interface ArtifactTypeOption {
   plusOnly?: boolean;
   /** Показывать, даже если группа свёрнута (топ-1 тип группы). */
   primaryInGroup?: boolean;
+  /**
+   * Сервер этот тип пока не собирает (BL-05, 06.10.2026).
+   *
+   * Раньше такие типы выглядели в выборе как обычные, а по нажатию «Создать»
+   * интерфейс молча подставлял типовую заготовку — учитель получал не то,
+   * что просил, и терял попытку. Теперь статус виден ДО нажатия: тип помечен,
+   * а клик объясняет, почему он недоступен.
+   */
+  notImplementedOnServer?: boolean;
 }
+
+/**
+ * Типы, которые сервер на 06.10.2026 отдаёт как «не реализовано» (HTTP 501).
+ * Источник истины — ответ бэкенда, список здесь нужен только для того, чтобы
+ * показать учителю статус заранее, до генерации.
+ */
+const SERVER_NOT_IMPLEMENTED: ReadonlySet<TaskType> = new Set<TaskType>([
+  "cards",
+  "lesson-plan",
+  "presentation",
+  "ktp",
+]);
 
 export const ARTIFACT_TYPE_OPTIONS: ArtifactTypeOption[] = [
   // Группа «Каждый день» — всегда развёрнута, это daily-driver учителя.
   { id: "worksheet", label: "Лист", icon: FileText, hint: "5–30 заданий, A4 PDF/DOCX", group: "daily" },
   { id: "test", label: "Тест", icon: ClipboardList, hint: "С автопроверкой, ответы в конце", group: "daily" },
-  { id: "cards", label: "Карточки", icon: Layers, hint: "Короткие, для запоминания", group: "daily" },
+  // Карточки, план урока, презентация и КТП сервер пока не собирает (HTTP 501).
+  // Помечаем флагом, а не прячем: учитель должен видеть, что тип существует и
+  // над чем мы работаем, вместо того чтобы гадать, куда делся пункт меню.
+  { id: "cards", label: "Карточки", icon: Layers, hint: "Короткие, для запоминания", group: "daily", notImplementedOnServer: true },
   { id: "control", label: "Контрольная", icon: ClipboardCheck, hint: "2 варианта работы", group: "daily" },
   // Группа «К уроку» — свёрнута по умолчанию. План урока — топ-1 тип группы.
-  { id: "lesson-plan", label: "План урока", icon: Pencil, hint: "ФГОС-конспект на 45 мин", group: "lesson", plusOnly: true, primaryInGroup: true },
-  { id: "presentation", label: "Презентация", icon: PresentationIcon, hint: "5–20 слайдов, PPTX", group: "lesson", plusOnly: true },
+  { id: "lesson-plan", label: "План урока", icon: Pencil, hint: "ФГОС-конспект на 45 мин", group: "lesson", plusOnly: true, primaryInGroup: true, notImplementedOnServer: true },
+  { id: "presentation", label: "Презентация", icon: PresentationIcon, hint: "5–20 слайдов, PPTX", group: "lesson", plusOnly: true, notImplementedOnServer: true },
   // Группа «На период» — свёрнута по умолчанию. КТП — топ-1 тип группы.
-  { id: "ktp", label: "КТП", icon: Calendar, hint: "Календарно-тематическое планирование на год", group: "period", plusOnly: true, primaryInGroup: true },
+  { id: "ktp", label: "КТП", icon: Calendar, hint: "Календарно-тематическое планирование на год", group: "period", plusOnly: true, primaryInGroup: true, notImplementedOnServer: true },
 ];
 
 /** Порядок и подписи групп. `daily` развёрнута всегда, остальные — по клику. */
@@ -116,6 +140,7 @@ export function ArtifactTypePicker({ value, onChange, hasPlus }: ArtifactTypePic
 
         const renderOption = (opt: ArtifactTypeOption) => {
           const disabled = opt.plusOnly && !hasPlus;
+          const notReady = opt.notImplementedOnServer === true;
           const selected = value === opt.id;
           const Icon = opt.icon;
           return (
@@ -124,11 +149,19 @@ export function ArtifactTypePicker({ value, onChange, hasPlus }: ArtifactTypePic
               type="button"
               role="radio"
               aria-checked={selected}
-              aria-disabled={disabled}
+              aria-disabled={disabled || notReady}
               // TZ-5: НЕ ставим HTML `disabled`, иначе браузер глохнет onClick и мы
               // не сможем перенаправить на /pricing/. Состояние "заблокировано" держим
               // через aria-disabled + CSS (opacity-60, cursor-not-allowed) + логику onClick.
               onClick={() => {
+                // Сервер этого типа ещё не умеет (501). Молча уводить учителя на
+                // /pricing/ было бы неверно — дело не в тарифе.
+                if (notReady) {
+                  window.dispatchEvent(
+                    new CustomEvent("uc:artifact-type-not-ready", { detail: { type: opt.id } })
+                  );
+                  return;
+                }
                 // TZ-5 (QA-аудит 2026-09-30): для plusOnly без подписки Плюс — перенаправляем
                 // на /pricing/, чтобы юзер получил понятную обратную связь, а не клик в пустоту.
                 if (disabled) {
@@ -137,17 +170,31 @@ export function ArtifactTypePicker({ value, onChange, hasPlus }: ArtifactTypePic
                 }
                 onChange(opt.id);
               }}
-              title={disabled ? `Доступно в тарифе «Плюс» — откроем тарифы (${opt.hint})` : opt.hint}
+              title={
+                notReady
+                  ? "Сервер пока не собирает этот тип — готовим"
+                  : disabled
+                    ? `Доступно в тарифе «Плюс» — откроем тарифы (${opt.hint})`
+                    : opt.hint
+              }
               className={`group flex items-center justify-center gap-1.5 h-10 px-3 rounded-lg text-[13px] font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 whitespace-nowrap ${
                 selected
                   ? "bg-white text-warm-950 shadow-soft"
-                  : disabled
+                  : disabled || notReady
                     ? "text-[color:var(--text-muted)] opacity-60 cursor-not-allowed hover:bg-warm-50"
                     : "text-warm-600 hover:text-warm-900"
               }`}
             >
               <Icon className="w-3.5 h-3.5 shrink-0" />
               <span>{opt.label}</span>
+              {notReady && (
+                <span
+                  className="text-[9px] uppercase tracking-wider font-bold px-1 rounded bg-warm-200 text-warm-500"
+                  title="Сервер пока не собирает этот тип"
+                >
+                  скоро
+                </span>
+              )}
               {opt.plusOnly && (
                 <span
                   className={`text-[9px] uppercase tracking-wider font-bold px-1 rounded ${

@@ -26,6 +26,25 @@ export interface CacheKeyInput {
   difficulty: string;
   count: number;
   type: string;
+  /**
+   * Владелец результата (NEW-COST-6, 06.10.2026).
+   *
+   * Раньше в ключе стояли только параметры материала, поэтому кэш был общим
+   * на всех: учитель получал результат, оплаченный другим учителем. Сейчас
+   * безобидно — в кэш попадает только учебный контент, персональных данных
+   * там нет. Но это перестаёт быть безобидным в момент, когда в ответ
+   * попадёт что-то, привязанное к учителю (ФГОС-карточка с ФИО, «моя
+   * рабочая программа», шаблон с названием школы).
+   *
+   * Поэтому userId входит в ключ ДАЖЕ СЕЙЧАС: когда персональные поля
+   * появятся, обмена не произойдёт, и менять схему кэша на проде (то есть
+   * его пересоздавать) не придётся.
+   *
+   * `null` = анонимный запрос. Все анонимы делят один адрес кэша — это
+   * осознанно: привязать к отпечатку значит либо отдавать друг другу
+   * материалы, либо платить за каждый холодный запрос.
+   */
+  userId?: string | null;
 }
 
 /**
@@ -41,6 +60,8 @@ export function makeCacheKey(input: CacheKeyInput | GenerationRequest): string {
   const difficulty = String(input.difficulty);
   const count = Number(input.count);
   const type = String(input.type);
+  // Пользователь — часть ключа (NEW-COST-6). См. пояснение в CacheKeyInput.
+  const userId = "userId" in input && input.userId ? String(input.userId) : "";
 
   const canonical = JSON.stringify({
     subject,
@@ -49,6 +70,7 @@ export function makeCacheKey(input: CacheKeyInput | GenerationRequest): string {
     difficulty,
     count,
     type,
+    userId,
   });
 
   // sha256Hex async — нам нужен sync API для удобства вызова, синхронно хешируем

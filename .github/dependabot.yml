@@ -33,14 +33,6 @@ updates:
     labels:
       - dependencies
       - security
-
-  - package-ecosystem: npm
-    directory: "/worker-self-verify"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "08:00"
-      timezone: Europe/Moscow
     open-pull-requests-limit: 3
     commit-message:
       prefix: "chore(deps/worker)"

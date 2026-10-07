@@ -228,6 +228,15 @@ export async function callWithFallback(
   req: LLMRequest,
   decision: RoutingDecision,
   env: Env,
+  /**
+   * Кто и что пытались сгенерировать (BL-08).
+   *
+   * Необязателен специально: добавление обязательного параметра заставило бы
+   * переписать все 12 мест вызова, а выигрыш даёт только запись об отказе.
+   * Без него отказ пишется с `task = "unknown"` и `user_id = NULL` — то есть
+   * фиксируется факт («что-то сломалось»), но не причина («где именно»).
+   */
+  context?: { task?: string; userId?: string | null; plan?: string },
 ): Promise<CallResult> {
   const allPicks: ProviderPick[] = [];
   if (decision.primary) allPicks.push(decision.primary);
@@ -257,7 +266,18 @@ export async function callWithFallback(
         );
       }
       const provider = getProvider(pick.provider, env);
-      const response = await provider.complete(req, env);
+      // Модель в запросе ОБЯЗАНА совпадать с тем pick, который мы сейчас
+      // пробуем. Раньше здесь стоял неизменённый `req`, из-за чего вся
+      // лестница `ESCALATION` (Luna → Sol → Sonnet) била в ту же Luna:
+      // роутер менял провайдера в цикле, но `req.model` оставался
+      // первичной моделью, то есть фолбэк не фолбэчил, а повторял тот же
+      // вызов — и платил за него цену дорогой модели повторно.
+      // Побочный эффект был и в учёте: успешный «фолбэк» записывался в
+      // llm_logs как `pick.model`, хотя фактически отработала `req.model`,
+      // то есть аналитика роутинга врала о том, какая модель ответила.
+      const attemptReq: LLMRequest =
+        req.model === pick.model ? req : { ...req, model: pick.model };
+      const response = await provider.complete(attemptReq, env);
       const generation: "primary" | "boost" | "premium" =
         i === 0
           ? (decision.generation ?? "primary")
@@ -285,6 +305,23 @@ export async function callWithFallback(
         error: msg.slice(0, 300),
         isLast,
       });
+
+      // НЕУДАЧНАЯ ПОПЫТКА — ТОЖЕ ПИШЕТСЯ В llm_logs (06.10.2026).
+      //
+      // Раньше строка в базу появлялась только на успехе. То есть цепочка
+      // «Luna 5xx → ушли на Sol → ушли на Sonnet → всё упало» не оставляла
+      // в базе НИ ОДНОЙ записи: провайдер отработал, деньги потрачены, а в
+      // отчёте — ноль. Именно поэтому по итогам аудита нельзя было сказать,
+      // сколько отказов у провайдера и по каким причинам.
+      //
+      // Пишем best-effort: ошибка записи не должна ломать генерацию, поэтому
+      // всё обёрнуто в try/catch, а детали ошибки кладутся в поле `error`.
+      await recordFailedAttempt(env, pick, e, i + 1, allPicks.length, {
+        task: context?.task ?? "unknown",
+        userId: context?.userId ?? null,
+        plan: context?.plan ?? "free",
+      });
+
       if (isLast) break;
     }
   }
@@ -295,4 +332,72 @@ export async function callWithFallback(
     }`,
     { attempts: allPicks.length },
   );
+}
+
+/**
+ * Записать неудачную попытку вызова в `llm_logs`.
+ *
+ * Строка отличается от успешной пустым `cost_usd` и заполненным `error`,
+ * поэтому существующая выборка в admin.ts (`AND error IS NULL` — «без ошибок»)
+ * продолжает считать только успешные вызовы, а полная картина расхода видна
+ * по всем строкам.
+ */
+async function recordFailedAttempt(
+  env: Env,
+  pick: ProviderPick,
+  error: unknown,
+  attempt: number,
+  totalAttempts: number,
+  context: { task: string; userId: string | null; plan: string },
+): Promise<void> {
+  const db = (env as { DB?: D1Database }).DB;
+  if (!db) return;
+  const message = error instanceof Error ? error.message : String(error);
+  // Детали (finishReason / reasoningTokens и т.п.) провайдер кладёт в details —
+  // без них строка «пустой content» не отличима от «сеть отвалилась».
+  const details =
+    error && typeof error === "object" && "details" in error
+      ? (error as { details?: unknown }).details
+      : null;
+  try {
+    await db
+      .prepare(
+        `INSERT INTO llm_logs
+           (id, user_id, task, provider, model, plan,
+            tokens_in, tokens_out, cost_usd, latency_ms, cached, fallback, error, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, 0, 0, 0, 0, ?7, ?8, ?9)`,
+      )
+      .bind(
+        `log_fail_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+        // BL-08: раньше здесь стояли NULL и 'unknown'. То есть в базу попадало
+        // «отказ неизвестного пользователя неизвестной задачи» — по такой строке
+        // нельзя было ни построить разбор причин (где именно рвётся), ни посчитать,
+        // сколько отказов досталось конкретному типу материала. Теперь пишется
+        // реальная задача и реальный владелец, поэтому группировка по причинам
+        // («план урока ломается на 429 у 12 учителей») работает на обычном GROUP BY.
+        context.userId,
+        context.task,
+        pick.provider,
+        pick.model,
+        context.plan,
+        attempt > 1 ? 1 : 0,
+        // Ограничиваем длину: error идёт в колонку TEXT, но разбор причин
+        // читают глазами, и тысячи символов там не нужны.
+        `${message.slice(0, 400)}${details ? ` | ${JSON.stringify(details).slice(0, 400)}` : ""}`,
+        Math.floor(Date.now() / 1000),
+      )
+      .run();
+    logLlmEvent("info", "callWithFallback: failed attempt recorded", {
+      provider: pick.provider,
+      model: pick.model,
+      task: context.task,
+      attempt,
+      totalAttempts,
+    });
+  } catch (e) {
+    // Запись в базу сама упала — молча ронять генерацию из-за этого нельзя.
+    logLlmEvent("warn", "callWithFallback: не удалось записать отказ в llm_logs", {
+      error: String(e),
+    });
+  }
 }

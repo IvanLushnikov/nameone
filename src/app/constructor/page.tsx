@@ -17,7 +17,7 @@ import { CardsPreview } from "@/components/constructor/CardsPreview";
 import { MaterialsPreview } from "@/components/constructor/MaterialsPreview";
 import { LessonBundlePreview } from "@/components/constructor/LessonBundlePreview";
 import { PaywallModal } from "@/components/shared/PaywallModal";
-import { ArtifactTypePicker } from "@/components/constructor/ArtifactTypePicker";
+import { ArtifactTypePicker, ARTIFACT_TYPE_OPTIONS } from "@/components/constructor/ArtifactTypePicker";
 import { PrintWatermark } from "@/components/constructor/PrintWatermark";
 import { ArtifactTypePreview } from "@/components/constructor/ArtifactTypePreview";
 import {
@@ -76,6 +76,7 @@ import {
   generateBundleSmart,
 } from "@/lib/client/llm";
 import { generateWorksheetDocx, downloadBlob } from "@/lib/utils/docx";
+import { verifyWorksheetTasks, type VerifyProgress } from "@/lib/llm/verify-sheet";
 import { trackEvent } from "@/lib/track";
 import { saveTemplate } from "@/lib/lk/templates";
 import { generateLessonPlanDocx } from "@/lib/utils/lesson-plan-docx";
@@ -386,6 +387,40 @@ export default function ConstructorPage() {
   const [isDemoResult, setIsDemoResult] = React.useState(false);
   const [remaining, setRemaining] = React.useState<number>(3);
   const [showPaywall, setShowPaywall] = React.useState(false);
+  /**
+   * F-05: прогресс проверки ответов по кнопке.
+   *
+   * Проверка идёт последовательно, по одному заданию (5–20 с на задание), и
+   * учитель запускает её сам — автоматически она не запускалась НИКОГДА
+   * (см. docs/25-audit-llm-verification-2026-10-06.md, BL-01). Состояние
+   * живёт здесь, а не в модалке, чтобы прогресс был виден рядом с листом.
+   */
+  const [verifyProgress, setVerifyProgress] = React.useState<VerifyProgress | null>(null);
+  /** Отмена текущего прогона проверки (кнопка «Остановить»). */
+  const verifyAbortRef = React.useRef<AbortController | null>(null);
+
+  /**
+   * BL-05: клик по типу, который сервер ещё не умеет собирать.
+   *
+   * Тип помечен в выборе, но нажать его можно — раньше это приводило к тому,
+   * что учитель получал типовую заготовку и терял попытку. Теперь вместо
+   * молчаливой подмены показываем объяснение: тип готовим, можно выбрать
+   * «Лист» или «Тест».
+   */
+  React.useEffect(() => {
+    const onNotReady = (e: Event) => {
+      const typeId = (e as CustomEvent<{ type: string }>).detail?.type ?? "";
+      const label = ARTIFACT_TYPE_OPTIONS.find((o) => o.id === typeId)?.label ?? "Этот тип";
+      toast({
+        tone: "error",
+        title: `${label} пока не готовится на сервере`,
+        description:
+          "Мы ещё делаем этот тип материала. Пока доступны «Лист», «Тест» и «Контрольная» — они собираются полностью.",
+      });
+    };
+    window.addEventListener("uc:artifact-type-not-ready", onNotReady);
+    return () => window.removeEventListener("uc:artifact-type-not-ready", onNotReady);
+  }, []);
   /** F-06: видна ли inline-панель проверки фото тетради (только worksheet). */
   const [photoCheckOpen, setPhotoCheckOpen] = React.useState(false);
   /** TZ-12: открыта ли модалка «Выдать классу». */
@@ -1101,7 +1136,7 @@ export default function ConstructorPage() {
               title: ws.title,
               difficulty: ws.difficulty,
               tasks: ws.tasks,
-              source: "mock",
+              source: result.isDemo ? ("mock" as const) : ("llm" as const),
             };
           }
           case "lesson-plan": {
@@ -1118,7 +1153,7 @@ export default function ConstructorPage() {
               stages: lp.stages,
               homework: lp.homework,
               fgosRef: lp.fgosRef,
-              source: "mock",
+              source: result.isDemo ? ("mock" as const) : ("llm" as const),
             };
           }
           case "presentation": {
@@ -1132,7 +1167,7 @@ export default function ConstructorPage() {
               slideCount: p.slideCount,
               slides: p.slides,
               theme: p.theme,
-              source: "mock",
+              source: result.isDemo ? ("mock" as const) : ("llm" as const),
             };
           }
           case "ktp": {
@@ -1147,7 +1182,7 @@ export default function ConstructorPage() {
               schoolYear: k.schoolYear,
               totalHours: k.totalHours,
               weeks: k.weeks,
-              source: "mock",
+              source: result.isDemo ? ("mock" as const) : ("llm" as const),
             };
           }
           default: {
@@ -1322,12 +1357,68 @@ export default function ConstructorPage() {
       return;
     }
     if (!worksheet) return;
-    const blob = await generateWorksheetDocx(worksheet, { withAnswers, withExplanations });
+    const blob = await generateWorksheetDocx(worksheet, {
+      withAnswers,
+      withExplanations,
+      // Пометка «демонстрационная заготовка» должна попасть В ФАЙЛ: на экране
+      // её видно плашкой, а выгрузка уходит из приложения — и без неё учитель
+      // раздаёт заготовку, не зная об этом (NEW-EXPORT-1).
+      isDemo: isDemoResult,
+    });
     const filename = `${worksheet.subject}-${worksheet.grade}kl-${worksheet.topic}.docx`
       .toLowerCase()
       .replace(/\s+/g, "-");
     downloadBlob(blob, filename);
     toast({ tone: "success", title: "DOCX скачан", description: "Откройте в Word или LibreOffice" });
+  };
+
+  /**
+   * F-05: проверить ответы листа по нажатию.
+   *
+   * Раньше проверка была привязана к генератору-заглушке, то есть бейдж
+   * «проверено» получала заготовка, а настоящий лист с сервера — никогда
+   * (BL-01 из docs/25-audit-llm-verification-2026-10-06.md). Теперь проверку
+   * запускает учитель, она идёт по одному заданию за раз, а результат
+   * расставляется по заданиям на месте — без перегенерации листа.
+   */
+  const handleVerifyAnswers = async () => {
+    // `kind` в разметке — локальная переменная блока превью, в хендлере её
+    // нет. Здесь судим по `worksheet`: проверять имеет смысл только рабочий
+    // лист, а у остальных типов заданий другой смысл и другой бейдж.
+    if (!worksheet) return;
+
+    // Заготовку не проверяем: её ответы заведомо верны, проверка осмысленного
+    // результата не даёт и стоит платных вызовов.
+    if (isDemoResult) {
+      toast({
+        tone: "error",
+        title: "Это заготовка",
+        description: "Проверять можно только настоящий лист, собранный под вашу тему",
+      });
+      return;
+    }
+
+    verifyAbortRef.current?.abort();
+    const controller = new AbortController();
+    verifyAbortRef.current = controller;
+
+    try {
+      const tasks = await verifyWorksheetTasks(
+        worksheet,
+        (p) => setVerifyProgress(p),
+        { signal: controller.signal }
+      );
+      // Сохраняем ТОЛЬКО проверенные задания: если прогон прервали, у
+      // непроверенных счётчик нулевой, а не «проверено и неверно».
+      setWorksheet({ ...worksheet, tasks });
+      trackEvent("worksheet_verify_answers", {
+        total: tasks.length,
+        matched: tasks.filter((t) => t.verified === true).length,
+        checked: tasks.filter((t) => t.verified !== undefined).length,
+      });
+    } finally {
+      verifyAbortRef.current = null;
+    }
   };
 
   const handleSaveFavorite = () => {
@@ -1797,6 +1888,55 @@ export default function ConstructorPage() {
                       >
                         Повторить
                       </Button>
+                    </div>
+                  )}
+
+                  {/* F-05: проверка ответов по кнопке (BL-01).
+                      Показывается только для настоящего листа: у заготовки
+                      ответы заведомо верны, и проверка была бы тратой денег
+                      впустую. */}
+                  {kind === "worksheet" && worksheet && !isDemoResult && (
+                    <div className="no-print mb-4 rounded-xl border border-warm-200 bg-white p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-warm-900">
+                            Проверить ответы
+                          </p>
+                          <p className="mt-1 text-xs text-warm-600">
+                            Нейросеть заново решит каждое задание и сверит с вашим ответом.
+                            По одному заданию — это 5–20 секунд, весь лист 1–3 минуты.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {verifyProgress?.running ? (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => verifyAbortRef.current?.abort()}
+                            >
+                              Остановить
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={handleVerifyAnswers}
+                              disabled={generating}
+                            >
+                              {verifyProgress?.finished ? "Проверить заново" : "Проверить ответы"}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      {verifyProgress && verifyProgress.done > 0 && (
+                        <p className="mt-3 text-xs text-warm-700" role="status">
+                          Проверено {verifyProgress.done} из {verifyProgress.total}
+                          {verifyProgress.matched !== null &&
+                            ` · сошлось ${verifyProgress.matched}`}
+                          {verifyProgress.finished && " · готово"}
+                        </p>
+                      )}
                     </div>
                   )}
 
