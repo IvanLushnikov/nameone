@@ -83,6 +83,13 @@ jobs:
           # правдоподобный, но выдуманный лист. Проверяется так: в бандле
           # pages.dev/_next/static/chunks/... должен встречаться этот домен.
           NEXT_PUBLIC_API_URL: https://rabochielisty-api.ivanlusnikov159.workers.dev
+          # Реквизиты оператора ПДн — уходят в публичную оферту и в согласие
+          # на обработку персональных данных. Без ФИО+адреса согласие
+          # недействительно по ч. 4 ст. 9 152-ФЗ (штраф 300–700 тыс. ₽).
+          # Секреты в GitHub: Settings → Secrets and variables → Actions.
+          NEXT_PUBLIC_OPERATOR_NAME: ${{ secrets.NEXT_PUBLIC_OPERATOR_NAME }}
+          NEXT_PUBLIC_OPERATOR_INN: ${{ secrets.NEXT_PUBLIC_OPERATOR_INN }}
+          NEXT_PUBLIC_OPERATOR_ADDRESS: ${{ secrets.NEXT_PUBLIC_OPERATOR_ADDRESS }}
         run: npm run build
 
       - name: Deploy to Cloudflare Pages
