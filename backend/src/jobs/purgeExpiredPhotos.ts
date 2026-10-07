@@ -20,6 +20,7 @@
  */
 
 import type { D1Database, R2Bucket } from "@cloudflare/workers-types";
+import { deletePhotoObjects } from "../routes/f06";
 import { listExpiredPhotoChecks, markPhotoDeleted } from "../db/photoChecks";
 
 /** Сколько записей обрабатываем за один проход — защита от длинного запроса. */
@@ -56,7 +57,9 @@ export async function purgeExpiredPhotos(
       // проставляем deleted_at: markPhotoDeleted требует совпадения user_id.
       if (row.r2_key) {
         try {
-          await bucket.delete(row.r2_key);
+          await deletePhotoObjects(bucket, row.r2_key, (page, msg) =>
+            console.warn(`[purge] не удалось удалить страницу ${page} для ${row.r2_key}: ${msg}`),
+          );
           result.deletedFromR2++;
         } catch {
           result.failed++;
@@ -67,7 +70,9 @@ export async function purgeExpiredPhotos(
 
     try {
       if (row.r2_key) {
-        await bucket.delete(row.r2_key);
+        await deletePhotoObjects(bucket, row.r2_key, (page, msg) =>
+            console.warn(`[purge] не удалось удалить страницу ${page} для ${row.r2_key}: ${msg}`),
+          );
         result.deletedFromR2++;
       }
       const ok = await markPhotoDeleted(db, {

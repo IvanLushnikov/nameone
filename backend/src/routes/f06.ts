@@ -99,7 +99,17 @@ export function monthlyLimitFor(plan: string): number {
   return Math.min(MONTHLY_LIMITS[plan] ?? MONTHLY_LIMITS.free!, ABSOLUTE_CEILING);
 }
 
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8 МБ
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8 МБ — на КАЖДОЕ фото
+/**
+ * Сколько страниц одной работы принимаем за одну проверку.
+ *
+ * Работа ученика почти всегда на двух-трёх страницах. Раньше ручка брала
+ * `form.getAll("image")[0]` и тихо выкидывала вторую-третью страницу: учитель
+ * получал неполный результат и платил за него как за полный. Три фото —
+ * это потолок именно по разумной цене вопроса: каждая картинка — это
+ * ~1.3k vision-токенов, а лимит тарифа общий на месяц.
+ */
+const MAX_PHOTOS = 3;
 const MAX_TASKS = 40;
 const MIN_TASKS = 1;
 
@@ -152,6 +162,112 @@ const ALLOWED_MIME: Record<string, string> = {
 
 function readCf(c: Context<AppEnv>): CfObject | undefined {
   return (c.req.raw as Request & { cf?: CfObject }).cf;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ключи R2 для нескольких страниц одной проверки
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * ПОЧЕМУ НЕ JSON-МАССИВ В НОВОЙ КОЛОНКЕ `photo_checks.r2_keys`, а суффиксы.
+ *
+ * `r2_key` — единственная колонка, и миграцию D1 в этот заход не делаем
+ * (решение владельца). Варианты были два:
+ *
+ *   1. новая колонка `r2_keys TEXT` с JSON-массивом — чисто, но требует
+ *      миграции, а на проде миграция = окно, где часть воркеров уже читает
+ *      старую схему. Плюс существующий retention-скрипт и все выборки
+ *      продолжают смотреть только на `r2_key`;
+ *   2. детерминированные суффиксы от базового ключа — миграция не нужна
+ *      ВООБЩЕ: `r2_key` остаётся первым фото, всё остальное выводится из
+ *      него по правилу, а не хранится.
+ *
+ * Выбран вариант 2. Платим за это одним: удаление обязано знать про суффиксы.
+ * Зато ВСЕ строки в базе — и новые, и созданные до этой правки — удаляются
+ * одним и тем же кодом, и у старых строк (где фото было одно) ничего не ломается.
+ */
+
+/** Номера дополнительных страниц: 2-я и 3-я. Первое фото — сам `r2_key`. */
+const EXTRA_PHOTO_PAGES: readonly number[] = [2, 3];
+
+/**
+ * Положить все страницы проверки в R2 по ключам из `photoR2Keys`.
+ *
+ * Если вторая страница не залилась, первую мы тоже убираем: иначе в R2
+ * остаётся объект с фото ребёнка, на который в D1 нет ни одной строки и
+ * который никто никогда не удалит.
+ */
+export async function putPhotoObjects(
+  bucket: R2Bucket,
+  keys: string[],
+  images: Array<{ bytes: ArrayBuffer; mimeType: string }>,
+  ownerId: string,
+): Promise<void> {
+  const stored: string[] = [];
+  try {
+    for (const [i, image] of images.entries()) {
+      const key = keys[i]!;
+      await bucket.put(key, image.bytes, {
+        httpMetadata: { contentType: image.mimeType },
+        customMetadata: { owner: ownerId },
+      });
+      stored.push(key);
+    }
+  } catch (e) {
+    for (const key of stored) {
+      try {
+        await bucket.delete(key);
+      } catch {
+        // Уже падали — гасим: original error важнее ошибки уборки.
+      }
+    }
+    throw e;
+  }
+}
+
+/** Базовое имя без расширения: `pc/<ts>/<uuid>.jpg` → `pc/<ts>/<uuid>`. */
+function photoKeyBase(r2Key: string): string {
+  return r2Key.endsWith(".jpg") ? r2Key.slice(0, -".jpg".length) : r2Key;
+}
+
+/** Ключ `n`-й страницы (n ≥ 2): `pc/<ts>/<uuid>-2.jpg`. */
+export function extraPhotoKey(r2Key: string, page: number): string {
+  return `${photoKeyBase(r2Key)}-${page}.jpg`;
+}
+
+/**
+ * Все ключи проверки по порядку страниц: `count` штук, начиная с `r2Key`.
+ * Первое фото ВСЕГДА живёт по старому ключу — это и есть то, что лежит в
+ * колонке `r2_key`, поэтому чужие строки базы продолжают работать.
+ */
+export function photoR2Keys(r2Key: string, count: number): string[] {
+  return [r2Key, ...EXTRA_PHOTO_PAGES.slice(0, Math.max(0, count - 1)).map((p) => extraPhotoKey(r2Key, p))];
+}
+
+/**
+ * Удалить из R2 все страницы проверки.
+ *
+ * Первый ключ удаляется строго: если не получилось — вызывающий не помечает
+ * строку удалённой, чтобы retention-скрипт попробовал ещё раз. Дополнительные
+ * ключи удаляем «мягко»: у старых строк их просто не существует, а R2 на
+ * отсутствующий объект отвечает успехом — но в тестах и на нестандартных
+ * бэкендах это может быть и ошибка, и она НЕ должна ронять удаление фото,
+ * которое пользователь и так удалил успешно.
+ */
+export async function deletePhotoObjects(
+  bucket: R2Bucket,
+  r2Key: string,
+  onExtraError?: (page: number, message: string) => void,
+): Promise<void> {
+  await bucket.delete(r2Key);
+  for (const page of EXTRA_PHOTO_PAGES) {
+    try {
+      await bucket.delete(extraPhotoKey(r2Key, page));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      onExtraError?.(page, msg.slice(0, 200));
+    }
+  }
 }
 
 const f06Router = new Hono<AppEnv>();
@@ -220,13 +336,13 @@ f06Router.post(
       );
     }
 
-    // 4. Картинка в R2. Ключ — без ID пользователя внутри, чтобы по имени
-    //    объекта нельзя было перебрать чужие фото.
-    const checkIdPlaceholder = `pc/${now}/${crypto.randomUUID()}.jpg`;
-    await c.env.PDFS.put(checkIdPlaceholder, form.bytes, {
-      httpMetadata: { contentType: form.mimeType },
-      customMetadata: { owner: user.id },
-    });
+    // 4. Картинки в R2. Ключ — без ID пользователя внутри, чтобы по имени
+    //    объекта нельзя было перебрать чужие фото. Первая страница ложится на
+    //    базовый ключ (он и пишется в `r2_key`), вторая и третья — на ключи с
+    //    суффиксами `-2`/`-3` от того же базового имени.
+    const baseR2Key = `pc/${now}/${crypto.randomUUID()}.jpg`;
+    const r2Keys = photoR2Keys(baseR2Key, form.images.length);
+    await putPhotoObjects(c.env.PDFS, r2Keys, form.images, user.id);
 
     // 5. Запись в D1 со статусом pending — нужна, чтобы фото не потерялось,
     //    если воркер умрёт посреди вызова LLM (retention-скрипт подчистит).
@@ -235,9 +351,12 @@ f06Router.post(
       worksheetId: form.worksheetId,
       subject: form.subject,
       grade: form.grade,
-      r2Key: checkIdPlaceholder,
-      mimeType: form.mimeType,
-      byteSize: form.bytes.byteLength,
+      r2Key: r2Keys[0]!,
+      // `mime_type`/`byte_size` описывают первую страницу (единственную,
+      // которая лежит по `r2_key`), но размер считаем по всем: учителю важна
+      // общая «тяжесть» проверки, а колонки второй строки уже не существует.
+      mimeType: form.images[0]!.mimeType,
+      byteSize: form.images.reduce((sum, img) => sum + img.bytes.byteLength, 0),
       deleteAt: now + PHOTO_RETENTION_SECONDS,
       createdAt: now,
     });
@@ -251,8 +370,7 @@ f06Router.post(
     try {
       const result = await checkPhoto(
         {
-          imageBytes: form.bytes,
-          mimeType: form.mimeType,
+          images: form.images,
           tasks: form.tasks,
           // `CheckPhotoArgs` ждёт `undefined`, а `readPhotoForm` отдаёт `null`
           // для незаполненного поля. Приводим явно, иначе null уедет в промпт
@@ -575,7 +693,15 @@ f06Router.delete("/photo-checks/:id", async (c) => {
   // retention-скрипт попробовал ещё раз.
   if (row.r2_key) {
     try {
-      await c.env.PDFS.delete(row.r2_key);
+      await deletePhotoObjects(c.env.PDFS, row.r2_key, (page, msg) => {
+        // Дополнительные страницы могут отсутствовать (старые строки база,
+        // где фото было одно) — это не мешает удалить то, что есть.
+        logLlmEvent("warn", "photo-check: R2 delete of extra page failed", {
+          checkId: id,
+          page,
+          error: msg,
+        });
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       logLlmEvent("error", "photo-check: R2 delete failed", { checkId: id, error: msg.slice(0, 200) });
@@ -1005,9 +1131,15 @@ async function resolveTaskNumbers(
   return defaults;
 }
 
-interface ParsedPhotoForm {
+export interface ParsedPhotoImage {
+  /** Байты одной страницы. Порядок в массиве = порядок страниц работы. */
   bytes: ArrayBuffer;
   mimeType: string;
+}
+
+export interface ParsedPhotoForm {
+  /** От 1 до `MAX_PHOTOS` страниц, в порядке загрузки. */
+  images: ParsedPhotoImage[];
   tasks: ExpectedTask[];
   worksheetId: string | null;
   subject: string | null;
@@ -1021,8 +1153,11 @@ interface ParsedPhotoForm {
  *
  * Валидация тут строгая и ПОЛЬЗОВАТЕЛЬСКАЯ: учителю нужен понятный текст,
  * а не стек zod. Каждая проверка — с человеческим сообщением.
+ *
+ * Экспортируется ради тестов: это единственное место, где живут лимиты
+ * на количество страниц и на размер каждого фото.
  */
-async function readPhotoForm(c: Context<AppEnv>): Promise<ParsedPhotoForm> {
+export async function readPhotoForm(c: Context<AppEnv>): Promise<ParsedPhotoForm> {
   const contentType = c.req.header("content-type") ?? "";
   if (!contentType.includes("multipart/form-data")) {
     throw new BadRequestError("Ожидается multipart/form-data с полем image");
@@ -1035,7 +1170,8 @@ async function readPhotoForm(c: Context<AppEnv>): Promise<ParsedPhotoForm> {
     throw new BadRequestError("Не удалось прочитать загруженный файл");
   }
 
-  // 1. Фото.
+  // 1. Фото. Страниц может быть от одной до трёх, порядок в форме = порядок
+  //    страниц работы, и модель обязана видеть их именно в этом порядке.
   //
   // ПОЧЕМУ ТАК, А НЕ `form.get("image")` + `instanceof File`:
   // в `@cloudflare/workers-types` метод `FormData.get()` объявлен как
@@ -1047,31 +1183,52 @@ async function readPhotoForm(c: Context<AppEnv>): Promise<ParsedPhotoForm> {
   // Берём значение через `getAll` — там тип элемента union-ный — и сужаем
   // уже по фактическому рантайм-признаку: строка вместо файла, null либо
   // объект без `arrayBuffer` — это не загруженное фото.
-  const file = form.getAll("image")[0] as unknown;
-  if (typeof file === "string" || file === null || file === undefined) {
+  const rawFiles = form.getAll("image") as unknown[];
+  const files: File[] = [];
+  for (const candidate of rawFiles) {
+    if (typeof candidate === "string" || candidate === null || candidate === undefined) continue;
+    const maybeFile = candidate as File;
+    if (typeof maybeFile.arrayBuffer !== "function") continue;
+    files.push(maybeFile);
+  }
+
+  if (files.length === 0) {
     throw new BadRequestError("Приложите фото работы (поле image)");
   }
-  const uploaded = file as File;
-  if (typeof uploaded.arrayBuffer !== "function") {
-    throw new BadRequestError("Приложите фото работы (поле image)");
-  }
-  const mimeRaw = (uploaded.type || "").toLowerCase();
-  const mimeType = ALLOWED_MIME[mimeRaw];
-  if (!mimeType) {
-    throw new BadRequestError("Формат фото не поддерживается. Загрузите JPEG, PNG или WebP");
-  }
-  if (uploaded.size === 0) {
-    throw new BadRequestError("Файл пустой");
-  }
-  if (uploaded.size > MAX_IMAGE_BYTES) {
-    // ТЗ §11: фото > 8 МБ отклоняется с понятным сообщением, сервер не падает.
-    throw new ApiError(
-      413,
-      "PAYLOAD_TOO_LARGE",
-      "Фото больше 8 МБ. Снимите в меньшем разрешении или сожмите на устройстве",
+  // Лишние страницы НЕ игнорируем молча: иначе учитель отправит четыре фото,
+  // получит вердикт по трём и заплатит как за полную работу, не зная, что
+  // четвёртая страница в проверку не попала.
+  if (files.length > MAX_PHOTOS) {
+    throw new BadRequestError(
+      `За одну проверку — до ${MAX_PHOTOS} фото работы, пришло ${files.length}. ` +
+        `Лишние страницы не попадут в проверку: уберите их или объедините в один снимок`,
     );
   }
-  const bytes = await uploaded.arrayBuffer();
+
+  const images: ParsedPhotoImage[] = [];
+  for (const [i, uploaded] of files.entries()) {
+    const page = i + 1;
+    const pageLabel = files.length > 1 ? `Фото ${page}: ` : "";
+    const mimeRaw = (uploaded.type || "").toLowerCase();
+    const mimeType = ALLOWED_MIME[mimeRaw];
+    if (!mimeType) {
+      throw new BadRequestError(`${pageLabel}формат не поддерживается. Загрузите JPEG, PNG или WebP`);
+    }
+    if (uploaded.size === 0) {
+      throw new BadRequestError(`${pageLabel}файл пустой`);
+    }
+    if (uploaded.size > MAX_IMAGE_BYTES) {
+      // ТЗ §11: фото > 8 МБ отклоняется с понятным сообщением, сервер не падает.
+      // Лимит — на КАЖДОЕ фото, поэтому номер страницы обязателен: без него
+      // учитель не понимает, какое именно снимок надо переснять.
+      throw new ApiError(
+        413,
+        "PAYLOAD_TOO_LARGE",
+        `${pageLabel}больше 8 МБ. Снимите в меньшем разрешении или сожмите на устройстве`,
+      );
+    }
+    images.push({ bytes: await uploaded.arrayBuffer(), mimeType });
+  }
 
   // 2. Согласие (В-2.2). Текст показан на фронте ДО загрузки; здесь фиксируем
   //    сам факт и версию текста — юридическую силу этому придаёт юрист, не код.
@@ -1125,8 +1282,7 @@ async function readPhotoForm(c: Context<AppEnv>): Promise<ParsedPhotoForm> {
   const detailRaw = String(form.get("detail") ?? "low").toLowerCase();
 
   return {
-    bytes,
-    mimeType,
+    images,
     tasks,
     worksheetId:
       typeof worksheetIdRaw === "string" && /^ws_[a-z0-9]{12}$/.test(worksheetIdRaw)

@@ -9,7 +9,7 @@
  *
  * Пять состояний сценария §3:
  *   idle   — инструкция, согласие, выбор фото (шаги 1-2)
- *   file   — фото выбрано, эталон подставлен, ждём кнопки «Проверить» (шаг 3)
+ *   file   — страницы выбраны, эталон подставлен, ждём кнопки «Проверить» (шаг 3)
  *   pending— запрос ушёл, «Распознаём ответы…» (шаг 4)
  *   result — сначала блок «Проверьте сами», потом таблица (шаг 5)
  *   error  — понятная ошибка; вид ошибки решает, что учителю делать дальше
@@ -107,7 +107,7 @@ export function PhotoCheckPanel({
   demoTasks,
   onResult,
 }: PhotoCheckPanelProps) {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [consent, setConsent] = useState(false);
   const [state, setState] = useState<ViewState>("idle");
   const [result, setResult] = useState<PhotoCheckResult | null>(null);
@@ -142,7 +142,7 @@ export function PhotoCheckPanel({
     [demoTasks],
   );
 
-  const canSubmit = file !== null && consent && state !== "pending" && tasks.length > 0;
+  const canSubmit = files.length > 0 && consent && state !== "pending" && tasks.length > 0;
 
   /**
    * Разбор результата по уверенности — для ПОКАЗА: гистограмма, бейджи,
@@ -204,13 +204,15 @@ export function PhotoCheckPanel({
   }, [result, partition, decisionPartition]);
 
   async function submit() {
-    if (!file) return;
+    if (files.length === 0) return;
     setState("pending");
     setError(null);
     setErrorCode(null);
 
     const res = await runPhotoCheck({
-      blob: file,
+      // Порядок массива = порядок страниц в тетради; бэк читает `image`
+      // именно в этом порядке, и переупорядочивать их здесь нельзя.
+      blobs: files,
       tasks,
       worksheetId,
       detail: "low", // черновик/массовая проверка — экономит токены картинки
@@ -289,7 +291,7 @@ export function PhotoCheckPanel({
 
   /** Сбросить фото: после «не прочиталось» повторять тот же снимок смысла нет. */
   function reshoot() {
-    setFile(null);
+    setFiles([]);
     setError(null);
     setErrorCode(null);
     setState("idle");
@@ -325,7 +327,8 @@ export function PhotoCheckPanel({
       <header>
         <h2 className="text-lg font-semibold text-warm-950">Проверка работ по фото</h2>
         <p className="text-sm text-warm-600 mt-1">
-          Сфотографируйте страницу тетради с ответами. Одна страница — одно фото.
+          Сфотографируйте до трёх страниц тетради с ответами — по порядку,
+          одна страница на фото.
           Будем сверять с эталоном по {tasks.length}{" "}
           {plural(tasks.length, "заданию", "заданиям", "заданиям")}.
         </p>
@@ -334,7 +337,7 @@ export function PhotoCheckPanel({
       {state === "result" && result ? (
         <div className="space-y-4">
           {result.status === "failed" ? (
-            <RecognitionFailed onReshoot={reshoot} onRetry={submit} canRetry={file !== null} />
+            <RecognitionFailed onReshoot={reshoot} onRetry={submit} canRetry={files.length > 0} />
           ) : (
             <>
               {/* Блок «Проверьте сами» — ПЕРВЫМ на экране (ТЗ-18 В2).
@@ -366,8 +369,8 @@ export function PhotoCheckPanel({
         <>
           {/* ── Шаги 1-2: согласие и фото ─────────────────────────────── */}
           <PhotoUpload
-            file={file}
-            onFileChange={setFile}
+            files={files}
+            onFilesChange={setFiles}
             consentAccepted={consent}
             onConsentChange={setConsent}
             disabled={state === "pending"}
@@ -407,7 +410,7 @@ export function PhotoCheckPanel({
               message={error}
               onRetry={submit}
               onReshoot={reshoot}
-              canRetry={file !== null}
+              canRetry={files.length > 0}
             />
           )}
 

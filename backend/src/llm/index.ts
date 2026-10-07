@@ -71,7 +71,7 @@ import {
 } from "./config";
 import { recordUsage, getUsageStatus, type UsageStatus, type UsagePlan } from "../services/usage";
 import { shortId, worksheetId } from "../lib/shortid";
-import type { GenerationKind } from "./types";
+import type { GenerationKind, LLMContentPart } from "./types";
 import type { GenerationRequest, Worksheet, ExamVariant, SubjectSlug, GenerateWorksheetMeta } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1501,10 +1501,32 @@ export async function embed(
 // checkPhoto (TZ-11)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface CheckPhotoArgs {
-  /** Фото страницы тетради в байтах (уже сжатое на клиенте). */
-  imageBytes: ArrayBuffer;
+/**
+ * Габариты страницы для ГРУБОЙ оценки vision-токенов.
+ *
+ * Точной разбивки у нас нет: клиент шлёт уже сжатый снимок, а декодировать его
+ * в воркере дорого. Раньше здесь были голые `1600` в двух местах — берём те
+ * же числа, просто вынесём в именованные константы, потому что теперь по ним
+ * считается не одна картинка, а каждая страница.
+ */
+const PHOTO_EST_WIDTH_PX = 1600;
+const PHOTO_EST_HEIGHT_PX = 1600;
+
+/** Одна страница работы для photo-check. */
+export interface CheckPhotoImage {
+  bytes: ArrayBuffer;
   mimeType: string;
+}
+
+export interface CheckPhotoArgs {
+  /**
+   * Страницы работы ПО ПОРЯДКУ: от 1 до 3 штук (лимит — в роуте, MAX_PHOTOS).
+   *
+   * Раньше здесь был один `imageBytes` + `mimeType`, и вторая-третья страница
+   * работы просто не доезжала до модели: учитель получал неполный вердикт.
+   * Порядок в массиве значим — по нему модель читает страницы как страницы.
+   */
+  images: CheckPhotoImage[];
   /** Эталоны из тела запроса. */
   tasks: PhotoCheckTask[];
   subject?: string;
@@ -1554,34 +1576,47 @@ export async function checkPhoto(
   const { system, user } = buildPhotoCheckPrompt(args.tasks, {
     subject: args.subject,
     grade: args.grade,
+    pageCount: args.images.length,
   });
 
   // Оценка стоимости ДО вызова: грубая, по размеру картинки (см. cost.ts).
   // Реальную стоимость вернёт провайдер в usage — её и тарифицирует calcCost.
-  const estimatedImageTokens = estimateImageTokens(
-    args.imageBytes.byteLength > 0 ? 1600 : 0,
-    args.imageBytes.byteLength > 0 ? 1600 : 0,
-    detail,
+  //
+  // ВАЖНО: считаем ПО КАЖДОЙ странице. Раньше картинка была одна, и оценка
+  // молча делилась на количество снимков: три фото выглядели бы как одно, и
+  // предварительная стоимость была бы занижена втрое — платные планы
+  // ограничивают бюджет именно по этой оценке.
+  const estimatedImageTokens = args.images.reduce(
+    (sum, image) =>
+      sum + (image.bytes.byteLength > 0 ? estimateImageTokens(PHOTO_EST_WIDTH_PX, PHOTO_EST_HEIGHT_PX, detail) : 0),
+    0,
   );
   const estimatedCostUsd = calcCost(decision.primary.model, estimatedImageTokens, 1000);
 
-  // Картинку кладём data-URL прямо в content-part — OpenAI-совместимый формат,
-  // polza такой принимает наравне с внешним URL. Отдельный R2-URL тут не нужен:
+  // Каждую страницу кладём отдельным image_url в content — OpenAI-совместимый
+  // формат, polza такой принимает наравне с внешним URL (см. providers/polza.ts:
+  // массив content уходит без преобразований). Отдельный R2-URL тут не нужен:
   // он всё равно просидел бы в логах провайдера как ссылка на ПДн ребёнка.
-  const dataUrl = `data:${args.mimeType};base64,${arrayBufferToBase64(args.imageBytes)}`;
+  // Порядок частей = порядок страниц, и модель обязана видеть их именно так.
+  const content: LLMContentPart[] = [
+    { type: "text", text: user },
+    ...args.images.map(
+      (image): LLMContentPart => ({
+        type: "image_url",
+        image_url: {
+          url: `data:${image.mimeType};base64,${arrayBufferToBase64(image.bytes)}`,
+          detail,
+        },
+      }),
+    ),
+  ];
 
   const result = await callWithFallback(
     {
       model: decision.primary.model,
       messages: [
         { role: "system", content: system },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: user },
-            { type: "image_url", image_url: { url: dataUrl, detail } },
-          ],
-        },
+        { role: "user", content },
       ],
       responseFormat: "json",
       temperature: 0.1, // распознавание — почти детерминированная задача

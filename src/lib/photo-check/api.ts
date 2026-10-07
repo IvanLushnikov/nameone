@@ -59,31 +59,59 @@ function fail(error: PhotoCheckApiErrorCode, message?: string, status?: number):
   return { ok: false, error, message: message || ERROR_TEXT[error], status };
 }
 
+/**
+ * Человеческий текст ошибки из тела ответа.
+ *
+ * Бэк отдаёт `{ ok: false, error: <текст>, code: <CODE> }`
+ * (`backend/src/middleware/error.ts`), но шлюзы и прокси перед ним любят
+ * присылать `message`/`detail`, а иногда — только код. Учителю 45+ нужен текст
+ * («нужен тариф», «до 3 фото за раз»), поэтому берём первое непустое из трёх
+ * полей. Код вида `TOO_MANY_FILES` текстом НЕ считаем: это машинная метка, и на
+ * экране она читалась бы хуже, чем внятный текст по типу ошибки из ERROR_TEXT.
+ */
+function serverText(json: unknown): string | undefined {
+  const body = (json ?? {}) as { error?: unknown; message?: unknown; detail?: unknown };
+  for (const value of [body.error, body.message, body.detail]) {
+    if (typeof value !== "string") continue;
+    const text = value.trim();
+    if (!text) continue;
+    if (/^[A-Z][A-Z0-9_]*$/.test(text)) continue;
+    return text;
+  }
+  return undefined;
+}
+
 /** Разбор ответа бэка в наш union. Никогда не бросает. */
 function parseResult(res: Response, json: unknown): PhotoCheckApiError | null {
   if (res.ok) return null;
-  const err = (json as { error?: string; code?: string } | null) ?? {};
+  const err = (json as { code?: string } | null) ?? {};
   const code = (err.code ?? "").toUpperCase();
+  const text = serverText(json);
 
-  if (res.status === 401) return fail("unauthorized", err.error);
-  if (res.status === 402) return fail("quota", err.error, res.status);
-  if (res.status === 413) return fail("too_large", err.error, res.status);
-  if (res.status === 404) return fail("not_found", err.error, res.status);
+  if (res.status === 401) return fail("unauthorized", text);
+  if (res.status === 402) return fail("quota", text, res.status);
+  if (res.status === 413) return fail("too_large", text, res.status);
+  if (res.status === 404) return fail("not_found", text, res.status);
   if (res.status === 503 || code === "LLM_UNAVAILABLE") {
-    return fail("llm_unavailable", err.error, res.status);
+    return fail("llm_unavailable", text, res.status);
   }
-  if (res.status === 400) return fail("bad_request", err.error, res.status);
-  return fail("http", err.error, res.status);
+  if (res.status === 400) return fail("bad_request", text, res.status);
+  return fail("http", text, res.status);
 }
 
 /**
- * POST /photo-checks — отправить фото на проверку.
+ * POST /photo-checks — отправить фото работы на проверку.
+ *
+ * `blobs` — от одной до трёх страниц, ПОРЯДОК ЗНАЧИТ: он равен порядку страниц
+ * в тетради, и модель читает их именно так. Поэтому файлы кладутся в FormData
+ * под одним именем `image` по очереди — `getAll("image")` на бэке отдаёт их в
+ * том же порядке.
  *
  * `detail` выбирает режим распознавания: `low` — обычная проверка (экономит
  * токены картинки в разы), `high` — финальная выверка. По умолчанию `low`.
  */
 export async function runPhotoCheck(args: {
-  blob: Blob;
+  blobs: Blob[];
   tasks: PhotoCheckTask[];
   worksheetId?: string | null;
   subject?: string | null;
@@ -93,7 +121,7 @@ export async function runPhotoCheck(args: {
   if (!API_URL) return fail("no_api_url");
 
   const fd = new FormData();
-  fd.append("image", args.blob, "page.jpg");
+  args.blobs.forEach((blob, i) => fd.append("image", blob, `page-${i + 1}.jpg`));
   fd.append("tasks", JSON.stringify(args.tasks));
   // Согласие на обработку ПДн (В-2.2). Чекбокс в UI → true здесь.
   // Это фиксация ТЕХНИЧЕСКОГО факта, а не юридическое основание (В-2.1 — открыто).
