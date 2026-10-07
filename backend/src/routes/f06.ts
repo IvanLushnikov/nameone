@@ -23,6 +23,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { AppEnv } from "../types";
+import type { CfObject } from "../lib/antifraud";
 import { requireAuth } from "../middleware/auth";
 import { rateLimitMiddleware } from "../middleware/ratelimit";
 import {
@@ -35,7 +36,12 @@ import {
 import { checkPhoto, logLlmCall } from "../llm";
 import { isProviderEnabled } from "../llm/config";
 import { callWithFallback } from "../llm/router";
-import { checkLlmRateLimit, ipHashFromHeaders } from "../llm/ratelimit";
+import {
+  checkLlmRateLimit,
+  ipHashFromHeaders,
+  guardGeneration,
+  consumeGenerationQuota,
+} from "../llm/ratelimit";
 import {
   PHOTO_RETENTION_SECONDS,
   journalSourceFor,
@@ -144,6 +150,10 @@ const ALLOWED_MIME: Record<string, string> = {
   "image/webp": "image/webp",
 };
 
+function readCf(c: Context<AppEnv>): CfObject | undefined {
+  return (c.req.raw as Request & { cf?: CfObject }).cf;
+}
+
 const f06Router = new Hono<AppEnv>();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -174,6 +184,30 @@ f06Router.post(
         { used, limit, resetAt: nextMonthStart(windowStart) },
       );
     }
+
+    // 1б. Занятие попытки — ровно как в /api/worksheets/generate.
+    //
+    // Проверка по фото — платный вызов vision-модели, то есть самая дорогая
+    // ручка продукта. Раньше её вовсе не было в общем счётчике: считалась
+    // только месячная норма usage_counters, а попытка тратилась впустую.
+    // Решение владельца 07.10.2026: все платные вызовы в общей пачке, и
+    // демо-учитель тратит на фото те же три попытки, что и на материалы.
+    //
+    // Пропускаем для платных: там лимит в токенах, и занятие «попытки»
+    // не имеет смысла (это не счётчик штук, а норма).
+    const isFreePlan = user.plan === "free";
+    const guard = isFreePlan
+      ? await guardGeneration({
+          db: c.env.DB,
+          userId: user.id,
+          plan: "free",
+          ip: c.get("ip") ?? "0.0.0.0",
+          userAgent: c.get("userAgent") ?? "",
+          cf: readCf(c),
+          salt: c.env.FINGERPRINT_SALT ?? "dev-fingerprint-salt",
+          challengePassed: Boolean(c.req.header("cf-turnstile-response")),
+        })
+      : null;
 
     // 2. Разбор multipart.
     const form = await readPhotoForm(c);
@@ -276,6 +310,16 @@ f06Router.post(
         occurredAt: now,
         now,
       });
+
+      // Попытка списывается ПОСЛЕ успеха: упавший вызов провайдера или
+      // неразобранное фото не должны стоить учителю проверки.
+      if (guard) {
+        await consumeGenerationQuota(db, {
+          userId: user.id,
+          plan: "free",
+          fingerprint: guard.fingerprint,
+        });
+      }
 
       logLlmEvent("info", "photo-check done", {
         checkId,

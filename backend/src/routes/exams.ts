@@ -10,12 +10,24 @@
 
 import { Hono } from "hono";
 import { z } from "zod";
+import type { Context } from "hono";
+import type { CfObject } from "../lib/antifraud";
+import type { UsagePlan } from "../services/usage";
 import { generateExam } from "../llm";
+import {
+  guardGeneration,
+  consumeGenerationQuota,
+  releaseFreeQuotaForGeneration,
+} from "../llm/ratelimit";
 import { checkExamAnswers, saveExamAttempt } from "../services/exam";
 import { BadRequestError, ForbiddenError, PaymentRequiredError } from "../lib/errors";
 import type { AppEnv, SubjectSlug, CheckExamRequest } from "../types";
 
 const examsRouter = new Hono<AppEnv>();
+
+function readCf(c: Context<AppEnv>): CfObject | undefined {
+  return (c.req.raw as Request & { cf?: CfObject }).cf;
+}
 
 const generateSchema = z.object({
   exam: z.enum(["oge", "ege"]),
@@ -50,17 +62,53 @@ examsRouter.post("/generate", async (c) => {
   const userId = c.get("user")?.id ?? null;
   const ip = c.get("ip") ?? "0.0.0.0";
 
-  const result = await generateExam(
-    { exam: body.exam, subject: body.subject, variantNumber: body.variantNumber, plan, userId, ip },
-    c.env,
-    c.env.DB,
-  );
-
-  return c.json({
-    ok: true,
-    variant: result.variant,
-    meta: result.meta,
+  // Вариант ОГЭ/ЕГЭ — та же генерация, что и рабочий лист: та же отпечатковая
+  // защита и тот же счётчик попыток.
+  //
+  // Раньше здесь ничего не было, то есть вариант экзамена был единственной
+  // ручкой, которая вообще не попадала в лимиты: бесплатная квота её не
+  // видела, антифрод по отпечатку не считал всплеск генераций. Решение
+  // владельца от 07.10.2026 — все платные вызовы в общей пачке.
+  const guard = await guardGeneration({
+    db: c.env.DB,
+    userId,
+    plan: plan as UsagePlan,
+    ip,
+    userAgent: c.get("userAgent") ?? "",
+    cf: readCf(c),
+    salt: c.env.FINGERPRINT_SALT ?? "dev-fingerprint-salt",
+    challengePassed: Boolean(c.req.header("cf-turnstile-response")),
   });
+
+  try {
+    const result = await generateExam(
+      { exam: body.exam, subject: body.subject, variantNumber: body.variantNumber, plan, userId, ip },
+      c.env,
+      c.env.DB,
+    );
+
+    // Попытку списываем ПОСЛЕ успеха: упавший вызов провайдера не должен стоить
+    // учителю варианта.
+    await consumeGenerationQuota(c.env.DB, {
+      userId,
+      plan: plan as UsagePlan,
+      fingerprint: guard.fingerprint,
+    });
+
+    return c.json({
+      ok: true,
+      variant: result.variant,
+      meta: result.meta,
+    });
+  } catch (e) {
+    // Занятая попытка возвращается сразу, а не ждёт TTL в 5 минут.
+    await releaseFreeQuotaForGeneration(c.env.DB, {
+      userId,
+      plan: plan as UsagePlan,
+      fingerprint: guard.fingerprint,
+    }).catch(() => {});
+    throw e;
+  }
 });
 
 examsRouter.post("/check", async (c) => {
