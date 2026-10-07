@@ -90,8 +90,27 @@ describe("маршрутизация: пять эндпоинтов не пер�
     expect(json).toMatchObject({ ok: false });
   });
 
-  it("A2. Контроль: неизвестный путь /api/* по-прежнему отдаёт 501 заглушки", async () => {
+  // Раньше здесь стояло обратное ожидание: неизвестный путь /api/* должен был
+  // отдать 501 «tracking ещё не реализован». Именно это поведение и прятало
+  // баг на месяцы: пять отсутствующих эндпоинтов отвечали 501 с текстом про
+  // трекинг, и по ответу нельзя было понять, что адреса просто нет.
+  // С 07.10.2026 неизвестный адрес честно отвечает 404 (см. routes/track.ts).
+  it("A2. Контроль: неизвестный путь /api/* отвечает 404, а не 501 про трекинг", async () => {
     const res = await SELF.fetch("https://uchlist.test/api/definitely-not-a-route", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const json = (await res.json().catch(() => null)) as { code?: string; path?: string } | null;
+    expect(res.status).toBe(404);
+    expect(json?.code).toBe("NOT_FOUND");
+    // Адрес в ответе — чтобы ошибка сама подсказывала, куда смотреть.
+    expect(json?.path).toBe("/api/definitely-not-a-route");
+    expect(JSON.stringify(json)).not.toContain("tracking ещё не реализован");
+  });
+
+  it("A2b. Сам /api/track остаётся 501 — трекинг действительно не сделан", async () => {
+    const res = await SELF.fetch("https://uchlist.test/api/track", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
