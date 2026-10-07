@@ -22,6 +22,11 @@ CF_API = "https://api.cloudflare.com/client/v4"
 RESEND_API = "https://api.resend.com"
 API = "https://rabochielisty-api.ivanlusnikov159.workers.dev"
 
+# Cloudflare (и воркеры за ним) режут запросы без браузерного User-Agent —
+# ответ 403/1010. Без него диагностика молчит и выглядит как «ничего нет».
+UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+
 
 def read_secret(path):
     with open(path, encoding="utf-8") as fh:
@@ -33,6 +38,12 @@ def request(url, token, method="GET", body=None, extra=None):
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Authorization", f"Bearer {token}")
     req.add_header("Content-Type", "application/json")
+    # Cloudflare отвечает 403/1010 на запросы без браузерного User-Agent.
+    # Без этих заголовков проверка молча получала пустой ответ и врала:
+    # «домена в Resend нет», хотя он есть. Ошибку 403 надо показывать, а не
+    # прятать за пустым списком.
+    req.add_header("User-Agent", UA)
+    req.add_header("Accept", "application/json")
     for key, value in (extra or {}).items():
         req.add_header(key, value)
     try:
@@ -40,7 +51,7 @@ def request(url, token, method="GET", body=None, extra=None):
             return json.loads(resp.read())
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")
-        return {"_error": f"{exc.code} {exc.reason}: {detail[:300]}"}
+        return {"_error": f"{exc.code} {exc.reason}: {detail[:300]}", "data": []}
 
 
 def dig(name, rtype):
@@ -71,6 +82,10 @@ def main():
 
     if resend_token and not resend_token.startswith("re_ЗАМЕНИ"):
         domains = request(f"{RESEND_API}/domains", resend_token)
+        if domains.get("_error"):
+            # Раньше ошибка молча превращалась в пустой список и печатала
+            # «домена нет» — то есть диагностика врала о причине.
+            print(f"\nResend: не удалось опросить API — {domains['_error']}")
         found = None
         for item in domains.get("data") or []:
             if item.get("name") == DOMAIN:

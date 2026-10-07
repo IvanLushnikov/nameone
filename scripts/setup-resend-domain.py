@@ -30,6 +30,12 @@ RESEND_API = "https://api.resend.com"
 # домен «не верифицируется» после ручного добавления записей.
 CF_RESOLVER = "1.1.1.1"
 
+# Cloudflare (и воркеры за ним) отвечают 403/1010 на запросы без
+# браузерного User-Agent. Скрипту нужны реальные HTTP-вызовы к API, поэтому
+# подставляем User-Agent браузера, а не urllib по умолчанию.
+UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+
 
 def read_secret(path, label):
     if not os.path.exists(path):
@@ -54,6 +60,8 @@ def request(url, token, method="GET", body=None, extra_headers=None):
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Authorization", f"Bearer {token}")
     req.add_header("Content-Type", "application/json")
+    req.add_header("User-Agent", UA)
+    req.add_header("Accept", "application/json")
     for key, value in (extra_headers or {}).items():
         req.add_header(key, value)
     try:
