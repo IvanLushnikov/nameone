@@ -63,3 +63,6 @@ next-env.d.ts
 test-results/
 playwright-report/
 tests/screenshots/
+
+# Секретные ключи почты (никогда не коммитить)
+backend/.resend.key
