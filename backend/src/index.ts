@@ -33,6 +33,11 @@ import { authRouter } from "./routes/auth";
 import { usersRouter } from "./routes/users";
 import { billingRouter } from "./routes/billing";
 import { adminRouter } from "./routes/admin";
+import { lessonPlansRouter } from "./routes/lesson-plans";
+import { presentationsRouter } from "./routes/presentations";
+import { ktpRouter } from "./routes/ktp";
+import { cardsRouter } from "./routes/cards";
+import { materialsRouter } from "./routes/materials";
 import { trackRouter } from "./routes/track";
 import { turnstileRouter } from "./routes/turnstile";
 import { accountRouter } from "./routes/account";
@@ -214,6 +219,16 @@ app.route("/api/interactives", interactivesRouter); // TZ-13: ЛК учител�
 app.route("/api/public/interactives", publicInteractivesRouter); // TZ-13: игра ученика, БЕЗ авторизации
 app.route("/api/turnstile", turnstileRouter); // проверка капчи антифрода (409 → капча → повтор)
 app.route("/api/admin", adminRouter);
+
+// Пять типов материалов, которых на сервере не было: фронт рисовал типовую
+// заготовку вместо готового материала. Ключи ответа — lessonPlan,
+// presentation, ktp, cardSet, materialBundle (их ждёт src/lib/client/llm.ts).
+// ВАЖНО: выше заглушки /api/* ниже — см. комментарий перед ней.
+app.route("/api/lesson-plans", lessonPlansRouter);
+app.route("/api/presentations", presentationsRouter);
+app.route("/api/ktp", ktpRouter);
+app.route("/api/cards", cardsRouter);
+app.route("/api/materials", materialsRouter);
 
 /**
  * Заглушка /api/track подключается ПОСЛЕДНЕЙ — и это не порядок ради порядка.

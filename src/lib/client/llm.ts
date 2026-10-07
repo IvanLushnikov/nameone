@@ -106,9 +106,17 @@ async function callBackendOnce<T>(
   }
   if (res.status >= 400 && res.status < 500) {
     const payload = (await res.json().catch(() => null)) as
-      | { error?: string; code?: string }
+      | { error?: string; code?: string; details?: { code?: string } }
       | null;
-    throw new BackendError(res.status, payload?.code ?? null, payload?.error ?? `HTTP ${res.status}`);
+    // Код ошибки может лежать в двух местах, и это не украшение: сервер кладёт
+    // общий код в корне (`PAYMENT_REQUIRED` из ApiError), а предметный — в
+    // `details.code` (`UPGRADE_REQUIRED`). Раньше читался только корень, и
+    // `isUpgradeRequired` не срабатывал НИКОГДА: то есть окно оплаты не
+    // показывалось ни для вариантов ОГЭ/ЕГЭ, ни для премиум-листов и КТП —
+    // учитель вместо экрана оплаты видел сырой текст ошибки.
+    // Берём оба: предметный код точнее, корневой — запасной вариант.
+    const code = payload?.details?.code ?? payload?.code ?? null;
+    throw new BackendError(res.status, code, payload?.error ?? `HTTP ${res.status}`);
   }
   // 501 — сервер ответил «этот тип не реализован». Это НЕ сбой сервиса и не
   // повод молча подставить заготовку: у заготовки типовые задания, учитель

@@ -233,7 +233,21 @@ export async function recordUsage(
   params: { userId: string | null; plan: UsagePlan; weightedTokens: number },
 ): Promise<UsageStatus | null> {
   const { userId, plan, weightedTokens } = params;
-  if (!userId || plan === "free" || weightedTokens <= 0) return null;
+  if (weightedTokens <= 0) return null;
+
+  // BL-07: анонимный вызов не попадает ни в чью норму — нормы у анонима нет,
+  // и превысить её без аккаунта нельзя. Но деньги у провайдера он стоит ровно
+  // те же, и раньше был виден только в llm_logs: «сколько бесплатного трафика
+  // мы сознательно дарим» не отвечалось ничем. Теперь каждый анонимный вызов
+  // пишет событие ANON_USAGE_EVENT — агрегат по суткам без userId (его нет),
+  // с ключом счёта владельца вместо id.
+  if (!userId) {
+    await recordAnonymousUsage(db, { weightedTokens, plan });
+    return null;
+  }
+  // Бесплатный тариф с аккаунтом: квота в штуках генераций (checkFreeQuota),
+  // а токены в норму не идут — помесячной нормы у этого тарифа нет.
+  if (plan === "free") return null;
 
   const window = await usageWindowFor(db, userId, plan);
   if (window.norm == null) return null;
@@ -316,19 +330,339 @@ export async function checkFreeQuota(
   };
 }
 
-/** Списать одну генерацию из бесплатной квоты. Вызывается ПОСЛЕ успешной генерации. */
-export async function consumeFreeQuota(db: D1Database, ownerKey: string): Promise<void> {
-  const key = `freetotal:${ownerKey}`;
+/** Ключ счёта бесплатной квоты: у кого есть аккаунт — он, у анонима — отпечаток.
+ *
+ * Отпечаток, а не IP: IP один на всю школу и на всех, кто сидит за одним NAT,
+ * и счёт по IP отдавал бы три попытки на класс. Смена аккаунта отпечаток не
+ * меняет, поэтому обойти квоту новым аккаунтом нельзя.
+ */
+export function freeQuotaOwnerKey(userId: string | null, fingerprint?: string | null): string {
+  return userId ?? `fp:${fingerprint ?? ""}`;
+}
+
+/** Ключ счётчика «использовано попыток». */
+const freeQuotaKey = (ownerKey: string) => `freetotal:${ownerKey}`;
+/** Префикс ключей «занятых, но ещё не подтверждённых» попыток. */
+const freeHoldPrefix = (ownerKey: string) => `freehold:${ownerKey}:`;
+/**
+ * Верхняя граница диапазона по префиксу. Нужна, чтобы «занятые» попытки
+ * считались выборкой по УНИКАЛЬНОМУ индексу по key, а не полным сканом
+ * таблицы счётчиков (в ней же лежат суточные окна остальных ручек).
+ */
+const holdRangeEnd = (prefix: string) => `${prefix}\uffff`;
+
+/**
+ * Сколько секунд «занятая» попытка считается ещё занятой.
+ *
+ * Попытка занимается ДО вызова провайдера (см. holdFreeQuotaSlot) и снимается
+ * после успеха. Если генерация упала или воркер умер, попытка не снимается
+ * никем — и снимает её время: через TTL такая строка перестаёт учитываться.
+ * Пять минут — с запасом на самый долгий вызов с фолбэком и повтором.
+ */
+export const FREE_QUOTA_HOLD_TTL_SEC = 300;
+
+export interface FreeQuotaState {
+  allowed: boolean;
+  used: number;
+  limit: number;
+  remaining: number;
+}
+
+/** Прочитать состояние квоты: зачтённые попытки + ещё не истёкшие «занятые». */
+async function freeQuotaState(
+  db: D1Database,
+  ownerKey: string,
+  now = Math.floor(Date.now() / 1000),
+): Promise<Omit<FreeQuotaState, "allowed">> {
+  const prefix = freeHoldPrefix(ownerKey);
+  // Первичная реплика — та же причина, что в checkFreeQuota: счётчик, который
+  // только что попросили занять, должен быть виден сразу (BL-06).
+  const row = await db
+    .withSession("first-primary")
+    .prepare(
+      `SELECT
+         (SELECT COALESCE(SUM(count), 0) FROM rate_limits WHERE key = ?1) AS committed,
+         (SELECT COUNT(*) FROM rate_limits
+          WHERE key >= ?2 AND key < ?3 AND window_start > ?4) AS held`,
+    )
+    .bind(
+      freeQuotaKey(ownerKey),
+      prefix,
+      holdRangeEnd(prefix),
+      now - FREE_QUOTA_HOLD_TTL_SEC,
+    )
+    .first<{ committed: number; held: number }>();
+  const used = Number(row?.committed ?? 0) + Number(row?.held ?? 0);
+  return {
+    used,
+    limit: FREE_TOTAL_GENERATIONS,
+    remaining: Math.max(0, FREE_TOTAL_GENERATIONS - used),
+  };
+}
+
+/**
+ * Занять одну попытку бесплатной квоты АТОМАРНО.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ПОЧЕМУ ПРОВЕРКА И СПИСАНИЕ БОЛЬШЕ НЕ РАЗНЫЕ ОБРАЩЕНИЯ
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Раньше было так: `checkFreeQuota` читает `count`, потом (после успешной
+ * генерации) `consumeFreeQuota` делает `count = count + 1`. Между этими двумя
+ * обращениями живёт вся генерация — секунды, а не микросекунды. Два запроса с
+ * одного отпечатка, пришедшие одновременно (две вкладки, кнопка «ещё раз»),
+ * оба читали `count = 2`, оба проходили проверку, и счётчик уезжал на 4+.
+ * Инкремент в SQL атомарен, но ограничен СНИЗУ, а нужен потолок СВЕРХУ.
+ *
+ * Теперь попытка ЗАНИМАЕТСЯ до вызова провайдера, одним оператором, условие
+ * которого — «использовано + занято < 3». Параллельные запросы сериализуются
+ * внутри одного оператора: трое получают занятие, четвёртый — отказ. Превысить
+ * квоту нельзя в принципе, а не «обычно не получается».
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ПОЧЕМУ ЭТО НЕ «СПИСАНИЕ ПЕРЕД ГЕНЕРАЦИЕЙ»
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Учитель не должен терять попытку из-за чужой ошибки (5xx провайдера), поэтому
+ * зачёркивает занятие только успех (consumeFreeQuota). Пока генерация идёт,
+ * занятие видно в квоте — и это правильно: попытка уже тратит деньги, иначе
+ * параллельные запросы разошлись бы снова. Попытка, которую не подтвердили и
+ * не вернули (падение, перезапуск воркера), освобождается сама по TTL.
+ *
+ * Второй плюс этого решения: `checkLlmRateLimit` (обёртка для llm/index.ts)
+ * продолжает читать ТОЛЬКО зачтённые попытки и потому не считает занятую
+ * попытку дважды — иначе учитель на бесплатном тарифе получил бы 2 генерации
+ * вместо трёх.
+ */
+export async function holdFreeQuotaSlot(db: D1Database, ownerKey: string): Promise<FreeQuotaState> {
   const now = Math.floor(Date.now() / 1000);
+  const prefix = freeHoldPrefix(ownerKey);
+  // id держим КОРОТКИМ и случайным: ключ счёта в нём не нужен (он лежит в
+  // `key`), а обрезка длинного `freehold:fp:<64 hex>:` обрезала бы всё
+  // содержимое после 40-го символа — и все занятия одного посетителя в одну
+  // секунду получили бы один и тот же id, то есть падение по UNIQUE.
+  const nonce = crypto.randomUUID().slice(0, 8);
+  const id = `rl_hold_${now.toString(36)}_${nonce}_${ownerKey.replace(/[^a-z0-9]/gi, "").slice(-10)}`;
+  const held =
+    Number(
+      (
+        await db
+          .prepare(
+            `INSERT INTO rate_limits (id, key, count, window_start)
+             SELECT ?1, ?2, 1, ?3
+             WHERE (SELECT COALESCE(SUM(count), 0) FROM rate_limits WHERE key = ?4)
+                 + (SELECT COUNT(*) FROM rate_limits
+                    WHERE key >= ?6 AND key < ?7 AND window_start > ?8) < ?5`,
+          )
+          .bind(
+            id,
+            `${prefix}${nonce}`,
+            now,
+            freeQuotaKey(ownerKey),
+            FREE_TOTAL_GENERATIONS,
+            prefix,
+            holdRangeEnd(prefix),
+            now - FREE_QUOTA_HOLD_TTL_SEC,
+          )
+          .run()
+      ).meta?.changes ?? 0,
+    ) > 0;
+  const state = await freeQuotaState(db, ownerKey, now);
+  return { ...state, allowed: held };
+}
+
+/** Вернуть занятую попытку: генерация не начнётся (капча, отказ на входе). */
+export async function releaseFreeQuotaHold(db: D1Database, ownerKey: string): Promise<void> {
+  const prefix = freeHoldPrefix(ownerKey);
   await db
     .prepare(
-      `INSERT INTO rate_limits (id, key, count, window_start)
-       VALUES (?1, ?2, 1, 0)
-       ON CONFLICT(key) DO UPDATE SET count = count + 1`,
+      `DELETE FROM rate_limits WHERE rowid = (
+         SELECT rowid FROM rate_limits WHERE key >= ?1 AND key < ?2
+         ORDER BY window_start ASC LIMIT 1)`,
     )
-    .bind(`rl_free_${key.slice(0, 40)}`, key)
+    .bind(prefix, holdRangeEnd(prefix))
     .run();
-  void now;
+}
+
+/**
+ * Зачесть занятую попытку: снять «занятое» и записать «использовано».
+ *
+ * Снятие и запись идут одним `batch` (D1 выполняет пачку в одной транзакции),
+ * поэтому «занято + использовано» не может разъехаться. Счётчик зачтённых
+ * ограничен сверху тем же `WHERE count < 3`: даже если вызвать списание лишний
+ * раз, четвёртая попытка в счёт не попадёт.
+ */
+export async function consumeFreeQuota(db: D1Database, ownerKey: string): Promise<void> {
+  const prefix = freeHoldPrefix(ownerKey);
+  await db.batch([
+    db
+      .prepare(
+        `DELETE FROM rate_limits WHERE rowid = (
+           SELECT rowid FROM rate_limits WHERE key >= ?1 AND key < ?2
+           ORDER BY window_start ASC LIMIT 1)`,
+      )
+      .bind(prefix, holdRangeEnd(prefix)),
+    db
+      .prepare(
+        `INSERT INTO rate_limits (id, key, count, window_start)
+         VALUES (?1, ?2, 1, 0)
+         ON CONFLICT(key) DO UPDATE SET count = count + 1 WHERE count < ?3`,
+      )
+      .bind(
+        `rl_free_${freeQuotaKey(ownerKey).slice(0, 40)}`,
+        freeQuotaKey(ownerKey),
+        FREE_TOTAL_GENERATIONS,
+      ),
+  ]);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Учёт БЕСПЛАТНОГО (анонимного) трафика — BL-07
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Анонимный расход: сколько бесплатного трафика мы сознательно отдаём.
+ *
+ * Где он живёт и почему не в норме: у анонима нет ни userId, ни нормы —
+ * `usage_counters.user_id` это NOT NULL + REFERENCES users(id), аноним туда
+ * не встанет, и логично: превысить норму без аккаунта нельзя. Деньги же
+ * провайдеру уходят. Поэтому считаем отдельно, в существующей таблице
+ * `events` (user_id там допускает NULL), по ключу счёта владельца —
+ * отпечатку, а не по id.
+ *
+ * Два события, и они не дублируют друг друга, потому что пишутся с разных
+ * слоёв и знают разное:
+ *   · ANON_USAGE_EVENT — слой вызова LLM (recordUsage): сколько ВЗВЕШЕННЫХ
+ *     токенов ушло, то есть сколько это денег;
+ *   · ANON_ACCESS_EVENT — слой запроса (guardGeneration / routes/llm.ts):
+ *     кому именно отдали доступ (отпечаток), сколько попыток.
+ */
+export const ANON_USAGE_EVENT = "anon_free_usage";
+export const ANON_ACCESS_EVENT = "anon_free_access";
+
+/**
+ * Записать анонимный вызов LLM в учёт. Не бросает никогда: аналитика не имеет
+ * права уронить генерацию (та же оговорка, что в interactives-public.ts).
+ */
+export async function recordAnonymousUsage(
+  db: D1Database,
+  params: { weightedTokens: number; plan: UsagePlan; ownerKey?: string | null; task?: string },
+): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  try {
+    await db
+      .prepare(
+        `INSERT INTO events (id, user_id, name, data_json, created_at)
+         VALUES (?1, NULL, ?2, ?3, ?4)`,
+      )
+      .bind(
+        `ev_anon_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+        ANON_USAGE_EVENT,
+        JSON.stringify({
+          weightedTokens: Math.round(params.weightedTokens),
+          plan: params.plan,
+          owner: params.ownerKey ?? null,
+          task: params.task ?? null,
+        }),
+        now,
+      )
+      .run();
+  } catch {
+    /* учёт не записался — генерация от этого не должна пострадать */
+  }
+}
+
+/** Записать, что бесплатный доступ отдан анониму (кто и каким отпечатком). */
+export async function recordAnonymousAccess(
+  db: D1Database,
+  params: { ownerKey: string; plan: UsagePlan; task: string },
+): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  try {
+    await db
+      .prepare(
+        `INSERT INTO events (id, user_id, name, data_json, created_at)
+         VALUES (?1, NULL, ?2, ?3, ?4)`,
+      )
+      .bind(
+        `ev_anonx_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+        ANON_ACCESS_EVENT,
+        JSON.stringify({
+          owner: params.ownerKey,
+          task: params.task,
+          // Префикс хэша, а не сам отпечаток: в отчёте хватает «сколько разных
+          // отпечатков», а полный хэш в аналитике незачем.
+          fp: params.ownerKey.replace(/^fp:/, "").slice(0, 16),
+        }),
+        now,
+      )
+      .run();
+  } catch {
+    /* см. выше: аналитика не роняет генерацию */
+  }
+}
+
+export interface AnonymousUsageSummary {
+  /** Границы интервала (unix seconds), для которых посчитан срез. */
+  fromSec: number;
+  toSec: number;
+  /** Сколько раз отдали бесплатный доступ. */
+  accesses: number;
+  /** Сколько разных ключей счёта (отпечатков) получили доступ. */
+  owners: number;
+  /** Объём бесплатного трафика во взвешенных токенах. */
+  weightedTokens: number;
+  /** Тот же трафик в рублях по действующему курсу и цене эталонной модели. */
+  costRub: number;
+}
+
+/**
+ * Срез бесплатного трафика за интервал — ответ на вопрос владельца «сколько
+ * бесплатного анонимного трафика мы отдаём в сутки».
+ *
+ * Читается с primary: это отчёт, а не путь генерации, зато читать его будут
+ * сразу после инцидента, и увидеть отстающую реплику обидно.
+ */
+export async function summarizeAnonymousUsage(
+  db: D1Database,
+  window: { fromSec: number; toSec: number },
+): Promise<AnonymousUsageSummary> {
+  const empty: AnonymousUsageSummary = {
+    fromSec: window.fromSec,
+    toSec: window.toSec,
+    accesses: 0,
+    owners: 0,
+    weightedTokens: 0,
+    costRub: 0,
+  };
+  try {
+    const access = await db
+      .withSession("first-primary")
+      .prepare(
+        `SELECT COUNT(*) AS accesses,
+                COUNT(DISTINCT json_extract(data_json, '$.owner')) AS owners
+         FROM events
+         WHERE name = ?1 AND created_at >= ?2 AND created_at < ?3`,
+      )
+      .bind(ANON_ACCESS_EVENT, window.fromSec, window.toSec)
+      .first<{ accesses: number; owners: number }>();
+    const usage = await db
+      .withSession("first-primary")
+      .prepare(
+        `SELECT COALESCE(SUM(COALESCE(json_extract(data_json, '$.weightedTokens'), 0)), 0) AS weighted
+         FROM events
+         WHERE name = ?1 AND created_at >= ?2 AND created_at < ?3`,
+      )
+      .bind(ANON_USAGE_EVENT, window.fromSec, window.toSec)
+      .first<{ weighted: number }>();
+    const weightedTokens = Number(usage?.weighted ?? 0);
+    return {
+      ...empty,
+      accesses: Number(access?.accesses ?? 0),
+      owners: Number(access?.owners ?? 0),
+      weightedTokens,
+      costRub: Math.round(weightedTokens * RUB_PER_WEIGHTED_TOKEN * 100) / 100,
+    };
+  } catch {
+    return empty;
+  }
 }
 
 /**

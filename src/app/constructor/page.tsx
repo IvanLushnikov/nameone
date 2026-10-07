@@ -74,6 +74,7 @@ import {
   generateCardsSmart,
   generateMaterialsSmart,
   generateBundleSmart,
+  BackendError,
 } from "@/lib/client/llm";
 import { generateWorksheetDocx, downloadBlob } from "@/lib/utils/docx";
 import { verifyWorksheetTasks, type VerifyProgress } from "@/lib/llm/verify-sheet";
@@ -1254,6 +1255,17 @@ export default function ConstructorPage() {
         setRemaining(getRemaining());
         quotaConsumed = false;
       }
+
+      // 402 = «этот тип входит в Плюс». Раньше он попадал в общий тост
+      // «Попытка не потрачена — попробуйте ещё раз», а для учителя это ложь:
+      // сколько он ни повторяй, без подписки тот же тип не соберётся.
+      // С 07.10.2026 это стало реальной ошибкой: презентация, КТП и варианты
+      // ОГЭ/ЕГЭ на тарифе «База» отдают 402, и показывать надо окно оплаты.
+      if (err instanceof BackendError && err.isUpgradeRequired) {
+        setShowPaywall(true);
+        return;
+      }
+
       toast({
         tone: "error",
         title: "Не получилось",
