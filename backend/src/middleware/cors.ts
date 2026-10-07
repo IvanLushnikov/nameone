@@ -21,23 +21,23 @@ import type { AppEnv } from "../types";
 /**
  * Origins, которые мы всегда готовы считать "своими".
  *
- * listai-prototype.pages.dev — текущий preview-домен фронта (Pages).
- * rabochielisty.ru — старый прод-домен (не делегирован, резолвится в пустоту).
- * uchlist.ru — действующий прод-домен (решение владельца 2026-10-03,
- * docs/tz/18-money-and-trust.md §7). Старый оставлен в списке, чтобы переход
- * не ломал попутно: удалить вместе с делегированием нового домена.
+ * listai-prototype.pages.dev — временный хост Pages, оставлен на переходный
+ * период, пока он отдаёт 301 на прод (public/_redirects).
+ * rabochielisty.ru удалён 2026-10-07: домен не резолвится, в allowlist смысла
+ * не имеет — только раздувает конфигурацию.
+ * uchlist.ru — прод-домен, делегирован на Cloudflare 2026-10-07. Обязан идти
+ * первым: из FRONTEND_URL берётся fallback для мест, где не задан
+ * APP_PUBLIC_URL (ссылки в письмах, редиректы оплаты).
 
  *
  * Оба с www- и без — Pages иногда отдаёт и так и так.
  */
 const DEFAULT_ALLOWED_ORIGINS: readonly string[] = [
-  "https://listai-prototype.pages.dev",
-  "https://www.listai-prototype.pages.dev",
-  "https://rabochielisty.ru",
-  "https://www.rabochielisty.ru",
-
   "https://uchlist.ru",
   "https://www.uchlist.ru",
+
+  "https://listai-prototype.pages.dev",
+  "https://www.listai-prototype.pages.dev",
 ];
 
 /**
