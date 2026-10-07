@@ -11,7 +11,7 @@ import {
   MATERIAL_PURPOSE_ORDER,
   getMaterialsByPurpose,
   getSubjectCounts,
-  getTopMaterials,
+  getFeaturedMaterials,
 } from "@/lib/content/materials-catalog";
 import { getSubject, subjects } from "@/lib/content/subjects";
 import { getUMK } from "@/lib/content/umk";
@@ -43,7 +43,7 @@ export const metadata: Metadata = {
   twitter: twitterCard(undefined),
 };
 
-/** Избранные темы — самые востребованные темы каталога. */
+/** Избранные темы — темы, на которые в каталоге больше всего материалов. */
 const featuredTopics = (() => {
   const counts = new Map<string, { topicSlug: string; topicTitle: string; subject: string; grade: number; hits: number }>();
   for (const m of MATERIALS_CATALOG) {
@@ -65,7 +65,7 @@ const featuredTopics = (() => {
 })();
 
 export default function MaterialsHubPage() {
-  const topMaterials = getTopMaterials(6);
+  const topMaterials = getFeaturedMaterials(6);
   const subjectCounts = getSubjectCounts();
   /** Предметы, у которых задан хотя бы один УМК, — для блока «По учебнику». */
   const umkSubjects = subjects.filter((s) => (getUMK(s.slug) ?? []).length > 0);
@@ -107,16 +107,18 @@ export default function MaterialsHubPage() {
         </div>
       </section>
 
-      {/* Топ материалов */}
+      {/* Начало каталога. Заголовок про «чаще всего берут» убрали вместе с
+          выдуманным счётчиком: обещать учителю популярность, которую мы не
+          считали, нельзя. */}
       <section className="py-12 sm:py-16">
         <div className="container-tight">
           <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
             <div>
               <h2 className="text-2xl sm:text-3xl font-display font-bold tracking-tight">
-                Чаще всего берут в работу
+                Начало каталога
               </h2>
               <p className="mt-2 text-sm text-warm-500">
-                Топ обновляется вместе с каталогом
+                Карточки обновляются вместе с каталогом
               </p>
             </div>
           </div>

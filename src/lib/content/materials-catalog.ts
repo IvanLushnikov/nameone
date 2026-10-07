@@ -53,10 +53,15 @@ export interface MaterialEntry {
   /** Сколько заданий в материале (идёт в конструктор через `count`). */
   count: number;
   author: string;
-  usesCount: number;
-  rating: number;
-  ratingCount: number;
-  /** ISO-дата (YYYY-MM-DD), последняя редакция карточки. */
+  /**
+   * ISO-дата (YYYY-MM-DD), последняя редакция карточки.
+   *
+   * Рейтинга и счётчика «взяли в работу» здесь нет намеренно: они считались
+   * из хэша строки и висели на каждой карточке как «4,4 по оценке 235
+   * учителей». Это не данные, а генератор чисел — реальных оценок у нас
+   * до сих пор ноль. Возвращать эти поля можно только вместе с таблицей
+   * настоящих оценок в базе.
+   */
   updatedAt: string;
 }
 
@@ -491,10 +496,6 @@ function buildCatalog(): MaterialEntry[] {
     }
     seenSlugs.add(slug);
 
-    // Счётчик «взяли в работу». Разнос по индексу нужен, чтобы значения не
-    // скапливались на максимуме: формула `3 + (h % 470)` давала нескольким
-    // карточкам одинаковое 470, и это читалось как заглушка, а не как данные.
-    const usesCount = 3 + ((h + entries.length * 97) % 468);
     entries.push({
       slug,
       title,
@@ -517,9 +518,6 @@ function buildCatalog(): MaterialEntry[] {
       difficulty,
       count,
       author: EDITORIAL_AUTHOR,
-      usesCount,
-      rating: Math.round((4.0 + ((h >>> 20) % 11) / 10) * 10) / 10,
-      ratingCount: Math.max(1, Math.round(usesCount * (0.22 + ((h >>> 24) % 5) * 0.07))),
       updatedAt: updatedAtFor(h),
     });
   }
@@ -536,6 +534,12 @@ export function getMaterialBySlug(slug: string): MaterialEntry | undefined {
   return MATERIALS_CATALOG.find((m) => m.slug === slug);
 }
 
+/**
+ * Фильтр каталога. Порядок — редакционный (предмет → класс), а не
+ * «по популярности»: счётчика использования больше нет, а придумывать
+ * вместо него другой «популярный» признак нельзя — учитель сразу видит,
+ * что порядок случайный.
+ */
 export function getMaterialsByFilters(filters: MaterialFilters): MaterialEntry[] {
   return MATERIALS_CATALOG.filter(
     (m) =>
@@ -543,12 +547,16 @@ export function getMaterialsByFilters(filters: MaterialFilters): MaterialEntry[]
       (filters.grade === undefined || m.grade === filters.grade) &&
       (filters.purpose === undefined || m.purpose === filters.purpose) &&
       (filters.artifactType === undefined || m.artifactType === filters.artifactType),
-  ).sort((a, b) => b.usesCount - a.usesCount);
+  );
 }
 
-/** Топ по «взяли в работу» — для главной страницы и топ-категорий хаба. */
-export function getTopMaterials(limit: number): MaterialEntry[] {
-  return [...MATERIALS_CATALOG].sort((a, b) => b.usesCount - a.usesCount).slice(0, limit);
+/**
+ * Первые N карточек каталога — для главной и топ-категорий хаба.
+ * Это НЕ «популярное»: берём первые N в редакционном порядке. Название
+ * про «популярность» пришлось убрать вместе с выдуманным счётчиком.
+ */
+export function getFeaturedMaterials(limit: number): MaterialEntry[] {
+  return MATERIALS_CATALOG.slice(0, limit);
 }
 
 export function getMaterialsByPurpose(purpose: MaterialPurpose, limit?: number): MaterialEntry[] {

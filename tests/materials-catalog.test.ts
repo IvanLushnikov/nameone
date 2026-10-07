@@ -6,7 +6,7 @@ import {
   getMaterialBySlug,
   getMaterialsByFilters,
   getSubjectCounts,
-  getTopMaterials,
+  getFeaturedMaterials,
   materialConstructorHref,
   materialToSitemapEntry,
   translit,
@@ -141,13 +141,8 @@ describe("Банк материалов: каталог", () => {
         bare(m.topicTitle),
       );
 
-      // Счётчики правдоподобные: не нули и не абсурд.
-      expect(m.usesCount).toBeGreaterThan(0);
-      expect(m.rating).toBeGreaterThanOrEqual(4);
-      expect(m.rating).toBeLessThanOrEqual(5);
-      expect(m.ratingCount).toBeGreaterThan(0);
-      expect(m.ratingCount).toBeLessThanOrEqual(m.usesCount + 1);
-
+      // Никаких «правдоподобных» счётчиков: у материала нет рейтинга
+      // и числа использований, потому что за ними нет данных.
       expect(m.author).toBe("Редакция УчЛист");
       expect(m.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(Number.isNaN(new Date(m.updatedAt).getTime())).toBe(false);
@@ -204,11 +199,11 @@ describe("Банк материалов: геттеры", () => {
     const byArtifact = getMaterialsByFilters({ artifactType: "interactive" });
     expect(byArtifact.every((m) => m.artifactType === "interactive")).toBe(true);
 
-    // Комбинация полей + сортировка по «взяли в работу» (по убыванию).
+    // Комбинация полей + сохранение редакционного порядка каталога.
     const combined = getMaterialsByFilters({ subject: sample.subject, grade: sample.grade });
     expect(combined.every((m) => m.subject === sample.subject && m.grade === sample.grade)).toBe(true);
-    const uses = combined.map((m) => m.usesCount);
-    expect([...uses].sort((a, b) => b - a)).toEqual(uses);
+    const order = combined.map((m) => MATERIALS_CATALOG.indexOf(m));
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
 
     // Нет пересечений — пустой результат.
     expect(getMaterialsByFilters({ subject: "math", grade: 11 })).toEqual([]);
@@ -216,13 +211,21 @@ describe("Банк материалов: геттеры", () => {
     expect(getMaterialsByFilters({})).toHaveLength(MATERIALS_CATALOG.length);
   });
 
-  it("getTopMaterials отдаёт самые популярные и не больше лимита", () => {
-    const top = getTopMaterials(5);
-    expect(top).toHaveLength(5);
-    const uses = top.map((m) => m.usesCount);
-    expect([...uses].sort((a, b) => b - a)).toEqual(uses);
-    const max = Math.max(...MATERIALS_CATALOG.map((m) => m.usesCount));
-    expect(top[0].usesCount).toBe(max);
+  it("getFeaturedMaterials берёт начало каталога и не больше лимита", () => {
+    const featured = getFeaturedMaterials(5);
+    expect(featured).toHaveLength(5);
+    expect(featured).toEqual(MATERIALS_CATALOG.slice(0, 5));
+  });
+
+  // Рейтинга и «взяли в работу» в карточке больше нет: они считались из хэша
+  // и показывались живым посетителям как настоящие. Тест держит границу, чтобы
+  // счётчик не вернулся вместе с новым полем под другим именем.
+  it("в карточке материала нет выдуманных счётчиков", () => {
+    for (const m of MATERIALS_CATALOG) {
+      expect(Object.keys(m), `лишние поля у ${m.slug}`).not.toContain("usesCount");
+      expect(Object.keys(m), `лишние поля у ${m.slug}`).not.toContain("rating");
+      expect(Object.keys(m), `лишние поля у ${m.slug}`).not.toContain("ratingCount");
+    }
   });
 
   it("getSubjectCounts совпадает с фактическим составом каталога", () => {
