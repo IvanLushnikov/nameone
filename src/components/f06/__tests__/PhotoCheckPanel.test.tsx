@@ -272,6 +272,46 @@ describe("Проверьте сами", () => {
   });
 });
 
+describe("несколько страниц работы", () => {
+  it("три страницы уходят одной проверкой в выбранном порядке", async () => {
+    runPhotoCheck.mockResolvedValue(RESULT);
+    const { container } = render(
+      <PhotoCheckPanel assignmentId="local-ws_1" demoTasks={TASKS} />,
+    );
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: {
+        files: [
+          new File(["1"], "page-1.jpg", { type: "image/jpeg" }),
+          new File(["2"], "page-2.jpg", { type: "image/jpeg" }),
+          new File(["3"], "page-3.jpg", { type: "image/jpeg" }),
+        ],
+      },
+    });
+    await waitFor(() => expect(screen.getByText(/page-3\.jpg/)).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /понимаю, что загружаю фото/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Проверить$/ }));
+
+    await waitFor(() => expect(runPhotoCheck).toHaveBeenCalledTimes(1));
+    // Один запрос на всю работу, и страницы идут в том порядке, в каком их
+    // выбрали: перестановка тихо переставила бы страницы тетради.
+    const sent = runPhotoCheck.mock.calls[0][0].blobs as File[];
+    expect(sent.map((f) => f.name)).toEqual(["page-1.jpg", "page-2.jpg", "page-3.jpg"]);
+  });
+
+  it("без выбранных страниц проверка не запускается", async () => {
+    const { container } = render(
+      <PhotoCheckPanel assignmentId="local-ws_1" demoTasks={TASKS} />,
+    );
+    expect(container.querySelector('input[type="file"]')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: /понимаю, что загружаю фото/i }));
+
+    expect(screen.getByRole("button", { name: /^Проверить$/ })).toBeDisabled();
+    expect(runPhotoCheck).not.toHaveBeenCalled();
+  });
+});
+
 describe("ошибка сети ≠ ошибка распознавания", () => {
   it("сервис недоступен: фото цело, предлагаем повтор", async () => {
     runPhotoCheck.mockResolvedValue({ ok: false, error: "network", message: "Сеть недоступна. Проверьте соединение." });
