@@ -17,7 +17,10 @@
  * Теперь:
  *   * Бесплатный тариф — 3 генерации ВСЕГО, без сброса, счёт на сервере.
  *     Привязан к аккаунту, а у анонима — к отпечатку устройства. Обнулить
- *     квоту сменой браузера или часов нельзя.
+ *     квоту сменой браузера или часов нельзя. Попытка занимается до вызова
+ *     провайдера и зачитывается после успеха — иначе два параллельных
+ *     запроса с одного отпечатка проходили бы проверку одновременно и лимит
+ *     превышался (подробности — в services/usage.ts → holdFreeQuotaSlot).
  *   * Платные тарифы — МЯГКИЙ порог по взвешенным токенам (services/usage.ts).
  *     Пересечение нормы не блокирует: генерация продолжается, UI показывает
  *     «докупить», пишется событие и уходит алерт админу.
@@ -30,6 +33,10 @@ import { sha256Hex } from "../lib/hash";
 import {
   checkFreeQuota,
   consumeFreeQuota,
+  freeQuotaOwnerKey,
+  holdFreeQuotaSlot,
+  recordAnonymousAccess,
+  releaseFreeQuotaHold,
   type UsagePlan,
 } from "../services/usage";
 import {
@@ -112,19 +119,73 @@ export async function guardGeneration(
   const signals = await recordVisit(db, fingerprint, userId, cf);
 
   // ── Бесплатный тариф: 3 генерации всего ──
+  //
+  // Попытка ЗАНИМАЕТСЯ здесь, до вызова провайдера, и зачитывается после
+  // успеха (consumeGenerationQuota). Проверка чтением + последующая запись
+  // давали зазор на всю длительность генерации: два параллельных запроса с
+  // одного отпечатка оба проходили проверку и счётчик уезжал на 4+. Занятие
+  // атомарно и ограничено сверху — подробности в services/usage.ts
+  // (holdFreeQuotaSlot).
   let freeRemaining: number | null = null;
   if (plan === "free") {
-    const owner = userId ?? `fp:${fingerprint}`;
-    const quota = await checkFreeQuota(db, owner);
-    if (!quota.allowed && !input.challengePassed) {
-      // Квота кончилась — капча тут не поможет, это не подозрение, а лимит.
+    const owner = freeQuotaOwnerKey(userId, fingerprint);
+    const quota = await holdFreeQuotaSlot(db, owner);
+    if (!quota.allowed) {
+      // Квота кончилась — это лимит, а не подозрение. Капча тут не помогает:
+      // решение владельца от 07.10.2026 — анонимным ровно 3 попытки, и обход
+      // через «а я человек» делал бы лимит бессмысленным (раньше именно так и
+      // было: `!quota.allowed && !challengePassed`).
       throw new RateLimitError(
         `Бесплатные генерации закончились (${quota.limit} на весь период). Оформите подписку, чтобы продолжить.`,
         { limit: quota.limit, used: quota.used, kind: "free_total" },
       );
     }
     freeRemaining = quota.remaining;
+    try {
+      return await runFraudGuard({
+        db,
+        fingerprint,
+        signals,
+        userId,
+        cf,
+        challengePassed: input.challengePassed,
+        freeRemaining,
+      });
+    } catch (err) {
+      // Генерация не начнётся (капча 409, отказ на входе) — занятую попытку
+      // возвращаем сразу, а не ждём TTL: иначе учитель, которому фронт
+      // показал капчу, потратил бы попытку на пустой ответ 409.
+      await releaseFreeQuotaHold(db, owner).catch(() => {
+        /* вернуть не удалось — попытка освободится по TTL */
+      });
+      throw err;
+    }
   }
+
+  return runFraudGuard({
+    db,
+    fingerprint,
+    signals,
+    userId,
+    cf,
+    challengePassed: input.challengePassed,
+    freeRemaining,
+  });
+}
+
+interface FraudGuardInput {
+  db: D1Database;
+  fingerprint: string;
+  signals: FraudSignals;
+  userId: string | null;
+  cf?: CfObject;
+  challengePassed?: boolean;
+  freeRemaining: number | null;
+}
+
+/** Антифрод после проверки квоты: капча, а не блокировка. */
+async function runFraudGuard(input: FraudGuardInput): Promise<GenerationGuardResult> {
+  const { db, fingerprint, signals, userId, cf, challengePassed, freeRemaining } = input;
 
   // ── Антифрод: капча, а не блокировка ──
   const burst = await generationsInLastHour(db, fingerprint);
@@ -132,7 +193,7 @@ export async function guardGeneration(
   logFraudDecision(fingerprint, verdict, userId);
 
   if (verdict.decision === "challenge") {
-    if (input.challengePassed) {
+    if (challengePassed) {
       // Капчу уже прошли в этом запросе — доверяем и идём дальше.
       await markChallengePassed(db, fingerprint);
       return { fingerprint, signals, challenged: true, freeRemaining };
@@ -148,18 +209,43 @@ export async function guardGeneration(
 }
 
 /**
- * Списать бесплатную квоту ПОСЛЕ успешной генерации.
+ * Зачесть занятую попытку ПОСЛЕ успешной генерации.
  *
  * Списываем после, а не до: если генерация упала (5xx от провайдера, невалидный
- * JSON), учитель не должен терять генерацию из-за чужой ошибки.
+ * JSON), учитель не должен терять генерацию из-за чужой ошибки. Попытка, за
+ * которую заплатили, при этом уже была занята в guardGeneration — здесь мы
+ * только переводим «занято» в «использовано» (и снимаем занятое, если
+ * генерация не дошла до этого места — освободит TTL).
  */
+/**
+ * Вернуть занятую попытку, если генерация не удалась.
+ *
+ * Симметрично `consumeGenerationQuota`: та же логика ключа, тот же тариф.
+ * Нужна маршрутам, которые занимают попытку до вызова провайдера — иначе
+ * упавшая генерация держала бы занятый слот до истечения TTL (5 минут).
+ * Для платных планов функция ничего не делает: там квота в токенах.
+ */
+export async function releaseFreeQuotaForGeneration(
+  db: D1Database,
+  params: { userId: string | null; plan: UsagePlan; fingerprint: string },
+): Promise<void> {
+  if (params.plan !== "free") return;
+  await releaseFreeQuotaHold(db, freeQuotaOwnerKey(params.userId, params.fingerprint));
+}
+
 export async function consumeGenerationQuota(
   db: D1Database,
   params: { userId: string | null; plan: UsagePlan; fingerprint: string },
 ): Promise<void> {
   if (params.plan === "free") {
-    const owner = params.userId ?? `fp:${params.fingerprint}`;
+    const owner = freeQuotaOwnerKey(params.userId, params.fingerprint);
     await consumeFreeQuota(db, owner);
+    if (!params.userId) {
+      // BL-07: бесплатный доступ анониму виден в учёте по отпечатку, а не
+      // «где-то там». Кто именно получил бесплатную генерацию — вопрос, на
+      // который раньше не отвечала ни одна таблица.
+      await recordAnonymousAccess(db, { ownerKey: owner, plan: params.plan, task: "generation" });
+    }
   }
   // Событие пишется для платных тоже: из него берётся сигнал «всплеск»
   // (10+ генераций в час с отпечатка) в decideFraud.
@@ -171,6 +257,12 @@ export async function consumeGenerationQuota(
  * Старый интерфейс сохранён как тонкая обёртка: вызывающий код в llm/index.ts
  * импортирует checkLlmRateLimit. Платарифы проходят без проверки (мягкая норма),
  * бесплатные — через guardGeneration.
+ *
+ * ВНИМАНИЕ: здесь осталось ЧТЕНИЕ счётчика, а не занятие попытки. Занятие
+ * живёт в guardGeneration, и там оно атомарно; если бы эта обёртка тоже
+ * занимала, одна генерация съедала бы две попытки (маршрут зовёт guard, а потом
+ * generateWorksheet зовёт сюда). Побочный эффект чтения без занятия — в том,
+ * что параллельные запросы сводятся к решению занятия в guardGeneration.
  *
  * @deprecated Пользуйтесь guardGeneration: он умеет отпечаток, капчу и
  * бесплатную квоту. Эта функция осталась, чтобы не расползалась правка вызовов.

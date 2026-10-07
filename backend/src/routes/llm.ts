@@ -10,12 +10,15 @@
  */
 
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../types";
 import { availableModels } from "../llm/config";
 import { embed, verifySelfTask } from "../llm";
 import { BadRequestError } from "../lib/errors";
 import { rateLimitMiddleware } from "../middleware/ratelimit";
+import { fingerprintHash, type CfObject } from "../lib/antifraud";
+import { recordAnonymousAccess } from "../services/usage";
 
 // AppEnv, а не { Bindings: Env }: /verify читает тариф из сессии (c.get("user")).
 const llmRouter = new Hono<AppEnv>();
@@ -49,6 +52,35 @@ llmRouter.get("/models", (c) => {
 const embedSchema = z.object({
   texts: z.array(z.string().min(1).max(8000)).min(1).max(100),
 });
+
+/**
+ * Отметить, что бесплатный доступ к LLM отдан анониму (BL-07).
+ *
+ * /embeddings и /verify — анонимные платные ручки, и их расход виден в
+ * `llm_logs`, но не в учёте: у анонима нет userId, в норму его не записать.
+ * Здесь счёт идёт по отпечатку того же посетителя, что и в антифроде, поэтому
+ * в отчёте видно и «сколько трафика отдаём анонимам», и «кто именно» —
+ * без введения новых таблиц (пишем в `events`, см. services/usage.ts).
+ *
+ * Ошибки внутри recordAnonymousAccess не бросаются, а учёт с аккаунтом здесь
+ * не пишется вовсе: у платного тарифа расход идёт в норму.
+ */
+async function noteAnonymousAccess(c: Context<AppEnv>, task: string): Promise<void> {
+  if (c.get("user")?.id) return;
+  const fingerprint = await fingerprintHash(
+    {
+      ip: c.get("ip") ?? "0.0.0.0",
+      userAgent: c.get("userAgent") ?? "",
+      cf: (c.req.raw as Request & { cf?: CfObject }).cf,
+    },
+    c.env.FINGERPRINT_SALT ?? "dev-fingerprint-salt",
+  );
+  await recordAnonymousAccess(c.env.DB, {
+    ownerKey: `fp:${fingerprint}`,
+    plan: "free",
+    task,
+  });
+}
 
 /**
  * Лимит на эмбеддинги.
@@ -92,6 +124,7 @@ llmRouter.post("/embeddings", embedLimit, async (c) => {
     c.env,
     c.env.DB,
   );
+  await noteAnonymousAccess(c, "embed");
   return c.json({
     ok: true,
     vectors: result.vectors,
@@ -167,6 +200,7 @@ llmRouter.post("/verify", verifyLimit, async (c) => {
     c.env,
     c.env.DB,
   );
+  await noteAnonymousAccess(c, "self-verify");
 
   // Контракт ответа — ровно тот, что ждёт фронт (src/lib/llm/self-verify.ts).
   // `mock: false` здесь не украшение: клиент по нему отличает настоящую

@@ -32,7 +32,11 @@ import { shortId, worksheetId as makeWorksheetId } from "../lib/shortid";
 import { requireAuth } from "../middleware/auth";
 import { getUserById, incrementUserGenerations } from "../db/queries";
 import { taskForArtifact, PLUS_ONLY_TASKS } from "../llm/router";
-import { guardGeneration, consumeGenerationQuota } from "../llm/ratelimit";
+import {
+  guardGeneration,
+  consumeGenerationQuota,
+  releaseFreeQuotaForGeneration,
+} from "../llm/ratelimit";
 import { rateLimitMiddleware } from "../middleware/ratelimit";
 import type { CfObject } from "../lib/antifraud";
 import type { UsagePlan } from "../services/usage";
@@ -208,25 +212,68 @@ worksheetsRouter.post("/validate", validateLimit, async (c) => {
   }
   if (!body.worksheet || !body.context) throw new BadRequestError("Missing worksheet or context");
 
-  const result = await validateWorksheet(
-    {
-      worksheet: body.worksheet,
-      context: body.context,
-      // Квоту берём из сессии, не из тела запроса — по той же причине,
-      // что и в /generate: `plan` в теле подделывается тривиально.
-      plan: resolvePlan(c),
-      userId: await resolveUserId(c),
-      ip: c.get("ip") ?? "0.0.0.0",
-    },
-    c.env,
-    c.env.DB,
-  );
-  return c.json({
-    ok: true,
-    score: result.score,
-    issues: result.issues,
-    meta: result.meta,
+  const plan = resolvePlan(c);
+  const userId = await resolveUserId(c);
+  const ip = c.get("ip") ?? "0.0.0.0";
+
+  // Антифрод + бесплатная квота — РОВНО как в /generate.
+  //
+  // Раньше здесь стоял `checkLlmRateLimit` внутри `validateWorksheet`, и это
+  // была дыра: он считал по ключу `iphash:<хэш IP>`, а квоту списывает
+  // `consumeGenerationQuota` по `fp:<отпечаток>`. Ключи разные, то есть
+  // счётчик этой ручки вечно оставался нулём — проверка проходила всегда.
+  // Хуже: сама ручка вообще не списывала квоту, то есть была
+  // неограниченным источником платных вызовов для анонимов.
+  const guard = await guardGeneration({
+    db: c.env.DB,
+    userId,
+    plan,
+    ip,
+    userAgent: c.get("userAgent") ?? "",
+    cf: readCf(c),
+    salt: c.env.FINGERPRINT_SALT ?? "dev-fingerprint-salt",
+    challengePassed: Boolean(c.req.header("cf-turnstile-response")),
   });
+
+  try {
+    const result = await validateWorksheet(
+      {
+        worksheet: body.worksheet,
+        context: body.context,
+        // Квоту берём из сессии, не из тела запроса — по той же причине,
+        // что и в /generate: `plan` в теле подделывается тривиально.
+        plan,
+        userId,
+        ip,
+      },
+      c.env,
+      c.env.DB,
+    );
+
+    // Занятая попытка зачисляется только на успехе: упавший вызов провайдера
+    // не должен съедать учителю проверку.
+    await consumeGenerationQuota(c.env.DB, {
+      userId,
+      plan: plan as UsagePlan,
+      fingerprint: guard.fingerprint,
+    });
+
+    return c.json({
+      ok: true,
+      score: result.score,
+      issues: result.issues,
+      meta: result.meta,
+    });
+  } catch (e) {
+    // Возврат занятия: без этого упавшая проверка висела бы занятым слотом
+    // до истечения TTL (5 минут). Здесь возвращаем сразу.
+    await releaseFreeQuotaForGeneration(c.env.DB, {
+      userId,
+      plan: plan as UsagePlan,
+      fingerprint: guard.fingerprint,
+    }).catch(() => {});
+    throw e;
+  }
 });
 
 /**

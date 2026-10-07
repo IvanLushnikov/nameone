@@ -55,16 +55,18 @@ export interface ArtifactTypeOption {
 }
 
 /**
- * Типы, которые сервер на 06.10.2026 отдаёт как «не реализовано» (HTTP 501).
- * Источник истины — ответ бэкенда, список здесь нужен только для того, чтобы
- * показать учителю статус заранее, до генерации.
+ * Типы, которых сервер НЕ умеет собирать: помечаются в выборе и не выбираются.
+ *
+ * 06–07.10.2026 здесь стояли четыре типа — cards, lesson-plan, presentation, ktp:
+ * все они отдавали HTTP 501, а интерфейс молча подставлял типовую заготовку.
+ * 07.10.2026 серверные эндпоинты реализованы (backend/src/routes/*.ts), и
+ * список пуст — то есть все доступные учителю типы теперь делаются по-настоящему.
+ *
+ * Список оставлен НЕ удалённым: он и есть защита от повтора. Если новый тип
+ * добавить в меню, не сделав эндпоинт, и забыть сюда — учитель снова получит
+ * заготовку вместо материала. Пустой список = «всё, что в меню, работает».
  */
-const SERVER_NOT_IMPLEMENTED: ReadonlySet<TaskType> = new Set<TaskType>([
-  "cards",
-  "lesson-plan",
-  "presentation",
-  "ktp",
-]);
+const SERVER_NOT_IMPLEMENTED: ReadonlySet<TaskType> = new Set<TaskType>([]);
 
 export const ARTIFACT_TYPE_OPTIONS: ArtifactTypeOption[] = [
   // Группа «Каждый день» — всегда развёрнута, это daily-driver учителя.
@@ -73,13 +75,13 @@ export const ARTIFACT_TYPE_OPTIONS: ArtifactTypeOption[] = [
   // Карточки, план урока, презентация и КТП сервер пока не собирает (HTTP 501).
   // Помечаем флагом, а не прячем: учитель должен видеть, что тип существует и
   // над чем мы работаем, вместо того чтобы гадать, куда делся пункт меню.
-  { id: "cards", label: "Карточки", icon: Layers, hint: "Короткие, для запоминания", group: "daily", notImplementedOnServer: true },
+  { id: "cards", label: "Карточки", icon: Layers, hint: "Короткие, для запоминания", group: "daily" },
   { id: "control", label: "Контрольная", icon: ClipboardCheck, hint: "2 варианта работы", group: "daily" },
   // Группа «К уроку» — свёрнута по умолчанию. План урока — топ-1 тип группы.
-  { id: "lesson-plan", label: "План урока", icon: Pencil, hint: "ФГОС-конспект на 45 мин", group: "lesson", plusOnly: true, primaryInGroup: true, notImplementedOnServer: true },
-  { id: "presentation", label: "Презентация", icon: PresentationIcon, hint: "5–20 слайдов, PPTX", group: "lesson", plusOnly: true, notImplementedOnServer: true },
+  { id: "lesson-plan", label: "План урока", icon: Pencil, hint: "ФГОС-конспект на 45 мин", group: "lesson", plusOnly: true, primaryInGroup: true },
+  { id: "presentation", label: "Презентация", icon: PresentationIcon, hint: "5–20 слайдов, PPTX", group: "lesson", plusOnly: true },
   // Группа «На период» — свёрнута по умолчанию. КТП — топ-1 тип группы.
-  { id: "ktp", label: "КТП", icon: Calendar, hint: "Календарно-тематическое планирование на год", group: "period", plusOnly: true, primaryInGroup: true, notImplementedOnServer: true },
+  { id: "ktp", label: "КТП", icon: Calendar, hint: "Календарно-тематическое планирование на год", group: "period", plusOnly: true, primaryInGroup: true },
 ];
 
 /** Порядок и подписи групп. `daily` развёрнута всегда, остальные — по клику. */

@@ -6,6 +6,10 @@
  * Контракт:
  *  - generateWorksheet(...) → { worksheet, meta }
  *  - generateExam(...)      → { variant, meta }
+ *  - generateLessonPlan/generatePresentation/generateKtp/generateCards/
+ *    generateMaterials(...) → { artifact: { id, createdAt, ... }, meta, usage }
+ *    (общий конвейер generateStructuredArtifact; ключ ответа у роутов свой:
+ *     lessonPlan / presentation / ktp / cardSet / materialBundle)
  *  - validateWorksheet(...) → { score, issues, meta }
  *  - verifySelfTask(...)    → { verified, answer, explanation, latencyMs, model }
  *  - embed(texts, env)      → { vectors, model, costUsd }
@@ -32,12 +36,30 @@ import { callWithFallback, pickModel, taskForArtifact } from "./router";
 import { lookupCache, makeCacheKey, saveCache } from "./cache";
 import { buildWorksheetPrompt, sanitizeTextLatex } from "./prompts/worksheet-gen";
 import { buildExamPrompt } from "./prompts/exam-gen";
+import type { ArtifactRequest } from "./prompts/artifact-gen";
+import {
+  buildLessonPlanPrompt,
+  normalizeLessonPlan,
+  type LessonPlanContent,
+} from "./prompts/lesson-plan-gen";
+import {
+  buildPresentationPrompt,
+  normalizePresentation,
+  type PresentationContent,
+} from "./prompts/presentation-gen";
+import { buildKtpPrompt, normalizeKtp, type KtpContent } from "./prompts/ktp-gen";
+import { buildCardsPrompt, normalizeCardSet, type CardSetContent } from "./prompts/cards-gen";
+import {
+  buildMaterialsPrompt,
+  normalizeMaterialBundle,
+  type MaterialBundleContent,
+} from "./prompts/materials-gen";
 import { buildValidatePrompt } from "./prompts/validate";
 import { SOLVE_PROMPT, VERIFY_PROMPT } from "./prompts/self-verify";
 import { buildPhotoCheckPrompt, type PhotoCheckTask } from "./prompts/photo-check";
 import { calcCost, estimateImageTokens } from "./cost";
 import { gradePhotoCheck, type PhotoCheckSummary } from "../services/photoCheckGrading";
-import { findLanguageViolation } from "./validation/language-guard";
+import { findLanguageViolation, passesLanguageGuard } from "./validation/language-guard";
 import { reconcileSelfVerifyVerdict } from "./validation/answer-check";
 import { callPolzaEmbedding } from "./providers/polza";
 import {
@@ -48,7 +70,8 @@ import {
   REFERENCE_MODEL_ID,
 } from "./config";
 import { recordUsage, getUsageStatus, type UsageStatus, type UsagePlan } from "../services/usage";
-import { worksheetId } from "../lib/shortid";
+import { shortId, worksheetId } from "../lib/shortid";
+import type { GenerationKind } from "./types";
 import type { GenerationRequest, Worksheet, ExamVariant, SubjectSlug, GenerateWorksheetMeta } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -462,6 +485,418 @@ export async function generateExam(
   });
 
   return { variant, meta, usage };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Пять «документных» типов: план урока, презентация, КТП, карточки, материалы
+//
+// Общий конвейер generateStructuredArtifact. Разбирать его в пяти копиях
+// generateWorksheet незачем: шаги одни и те же (moderation → rate-limit → кэш →
+// выбор модели по задаче → LLM → JSON → нормализация → server-side id →
+// llm_logs → норма тарифа), различаются только промпт и разбор ответа.
+//
+// Отличие от generateExam в одном принципиальном месте: там language-guard,
+// сработав дважды, уводит в `emptyVariant` — то есть отдаёт заготовку. Здесь
+// такого нет: заготовка вместо материала здесь означала бы, что учителю отдали
+// сгенерированный документ, которого не генерировали (ровно та нечестность,
+// ради которой эти пять эндпоинтов и делаются). Если разбор или язык не годятся —
+// бросаем ошибку, фронт сам покажет пользователю, что генерация не удалась.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ArtifactGenerationArgs {
+  request: ArtifactRequest;
+  plan: "free" | "base" | "standard" | "plus";
+  bypassCache?: boolean;
+  userId: string | null;
+  ip: string;
+}
+
+export interface ArtifactSpec<T> {
+  /** Тип артефакта: ключ кэша и поле `task` в llm_logs. */
+  artifactType: string;
+  /** Задача роутера — по ней выбирается модель. */
+  task: GenerationKind;
+  /** Сборка промпта. */
+  buildPrompt: (req: ArtifactRequest) => { system: string; user: string };
+  /**
+   * Разбор ответа модели в артефакт. Возвращает объект БЕЗ `id`/`createdAt` —
+   * технические поля проставляет сервер.
+   * Бросает Error, если из ответа не получается содержательный материал.
+   */
+  normalize: (raw: unknown, req: ArtifactRequest) => T;
+  /** Префикс серверного id: `lp_`, `pres_`, `ktp_`, `card_`, `mat_`. */
+  idPrefix: string;
+  /** Влияет на maxTokens: KTP на год — самый объёмный документ. */
+  maxTokens: number;
+}
+
+export interface ArtifactResult<T> {
+  /** Артефакт с серверными `id` и `createdAt`. */
+  artifact: T & { id: string; createdAt: string };
+  meta: GenerateWorksheetMeta;
+  usage: UsageStatus | null;
+}
+
+/**
+ * Что кладём в semantic_cache: артефакт БЕЗ технических полей.
+ *
+ * Это не только экономит пару полей. Идентификатор материала выдаётся на
+ * каждый ответ: если хранить его в кэше, два одинаковых запроса вернут один и
+ * тот же `id`, а фронт по нему ключует историю и сохраняет материал — второй
+ * учитель (или второй tab) молча перезаписал бы первый материал тем же самым
+ * ключом. Поэтому в кэше лежит только содержание, а `id`/`createdAt`
+ * проставляются при каждой отдаче.
+ */
+type CachedArtifact = Record<string, unknown>;
+
+const MAX_LANG_RETRIES = 1;
+
+export async function generateStructuredArtifact<T extends object>(
+  spec: ArtifactSpec<T>,
+  args: ArtifactGenerationArgs,
+  env: Env,
+  db: D1Database,
+): Promise<ArtifactResult<T>> {
+  const start = Date.now();
+  const { request, plan, bypassCache = false, userId, ip } = args;
+
+  // 1. Moderation — до всего остального, чтобы заведомо мусорный ввод не дошёл
+  // до платного вызова.
+  const mod = moderateGenerationRequest({ subject: request.subject, topic: request.topic });
+  if (!mod.ok) {
+    throw new BadRequestError(`Invalid input: ${mod.reason}`, { reason: mod.reason });
+  }
+
+  const { artifactType, task } = spec;
+
+  // 2. Rate-limit (та же проверка, что в generateWorksheet).
+  const ipHash = await ipHashFromHeaders(new Headers({ "cf-connecting-ip": ip }));
+  await checkLlmRateLimit(db, { userId, ipHash, plan });
+
+  // 3. Cache lookup. Кэш персональный по владельцу (NEW-COST-6, llm/cache.ts).
+  const cacheKey = makeCacheKey({ ...request, type: artifactType, userId });
+  if (!bypassCache) {
+    const cached = await lookupCache(db, cacheKey);
+    const cachedArtifact = extractCachedArtifact(cached);
+    if (cachedArtifact) {
+      const meta: GenerateWorksheetMeta = {
+        model: "semantic-cache",
+        provider: "internal",
+        costUsd: 0,
+        latencyMs: Date.now() - start,
+        cached: true,
+        generation: "cached",
+      };
+      await logLlmCall(db, {
+        userId,
+        task,
+        provider: "cache",
+        model: cacheKey.slice(0, 12),
+        plan,
+        tokensIn: 0,
+        tokensOut: 0,
+        costUsd: 0,
+        latencyMs: meta.latencyMs,
+        cached: true,
+        fallback: false,
+      });
+      // Попадание в кэш не тратит токены → норма не меняется (как в generateWorksheet).
+      const usage = await getUsageStatus(db, userId, plan);
+      return {
+        artifact: stampArtifact(cachedArtifact as T, spec.idPrefix),
+        meta,
+        usage,
+      };
+    }
+  }
+
+  // 4. LLM call. Модель выбирается по задаче роутера (lesson-plan-gen / presentation-gen /
+  //    ktp-gen / cards-gen / worksheet-gen), тариф на выбор модели не влияет.
+  const decision = pickModel(task, env);
+  const model = decision.primary?.model ?? "gpt-6-luna";
+  const { system, user } = spec.buildPrompt(request);
+
+  let result: Awaited<ReturnType<typeof callWithFallback>> | null = null;
+  let content: T | null = null;
+  let lastViolation: string | null = null;
+
+  for (let attempt = 0; attempt <= MAX_LANG_RETRIES; attempt++) {
+    const strictRetry = attempt > 0;
+    result = await callWithFallback(
+      {
+        model,
+        messages: [
+          { role: "system", content: system },
+          {
+            role: "user",
+            content: strictRetry
+              ? user +
+                "\n\nВНИМАНИЕ: предыдущая попытка вернула материал на иностранном языке. " +
+                "Это ошибка. Перегенерируй — ВЕСЬ материал строго на русском языке " +
+                "(если предмет не английский/немецкий)."
+              : user,
+          },
+        ],
+        responseFormat: "json",
+        temperature: 0.7,
+        maxTokens: spec.maxTokens,
+        // На retry системный промпт другой (с добавленным требованием) — кэш
+        // провайдера по нему бессмысленен.
+        cacheSystemPrompt: !strictRetry && supportsPromptCache(model),
+      },
+      decision,
+      env,
+      { task, userId, plan },
+    );
+
+    // 5. Parse + нормализация.
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(result.response.content);
+    } catch {
+      throw new InternalError(`LLM returned invalid JSON for ${artifactType}`);
+    }
+
+    try {
+      content = spec.normalize(parsed, request);
+    } catch (err) {
+      // Модель ответила чем-то, из чего не получается материал (пустые стадии,
+      // слайды без заголовков, нет домашнего задания). Заглушку не подставляем:
+      // 500 честнее материала, которого нет.
+      logLlmEvent("error", `generateStructuredArtifact: unparsable ${artifactType}`, {
+        task,
+        artifactType,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw new InternalError(`LLM returned unusable ${artifactType}: ${errorMessage(err)}`);
+    }
+
+    // 6. Language guard. Детерминированная проверка на тексте самого материала:
+    // модель периодически уходит в английский на русскоязычных предметах.
+    lastViolation = findArtifactLanguageViolation(content, request.subject);
+    if (!lastViolation) break;
+
+    logLlmEvent("warn", `generateStructuredArtifact: language guard violation, ${artifactType}`, {
+      attempt: attempt + 1,
+      maxAttempts: MAX_LANG_RETRIES + 1,
+      subject: request.subject,
+      violation: lastViolation,
+    });
+  }
+
+  if (!content || !result) {
+    throw new InternalError(`LLM: ${artifactType} generation failed (no result)`);
+  }
+
+  // Guard не отпустил даже после retry — ошибка, а не заготовка. Причина в том,
+  // что учитель получил бы чужой язык в оплаченном материале и не смог бы
+  // понять, почему.
+  if (lastViolation) {
+    throw new InternalError(
+      `LLM returned ${artifactType} in wrong language (${lastViolation}) after ${MAX_LANG_RETRIES} retries`,
+    );
+  }
+
+  // 7. id и createdAt — ТОЛЬКО серверные, значение от модели не принимается
+  //    вообще (разбор в generateWorksheet: почему именно так).
+  const artifact = stampArtifact(content, spec.idPrefix);
+
+  const meta: GenerateWorksheetMeta = {
+    model: result.model,
+    provider: result.provider,
+    costUsd: result.response.costUsd,
+    latencyMs: Date.now() - start,
+    cached: false,
+    generation: result.generation,
+  };
+
+  // 8. В кэш — содержание без технических полей (см. CachedArtifact).
+  await saveCache(db, {
+    key: cacheKey,
+    subject: request.subject,
+    grade: request.grade,
+    topic: request.topic,
+    difficulty: request.difficulty,
+    count: request.count,
+    type: artifactType,
+    response: { artifact: content },
+  });
+
+  // 9. Log
+  await logLlmCall(db, {
+    userId,
+    task,
+    provider: result.provider,
+    model: result.model,
+    plan,
+    tokensIn: result.response.tokensIn,
+    tokensOut: result.response.tokensOut,
+    costUsd: result.response.costUsd,
+    latencyMs: meta.latencyMs,
+    cached: false,
+    fallback: result.generation === "boost",
+  });
+
+  // 9b. Норма тарифа (мягкий порог, recordUsage не бросает ошибок).
+  const usage = await recordUsage(db, env, {
+    userId,
+    plan,
+    weightedTokens: weightedTokens(result.model, result.response.tokensOut),
+  });
+
+  return { artifact, meta, usage };
+}
+
+/** Технические поля: только сервер и только свежие. */
+function stampArtifact<T extends object>(
+  content: T,
+  idPrefix: string,
+): T & { id: string; createdAt: string } {
+  return {
+    ...content,
+    id: `${idPrefix}_${shortId()}`,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Достать артефакт из записи кэша.
+ *
+ * Битая запись (старый формат, обрезанный JSON) считается промахом: лучше
+ * сходить к провайдеру, чем отдать учителю половину материала.
+ */
+function extractCachedArtifact(cached: unknown): CachedArtifact | null {
+  if (!cached || typeof cached !== "object" || !("response" in cached)) return null;
+  const response = (cached as { response?: unknown }).response;
+  if (!response || typeof response !== "object") return null;
+  const artifact = (response as Record<string, unknown>).artifact;
+  if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) return null;
+  return artifact as CachedArtifact;
+}
+
+/**
+ * Language guard для произвольного артефакта.
+ *
+ * У листа и экзамена есть типизированный `findLanguageViolation` (по варианту
+ * задания). Здесь артефакты пяти разных форм, поэтому проверяем текст целиком:
+ * JSON без технических полей — это просто весь учебный текст документа.
+ */
+function findArtifactLanguageViolation(content: unknown, subject: string): string | null {
+  if (!passesLanguageGuard(JSON.stringify(content), subject as SubjectSlug)) {
+    return `subject=${subject} (требуется русский текст)`;
+  }
+  return null;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+// ── Пять типов: тонкие обёртки над общим конвейером ────────────────────────
+
+export async function generateLessonPlan(
+  args: ArtifactGenerationArgs,
+  env: Env,
+  db: D1Database,
+): Promise<ArtifactResult<LessonPlanContent>> {
+  return generateStructuredArtifact<LessonPlanContent>(
+    {
+      artifactType: "lesson-plan",
+      task: "lesson-plan-gen",
+      buildPrompt: buildLessonPlanPrompt,
+      normalize: normalizeLessonPlan,
+      idPrefix: "lp",
+      maxTokens: 4096,
+    },
+    args,
+    env,
+    db,
+  );
+}
+
+export async function generatePresentation(
+  args: ArtifactGenerationArgs,
+  env: Env,
+  db: D1Database,
+): Promise<ArtifactResult<PresentationContent>> {
+  return generateStructuredArtifact<PresentationContent>(
+    {
+      artifactType: "presentation",
+      task: "presentation-gen",
+      buildPrompt: buildPresentationPrompt,
+      normalize: normalizePresentation,
+      idPrefix: "pres",
+      // Слайды с подписями и заметками учителя — больше токенов, чем лист.
+      maxTokens: 8000,
+    },
+    args,
+    env,
+    db,
+  );
+}
+
+export async function generateKtp(
+  args: ArtifactGenerationArgs,
+  env: Env,
+  db: D1Database,
+): Promise<ArtifactResult<KtpContent>> {
+  return generateStructuredArtifact<KtpContent>(
+    {
+      artifactType: "ktp",
+      task: "ktp-gen",
+      buildPrompt: buildKtpPrompt,
+      normalize: normalizeKtp,
+      idPrefix: "ktp",
+      // Годовой план на 34–36 недель — самый объёмный документ из пяти.
+      maxTokens: 16000,
+    },
+    args,
+    env,
+    db,
+  );
+}
+
+export async function generateCards(
+  args: ArtifactGenerationArgs,
+  env: Env,
+  db: D1Database,
+): Promise<ArtifactResult<CardSetContent>> {
+  return generateStructuredArtifact<CardSetContent>(
+    {
+      artifactType: "cards",
+      task: "cards-gen",
+      buildPrompt: buildCardsPrompt,
+      normalize: normalizeCardSet,
+      idPrefix: "card",
+      maxTokens: 4096,
+    },
+    args,
+    env,
+    db,
+  );
+}
+
+export async function generateMaterials(
+  args: ArtifactGenerationArgs,
+  env: Env,
+  db: D1Database,
+): Promise<ArtifactResult<MaterialBundleContent>> {
+  return generateStructuredArtifact<MaterialBundleContent>(
+    {
+      artifactType: "materials",
+      // Отдельной GenerationKind для материалов нет: комплект раздаток — тот же
+      // дешёвый класс документа, что и рабочий лист (см. ARTIFACT_TASK в router.ts).
+      task: "worksheet-gen",
+      buildPrompt: buildMaterialsPrompt,
+      normalize: normalizeMaterialBundle,
+      idPrefix: "mat",
+      // Несколько файлов с длинным текстом.
+      maxTokens: 8000,
+    },
+    args,
+    env,
+    db,
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
