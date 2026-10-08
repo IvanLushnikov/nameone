@@ -23,6 +23,8 @@ import {
   NO_TECHNICAL_FIELDS_RULE,
   RUSSIAN_DEFAULT_RULE,
   SUBJECT_CONFINEMENT_RULE,
+  PATTERN_REFERENCE_RULE,
+  CONCRETE_ANSWER_RULE,
   type ArtifactRequest,
 } from "./artifact-gen";
 
@@ -65,6 +67,8 @@ ${RUSSIAN_DEFAULT_RULE}
 4. content — готовый текст документа, а не описание документа. Никаких «здесь будет таблица»: пиши саму таблицу или список, с переносами строк.
 5. Никакого markdown: без **жирного**, без заголовков с решётками, без обрамления ответа блоками кода. Обычные дефисы в списках и двоеточие после термина допустимы.
 ${SUBJECT_CONFINEMENT_RULE}
+${PATTERN_REFERENCE_RULE}
+${CONCRETE_ANSWER_RULE}
 ${CLASS_APPROPRIATENESS_RULE}
 6. Поля "id" и "createdAt" в ответе не нужны: файл в архиве получает идентификатор на сервере.
 

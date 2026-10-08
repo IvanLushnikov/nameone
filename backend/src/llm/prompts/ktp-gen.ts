@@ -20,6 +20,8 @@ import {
   JSON_ONLY_RULE,
   NO_TECHNICAL_FIELDS_RULE,
   RUSSIAN_DEFAULT_RULE,
+  SUBJECT_CONFINEMENT_RULE,
+  CLASS_APPROPRIATENESS_RULE,
   type ArtifactRequest,
 } from "./artifact-gen";
 
@@ -67,6 +69,8 @@ export const KTP_GEN_SYSTEM = `Ты — методист, который сос�
 
 ЖЁСТКИЕ ПРАВИЛА:
 ${RUSSIAN_DEFAULT_RULE}
+${SUBJECT_CONFINEMENT_RULE}
+${CLASS_APPROPRIATENESS_RULE}
 2. План на полный учебный год: с сентября по май, 34–36 учебных недель.
 3. Номера уроков (num) идут подряд по всему плану без пропусков, начиная с 1.
 4. Даты (dates) — реалистичные учебные даты этой недели в формате "12.09.2026-18.09.2026". Праздничные дни пропускай.

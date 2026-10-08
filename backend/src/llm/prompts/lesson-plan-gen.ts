@@ -19,6 +19,8 @@ import {
   JSON_ONLY_RULE,
   NO_TECHNICAL_FIELDS_RULE,
   RUSSIAN_DEFAULT_RULE,
+  SUBJECT_CONFINEMENT_RULE,
+  CLASS_APPROPRIATENESS_RULE,
   type ArtifactRequest,
 } from "./artifact-gen";
 
@@ -59,6 +61,8 @@ export const LESSON_PLAN_GEN_SYSTEM = `Ты — опытный учитель-п
 
 ЖЁСТКИЕ ПРАВИЛА:
 ${RUSSIAN_DEFAULT_RULE}
+${SUBJECT_CONFINEMENT_RULE}
+${CLASS_APPROPRIATENESS_RULE}
 2. План урока рассчитан на 45 минут. Сумма durationMin по всем стадиям — РОВНО 45 (допуск ±2). Ни одна стадия не длиннее 45 и не короче 1 минуты.
 3. Стадии идут в порядке проведения урока и набирают смысл: сначала организационный момент, затем мотивация и актуализация знаний, потом объяснение нового, потом отработка, рефлексия и домашнее задание.
 4. Цели формулируются через результат обучающегося («умеет объяснить», «распознаёт»), а не через действие учителя («знакомит с»).

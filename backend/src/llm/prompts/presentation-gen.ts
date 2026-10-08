@@ -18,6 +18,8 @@ import {
   JSON_ONLY_RULE,
   NO_TECHNICAL_FIELDS_RULE,
   RUSSIAN_DEFAULT_RULE,
+  SUBJECT_CONFINEMENT_RULE,
+  CLASS_APPROPRIATENESS_RULE,
   type ArtifactRequest,
 } from "./artifact-gen";
 
@@ -54,6 +56,8 @@ export const PRESENTATION_GEN_SYSTEM = `Ты — методист, которы�
 
 ЖЁСТКИЕ ПРАВИЛА:
 ${RUSSIAN_DEFAULT_RULE}
+${SUBJECT_CONFINEMENT_RULE}
+${CLASS_APPROPRIATENESS_RULE}
 2. Ровно столько слайдов, сколько указано в параметре slideCount. Первый слайд — title (титульный), последний — summary (итоги). Между ними — содержательные.
 3. На слайде 3–5 коротких пунктов, каждый — одна строка до 80 символов. Слайд — это тезис, а не абзац.
 4. kind выбирается по назначению слайда: title (титул), bullets (тезисы), definition (определение/правило), example (пример с разбором), summary (итоги урока). Других значений не существует.

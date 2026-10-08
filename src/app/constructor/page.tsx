@@ -100,6 +100,7 @@ import { useUsage } from "@/lib/hooks/useUsage";
 import { EditChat } from "@/components/f08/EditChat";
 import { PhotoCheckPanel } from "@/components/f06/PhotoCheckPanel";
 import { PhotoCheckEntry } from "@/components/f06/PhotoCheckEntry";
+import { ControlVariantSwitch } from "@/components/constructor/ControlVariantSwitch";
 
 /** F-04-C: режим wizard. «По теме» — текущий flow. «По номеру» — экзамен → предмет → номера → параметры. */
 type Mode = "topic" | "exam";
@@ -372,7 +373,15 @@ export default function ConstructorPage() {
    * Раньше контрольная делалась в один лист, а подпись «вариант N» бралась из
    * `Math.random()` — учительница получила один вариант с надписью «вариант 4».
    * Теперь это два настоящих листа, и `controlVariant` выбирает, какой показан.
+   *
+   * ВАЖНО: `worksheet` — это ЛИСТ, КОТОРЫЙ СЕЙЧАС НА ЭКРАНЕ, а не «вариант 1».
+   * Первый вариант лежит отдельно в `controlVariant1`. Если бы переключатель
+   * брал вариант 1 из `worksheet`, то клик «Вариант 2» записал бы второй лист
+   * в `worksheet`, и возврат к первому стал бы невозможен: `worksheet` уже
+   * перезаписан. Учитель видел бы подпись «Вариант 1» с содержимым варианта 2 —
+   * то есть ровно тот дефект, который мы чиним.
    */
+  const [controlVariant1, setControlVariant1] = React.useState<Worksheet | null>(null);
   const [controlVariant2, setControlVariant2] = React.useState<Worksheet | null>(null);
   const [controlVariant, setControlVariant] = React.useState<1 | 2>(1);
   /** TZ-12: название выбранного шаблонного пресета — для подписи в ConfigureStep. */
@@ -913,6 +922,7 @@ export default function ConstructorPage() {
     // успешной генерации: если генерация упадёт, в состоянии остался бы
     // второй вариант от ПРЕДЫДУЩЕЙ работы, а переключатель появился бы у
     // нового листа (у которого второго варианта нет).
+    setControlVariant1(null);
     setControlVariant2(null);
     setControlVariant(1);
     setLessonPlan(null);
@@ -1097,6 +1107,10 @@ export default function ConstructorPage() {
           const second = result.secondVariant
             ? { ...(result.secondVariant as Worksheet), isDemo: result.isDemo }
             : null;
+          // Вариант 1 кладём в ОТДЕЛЬНЫЙ слот: `worksheet` уезжает в
+          // переключатель как «что сейчас на экране», и читать из него
+          // вариант 1 уже нельзя.
+          setControlVariant1(type === "control" ? ws : null);
           setControlVariant2(type === "control" ? second : null);
           setControlVariant(1);
           artifactTitle = ws.title;
@@ -1733,10 +1747,14 @@ export default function ConstructorPage() {
             {!worksheet && !generating && photoCheckOpen && (
               <PhotoCheckEntry
                 onCreateSource={() => {
-                  // Закрываем вход: дальше — обычный путь выбора темы и
-                  // генерации. Панель проверки откроется сама, когда лист
-                  // появится (см. условие рендера ниже).
-                  setPhotoCheckOpen(false);
+                  // Флаг НЕ сбрасываем: он означает «учитель пришёл за проверкой
+                  // по фото». Если его закрыть здесь, то после генерации листа
+                  // панель не откроется сама — учителю пришлось бы ещё раз
+                  // нажимать «Проверить фото». Именно это и обещает текст на
+                  // экране входа, обещание без кода было бы враньём.
+                  //
+                  // Экран входа при этом исчезает сам: он рендерится только
+                  // пока нет листа (`!worksheet`).
                   setMode("topic");
                   setStep("select");
                 }}
@@ -1904,38 +1922,25 @@ export default function ConstructorPage() {
                       <span className="sm:hidden">Заново</span>
                     </Button>
                     {/* Переключатель двух вариантов КОНТРОЛЬНОЙ (08.10.2026).
-                        Раньше контрольная делалась одним листом, а номер варианта
-                        придумывался случайно — учительница получила «вариант 4»
-                        при одном варианте. Теперь переключатель показывает
-                        два настоящих листа и печатает тот, который выбран. */}
-                    {kind === "worksheet" && type === "control" && controlVariant2 && (
-                      <div
-                        className="inline-flex p-1 rounded-full bg-warm-100 border border-warm-200"
-                        role="group"
-                        aria-label="Вариант контрольной работы"
-                        data-testid="control-variant-switch"
-                      >
-                        {([1, 2] as const).map((n) => (
-                          <button
-                            key={n}
-                            type="button"
-                            onClick={() => {
-                              setControlVariant(n);
-                              const next = n === 1 ? worksheet : controlVariant2;
-                              if (next) setWorksheet(next);
-                            }}
-                            aria-pressed={controlVariant === n}
-                            className={cn(
-                              "px-3 py-1.5 rounded-full text-sm font-medium transition-all",
-                              controlVariant === n
-                                ? "bg-white text-warm-950 shadow-soft"
-                                : "text-warm-600 hover:text-warm-900",
-                            )}
-                          >
-                            Вариант {n}
-                          </button>
-                        ))}
-                      </div>
+                        Логика вынесена в ControlVariantSwitch, потому что её
+                        ломало: чтение «варианта 1» из `worksheet` (того, что
+                        сейчас на экране) делало возврат к первому варианту
+                        невозможным. Компонент принимает оба варианта и ничего
+                        не знает про `worksheet`. */}
+                    {kind === "worksheet" && type === "control" && controlVariant1 && (
+                      <ControlVariantSwitch
+                        variant1={controlVariant1}
+                        variant2={controlVariant2}
+                        active={controlVariant}
+                        onVariantChange={(n) => {
+                          setControlVariant(n);
+                          // Берём вариант ИЗ СПЕЦИАЛЬНОГО СЛОТА, а не из
+                          // `worksheet`: `worksheet` — это то, что сейчас
+                          // показано, и оно перезаписывается каждым кликом.
+                          const next = n === 1 ? controlVariant1 : controlVariant2;
+                          if (next) setWorksheet(next);
+                        }}
+                      />
                     )}
                     {kind === "worksheet" && (
                       <>

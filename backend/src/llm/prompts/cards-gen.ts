@@ -21,6 +21,8 @@ import {
   NO_TECHNICAL_FIELDS_RULE,
   RUSSIAN_DEFAULT_RULE,
   SUBJECT_CONFINEMENT_RULE,
+  PATTERN_REFERENCE_RULE,
+  CONCRETE_ANSWER_RULE,
   type ArtifactRequest,
 } from "./artifact-gen";
 
@@ -53,6 +55,8 @@ ${RUSSIAN_DEFAULT_RULE}
 7. Карточки должны покрывать тему целиком: ключевые понятия, признаки, формулы, даты — а не один узкий факт.
 8. Без «повторите параграф» вместо содержания: на карточке должен быть конкретный факт.
 ${SUBJECT_CONFINEMENT_RULE}
+${PATTERN_REFERENCE_RULE}
+${CONCRETE_ANSWER_RULE}
 ${CLASS_APPROPRIATENESS_RULE}
 
 ФОРМАТ ОТВЕТА — СТРОГО JSON:
