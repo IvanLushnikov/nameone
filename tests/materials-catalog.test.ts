@@ -131,7 +131,7 @@ describe("Банк материалов: каталог", () => {
       expect(m.title).toContain(String(m.grade));
 
       // description идёт в meta description — 300–800 символов.
-      expect(m.description.length, `description ${m.slug}: ${m.description.length}`).toBeGreaterThanOrEqual(300);
+      expect(m.description.length, `description ${m.slug}: ${m.description.length}`).toBeGreaterThanOrEqual(250);
       expect(m.description.length, `description ${m.slug}: ${m.description.length}`).toBeLessThanOrEqual(800);
       // Описание обязано быть про ту же тему. Сравниваем без кавычек:
       // в описаниях внутренние кавычки приводятся к „лапкам“, а в
@@ -141,11 +141,12 @@ describe("Банк материалов: каталог", () => {
         bare(m.topicTitle),
       );
 
-      // Никаких «правдоподобных» счётчиков: у материала нет рейтинга
-      // и числа использований, потому что за ними нет данных.
+      // Никаких «правдоподобных» счётчиков и никакой даты: у материала нет
+      // рейтинга, числа использований и даты правки, потому что за ними нет
+      // данных. Описание обязано быть осмысленным само по себе, без добивки
+      // выдуманной фразой: сниппет Google показывает ~155 символов, 250 — с
+      // запасом. Порог 300 существовал только ради той добивки.
       expect(m.author).toBe("Редакция УчЛист");
-      expect(m.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(Number.isNaN(new Date(m.updatedAt).getTime())).toBe(false);
       expect(m.count).toBeGreaterThanOrEqual(5);
       expect(m.count).toBeLessThanOrEqual(30);
       expect(["easy", "medium", "hard"]).toContain(m.difficulty);
@@ -171,6 +172,54 @@ describe("Банк материалов: каталог", () => {
   it("КТП не выпадает на начальной школе", () => {
     for (const m of MATERIALS_CATALOG.filter((x) => x.artifactType === "ktp")) {
       expect(m.grade).toBeGreaterThanOrEqual(5);
+    }
+  });
+
+  // Описание собирается из шаблонов, и раньше в него дописывалась фраза
+  // «Материал проверен на школьных классах и печатается без подготовки» —
+  // про школьные классы никто не проверял, и при описании около 250 символов
+  // она попадала в текст дважды подряд. Оба класса дефектов закрыты тестом.
+  it("в описании нет обещаний, которых никто не проверял", () => {
+    const banned = [
+      /проверен/i,
+      /протестирован/i,
+      /обкатан/i,
+      /опробован/i,
+      /апробирован/i,
+      /без подготовки/i,
+    ];
+    for (const m of MATERIALS_CATALOG) {
+      for (const pattern of banned) {
+        expect(m.description, `«${pattern}» в описании ${m.slug}: ${m.description}`).not.toMatch(
+          pattern,
+        );
+      }
+    }
+  });
+
+  it("в описании нет фразы, повторённой дважды подряд", () => {
+    for (const m of MATERIALS_CATALOG) {
+      // Фрагменты короче 25 символов отбрасываем: сплит по точке режет
+      // инициалы («А.С. Пушкин» → «А.» + «С.» + «Пушкин.»), и это не дубль,
+      // а нормальный русский текст. Дубль — это целая фраза, которая
+      // повторилась, потому что описанию не хватало длины.
+      const sentences = m.description
+        .split(/(?<=[.!?])\s+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length >= 25);
+      expect(new Set(sentences).size, `дубль фразы в ${m.slug}: ${m.description}`).toBe(
+        sentences.length,
+      );
+    }
+  });
+
+  it("описание обещает ровно тот формат, который делает генератор", () => {
+    // В выгрузке A4 и поля 1000 twips ≈ 1,8 см со всех сторон, шрифт в листе
+    // плавает между 10 и 12 pt. Раньше в описании стояло «поля под скрепку,
+    // шрифт 14» — учитель печатал и получал не то.
+    for (const m of MATERIALS_CATALOG) {
+      expect(m.description, `обещание скрепки в ${m.slug}`).not.toMatch(/скрепк/i);
+      expect(m.description, `обещание шрифта 14 в ${m.slug}`).not.toMatch(/шрифт\s*14/i);
     }
   });
 });
@@ -252,14 +301,17 @@ describe("Банк материалов: геттеры", () => {
     }
   });
 
-  it("materialToSitemapEntry даёт URL с priority 0.7 и monthly", () => {
+  // В sitemap у материала нет ни lastModified, ни changeFrequency: дата была
+  // посчитана из хэша строки. Ровно то же решение для всей остальной карты
+  // зафиксировано в `src/app/sitemap.ts` — не отдавать поле честнее, чем
+  // отдавать выдуманное.
+  it("materialToSitemapEntry даёт URL с priority 0.7 и без выдуманных дат", () => {
     const m: MaterialEntry = MATERIALS_CATALOG[0];
     const entry = materialToSitemapEntry(m, "https://uchlist.ru");
     expect(entry.url).toBe(`https://uchlist.ru/material/${m.slug}/`);
     expect(entry.priority).toBe(0.7);
-    expect(entry.changeFrequency).toBe("monthly");
-    expect(entry.lastModified).toBeInstanceOf(Date);
-    expect((entry.lastModified as Date).toISOString().slice(0, 10)).toBe(m.updatedAt);
+    expect(entry).not.toHaveProperty("lastModified");
+    expect(entry).not.toHaveProperty("changeFrequency");
   });
 });
 

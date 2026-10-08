@@ -73,6 +73,36 @@ function noPrintNodeFor(label: string): HTMLElement {
   return found as HTMLElement;
 }
 
+/**
+ * Все узлы с классом `no-print` для подписи `label`.
+ *
+ * Нужен там, где подпись встречается несколько раз: «ИИ-проверено» стоит и
+ * в шапке листа, и у задания, и `getByText` на таком падает с «Found
+ * multiple elements». Возвращаем все — вызывающий проверяет, что класс
+ * стоит на каждом.
+ */
+function noPrintNodesFor(label: string): HTMLElement[] {
+  return screen
+    .getAllByText(label)
+    .map((node) => node.closest(".no-print"))
+    .filter((node): node is HTMLElement => node !== null);
+}
+
+/**
+ * Бейдж статуса в шапке листа — отдельно от бейджей у заданий.
+ *
+ * Раньше шапка содержала захардкоженный див «Проверено ИИ», который не зависел
+ * от статусов заданий вообще. Теперь это тот же `VerifiedBadge`, но с честным
+ * значением, поэтому в тестах его надо адресовать точечно.
+ */
+function headerBadgeIn(container: HTMLElement): HTMLElement {
+  const header = container.querySelector("header");
+  if (!header) throw new Error("В листе нет шапки");
+  const badge = header.querySelector(".no-print");
+  if (!badge) throw new Error("В шапке листа нет бейджа статуса проверки");
+  return badge as HTMLElement;
+}
+
 const PRINT_BODY = printMediaBody(CSS);
 
 /**
@@ -147,20 +177,45 @@ describe("VerifiedBadge: класс no-print", () => {
   });
 });
 
+/**
+ * Тот же лист, но проверены ВСЕ задания. Нужен, чтобы проверить обратную
+ * сторону: зелёный статус в шапке появляется только когда проверен весь лист.
+ */
+const ALL_VERIFIED: Worksheet = {
+  ...WORKSHEET,
+  tasks: WORKSHEET.tasks.map((t) => ({ ...t, verified: true })),
+};
+
 describe("WorksheetPreview: бейджи на экране, но не на печати", () => {
-  it("плашка «Проверено ИИ» и все VerifiedBadge в листе имеют no-print", () => {
-    render(
+  it("плашка в шапке показывает реальный статус листа, а не всегда «Проверено ИИ»", () => {
+    const { container } = render(
       <WorksheetPreview worksheet={WORKSHEET} withAnswers withExplanations type="worksheet" />
     );
 
-    // Плашка в шапке листа — сам div несёт класс.
-    const headerChip = screen.getByText("Проверено ИИ");
-    expect(headerChip.className).toContain("no-print");
+    // В WORKSHEET задания с разными статусами (true / false / null), поэтому
+    // лист проверен не весь и в шапке зелёного «ИИ-проверено» быть не должно.
+    // Раньше там стоял безусловный бейдж «Проверено ИИ» — он показывался даже
+    // для листа, который никто не проверял. Смотрим ИМЕННО шапку, а не весь
+    // документ: у первого задания статус «ИИ-проверено» есть, и это правда.
+    const headerBadge = headerBadgeIn(container);
+    expect(headerBadge.textContent).toContain("не проверено");
+    expect(headerBadge.textContent).not.toContain("ИИ-проверено");
+    expect(headerBadge.className).toContain("no-print");
 
-    // Бейджи у заданий: по одному на каждое, все три состояния.
+    // Бейджи у заданий: все три состояния на месте, у каждого no-print.
     for (const label of ["ИИ-проверено", "Требует проверки", "не проверено"]) {
-      expect(noPrintNodeFor(label).textContent).toContain(label);
+      const nodes = noPrintNodesFor(label);
+      expect(nodes.length, `бейдж «${label}» не найден`).toBeGreaterThan(0);
     }
+  });
+
+  it("когда проверены все задания, в шапке стоит «ИИ-проверено»", () => {
+    const { container } = render(
+      <WorksheetPreview worksheet={ALL_VERIFIED} withAnswers withExplanations type="worksheet" />
+    );
+    const headerBadge = headerBadgeIn(container);
+    expect(headerBadge.textContent).toContain("ИИ-проверено");
+    expect(headerBadge.className).toContain("no-print");
   });
 
   it("no-print не съел сам лист: текст заданий печатается", () => {

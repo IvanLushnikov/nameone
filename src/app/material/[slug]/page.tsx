@@ -67,7 +67,6 @@ function buildJsonLd(material: MaterialEntry, subjectTitle: string, fgosRef?: st
     headline: material.title,
     description: material.description,
     inLanguage: "ru-RU",
-    dateModified: material.updatedAt,
     author: { "@type": "Organization", name: material.author },
     publisher: {
       "@type": "Organization",
@@ -136,12 +135,10 @@ export default function MaterialPage({ params }: Props) {
               {material.description}
             </p>
 
-            {/* Ни рейтинга, ни счётчика «взяли в работу» здесь нет и не должно
-                быть, пока в базе нет настоящих оценок: выдуманные числа стоили
-                бы учителю доверия на всех 150 страницах банка сразу. */}
-            <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 text-sm text-warm-600">
-              <span className="text-[color:var(--text-muted)]">Обновлён {material.updatedAt}</span>
-            </div>
+            {/* Ни рейтинга, ни счётчика «взяли в работу», ни даты обновления здесь нет
+                и не должно быть, пока в базе нет настоящих оценок и истории
+                правок: выдуманные числа стоили бы учителю доверия на всех 150
+                страницах банка сразу. */}
           </div>
         </div>
       </section>

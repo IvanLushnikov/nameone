@@ -63,6 +63,14 @@ const TYPE_LABEL: Record<TaskType, string> = {
  * для type=cards — как сетку карточек, иначе — обычный нумерованный список.
  */
 export function WorksheetPreview({ worksheet, withAnswers, withExplanations, type }: Props) {
+  /**
+   * ИИ-проверены ли задания. Источник правды — `task.verified` у каждого
+   * задания, а не «лист вообще проверен»: частично проверенный лист не должен
+   * выглядеть как проверенный целиком.
+   */
+  const allTasksVerified =
+    worksheet.tasks.length > 0 && worksheet.tasks.every((task) => task.verified === true);
+
   return (
     <div className="bg-warm-100 rounded-2xl p-3 sm:p-6 print:p-0 print:bg-white">
       <div className="mx-auto max-w-[800px]">
@@ -92,8 +100,18 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
               <div className="text-right text-xs text-warm-500 shrink-0">
                 <div>УчЛист</div>
                 <div className="mt-0.5">{formatDate(worksheet.createdAt)}</div>
-                <div className="mt-2 inline-block px-2 py-0.5 rounded border border-brand-300 text-brand-700 text-[10px] font-semibold no-print">
-                  Проверено ИИ
+                {/*
+                  Бейдж статуса проверки в шапке. Раньше здесь стоял
+                  безусловный «Проверено ИИ» — он показывался даже для листа,
+                  который никто никогда не проверял. Ровно это уже чинили в
+                  подвале выгрузки (`src/lib/utils/docx.ts`, «ВАЖНО: проверено
+                  AI пишем ТОЛЬКО когда проверка реально прошла»), а на экране
+                  осталось. Теперь зелёный бейдж появляется только когда
+                  проверены ВСЕ задания; иначе компонент сам рисует серое
+                  «— не проверено», и это правда.
+                */}
+                <div className="mt-2">
+                  <VerifiedBadge verified={allTasksVerified ? true : undefined} />
                 </div>
               </div>
             </header>
