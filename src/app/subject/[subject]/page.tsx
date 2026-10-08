@@ -195,11 +195,13 @@ export default function SubjectHubPage({ params }: Props) {
         </section>
       )}
 
-      {/* Popular topics by grade */}
+      {/* Темы по классам. Заголовок был «Популярные темы / что чаще всего
+          ищут репетиторы» — это обещание популярности, которую мы никогда
+          не считали. Ниже первые темы каждого класса, как в каталоге. */}
       <section className="py-12 sm:py-16 bg-warm-50 border-y border-warm-100">
         <div className="container-tight">
-          <h2 className="text-2xl font-display font-bold mb-2">Популярные темы</h2>
-          <p className="text-warm-600 mb-6">Что чаще всего ищут репетиторы и родители</p>
+          <h2 className="text-2xl font-display font-bold mb-2">Темы по классам</h2>
+          <p className="text-warm-600 mb-6">Первые темы каждого класса — полный список в каталоге материалов</p>
 
           <div className="space-y-8">
             {subject.grades.slice(0, 4).map((g) => (

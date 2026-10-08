@@ -2945,18 +2945,21 @@ function EmptyPreview({
         </div>
       </div>
 
-      <div className="px-4 sm:px-6 pb-8 grid grid-cols-3 gap-6 text-center w-full">
-        <div>
-          <div className="text-2xl font-bold text-brand-600">~30 сек</div>
-          <div className="text-xs text-warm-500 mt-0.5">Среднее время</div>
-        </div>
-        <div>
-          <div className="text-2xl font-bold text-brand-600">100%</div>
-          <div className="text-xs text-warm-500 mt-0.5">Проверено ИИ</div>
-        </div>
+      {/*
+        Три плитки стояли здесь с придуманными числами: «~30 сек» (замера
+        длительности генерации в коде нет) и «100% / Проверено ИИ» (проверка
+        запускается по кнопке и по умолчанию не выполняется, а 100% —
+        обещание, которое не может выполнить ни одна проверка). Осталась
+        правда: PDF A4 и то, что проверку запускает учитель.
+      */}
+      <div className="px-4 sm:px-6 pb-8 grid grid-cols-2 gap-6 text-center w-full">
         <div>
           <div className="text-2xl font-bold text-brand-600">PDF A4</div>
           <div className="text-xs text-warm-500 mt-0.5">Готов к печати</div>
+        </div>
+        <div>
+          <div className="text-2xl font-bold text-brand-600">По кнопке</div>
+          <div className="text-xs text-warm-500 mt-0.5">Проверка ответов</div>
         </div>
       </div>
     </Card>

@@ -53,11 +53,20 @@ export interface MaterialEntry {
   /** Сколько заданий в материале (идёт в конструктор через `count`). */
   count: number;
   author: string;
-  usesCount: number;
-  rating: number;
-  ratingCount: number;
-  /** ISO-дата (YYYY-MM-DD), последняя редакция карточки. */
-  updatedAt: string;
+  /**
+   * Здесь нет рейтинга, счётчика «взяли в работу» и даты обновления — и это
+   * сделано намеренно.
+   *
+   * Все три значения считались из хэша строки каталога, то есть были
+   * придуманы: «4,4 по оценке 235 учителей», «312 взяли в работу»,
+   * «Обновлён 2025-12-12». За ними нет ни одной настоящей оценки и ни одной
+   * реальной правки карточки — в базе нет ни таблицы рейтингов, ни дат
+   * редактора. Живой посетитель видел правдоподобные цифры, которых нет.
+   *
+   * Вернуть любое из этих полей можно только вместе с данными: оценки — с
+   * таблицей оценок в БД, дату — с реальной историей правок. Для даты у
+   * sitemap уже принято решение не отдавать поле вовсе (см. `src/app/sitemap.ts`).
+   */
 }
 
 export interface MaterialFilters {
@@ -228,11 +237,24 @@ const DESCRIPTION_OPENINGS: Record<MaterialPurpose, string[]> = {
 
 const DESCRIPTION_DETAILS = [
   "Все задания в одном файле: сначала короткая теория, потом практика, потом ответы.",
-  "Формат печати A4, поля под скрепку, шрифт 14 — входит в раздаточный комплект.",
+  // Раньше здесь стояло «поля под скрепку, шрифт 14». В выгрузке A4 и поля
+  // 1000 twips ≈ 1,8 см со всех сторон (левое не шире правого, скрепка
+  // не предусмотрена), а размер шрифта в листе плавает между 10 и 12 pt.
+  // Учитель печатает лист и получает не то, что обещали, — обещаем ровно то,
+  // что делает генератор.
+  "Формат печати A4, поля по 1,8 см со всех сторон — входит в раздаточный комплект.",
   "Ответы вынесены на отдельную страницу, чтобы листы можно было раздать не переворачивая.",
-  "Проверено по действующей программе, привязка к разделу «{f}».",
   "Базовый и повышенный уровень в одном материале: задания можно брать выборочно.",
 ];
+
+/**
+ * Деталь с привязкой к разделу ФГОС. Раньше она была в общем списке и
+ * показывалась только карточкам с реальной ссылкой на раздел — из-за этого
+ * 110 карточек из 150 остались вообще без детали, и описание коротило до
+ * 170 символов, а добить его можно было только выдуманной фразой.
+ * Тема действительно привязана к разделу программы — ссылка есть в таксономии.
+ */
+const DESCRIPTION_DETAILS_FGOS = ["Тема привязана к разделу программы «{f}»."];
 
 const DESCRIPTION_CTAS = [
   "Сгенерируйте такой же материал под свой класс за 30 секунд — конструктор откроется с уже выбранной темой.",
@@ -315,18 +337,14 @@ export function makeMaterialSlug(title: string, seed: string): string {
   return `${base || "material"}-${hash32(seed).toString(16).padStart(8, "0")}`;
 }
 
-/** Дата в пределах последних ~10 месяцев, стабильная для конкретной записи. */
-const UPDATED_FROM_MS = Date.UTC(2025, 11, 1);
-const UPDATED_SPAN_DAYS = 300;
-
-function updatedAtFor(h: number): string {
-  const days = h % UPDATED_SPAN_DAYS;
-  return new Date(UPDATED_FROM_MS + days * 86_400_000).toISOString().slice(0, 10);
-}
-
 /**
- * Обрезает описание до 800 символов и добивает до 300 — meta description
- * должен попадать в сниппет, но при этом оставаться осмысленным текстом.
+ * Обрезает описание до 800 символов.
+ *
+ * Добивки до 300 символов больше НЕТ. Раньше она дописывала одну и ту же
+ * фразу «Материал проверен на школьных классах и печатается без подготовки» —
+ * про школьные классы никто не проверял, и при описании около 250 символов
+ * фраза попадала в текст дважды подряд. Длина описания теперь такая, какая
+ * получилась из фактов о карточке; тест ниже держит нижнюю границу.
  */
 function fitDescription(text: string): string {
   let out = text.replace(/\s+/g, " ").trim();
@@ -334,13 +352,6 @@ function fitDescription(text: string): string {
     out = out.slice(0, 800);
     const cut = out.lastIndexOf(" ");
     if (cut > 300) out = out.slice(0, cut);
-  }
-  while (out.length < 300) {
-    const filler =
-      out.length < 340
-        ? " Материал проверен на школьных классах и печатается без подготовки."
-        : " Подходит для обычного урока и для домашней работы.";
-    out += filler;
   }
   return out;
 }
@@ -374,11 +385,14 @@ function buildDescription(ctx: {
       .replace(/\{dw\}/g, DIFFICULTY_WORDS[difficulty])
       .replace(/\{f\}/g, fgosRef ?? "");
 
-  // Деталь про раздел программы показываем, только если у темы есть реальная
-  // ссылка на раздел. Раньше вместо неё подставлялась заглушка «программа
-  // ФГОС» — учитель видел её в описании материала как отсылку к программе.
-  const detailText = fgosRef ? ` ${format(detail)}` : "";
-  return fitDescription(`${format(opening)}${detailText} ${format(cta)}`);
+  // Деталь про содержание файла показываем ВСЕГДА: раньше единственная
+  // деталь жила в общем списке с плейсхолдером «{f}», и карточки без ссылки
+  // на раздел ФГОС оставались вовсе без неё — описание коротило до 170
+  // символов. Привязку к разделу добавляем сверху, когда ссылка реальная.
+  const parts = [format(opening), format(detail)];
+  if (fgosRef) parts.push(format(DESCRIPTION_DETAILS_FGOS[0]));
+  parts.push(format(cta));
+  return fitDescription(parts.join(" "));
 }
 
 /** Тип артефакта записи — нужен и заголовку, и описанию, и CTA. */
@@ -491,10 +505,6 @@ function buildCatalog(): MaterialEntry[] {
     }
     seenSlugs.add(slug);
 
-    // Счётчик «взяли в работу». Разнос по индексу нужен, чтобы значения не
-    // скапливались на максимуме: формула `3 + (h % 470)` давала нескольким
-    // карточкам одинаковое 470, и это читалось как заглушка, а не как данные.
-    const usesCount = 3 + ((h + entries.length * 97) % 468);
     entries.push({
       slug,
       title,
@@ -517,10 +527,6 @@ function buildCatalog(): MaterialEntry[] {
       difficulty,
       count,
       author: EDITORIAL_AUTHOR,
-      usesCount,
-      rating: Math.round((4.0 + ((h >>> 20) % 11) / 10) * 10) / 10,
-      ratingCount: Math.max(1, Math.round(usesCount * (0.22 + ((h >>> 24) % 5) * 0.07))),
-      updatedAt: updatedAtFor(h),
     });
   }
 
@@ -536,6 +542,12 @@ export function getMaterialBySlug(slug: string): MaterialEntry | undefined {
   return MATERIALS_CATALOG.find((m) => m.slug === slug);
 }
 
+/**
+ * Фильтр каталога. Порядок — редакционный (предмет → класс), а не
+ * «по популярности»: счётчика использования больше нет, а придумывать
+ * вместо него другой «популярный» признак нельзя — учитель сразу видит,
+ * что порядок случайный.
+ */
 export function getMaterialsByFilters(filters: MaterialFilters): MaterialEntry[] {
   return MATERIALS_CATALOG.filter(
     (m) =>
@@ -543,12 +555,16 @@ export function getMaterialsByFilters(filters: MaterialFilters): MaterialEntry[]
       (filters.grade === undefined || m.grade === filters.grade) &&
       (filters.purpose === undefined || m.purpose === filters.purpose) &&
       (filters.artifactType === undefined || m.artifactType === filters.artifactType),
-  ).sort((a, b) => b.usesCount - a.usesCount);
+  );
 }
 
-/** Топ по «взяли в работу» — для главной страницы и топ-категорий хаба. */
-export function getTopMaterials(limit: number): MaterialEntry[] {
-  return [...MATERIALS_CATALOG].sort((a, b) => b.usesCount - a.usesCount).slice(0, limit);
+/**
+ * Первые N карточек каталога — для главной и топ-категорий хаба.
+ * Это НЕ «популярное»: берём первые N в редакционном порядке. Название
+ * про «популярность» пришлось убрать вместе с выдуманным счётчиком.
+ */
+export function getFeaturedMaterials(limit: number): MaterialEntry[] {
+  return MATERIALS_CATALOG.slice(0, limit);
 }
 
 export function getMaterialsByPurpose(purpose: MaterialPurpose, limit?: number): MaterialEntry[] {
@@ -585,12 +601,17 @@ export function materialArtifactLabel(type: MaterialArtifactType): string {
   return ARTIFACT_LABELS[type];
 }
 
-/** Запись sitemap для одной карточки (TZ-15 §5.4). */
+/**
+ * Запись sitemap для одной карточки (TZ-15 §5.4).
+ *
+ * `lastModified` и `changeFrequency` здесь больше нет: дата была посчитана из
+ * хэша строки, то есть выдумана. Ровно ту же логику для остальной карты уже
+ * зафиксировали в `src/app/sitemap.ts` — не отдавать поле честнее, чем отдавать
+ * враньё.
+ */
 export function materialToSitemapEntry(m: MaterialEntry, base: string): MetadataRoute.Sitemap[number] {
   return {
     url: `${base}/material/${m.slug}/`,
-    lastModified: new Date(m.updatedAt),
     priority: 0.7,
-    changeFrequency: "monthly" as const,
   };
 }

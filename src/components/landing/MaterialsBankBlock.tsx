@@ -7,7 +7,7 @@ import {
   MATERIALS_CATALOG,
   MATERIAL_PURPOSE_LABELS,
   MATERIAL_PURPOSE_ORDER,
-  getTopMaterials,
+  getFeaturedMaterials,
 } from "@/lib/content/materials-catalog";
 
 /**
@@ -15,7 +15,7 @@ import {
  * Показывает, что каталог есть и он живой: топ-6 карточек + пять категорий по цели.
  */
 export function MaterialsBankBlock() {
-  const top = getTopMaterials(6);
+  const top = getFeaturedMaterials(6);
   const counts = MATERIAL_PURPOSE_ORDER.map((purpose) => ({
     purpose,
     count: MATERIALS_CATALOG.filter((m) => m.purpose === purpose).length,

@@ -81,12 +81,14 @@ export function generateMetadata({ params }: Props): Metadata {
   const rawDescription = `Скачайте готовые рабочие листы и тесты по теме ${quotedTopic(topicTitleWithUmk(topic.title, countTitles(params.subject, Number(params.grade)).get(topic.title.trim()) ?? 1, topic.fgosRef))} для ${grade.num} класса по ${subjectName}. ${examplesPhrase(topic.examples.length)} с ответами. Сгенерируйте свой вариант за 30 секунд.`;
   const description = clipDescription(rawDescription);
 
-  // TZ-10 §5.1 / §9.7: canonical + og:type=article + publishedTime/modifiedTime.
-  // В таксономии (Topic) нет полей createdAt/updatedAt — ставим текущую дату;
-  // когда поле появится, заменить на topic.createdAt/topic.updatedAt.
+  // TZ-10 §5.1 / §9.7: canonical + og:type=article.
+  // publishedTime/modifiedTime убрали: в таксономии (Topic) нет полей
+  // createdAt/updatedAt, а раньше туда писалась текущая дата — то есть каждая
+  // пересборка объявляла все 1 070 страниц тем только что опубликованными.
+  // Так и делали карточки материалов с датой из хэша: Google такие даты
+  // считает недостоверными. Вернём, когда в теме появятся реальные даты.
   const base = SITE_URL;
   const canonicalUrl = `${base}/subject/${subject.slug}/${grade.num}/${topic.slug}`;
-  const now = new Date();
 
   return {
     title,
@@ -106,8 +108,6 @@ export function generateMetadata({ params }: Props): Metadata {
       url: canonicalUrl,
       siteName: "УчЛист",
       locale: "ru_RU",
-      publishedTime: now.toISOString(),
-      modifiedTime: now.toISOString(),
       authors: ["Команда УчЛист"],
       // TZ-10 §5.4 / §9.6: og:image — статичный PNG.
 // Per-topic PNG не генерим (660+ тем × N = тысячи файлов) — fallback на
@@ -287,10 +287,12 @@ export default function TopicPage({ params }: Props) {
                   <Check className="w-4 h-4 text-brand-500" />
                   PDF в формате A4
                 </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <Check className="w-4 h-4 text-brand-500" />
-                  Проверено ИИ
-                </span>
+                {/*
+                  Отсюда убрали «✓ Проверено ИИ»: галочка стояла на всех 1075
+                  страницах тем и читалась как «эти задания уже проверены».
+                  Проверка у нас запускается учителем по кнопке и по умолчанию
+                  не выполняется, поэтому обещать её на странице темы нельзя.
+                */}
               </div>
             </div>
 

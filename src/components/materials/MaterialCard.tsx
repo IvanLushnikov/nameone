@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Star, Users } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import {
   MATERIAL_PURPOSE_LABELS,
@@ -63,19 +62,6 @@ export function MaterialCard({ material, compact = false }: MaterialCardProps) {
         {!compact && (
           <p className="mt-2 line-clamp-3 text-sm text-warm-600">{material.description}</p>
         )}
-
-        {/* Социальное доказательство: сколько учителей взяли в работу */}
-        <div className="mt-auto flex items-center gap-4 pt-4 text-xs text-warm-500">
-          <span className="inline-flex items-center gap-1">
-            <Users className="w-3.5 h-3.5" aria-hidden />
-            {material.usesCount} взяли в работу
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <Star className="w-3.5 h-3.5 fill-accent-400 text-accent-400" aria-hidden />
-            {material.rating.toFixed(1).replace(".", ",")}
-            <span className="text-[color:var(--text-muted)]">({material.ratingCount})</span>
-          </span>
-        </div>
       </div>
     </Link>
   );

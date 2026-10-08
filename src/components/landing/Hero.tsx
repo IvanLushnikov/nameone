@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Sparkles, Timer, FileCheck, Wand2, ArrowRight, Play, Check } from "lucide-react";
+import { Sparkles, FileCheck, Wand2, ArrowRight, Play, Check } from "lucide-react";
 import { useTilt } from "@/hooks/useTilt";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { getRealMetrics } from "@/components/landing/Stats";
@@ -85,7 +85,12 @@ export function Hero() {
           </p>
 
           <div className="mt-12 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm animate-fade-in" style={{ animationDelay: "0.4s", animationFillMode: "both" }}>
-            <Stat icon={<Timer className="w-4 h-4" />} label="Среднее время" value="~30 сек" />
+            {/* Плитку «Среднее время ~30 сек» убрали: замера длительности
+                генерации в коде нет, а в блоке метрик это было единственное
+                придуманное число. Обещание «за 30 секунд» осталось в
+                заголовке и кнопках — там оно приписывает скорость работы,
+                а не измеренный факт. */}
+
             <Stat icon={<FileCheck className="w-4 h-4" />} label="с&nbsp;ответами и&nbsp;пояснениями" value="Все листы" />
             <Stat icon={<Sparkles className="w-4 h-4" />} label="Тем в&nbsp;каталоге" value={`${CATALOG_TOPICS}`} />
           </div>
@@ -223,10 +228,6 @@ function HeroMockup() {
 
           <div className="mt-6 pt-3 border-t border-dashed border-warm-200 text-[10px] text-[color:var(--text-muted)] text-center">
             УчЛист · Ответы и пояснения на&nbsp;отдельной странице · Подходит для&nbsp;печати на&nbsp;A4
-          </div>
-
-          <div className="absolute top-3 right-3 -rotate-12 px-3 py-1 rounded-full border-2 border-accent-500 text-accent-600 text-[10px] font-bold uppercase tracking-wider bg-white/80 animate-fade-in" style={{ animationDelay: "1.8s", animationFillMode: "both" }}>
-            Проверено ИИ
           </div>
 
           <div className="absolute right-3 bottom-3 flex items-center gap-1 text-[10px] text-warm-500">

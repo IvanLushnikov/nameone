@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Sparkles, ArrowRight, Star, Users, FileText, Layers } from "lucide-react";
+import { Sparkles, ArrowRight, FileText, Layers } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { JsonLd, Breadcrumb } from "@/components/seo";
@@ -11,7 +11,7 @@ import {
   MATERIAL_PURPOSE_LABELS,
   getMaterialBySlug,
   getMaterialsByFilters,
-  getTopMaterials,
+  getFeaturedMaterials,
   materialArtifactLabel,
   materialConstructorHref,
   type MaterialEntry,
@@ -67,7 +67,6 @@ function buildJsonLd(material: MaterialEntry, subjectTitle: string, fgosRef?: st
     headline: material.title,
     description: material.description,
     inLanguage: "ru-RU",
-    dateModified: material.updatedAt,
     author: { "@type": "Organization", name: material.author },
     publisher: {
       "@type": "Organization",
@@ -97,11 +96,12 @@ export default function MaterialPage({ params }: Props) {
   const topic = getTopic(material.subject, material.grade, material.topicSlug);
   const ctaHref = materialConstructorHref(material);
 
-  // Похожие: сначала та же цель, потом — самые популярные.
+  // Похожие: сначала та же цель, потом — начало каталога. «Популярных»
+  // больше нет: счётчика использования, по которому они выбирались, не существует.
   const samePurpose = getMaterialsByFilters({ purpose: material.purpose }).filter(
     (m) => m.slug !== material.slug,
   );
-  const related = (samePurpose.length >= 3 ? samePurpose : getTopMaterials(6).filter((m) => m.slug !== material.slug)).slice(0, 3);
+  const related = (samePurpose.length >= 3 ? samePurpose : getFeaturedMaterials(6).filter((m) => m.slug !== material.slug)).slice(0, 3);
 
   return (
     <>
@@ -135,20 +135,10 @@ export default function MaterialPage({ params }: Props) {
               {material.description}
             </p>
 
-            {/* Социальное доказательство */}
-            <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 text-sm text-warm-600">
-              <span className="inline-flex items-center gap-1.5">
-                <Users className="w-4 h-4 text-brand-500" aria-hidden />
-                <strong className="font-semibold text-warm-900">{material.usesCount}</strong>
-                {material.usesCount === 1 ? "учитель взял" : "учителей взяли"} в работу
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <Star className="w-4 h-4 fill-accent-400 text-accent-400" aria-hidden />
-                <strong className="font-semibold text-warm-900">{material.rating.toFixed(1).replace(".", ",")}</strong>
-                по оценке {material.ratingCount} учителей
-              </span>
-              <span className="text-[color:var(--text-muted)]">Обновлён {material.updatedAt}</span>
-            </div>
+            {/* Ни рейтинга, ни счётчика «взяли в работу», ни даты обновления здесь нет
+                и не должно быть, пока в базе нет настоящих оценок и истории
+                правок: выдуманные числа стоили бы учителю доверия на всех 150
+                страницах банка сразу. */}
           </div>
         </div>
       </section>
