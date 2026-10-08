@@ -40,6 +40,14 @@ interface GenerateOpts {
   endpoint: string;
   /** Поле-результат в JSON ответа бэка ("worksheet" | "lessonPlan" | ...). */
   dataKey: string;
+  /**
+   * Не брать результат из кэша бэка.
+   *
+   * Нужен второму варианту контрольной работы: ключ кэша строится из предмета,
+   * класса, темы, сложности, количества и типа, поэтому два прохода с
+   * одинаковыми параметрами вернули бы один и тот же лист дважды.
+   */
+  bypassCache?: boolean;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -183,7 +191,11 @@ async function smartGenerate<T>(
   // в тариф» — это ответы пользователю (PaywallModal / предложение Плюс),
   // а не повод подсунуть мок. Мок — только когда бэка нет или он упал (5xx,
   // сеть), то есть когда настоящую генерацию получить нечем.
-  const remote = await callBackend<T>(`/api/${opts.endpoint}/generate`, { request: req }, opts.dataKey);
+  const remote = await callBackend<T>(
+    `/api/${opts.endpoint}/generate`,
+    opts.bypassCache ? { request: req, bypassCache: true } : { request: req },
+    opts.dataKey,
+  );
   if (remote) {
     return { data: remote, source: "llm", isDemo: false, costUsd: 0, latencyMs: Date.now() - start };
   }
@@ -205,8 +217,23 @@ export type CardsClientResult = ArtifactResult<CardSet>;
 export type MaterialsClientResult = ArtifactResult<MaterialBundle>;
 export type BundleClientResult = ArtifactResult<LessonBundle>;
 
-export async function generateWorksheetSmart(request: GenerationRequest): Promise<WorksheetClientResult> {
-  const r = await smartGenerate<Worksheet>(request, { endpoint: "worksheets", dataKey: "worksheet" }, () => mockWorksheet(request));
+/**
+ * Рабочий лист / тест / контрольная.
+ *
+ * `opts.bypassCache` обязателен для ВТОРОГО варианта контрольной работы: без
+ * него оба прохода попадут в кэш по одному ключу (ключ строится из предмета,
+ * класса, темы, сложности, количества и типа — «варианта» в нём нет), и
+ * учитель получит два одинаковых листа вместо двух разных.
+ */
+export async function generateWorksheetSmart(
+  request: GenerationRequest,
+  opts?: { bypassCache?: boolean },
+): Promise<WorksheetClientResult> {
+  const r = await smartGenerate<Worksheet>(
+    request,
+    { endpoint: "worksheets", dataKey: "worksheet", bypassCache: opts?.bypassCache === true },
+    () => mockWorksheet(request),
+  );
   return { worksheet: r.data, source: r.source, isDemo: r.isDemo, costUsd: r.costUsd, latencyMs: r.latencyMs };
 }
 

@@ -90,7 +90,7 @@ import { generatePptx, pptxFilename } from "@/lib/utils/pptx";
 import { canGenerate, getRemaining, refund, settleGeneration } from "@/lib/utils/limit";
 import { isTouchDevice, subscribeToDeviceChange } from "@/lib/utils/device";
 import { ACADEMIC_YEAR_MONTHS, FREE_GENERATIONS, PLANS, priceLabel, priceShort } from "@/lib/content/plans";
-import { plural } from "@/lib/utils/cn";
+import { plural, cn } from "@/lib/utils/cn";
 import { pluralizeTasks, pluralizeFiles } from "@/lib/utils/cn";
 import { saveWorksheet, type SaveWorksheetInput } from "@/lib/worksheets/api";
 import { ShareFormDialog } from "@/components/teacher/ShareFormDialog";
@@ -99,6 +99,7 @@ import { getProfile } from "@/lib/utils/storage";
 import { useUsage } from "@/lib/hooks/useUsage";
 import { EditChat } from "@/components/f08/EditChat";
 import { PhotoCheckPanel } from "@/components/f06/PhotoCheckPanel";
+import { PhotoCheckEntry } from "@/components/f06/PhotoCheckEntry";
 
 /** F-04-C: режим wizard. «По теме» — текущий flow. «По номеру» — экзамен → предмет → номера → параметры. */
 type Mode = "topic" | "exam";
@@ -335,11 +336,16 @@ export default function ConstructorPage() {
   const [withAnswers, setWithAnswers] = React.useState(true);
   const [withExplanations, setWithExplanations] = React.useState(true);
 
-  // Номер варианта для подписи результата. Раньше здесь стоял Math.random() прямо в JSX —
-  // число менялось при каждом рендере, и учитель видел «Вариант 7», вводил текст,
-  // а после ререндера видел «Вариант 3». Читается как глюк и подрывает доверие к материалу.
-  // Нужен один раз на загрузку страницы, поэтому useRef с ленивой инициализацией.
-  const variantNoRef = React.useRef<number>(Math.floor(Math.random() * 9) + 1);
+  // Номер варианта для подписи результата УДАЛЁН (08.10.2026).
+  //
+  // Здесь стоял `Math.random()`: для обычного листа это давало «Вариант 7» в
+  // подписи к одному-единственному листу, а для контрольной — ровно то, на
+  // что пожаловалась учительница: один сгенерированный вариант с подписью
+  // «вариант 4». Случайное число не является ничем, кроме шума.
+  //
+  // Теперь номер варианта настоящий: у контрольной генерируются два листа
+  // (`controlVariant2`), а подпись показывает выбранный (`controlVariant`).
+  // У остальных типов варианта нет — и подписи тоже нет.
 
   // F-02 (Q4 2026): режим выбора параметров на шаге 1.
   // template = сетка из 5 preset-карточек, custom = пойти к теме и настроить параметры вручную.
@@ -360,6 +366,15 @@ export default function ConstructorPage() {
 
   const [generating, setGenerating] = React.useState(false);
   const [worksheet, setWorksheet] = React.useState<Worksheet | null>(null);
+  /**
+   * Второй вариант КОНТРОЛЬНОЙ работы (08.10.2026).
+   *
+   * Раньше контрольная делалась в один лист, а подпись «вариант N» бралась из
+   * `Math.random()` — учительница получила один вариант с надписью «вариант 4».
+   * Теперь это два настоящих листа, и `controlVariant` выбирает, какой показан.
+   */
+  const [controlVariant2, setControlVariant2] = React.useState<Worksheet | null>(null);
+  const [controlVariant, setControlVariant] = React.useState<1 | 2>(1);
   /** TZ-12: название выбранного шаблонного пресета — для подписи в ConfigureStep. */
   const selectedPresetTitle = React.useMemo(
     () => (selectedPresetId ? PRESETS.find((p) => p.id === selectedPresetId)?.title ?? null : null),
@@ -894,6 +909,12 @@ export default function ConstructorPage() {
     setGenerating(true);
     setIsDemoResult(false);
     setWorksheet(null);
+    // Второй вариант контрольной тоже сбрасываем ЗДЕСЬ, а не только после
+    // успешной генерации: если генерация упадёт, в состоянии остался бы
+    // второй вариант от ПРЕДЫДУЩЕЙ работы, а переключатель появился бы у
+    // нового листа (у которого второго варианта нет).
+    setControlVariant2(null);
+    setControlVariant(1);
     setLessonPlan(null);
     setPresentation(null);
     setKtp(null);
@@ -964,11 +985,41 @@ export default function ConstructorPage() {
           // Лист с разной перепаковкой заданий.
           case "worksheet":
           case "test":
-          case "control":
           case "oge":
           case "ege": {
             const r = await generateWorksheetSmart(body);
             return { kind: "worksheet" as const, payload: r.worksheet, isDemo: r.isDemo };
+          }
+          // Контрольная работа — единственный тип, который по определению
+          // делается в ДВУХ вариантах (иначе это тест, а «Контрольная на 2
+          // варианта» — обещание в тарифах, которое продукт не выполнял).
+          //
+          // Что было не так: вариант генерировался ОДИН, а подпись
+          // «вариант N» бралась из `Math.random()` — то есть номер был
+          // случайным, а не вторым настоящим вариантом. Учительница получила
+          // один вариант с надписью «вариант 4».
+          //
+          // Теперь генерируются два независимых листа: одинаковые параметры,
+          // разные задания (кэш персональный, поэтому второй вариант не
+          // совпадёт с первым — у ключа нет поля «вариант», а `bypassCache`
+          // для второго прохода выставлен явно).
+          case "control": {
+            const r = await generateWorksheetSmart(body);
+            // Второй вариант — best effort: если он не пришёл, учитель получает
+            // первый и честную пометку, а не ошибку вместо результата.
+            let second: Worksheet | null = null;
+            try {
+              const r2 = await generateWorksheetSmart(body, { bypassCache: true });
+              second = r2.worksheet;
+            } catch {
+              second = null;
+            }
+            return {
+              kind: "worksheet" as const,
+              payload: r.worksheet,
+              isDemo: r.isDemo,
+              secondVariant: second,
+            };
           }
           // TZ-16 Этапы 6–7: типы объявлены в TaskType и видны в пикере,
           // но генераторов для них ещё нет. Явная ошибка вместо тихой подмены.
@@ -1041,6 +1092,13 @@ export default function ConstructorPage() {
         case "worksheet": {
           const ws = { ...(result.payload as Worksheet), isDemo: result.isDemo };
           setWorksheet(ws);
+          // Второй вариант контрольной приходит в этом же result. Если его нет
+          // (сбой второго прохода) — показываем первый и не врём про два.
+          const second = result.secondVariant
+            ? { ...(result.secondVariant as Worksheet), isDemo: result.isDemo }
+            : null;
+          setControlVariant2(type === "control" ? second : null);
+          setControlVariant(1);
           artifactTitle = ws.title;
           artifactId = ws.id;
           histSubject = ws.subject as SubjectSlug;
@@ -1377,7 +1435,14 @@ export default function ConstructorPage() {
       // раздаёт заготовку, не зная об этом (NEW-EXPORT-1).
       isDemo: isDemoResult,
     });
-    const filename = `${worksheet.subject}-${worksheet.grade}kl-${worksheet.topic}.docx`
+    // Номер варианта в имени файла — ТОЛЬКО для контрольной со вторым вариантом
+    // (08.10.2026). Без этого суффикса оба варианта сохранялись под одним
+    // именем `drobi-5kl-drobi.docx`, и второй вариант ПЕРЕЗАПИСЫВАЛ первый:
+    // учитель скачивал вариант 1, переключался на вариант 2, скачивал снова —
+    // и на диске оставался один файл. Ровно тот случай, когда «два варианта»
+    // снова оказываются одним.
+    const variantSuffix = type === "control" && controlVariant2 ? `-variant-${controlVariant}` : "";
+    const filename = `${worksheet.subject}-${worksheet.grade}kl-${worksheet.topic}${variantSuffix}.docx`
       .toLowerCase()
       .replace(/\s+/g, "-");
     downloadBlob(blob, filename);
@@ -1660,7 +1725,29 @@ export default function ConstructorPage() {
           {/* Right: preview / empty state (hidden on Шаг 1, full width for subject picker) */}
           {!(step === "select" && mode === "topic") && (
           <div>
-            {!worksheet && !generating && (
+            {/* Приход по `?photo=1` с карточки «Проверка работ по фото» — показываем
+                ВХОД в проверку, а не генератор (08.10.2026). Раньше флаг
+                раскрывал `PhotoCheckPanel`, который рендерится только после
+                генерации листа, поэтому учительница после «Попробовать»
+                видела генератор. Подробности — в PhotoCheckEntry. */}
+            {!worksheet && !generating && photoCheckOpen && (
+              <PhotoCheckEntry
+                onCreateSource={() => {
+                  // Закрываем вход: дальше — обычный путь выбора темы и
+                  // генерации. Панель проверки откроется сама, когда лист
+                  // появится (см. условие рендера ниже).
+                  setPhotoCheckOpen(false);
+                  setMode("topic");
+                  setStep("select");
+                }}
+                onOpenHistory={() => {
+                  setPhotoCheckOpen(false);
+                  window.location.assign("/dashboard");
+                }}
+              />
+            )}
+
+            {!worksheet && !generating && !photoCheckOpen && (
               <EmptyPreview
                 mode={mode}
                 subject={mode === "topic" ? subjectData : (examSubject ? getSubject(examSubject) : null)}
@@ -1671,15 +1758,29 @@ export default function ConstructorPage() {
                     что получит после генерации. */
                 type={type}
                 onPickPopular={() => {
-                  setSubject("math");
-                  setGrade(5);
-                  setTimeout(() => {
-                    const g = getGrade("math", 5);
-                    if (g && g.topics[0]) {
-                      setTopic(g.topics[0].slug);
-                      setStep("configure");
-                    }
-                  }, 100);
+                  /**
+                   * «Попробовать» ведёт в ВЫБРАННЫЙ предмет (08.10.2026).
+                   *
+                   * Раньше здесь стояло `setSubject("math"); setGrade(5)`, а
+                   * подпись кнопки была зашита как «Попробовать: дроби, 5
+                   * класс». Учительница выбирала «Окружающий мир, 4 класс» —
+                   * и кнопка уводила в математику. Подпись и действие
+                   * совпадали только потому, что совпадали оба с математикой.
+                   *
+                   * Теперь берём то, что учитель уже выбрал. Если предмета нет,
+                   * показываем список предметов, а не подставляем чужую
+                   * дисциплину молча.
+                   */
+                  if (!subject || !grade) {
+                    setMode("topic");
+                    setStep("select");
+                    return;
+                  }
+                  const g = getGrade(subject, grade);
+                  if (g && g.topics[0]) {
+                    setTopic(g.topics[0].slug);
+                    setStep("configure");
+                  }
                 }}
               />
             )}
@@ -1717,7 +1818,15 @@ export default function ConstructorPage() {
 
               const subtitle =
                 kind === "worksheet"
-                  ? `${worksheet!.tasks.length} ${pluralizeTasks(worksheet!.tasks.length)} · ${type === "control" ? "Контрольная" : "Рабочий лист"} · вариант ${variantNoRef.current}`
+                  ? // Вариант контрольной — теперь настоящий, из двух листов,
+                    // поэтому в подписи именно он. Раньше здесь стоял
+                    // `variantNoRef.current` из `Math.random()`: учительница
+                    // получила один лист с надписью «вариант 4».
+                    `${worksheet!.tasks.length} ${pluralizeTasks(worksheet!.tasks.length)} · ${type === "control" ? "Контрольная" : "Рабочий лист"}${
+                      type === "control" && controlVariant2
+                        ? ` · вариант ${controlVariant}`
+                        : ""
+                    }`
                   : kind === "lesson-plan"
                     ? `План урока · ${lessonPlan!.stages.length} этапов · ~${lessonPlan!.stages.reduce((s, x) => s + x.durationMin, 0)} мин`
                     : kind === "presentation"
@@ -1794,6 +1903,40 @@ export default function ConstructorPage() {
                       <span className="hidden sm:inline">Новый вариант</span>
                       <span className="sm:hidden">Заново</span>
                     </Button>
+                    {/* Переключатель двух вариантов КОНТРОЛЬНОЙ (08.10.2026).
+                        Раньше контрольная делалась одним листом, а номер варианта
+                        придумывался случайно — учительница получила «вариант 4»
+                        при одном варианте. Теперь переключатель показывает
+                        два настоящих листа и печатает тот, который выбран. */}
+                    {kind === "worksheet" && type === "control" && controlVariant2 && (
+                      <div
+                        className="inline-flex p-1 rounded-full bg-warm-100 border border-warm-200"
+                        role="group"
+                        aria-label="Вариант контрольной работы"
+                        data-testid="control-variant-switch"
+                      >
+                        {([1, 2] as const).map((n) => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => {
+                              setControlVariant(n);
+                              const next = n === 1 ? worksheet : controlVariant2;
+                              if (next) setWorksheet(next);
+                            }}
+                            aria-pressed={controlVariant === n}
+                            className={cn(
+                              "px-3 py-1.5 rounded-full text-sm font-medium transition-all",
+                              controlVariant === n
+                                ? "bg-white text-warm-950 shadow-soft"
+                                : "text-warm-600 hover:text-warm-900",
+                            )}
+                          >
+                            Вариант {n}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {kind === "worksheet" && (
                       <>
                         {/* З5: кнопка AI-правок — только под флагом, иначе она
@@ -2922,7 +3065,15 @@ function EmptyPreview({
         </p>
         {!isExam && (
           <Button variant="primary" size="lg" onClick={onPickPopular} leftIcon={<Sparkles className="w-4 h-4" />}>
-            Попробовать: дроби, 5 класс
+            {/*
+              Подпись кнопки больше не зашитая «дроби, 5 класс» (08.10.2026).
+              Учительница выбирала «Окружающий мир, 4 класс» — а кнопка обещала
+              дроби и уводила в математику: `onPickPopular` жёстко ставил
+              `subject="math"`, `grade=5`. Теперь кнопка ведёт в ВЫБРАННЫЙ
+              предмет и класс, а если предмет ещё не выбран — предлагает
+              начать с выбора, а не молча подставляет математику.
+            */}
+            {subject ? `Попробовать: ${subject.shortTitle.toLowerCase()}, ${grade ?? "—"} класс` : "Выбрать предмет и класс"}
           </Button>
         )}
       </div>

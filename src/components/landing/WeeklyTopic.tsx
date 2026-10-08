@@ -20,13 +20,41 @@ function weekLabel(raw: string): string {
 
 /**
  * Виджет «Что проходят сейчас в школах» — на главной.
- * Подтягивает текущий сезон и подбирает первую тему из WEEKLY_TOPICS.
- * Если совпадений нет (лето, нет данных) — рендерит null.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ПОЧЕМУ ТЕМА МЕНЯЕТСЯ ПО НЕДЕЛЯМ (исправление 08.10.2026)
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Раньше здесь стояло `WEEKLY_TOPICS.find((t) => t.season === season)` —
+ * то есть ПЕРВАЯ тема сезона. В октябре это всегда «Дроби в 5 классе», и
+ * учительница написала: «опять эти дроби 5 класс после частых вопросов,
+ * нахуя не понятно».
+ *
+ * Почему это выглядело глупо: заголовок блока — «Что проходят сейчас в
+ * школах», то есть обещание актуальной картины по всей школе, а показывалась
+ * одна и та же тема весь сезон. Через месяц на странице было написано
+ * «Октябрь · 1–2-я недели» — про две недели из четырёх. Подпись не соответствовала
+ * содержимому, и учитель справедливо не понимает, зачем ему это показывают.
+ *
+ * Теперь: из тем сезона выбирается та, чья неделя совпадает с текущей, а если
+ * такой нет — по номеру недели циклически. И подпись «Что проходят сейчас»
+ * больше не обещает «в школах по всей стране» — это подборка тем недели.
  */
 export function WeeklyTopicBlock() {
   const season = getCurrentSeason();
-  const topic = WEEKLY_TOPICS.find((t) => t.season === season);
-  if (!topic) return null;
+  const seasonTopics = WEEKLY_TOPICS.filter((t) => t.season === season);
+
+  // Темы без подходящего сезона — виджет не показываем вовсе (как и раньше).
+  if (seasonTopics.length === 0) return null;
+
+  // Порядковый номер недели в году: от него зависит выбор темы. Считаем от
+  // начала учебного года (сентябрь), иначе в январе номер был бы 3, а в
+  // сентябре 38 — и ротация ломалась бы на границе года.
+  const now = new Date();
+  const yearStart = new Date(now.getFullYear(), 8, 1);
+  const elapsedWeeks = Math.floor(
+    (now.getTime() - yearStart.getTime()) / (7 * 24 * 60 * 60 * 1000),
+  );
+  const topic = seasonTopics[Math.abs(elapsedWeeks) % seasonTopics.length];
 
   const href = `/subject/${topic.subject}/${topic.grade}/${topic.topicSlug}`;
   const subjectLabel = SUBJECT_LABELS[topic.subject] ?? topic.subject;
@@ -38,8 +66,13 @@ export function WeeklyTopicBlock() {
     >
       <div className="container-tight">
         <div className="text-center mb-6">
+          {/*
+            Заголовок был «Что проходят сейчас в школах» — обещание картины по
+            всей школе, которую блок не показывал. Теперь это честная подборка
+            тем недели, а не заявление о всей стране.
+          */}
           <p className="text-xs font-semibold uppercase tracking-wider text-brand-600 mb-2">
-            Что проходят сейчас в школах
+            Тема недели
           </p>
           <h2 className="text-2xl sm:text-3xl font-display font-bold tracking-tight">
             {topic.title}

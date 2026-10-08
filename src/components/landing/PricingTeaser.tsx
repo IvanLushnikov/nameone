@@ -21,6 +21,8 @@ import {
   type PeriodId,
   type Plan,
 } from "@/lib/content/plans";
+import { createPayment } from "@/lib/lk/subscription-api";
+import { getCurrentUser } from "@/lib/auth/api";
 
 const teaserPlans = Object.values(PLANS).filter((p) => p.inTeaser);
 
@@ -152,6 +154,61 @@ function PricingCard({
   const price = priceFor(plan.id, period);
   const saving = period === "academicYear" ? academicYearSaving(plan.id) : null;
 
+  /**
+   * Кнопка тарифа — РАБОЧАЯ (08.10.2026).
+   *
+   * Что было: `<Button as="link" href={plan.href}>` с `href: "/pricing"`.
+   * То есть на главной кнопка «Оформить подписку» вела на страницу тарифов,
+   * а на самой странице тарифов — на саму себя. Учительница написала ровно
+   * про это: «они не нажимаются, не могу выбрать другой тариф и оформить
+   * подписку не активно». Кнопка выглядела как кнопка и никуда не вела.
+   *
+   * Теперь: клик создаёт платёж на бэке (`POST /api/billing/create`) и
+   * уводит на страницу платёжного сервиса. Неавторизованному — сначала
+   * вход: платёж привязан к аккаунту, иначе он ушёл бы в никуда.
+   *
+   * Ошибки НЕ прячем: если платёжный сервис не настроен, говорим прямо —
+   * молчаливая кнопка хуже неработающей.
+   */
+  const [busy, setBusy] = React.useState(false);
+  const [payError, setPayError] = React.useState<string | null>(null);
+
+  const isFree = plan.id === "free";
+
+  async function subscribe() {
+    if (isFree) {
+      window.location.assign("/constructor");
+      return;
+    }
+    setBusy(true);
+    setPayError(null);
+    try {
+      const user = await getCurrentUser();
+      if (!user) {
+        window.location.assign("/login?next=%2Fpricing");
+        return;
+      }
+      const res = await createPayment({
+        plan: plan.id,
+        period,
+        returnUrl: `${window.location.origin}/dashboard/settings?paid=1`,
+      });
+      if (!res.ok) {
+        setPayError(
+          res.error === "payment_unavailable"
+            ? "Приём платежей сейчас не настроен, оплатить нельзя. Попробуйте позже."
+            : res.error === "unauthorized"
+              ? "Вход истёк — войдите заново, чтобы оплатить."
+              : "Не удалось создать платёж. Попробуйте ещё раз.",
+        );
+        return;
+      }
+      window.location.assign(res.confirmationUrl);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div
       className="relative h-full"
@@ -223,17 +280,29 @@ function PricingCard({
 
         {/* mt-auto прижимает кнопку к низу карточки: без него у тарифа с коротким
             списком кнопка висела выше, чем у соседей, и ряд читался как три
-            разных предложения, а не как один тарифный ряд. */}
+            разных предложения, а не как один тарифный ряд.
+
+            Кнопка вызывает `subscribe()` — реальное создание платежа.
+            Раньше это была ссылка `href={plan.href}` на `/pricing`, то есть
+            кнопка на странице тарифов вела на эту же страницу и ничего
+            не делала. */}
         <Button
-          as="link"
-          href={plan.href}
+          type="button"
+          onClick={subscribe}
+          disabled={busy}
           variant={isHighlight ? "primary" : "secondary"}
           size="md"
           fullWidth
           className="mt-auto"
+          data-testid={`subscribe-${plan.id}`}
         >
-          {plan.cta}
+          {busy ? "Готовим платёж…" : isFree ? "Попробовать бесплатно" : plan.cta}
         </Button>
+        {payError && (
+          <p className="mt-2 text-xs text-red-600 text-center leading-relaxed" role="alert">
+            {payError}
+          </p>
+        )}
       </Card>
     </div>
   );

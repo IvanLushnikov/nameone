@@ -18,9 +18,11 @@ import {
   asRecord,
   asText,
   pickEnum,
+  CLASS_APPROPRIATENESS_RULE,
   JSON_ONLY_RULE,
   NO_TECHNICAL_FIELDS_RULE,
   RUSSIAN_DEFAULT_RULE,
+  SUBJECT_CONFINEMENT_RULE,
   type ArtifactRequest,
 } from "./artifact-gen";
 
@@ -62,6 +64,8 @@ ${RUSSIAN_DEFAULT_RULE}
 3. kind — тип файла, только из списка: glossary (словарь терминов), reference (справочные данные: таблицы, формулы, даты), handout (раздатка-памятка или инструкция), checklist (чек-лист: что взять на урок, что повторить).
 4. content — готовый текст документа, а не описание документа. Никаких «здесь будет таблица»: пиши саму таблицу или список, с переносами строк.
 5. Никакого markdown: без **жирного**, без заголовков с решётками, без обрамления ответа блоками кода. Обычные дефисы в списках и двоеточие после термина допустимы.
+${SUBJECT_CONFINEMENT_RULE}
+${CLASS_APPROPRIATENESS_RULE}
 6. Поля "id" и "createdAt" в ответе не нужны: файл в архиве получает идентификатор на сервере.
 
 ФОРМАТ ОТВЕТА — СТРОГО JSON:

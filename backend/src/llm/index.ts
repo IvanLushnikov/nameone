@@ -60,6 +60,7 @@ import { buildPhotoCheckPrompt, type PhotoCheckTask } from "./prompts/photo-chec
 import { calcCost, estimateImageTokens } from "./cost";
 import { gradePhotoCheck, type PhotoCheckSummary } from "../services/photoCheckGrading";
 import { findLanguageViolation, passesLanguageGuard } from "./validation/language-guard";
+import { filterTasks } from "./validation/quality-filter";
 import { reconcileSelfVerifyVerdict } from "./validation/answer-check";
 import { callPolzaEmbedding } from "./providers/polza";
 import {
@@ -220,19 +221,26 @@ export async function generateWorksheet(
       // и задание показывается обычным текстом. `text` НЕ трогаем: он
       // остаётся эталоном для self-verification и сверки ответов.
       tasks: Array.isArray(parsed.tasks)
-        ? parsed.tasks.map((task) => {
-            if (!task || typeof task !== "object") return task;
-            const sanitized = sanitizeTextLatex(
-              (task as { text_latex?: unknown }).text_latex,
-            );
-            // `as Record<string, unknown>` не проходит: у `WorksheetTask` нет
-            // индексируемой подписи, и TypeScript считает приведение натянутым.
-            // Промежуточный `unknown` — честное «смотрю как на словарь».
-            const next = { ...(task as unknown as Record<string, unknown>) };
-            if (sanitized) next.text_latex = sanitized;
-            else delete next.text_latex;
-            return next as unknown as Worksheet["tasks"][number];
-          })
+        ? filterTasks(
+            parsed.tasks
+              .filter((t: unknown): t is NonNullable<typeof t> => Boolean(t) && typeof t === "object")
+              .map((task) => {
+                if (!task || typeof task !== "object") return task;
+                const sanitized = sanitizeTextLatex(
+                  (task as { text_latex?: unknown }).text_latex,
+                );
+                // `as Record<string, unknown>` не проходит: у `WorksheetTask` нет
+                // индексируемой подписи, и TypeScript считает приведение натянутым.
+                // Промежуточный `unknown` — честное «смотрю как на словарь».
+                const next = { ...(task as unknown as Record<string, unknown>) };
+                if (sanitized) next.text_latex = sanitized;
+                else delete next.text_latex;
+                return next;
+              }),
+            // Фильтр качества (08.10.2026): выкидывает «по образцу» без
+            // образца и задания из чужого предмета, обнуляет ответ-заглушку.
+            request.subject,
+          ).tasks as unknown as Worksheet["tasks"]
         : [],
       createdAt: new Date().toISOString(),
     };

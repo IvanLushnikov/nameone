@@ -33,6 +33,7 @@ import {
   requestMagicLink,
   consumeMagicLinkAndCreateSession,
 } from "../../src/services/auth";
+import { MAGIC_LINK_REUSE_SECONDS } from "../../src/db/queries";
 import type { Env } from "../../src/env";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -385,15 +386,33 @@ describe("requestMagicLink + consumeMagicLinkAndCreateSession (D1)", () => {
     expect(consumed!.sessionExpiresAt).toBeLessThanOrEqual(now + 31 * 24 * 60 * 60);
   });
 
-  it("consume same token twice → second time null (атомарный swap)", async () => {
-    const r = await requestMagicLink(env.DB, "dave-replay@example.com", env);
+  it("ссылка работает на двух устройствах подряд, потом перестаёт (08.10.2026)", async () => {
+    // Сценарий учительницы: письмо открыли на телефоне, УчЛист заработал,
+    // а на планшете — нет, потому что ссылка была полностью одноразовой.
+    //
+    // Теперь после первого использования ссылка живёт ещё
+    // MAGIC_LINK_REUSE_SECONDS и выдаёт свою сессию на каждое устройство.
+    // Через окно — снова null: пересылка ссылки на следующий день не должна
+    // работать, поэтому «многоразовость» строго ограничена по времени.
+    const r = await requestMagicLink(env.DB, "two-devices@example.com", env);
     const token = tokenFromDevUrl(r.devMagicUrl);
 
-    const first = await consumeMagicLinkAndCreateSession(env.DB, token);
-    expect(first).not.toBeNull();
+    const phone = await consumeMagicLinkAndCreateSession(env.DB, token);
+    expect(phone).not.toBeNull();
 
-    const second = await consumeMagicLinkAndCreateSession(env.DB, token);
-    expect(second).toBeNull();
+    const tablet = await consumeMagicLinkAndCreateSession(env.DB, token);
+    expect(tablet).not.toBeNull();
+    // Сессии РАЗНЫЕ: телефон и планшет не вытесняют друг друга.
+    expect(tablet!.sessionToken).not.toBe(phone!.sessionToken);
+    expect(tablet!.user.email).toBe(phone!.user.email);
+
+    // Старая ссылка, израсходованная давно, — как и раньше: null.
+    await env.DB.prepare(`UPDATE magic_links SET used_at = ?1 WHERE token = ?2`)
+      .bind(Math.floor(Date.now() / 1000) - MAGIC_LINK_REUSE_SECONDS - 60, token)
+      .run();
+
+    const late = await consumeMagicLinkAndCreateSession(env.DB, token);
+    expect(late).toBeNull();
   });
 
   it("consume non-existent token → null", async () => {
