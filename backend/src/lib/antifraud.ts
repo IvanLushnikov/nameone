@@ -101,9 +101,6 @@ export async function fingerprintHash(
     input.userAgent || "unknown-ua",
     input.cf?.country ?? "-",
   ];
-  // ВРЕМЕННО: диагностика нестабильности отпечатка (09.10.2026). Снять после
-  // того, как будет найдено плающее поле.
-  console.info("[dbg-fp]", JSON.stringify({ ip: input.ip, ua: (input.userAgent || "").slice(0, 40), c: input.cf?.country ?? "-" }));
   return sha256Hex(`fp:${parts.join("|")}`);
 }
 
