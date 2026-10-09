@@ -35,6 +35,8 @@ import {
   consumeFreeQuota,
   freeQuotaOwnerKey,
   holdFreeQuotaSlot,
+  linkUserFingerprint,
+  quotaOwnerKeys,
   recordAnonymousAccess,
   releaseFreeQuotaHold,
   type UsagePlan,
@@ -118,6 +120,20 @@ export async function guardGeneration(
   const fingerprint = await fingerprintHash({ ip, userAgent, cf }, salt);
   const signals = await recordVisit(db, fingerprint, userId, cf);
 
+  // Привязываем этот отпечаток к человеку ДО подсчёта квоты (09.10.2026).
+  //
+  // Порядок обязателен: если посчитать ключи до привязки, устройство не увидит
+  // остальные свои отпечатки в базе и получит лимит, как будто оно первое.
+  //
+  // Ошибку глотаем: невозможность запомнить отпечаток не должна ломать
+  // генерацию. В этом случае человек просто считается по текущему отпечатку,
+  // то есть как раньше.
+  if (userId) {
+    await linkUserFingerprint(db, userId, fingerprint).catch(() => {
+      /* связь не записалась — считаем по текущему отпечатку */
+    });
+  }
+
   // ── Бесплатный тариф: 3 генерации всего ──
   //
   // Попытка ЗАНИМАЕТСЯ здесь, до вызова провайдера, и зачитывается после
@@ -128,8 +144,12 @@ export async function guardGeneration(
   // (holdFreeQuotaSlot).
   let freeRemaining: number | null = null;
   if (plan === "free") {
+    // owner — куда ПИШЕМ занятие (текущий отпечаток), ownerKeys — по чему
+    // СЧИТАЕМ занятое (все отпечатки этого человека). Разделено намеренно:
+    // занятие всегда освобождается по тому же ключу, которым было взято.
     const owner = freeQuotaOwnerKey(userId, fingerprint);
-    const quota = await holdFreeQuotaSlot(db, owner);
+    const ownerKeys = await quotaOwnerKeys(db, userId, fingerprint);
+    const quota = await holdFreeQuotaSlot(db, owner, ownerKeys);
     if (!quota.allowed) {
       // Квота кончилась — это лимит, а не подозрение. Капча тут не помогает:
       // решение владельца от 07.10.2026 — анонимным ровно 3 попытки, и обход

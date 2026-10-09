@@ -367,6 +367,79 @@ export function freeQuotaOwnerKey(userId: string | null, fingerprint?: string | 
   return userId ? `usr:${userId}` : "fp:unknown";
 }
 
+/**
+ * Привязать отпечаток к пользователю (09.10.2026).
+ *
+ * Вызывается при каждой генерации с аккаунтом. Один и тот же человек, зашедший
+ * с двух браузеров, получает две строки — и квота считается по обеим.
+ *
+ * Именно здесь «запоминаются пользователи в базе»: без этой связи база не
+ * знает, что отпечаток телефона и отпечаток ноутбука — это один человек, и
+ * лимит обходился сменой браузера.
+ *
+ * Пишем всегда: `last_seen_at` обновляется, `created_at` остаётся первым
+ * известным. Ошибку глотаем на стороне вызова — невозможность запомнить
+ * отпечаток не должна ломать генерацию, лимит при этом остаётся в силе.
+ */
+export async function linkUserFingerprint(
+  db: D1Database,
+  userId: string,
+  fingerprint: string | null | undefined,
+): Promise<void> {
+  if (!userId || !fingerprint) return;
+  const now = Math.floor(Date.now() / 1000);
+  await db
+    .prepare(
+      `INSERT INTO user_fingerprints (user_id, fingerprint, created_at, last_seen_at)
+       VALUES (?1, ?2, ?3, ?3)
+       ON CONFLICT(user_id, fingerprint) DO UPDATE SET last_seen_at = ?3`,
+    )
+    .bind(userId, fingerprint, now)
+    .run();
+}
+
+/**
+ * Все ключи счёта, которые принадлежат ОДНОМУ человеку.
+ *
+ * Считается СУММА по этим ключам (см. `freeQuotaState`), и это главное:
+ *   · аноним — единственный ключ по своему отпечатку;
+ *   · вошедший — личный счётчик плюс отпечатки всех его устройств из базы,
+ *     включая текущий.
+ *
+ * Сумма, а не максимум: максимум оставлял бы дыру «3 с одного браузера и 3 с
+ * другого». И не «последний отпечаток» — тогда переключение браузера
+ * обнуляло бы счёт, то есть лимит ничего бы не ограничивал.
+ *
+ * Ключи нормализуются и дедуплицируются: один и тот же отпечаток может
+ * прийти и из привязки, и из текущего запроса.
+ */
+export async function quotaOwnerKeys(
+  db: D1Database,
+  userId: string | null,
+  fingerprint?: string | null,
+): Promise<string[]> {
+  const keys = new Set<string>();
+
+  if (fingerprint) keys.add(`fp:${fingerprint}`);
+
+  if (userId) {
+    keys.add(`usr:${userId}`);
+    const rows = await db
+      .prepare(`SELECT fingerprint FROM user_fingerprints WHERE user_id = ?1 LIMIT 200`)
+      .bind(userId)
+      .all<{ fingerprint: string }>();
+    for (const row of rows?.results ?? []) {
+      if (row?.fingerprint) keys.add(`fp:${row.fingerprint}`);
+    }
+  }
+
+  // Совсем ничего не известно — общий ключ. Ограничение лучше, чем его
+  // отсутствие, и такой запрос всё равно упрётся в лимит.
+  if (keys.size === 0) keys.add("fp:unknown");
+
+  return [...keys];
+}
+
 /** Ключ счётчика «использовано попыток». */
 const freeQuotaKey = (ownerKey: string) => `freetotal:${ownerKey}`;
 /** Префикс ключей «занятых, но ещё не подтверждённых» попыток. */
@@ -398,27 +471,44 @@ export interface FreeQuotaState {
 /** Прочитать состояние квоты: зачтённые попытки + ещё не истёкшие «занятые». */
 async function freeQuotaState(
   db: D1Database,
-  ownerKey: string,
+  ownerKeys: string | string[],
   now = Math.floor(Date.now() / 1000),
 ): Promise<Omit<FreeQuotaState, "allowed">> {
-  const prefix = freeHoldPrefix(ownerKey);
+  // Принимаем и один ключ, и список: старые вызовы передают строку, новые —
+  // набор всех отпечатков человека (см. quotaOwnerKeys).
+  const keys = [...new Set(Array.isArray(ownerKeys) ? ownerKeys : [ownerKeys])];
+
   // Первичная реплика — та же причина, что в checkFreeQuota: счётчик, который
   // только что попросили занять, должен быть виден сразу (BL-06).
+  //
+  // Считаем СУММОЙ по всем ключам: смена браузера не должна выдавать новые
+  // попытки (09.10.2026). Параметры собираются динамически — их число равно
+  // числу отпечатков человека, а оно заранее неизвестно.
+  const committedMarks = keys.map((_, i) => `?${i + 1}`).join(", ");
+  const holdClause = keys
+    .map(
+      (_, i) =>
+        `(key >= ?${keys.length + i * 2 + 1} AND key < ?${keys.length + i * 2 + 2})`,
+    )
+    .join(" OR ");
+  const bound = [
+    ...keys.map((k) => freeQuotaKey(k)),
+    ...keys.flatMap((k) => [freeHoldPrefix(k), holdRangeEnd(freeHoldPrefix(k))]),
+    now - FREE_QUOTA_HOLD_TTL_SEC,
+  ];
+
   const row = await db
     .withSession("first-primary")
     .prepare(
       `SELECT
-         (SELECT COALESCE(SUM(count), 0) FROM rate_limits WHERE key = ?1) AS committed,
+         (SELECT COALESCE(SUM(count), 0) FROM rate_limits
+          WHERE key IN (${committedMarks})) AS committed,
          (SELECT COUNT(*) FROM rate_limits
-          WHERE key >= ?2 AND key < ?3 AND window_start > ?4) AS held`,
+          WHERE (${holdClause}) AND window_start > ?${bound.length}) AS held`,
     )
-    .bind(
-      freeQuotaKey(ownerKey),
-      prefix,
-      holdRangeEnd(prefix),
-      now - FREE_QUOTA_HOLD_TTL_SEC,
-    )
+    .bind(...bound)
     .first<{ committed: number; held: number }>();
+
   const used = Number(row?.committed ?? 0) + Number(row?.held ?? 0);
   return {
     used,
@@ -459,7 +549,11 @@ async function freeQuotaState(
  * попытку дважды — иначе учитель на бесплатном тарифе получил бы 2 генерации
  * вместо трёх.
  */
-export async function holdFreeQuotaSlot(db: D1Database, ownerKey: string): Promise<FreeQuotaState> {
+export async function holdFreeQuotaSlot(
+  db: D1Database,
+  ownerKey: string,
+  allOwnerKeys?: string[],
+): Promise<FreeQuotaState> {
   const now = Math.floor(Date.now() / 1000);
   const prefix = freeHoldPrefix(ownerKey);
   // id держим КОРОТКИМ и случайным: ключ счёта в нём не нужен (он лежит в
@@ -468,6 +562,26 @@ export async function holdFreeQuotaSlot(db: D1Database, ownerKey: string): Promi
   // секунду получили бы один и тот же id, то есть падение по UNIQUE.
   const nonce = crypto.randomUUID().slice(0, 8);
   const id = `rl_hold_${now.toString(36)}_${nonce}_${ownerKey.replace(/[^a-z0-9]/gi, "").slice(-10)}`;
+  // Условие «занято» считаем по ВСЕМ отпечаткам человека, а писать занятие
+  // в текущий. Так параллельные генерации с двух устройств одного учителя
+  // видят одно и то же «сколько уже занято» и не проскакивают вдвоём.
+  // Набор ключей одинаков у обоих устройств, потому что связь с пользователем
+  // заведена ДО этого вызова (см. `guardGeneration`).
+  const checkKeys = [...new Set(allOwnerKeys ?? [ownerKey])];
+  const committedMarks = checkKeys.map((_, i) => `?${i + 4}`).join(", ");
+  const holdClause = checkKeys
+    .map((_, i) => `(key >= ?${checkKeys.length + i * 2 + 4} AND key < ?${checkKeys.length + i * 2 + 5})`)
+    .join(" OR ");
+  const bound = [
+    id,
+    `${prefix}${nonce}`,
+    now,
+    ...checkKeys.map((k) => freeQuotaKey(k)),
+    ...checkKeys.flatMap((k) => [freeHoldPrefix(k), holdRangeEnd(freeHoldPrefix(k))]),
+    FREE_TOTAL_GENERATIONS,
+    now - FREE_QUOTA_HOLD_TTL_SEC,
+  ];
+
   const held =
     Number(
       (
@@ -475,24 +589,16 @@ export async function holdFreeQuotaSlot(db: D1Database, ownerKey: string): Promi
           .prepare(
             `INSERT INTO rate_limits (id, key, count, window_start)
              SELECT ?1, ?2, 1, ?3
-             WHERE (SELECT COALESCE(SUM(count), 0) FROM rate_limits WHERE key = ?4)
+             WHERE (SELECT COALESCE(SUM(count), 0) FROM rate_limits
+                    WHERE key IN (${committedMarks}))
                  + (SELECT COUNT(*) FROM rate_limits
-                    WHERE key >= ?6 AND key < ?7 AND window_start > ?8) < ?5`,
+                    WHERE (${holdClause}) AND window_start > ?${bound.length}) < ?${bound.length - 1}`,
           )
-          .bind(
-            id,
-            `${prefix}${nonce}`,
-            now,
-            freeQuotaKey(ownerKey),
-            FREE_TOTAL_GENERATIONS,
-            prefix,
-            holdRangeEnd(prefix),
-            now - FREE_QUOTA_HOLD_TTL_SEC,
-          )
+          .bind(...bound)
           .run()
       ).meta?.changes ?? 0,
     ) > 0;
-  const state = await freeQuotaState(db, ownerKey, now);
+  const state = await freeQuotaState(db, checkKeys, now);
   return { ...state, allowed: held };
 }
 
