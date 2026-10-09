@@ -85,7 +85,13 @@ export function WeeklyTopicBlock() {
       let season = getCurrentSeason();
 
       try {
-        const res = await fetch("/api/weekly-topic", {
+        // Адрес бэка ОБЯЗАТЕЛЬНЫЙ: бэк живёт на workers.dev, а сайт — на
+        // Pages. Относительный `/api/...` ушёл бы в Pages и вернул 404,
+        // то есть виджет молча уехал бы в локальный расчёт и потерял связь с
+        // cron. Тот же `NEXT_PUBLIC_API_URL`, что и во всём остальном клиенте.
+        const base = process.env.NEXT_PUBLIC_API_URL;
+        if (!base) throw new Error("NEXT_PUBLIC_API_URL не задан — считаем локально");
+        const res = await fetch(`${base}/api/weekly-topic`, {
           headers: { Accept: "application/json" },
         });
         if (res.ok) {
@@ -94,7 +100,8 @@ export function WeeklyTopicBlock() {
           if (typeof data.season === "string") season = data.season as Season;
         }
       } catch {
-        // Бэк недоступен (или это статический предпросмотр) — считаем сами.
+        // Бэк недоступен или переменная не задана (статический предпросмотр,
+        // сборка без прод-конфига) — считаем сами.
         // Тот же набор тем и то же правило ротации, разница только в источнике
         // даты, поэтому виджет не исчезает и не повторяет старые дроби.
       }
