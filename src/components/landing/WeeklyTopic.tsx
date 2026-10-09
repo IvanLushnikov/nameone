@@ -74,8 +74,22 @@ function pickTopic(weekIndex: number, season: Season): WeeklyTopic | null {
 }
 
 export function WeeklyTopicBlock() {
-  const [topic, setTopic] = useState<WeeklyTopic | null>(null);
-  const [label, setLabel] = useState<string>("");
+  // Начальное значение считается СИНХРОННО, чтобы блок попал в серверный HTML.
+  //
+  // Первый вариант был `useState(null)` + рендер по загрузке: блок исчезал из
+  // разметки полностью. Для статического экспорта это означало, что темы не
+  // было ни в HTML, ни в поиске, а при отключённом JS — её не было вообще.
+  //
+  // Теперь на сервере считается тема по текущей дате (при статической сборке
+  // это дата сборки — как было раньше), а на клиенте useEffect уточняет её у
+  // бэка. То есть разметка есть всегда, а значение уточняется сразу после
+  // монтирования.
+  const [initial] = useState(() => {
+    const now = new Date();
+    return { topic: pickTopic(getWeekIndex(now), getCurrentSeason()), label: currentWeekLabel(now) };
+  });
+  const [topic, setTopic] = useState<WeeklyTopic | null>(initial.topic);
+  const [label, setLabel] = useState<string>(initial.label);
 
   useEffect(() => {
     let alive = true;
@@ -117,8 +131,8 @@ export function WeeklyTopicBlock() {
     };
   }, []);
 
-  // До загрузки — пусто. Показывать тут заглушку нельзя: мигание блока, который
-  // и вызывал жалобу, — это ровно тот же дефект, только быстрее.
+  // Пусто только когда в сезоне нет тем (лето, например) — тогда блока на
+  // главной действительно быть не должно.
   if (!topic) return null;
 
   const href = `/subject/${topic.subject}/${topic.grade}/${topic.topicSlug}`;
