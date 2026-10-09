@@ -1014,21 +1014,23 @@ export default function ConstructorPage() {
           // совпадёт с первым — у ключа нет поля «вариант», а `bypassCache`
           // для второго прохода выставлен явно).
           case "control": {
+            // ОДИН вызов, а не два (09.10.2026).
+            //
+            // Раньше здесь было два запроса по одному на вариант: `r` и `r2` с
+            // `bypassCache`. Это стоило вдвое дороже, занимало вдвое больше
+            // времени и, главное, съедало ДВЕ попытки из трёх бесплатных —
+            // учитель нажимал «сделать» один раз.
+            //
+            // Теперь модель отдаёт оба варианта в одном ответе (промпт
+            // `worksheet-gen.ts`, разбор в `backend/src/llm/index.ts`), а
+            // `bypassCache` больше не нужен: кэш персональный, и второй
+            // вариант приходит вместе с первым, а не отдельным запросом.
             const r = await generateWorksheetSmart(body);
-            // Второй вариант — best effort: если он не пришёл, учитель получает
-            // первый и честную пометку, а не ошибку вместо результата.
-            let second: Worksheet | null = null;
-            try {
-              const r2 = await generateWorksheetSmart(body, { bypassCache: true });
-              second = r2.worksheet;
-            } catch {
-              second = null;
-            }
             return {
               kind: "worksheet" as const,
               payload: r.worksheet,
               isDemo: r.isDemo,
-              secondVariant: second,
+              secondVariant: r.secondVariant ?? null,
             };
           }
           // TZ-16 Этапы 6–7: типы объявлены в TaskType и видны в пикере,

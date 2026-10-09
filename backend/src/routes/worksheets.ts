@@ -196,6 +196,10 @@ worksheetsRouter.post("/generate", async (c) => {
   });
 
   return c.json({
+    // Второй вариант контрольной (09.10.2026): приходит из того же вызова
+    // модели, поэтому фронту не нужно делать второй запрос и тратить вторую
+    // попытку из трёх бесплатных.
+    ...(result.secondVariant ? { secondVariant: result.secondVariant } : {}),
     ok: true,
     worksheet,
     meta: result.meta,

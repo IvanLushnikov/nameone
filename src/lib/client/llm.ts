@@ -27,8 +27,10 @@ import { mockMaterials } from "@/lib/mock/materials";
 import { mockLessonBundle } from "@/lib/mock/lesson-bundle";
 import { passChallenge } from "@/lib/turnstile";
 
-interface ArtifactResult<T> {
+interface ArtifactResult<T, TExtra = never> {
   data: T;
+  /** Прочие поля ответа бэка (сейчас — `secondVariant` у контрольной). */
+  extra?: TExtra;
   source: "llm" | "mock";
   isDemo: boolean;
   costUsd: number;
@@ -87,12 +89,12 @@ export class BackendError extends Error {
  * 4xx = это ОТВЕТ на наш запрос (квота, капча, тариф), и мок тут неуместен:
  * бросаем BackendError, чтобы вызывающий показал учителю внятное объяснение.
  */
-async function callBackendOnce<T>(
+async function callBackendOnce<T, TExtra = never>(
   path: string,
   body: unknown,
   dataKey: string,
   turnstileToken?: string,
-): Promise<T | null> {
+): Promise<{ data: T; extra?: TExtra } | null> {
   if (!API_URL) return null;
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
@@ -110,7 +112,11 @@ async function callBackendOnce<T>(
   });
   if (res.ok) {
     const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-    return (data?.[dataKey] as T) ?? null;
+    const value = data?.[dataKey] as T | undefined;
+    if (value == null) return null;
+    // Всё, кроме самого артефакта, отдаём как extra: сейчас это
+    // `secondVariant` у контрольной работы, но схема не привязана к нему.
+    return { data: value, extra: data as TExtra };
   }
   if (res.status >= 400 && res.status < 500) {
     const payload = (await res.json().catch(() => null)) as
@@ -151,18 +157,18 @@ async function callBackendOnce<T>(
  * повторяем тот же запрос с токеном. Не более одного повтора: если капча не
  * помогла, второй круг только замкнёт нагрузку на Cloudflare.
  */
-async function callBackend<T>(
+async function callBackend<T, TExtra = never>(
   path: string,
   body: unknown,
   dataKey: string,
-): Promise<T | null> {
+): Promise<{ data: T; extra?: TExtra } | null> {
   try {
-    return await callBackendOnce<T>(path, body, dataKey);
+    return await callBackendOnce<T, TExtra>(path, body, dataKey);
   } catch (e) {
     if (e instanceof BackendError && e.isChallengeRequired) {
       const token = await passChallenge();
       if (token) {
-        return await callBackendOnce<T>(path, body, dataKey, token);
+        return await callBackendOnce<T, TExtra>(path, body, dataKey, token);
       }
       // Капча недоступна — fail-open, как и на бэке.
       return null;
@@ -181,29 +187,39 @@ async function wrapMock<T>(
   return { data, source: "mock", isDemo: true, costUsd: 0, latencyMs: Date.now() - startMs };
 }
 
-async function smartGenerate<T>(
+async function smartGenerate<T, TExtra = never>(
   req: GenerationRequest,
   opts: GenerateOpts,
   mockFn: () => Promise<T>,
-): Promise<ArtifactResult<T>> {
+): Promise<ArtifactResult<T, TExtra>> {
   const start = Date.now();
   // Здесь BackendError НЕ глотается. «Квота кончилась» и «этот тип не входит
   // в тариф» — это ответы пользователю (PaywallModal / предложение Плюс),
   // а не повод подсунуть мок. Мок — только когда бэка нет или он упал (5xx,
   // сеть), то есть когда настоящую генерацию получить нечем.
-  const remote = await callBackend<T>(
+  const remote = await callBackend<T, TExtra>(
     `/api/${opts.endpoint}/generate`,
     opts.bypassCache ? { request: req, bypassCache: true } : { request: req },
     opts.dataKey,
   );
   if (remote) {
-    return { data: remote, source: "llm", isDemo: false, costUsd: 0, latencyMs: Date.now() - start };
+    return {
+      data: remote.data,
+      extra: remote.extra,
+      source: "llm",
+      isDemo: false,
+      costUsd: 0,
+      latencyMs: Date.now() - start,
+    };
   }
   return wrapMock(`NEXT_PUBLIC_API_URL не задан или ${opts.endpoint}/generate недоступен`, mockFn, start);
 }
 
 export interface WorksheetClientResult {
   worksheet: Worksheet;
+  /** Второй вариант КОНТРОЛЬНОЙ. `null` у остальных типов и для control, */
+  /** если бэк вернул один вариант вместо двух. */
+  secondVariant: Worksheet | null;
   source: "llm" | "mock";
   isDemo: boolean;
   costUsd: number;
@@ -220,21 +236,30 @@ export type BundleClientResult = ArtifactResult<LessonBundle>;
 /**
  * Рабочий лист / тест / контрольная.
  *
- * `opts.bypassCache` обязателен для ВТОРОГО варианта контрольной работы: без
- * него оба прохода попадут в кэш по одному ключу (ключ строится из предмета,
- * класса, темы, сложности, количества и типа — «варианта» в нём нет), и
- * учитель получит два одинаковых листа вместо двух разных.
+ * Для КОНТРОЛЬНОЙ работы бэкенд отдаёт сразу два варианта одним вызовом
+ * (09.10.2026) — второй лежит в `secondVariant`. Клиенту делать второй запрос
+ * не нужно: это стоило бы второй попытки из трёх бесплатных.
+ *
+ * `opts.bypassCache` оставлен для ручной перегенерации с обходом кэша — сам
+ * второй вариант через него больше не ходит.
  */
 export async function generateWorksheetSmart(
   request: GenerationRequest,
   opts?: { bypassCache?: boolean },
 ): Promise<WorksheetClientResult> {
-  const r = await smartGenerate<Worksheet>(
+  const r = await smartGenerate<Worksheet, { secondVariant?: Worksheet | null }>(
     request,
     { endpoint: "worksheets", dataKey: "worksheet", bypassCache: opts?.bypassCache === true },
     () => mockWorksheet(request),
   );
-  return { worksheet: r.data, source: r.source, isDemo: r.isDemo, costUsd: r.costUsd, latencyMs: r.latencyMs };
+  return {
+    worksheet: r.data,
+    secondVariant: r.extra?.secondVariant ?? null,
+    source: r.source,
+    isDemo: r.isDemo,
+    costUsd: r.costUsd,
+    latencyMs: r.latencyMs,
+  };
 }
 
 export async function generateLessonPlanSmart(request: GenerationRequest): Promise<LessonPlanClientResult> {

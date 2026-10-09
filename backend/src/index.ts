@@ -25,6 +25,7 @@ import { errorMiddleware, notFoundHandler } from "./middleware/error";
 import { authMiddleware } from "./middleware/auth";
 import type { AppEnv } from "./types";
 
+import { weeklyTopicRouter } from "./routes/weeklyTopic";
 import { healthRouter } from "./routes/health";
 import { llmRouter } from "./routes/llm";
 import { worksheetsRouter } from "./routes/worksheets";
@@ -46,6 +47,7 @@ import { f07Router } from "./routes/f07";
 import { f08Router } from "./routes/f08";
 import { publicFormsRouter } from "./routes/publicForms";
 import { purgeExpiredPhotos } from "./jobs/purgeExpiredPhotos";
+import { refreshWeeklyTopicState } from "./jobs/weeklyTopic";
 import { purgeExpiredForms } from "./jobs/purgeExpiredForms";
 import { sendRenewalReminders, chargeDueSubscriptions } from "./jobs/billingRecurring";
 import { journalRouter } from "./routes/journal";
@@ -203,6 +205,7 @@ app.use("*", async (c, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.route("/", healthRouter); // /healthz, /readyz
+app.route("/api/weekly-topic", weeklyTopicRouter); // календарь темы недели для главной
 app.route("/api/llm", llmRouter);
 app.route("/api/worksheets", worksheetsRouter);
 app.route("/api/worksheets", f08Router); // F-08: POST /:id/edit
@@ -297,6 +300,15 @@ app.fire = ((event: ScheduledEvent, env: AppEnv["Bindings"], ctx: ExecutionConte
           // заберёт просроченное (batch ограничен, `delete_at` не сгорает).
           console.error("[cron] purgeExpiredPhotos failed", e);
         }
+        // Тема недели для главной. Считается раз в сутки, а меняется раз в
+        // неделю: то есть за проход — 366 вычислений даты на весь год.
+        try {
+          const week = await refreshWeeklyTopicState(env.DB);
+          console.info("[cron] refreshWeeklyTopicState", JSON.stringify(week));
+        } catch (e) {
+          console.error("[cron] refreshWeeklyTopicState failed", e);
+        }
+
 
         // 2) Ответы учеников в онлайн-формах — ПДн, 90 дней (TZ-12 §5.4).
         //    САМИ формы не удаляются: учитель должен видеть список выданного.

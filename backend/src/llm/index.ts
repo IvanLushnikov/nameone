@@ -60,7 +60,12 @@ import { buildPhotoCheckPrompt, type PhotoCheckTask } from "./prompts/photo-chec
 import { calcCost, estimateImageTokens } from "./cost";
 import { gradePhotoCheck, type PhotoCheckSummary } from "../services/photoCheckGrading";
 import { findLanguageViolation, passesLanguageGuard } from "./validation/language-guard";
-import { filterTasks } from "./validation/quality-filter";
+import {
+  filterTasks,
+  hasDanglingPatternRef,
+  isPlaceholderAnswer,
+  looksLikeForeignMath,
+} from "./validation/quality-filter";
 import { reconcileSelfVerifyVerdict } from "./validation/answer-check";
 import { callPolzaEmbedding } from "./providers/polza";
 import {
@@ -89,6 +94,17 @@ export interface GenerateWorksheetArgs {
 
 export interface GenerateWorksheetResult {
   worksheet: Worksheet;
+  /**
+   * Второй вариант КОНТРОЛЬНОЙ работы (09.10.2026).
+   *
+   * Раньше вариантов не было вовсе, а фронт делал второй запрос сам — то есть
+   * два вызова модели за одну списанную попытку. Теперь оба варианта приходят
+   * одним ответом, и второй нужно передать наверх.
+   *
+   * `null` у всех остальных типов и у контрольной, если модель вернула один
+   * вариант вместо двух: тогда показываем один и не рисуем переключатель.
+   */
+  secondVariant?: Worksheet | null;
   meta: GenerateWorksheetMeta;
   /**
    * Состояние нормы после генерации. `over: true` = норма превышена, но
@@ -186,6 +202,9 @@ export async function generateWorksheet(
 
   // 5. Parse JSON
   let worksheet: Worksheet;
+  // Объявлено до try: нужно после блока, чтобы вернуть второй вариант наружу.
+  let controlVariants: Worksheet[] | null = null;
+
   try {
     const parsed = JSON.parse(result.response.content) as Worksheet;
     // id и createdAt — ТОЛЬКО серверные, значение от модели игнорируется
@@ -208,21 +227,35 @@ export async function generateWorksheet(
     // createdAt — по той же причине: модель писала туда константу
     // (`2025-03-08T00:00:00Z` на проде), и это значение уходило в базу как
     // время создания листа, отстоящее на полтора года.
+    // ─────────────────────────────────────────────────────────────────────────────
+    // КОНТРОЛЬНАЯ: два варианта ОДНИМ вызовом (09.10.2026)
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Раньше фронт делал два запроса к /api/worksheets/generate — по одному на
+    // вариант. Это вдвое дороже по деньгам, вдвое медленнее по времени, и оба
+    // листа всё равно были независимыми. Теперь модель отдаёт оба варианта в
+    // одном ответе (`{ variants: [...] }`), а ниже выбирается нужный.
+    controlVariants =
+      request.type === "control" &&
+      Array.isArray((parsed as unknown as { variants?: unknown }).variants)
+        ? ((parsed as unknown as { variants: unknown[] }).variants as Worksheet[])
+        : null;
+    const primaryParsed = controlVariants?.[0] ?? parsed;
+
     worksheet = {
       id: worksheetId(),
-      title: parsed.title ?? request.topic,
-      subject: parsed.subject ?? request.subject,
-      grade: parsed.grade ?? request.grade,
-      topic: parsed.topic ?? request.topic,
-      difficulty: parsed.difficulty ?? request.difficulty,
+      title: primaryParsed.title ?? request.topic,
+      subject: primaryParsed.subject ?? request.subject,
+      grade: primaryParsed.grade ?? request.grade,
+      topic: primaryParsed.topic ?? request.topic,
+      difficulty: primaryParsed.difficulty ?? request.difficulty,
       // Прогоняем ответы заданий через санитайзер `text_latex`:
       // модель иногда отдаёт блок `$...$` на пол-экрана или незакрытую
       // конструкцию — такое рендерить нельзя, блок выкидывается целиком,
       // и задание показывается обычным текстом. `text` НЕ трогаем: он
       // остаётся эталоном для self-verification и сверки ответов.
-      tasks: Array.isArray(parsed.tasks)
+      tasks: Array.isArray(primaryParsed.tasks)
         ? filterTasks(
-            parsed.tasks
+            primaryParsed.tasks
               .filter((t: unknown): t is NonNullable<typeof t> => Boolean(t) && typeof t === "object")
               .map((task) => {
                 if (!task || typeof task !== "object") return task;
@@ -292,7 +325,42 @@ export async function generateWorksheet(
     weightedTokens: weightedTokens(result.model, result.response.tokensOut),
   });
 
-  return { worksheet, meta, usage };
+  // Второй вариант контрольной собираем тем же кодом, что и первый: те же
+  // id и createdAt — серверные, те же фильтры заданий.
+  let secondVariant: Worksheet | null = null;
+  const rawSecond = controlVariants?.[1];
+  if (rawSecond) {
+    const raw = rawSecond;
+    secondVariant = {
+      id: worksheetId(),
+      title: raw.title ?? `Вариант 2`,
+      subject: raw.subject ?? request.subject,
+      grade: raw.grade ?? request.grade,
+      topic: raw.topic ?? request.topic,
+      difficulty: raw.difficulty ?? request.difficulty,
+      tasks: Array.isArray(raw.tasks)
+        ? (filterTasks(
+            (raw.tasks as unknown[])
+              .filter(
+                (t: unknown): t is Record<string, unknown> =>
+                  Boolean(t) && typeof t === "object" && !Array.isArray(t),
+              )
+              .map((task) => {
+                const sanitized = sanitizeTextLatex(task.text_latex);
+                const next = { ...(task as unknown as Record<string, unknown>) };
+                if (sanitized) next.text_latex = sanitized;
+                else delete next.text_latex;
+                return next;
+              }),
+            request.subject,
+          ).tasks as unknown as Worksheet["tasks"])
+        : [],
+    } as Worksheet;
+    (secondVariant as Worksheet & { createdAt: string }).createdAt =
+      (worksheet as Worksheet & { createdAt?: string }).createdAt ?? new Date().toISOString();
+  }
+
+  return { worksheet, meta, usage, secondVariant };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -379,6 +447,13 @@ export async function generateExam(
         duration: parsed.duration ?? (exam === "oge" ? 235 : 235),
         problems: Array.isArray(parsed.problems) ? parsed.problems : [],
       };
+      // Тот же фильтр, что у рабочего листа (08.10.2026): ОГЭ/ЕГЭ — это тоже
+      // задания с текстом и ответом, жалобы на «математику в биологии» и
+      // «задания по образцу» прилетают оттуда точно так же.
+      variant.problems = filterTasks(
+        variant.problems as unknown as Parameters<typeof filterTasks>[0],
+        subject,
+      ).tasks as unknown as ExamVariant["problems"];
     } catch {
       throw new InternalError("LLM returned invalid JSON for exam");
     }
@@ -445,6 +520,10 @@ export async function generateExam(
           duration: parsed.duration ?? variant.duration,
           problems: Array.isArray(parsed.problems) ? parsed.problems : variant.problems,
         };
+        retryVariant.problems = filterTasks(
+          retryVariant.problems as unknown as Parameters<typeof filterTasks>[0],
+          subject,
+        ).tasks as unknown as ExamVariant["problems"];
         const retryViolation = findLanguageViolation(retryVariant, subject);
         if (!retryViolation) {
           variant = retryVariant;
@@ -627,6 +706,9 @@ export async function generateStructuredArtifact<T extends object>(
   let result: Awaited<ReturnType<typeof callWithFallback>> | null = null;
   let content: T | null = null;
   let lastViolation: string | null = null;
+  // Причина, по которой ждём перегенерацию. language — это исходная причина
+  // retry, quality добавлена 08.10.2026 и приходит с той же силой.
+  let lastViolationKind: "language" | "quality" | null = null;
 
   for (let attempt = 0; attempt <= MAX_LANG_RETRIES; attempt++) {
     const strictRetry = attempt > 0;
@@ -638,10 +720,7 @@ export async function generateStructuredArtifact<T extends object>(
           {
             role: "user",
             content: strictRetry
-              ? user +
-                "\n\nВНИМАНИЕ: предыдущая попытка вернула материал на иностранном языке. " +
-                "Это ошибка. Перегенерируй — ВЕСЬ материал строго на русском языке " +
-                "(если предмет не английский/немецкий)."
+              ? user + retryInstruction(lastViolationKind)
               : user,
           },
         ],
@@ -679,15 +758,33 @@ export async function generateStructuredArtifact<T extends object>(
       throw new InternalError(`LLM returned unusable ${artifactType}: ${errorMessage(err)}`);
     }
 
-    // 6. Language guard. Детерминированная проверка на тексте самого материала:
+    // 6a. Language guard. Детерминированная проверка на тексте самого материала:
     // модель периодически уходит в английский на русскоязычных предметах.
-    lastViolation = findArtifactLanguageViolation(content, request.subject);
+    const langViolation = findArtifactLanguageViolation(content, request.subject);
+    if (langViolation) {
+      lastViolation = langViolation;
+      lastViolationKind = "language";
+    } else {
+      // 6b. Quality guard (08.10.2026): запрет чужого предмета, ссылок на
+      // несуществующий образец и ответов-заглушек.
+      //
+      // Здесь нельзя «выкинуть плохой элемент», как делает filterTasks у листа:
+      // у КТП элемент — это тема недели, у презентации — тезис слайда, и
+      // выбрасывать их значит разбирать материал вручную. Поэтому единственный
+      // честный способ заставить модель переделать — повторить запрос.
+      const qualityViolation = findArtifactQualityViolation(content, request.subject);
+      if (qualityViolation) {
+        lastViolation = qualityViolation;
+        lastViolationKind = "quality";
+      }
+    }
     if (!lastViolation) break;
 
-    logLlmEvent("warn", `generateStructuredArtifact: language guard violation, ${artifactType}`, {
+    logLlmEvent("warn", `generateStructuredArtifact: guard violation, ${artifactType}`, {
       attempt: attempt + 1,
       maxAttempts: MAX_LANG_RETRIES + 1,
       subject: request.subject,
+      kind: lastViolationKind,
       violation: lastViolation,
     });
   }
@@ -700,8 +797,14 @@ export async function generateStructuredArtifact<T extends object>(
   // что учитель получил бы чужой язык в оплаченном материале и не смог бы
   // понять, почему.
   if (lastViolation) {
+    // Формулировка «wrong language» сохранена прежней намеренно: на неё
+    // завязаны логи и алерты (и тесты контракта), переименование текста ошибки
+    // не должно ломать наблюдаемость. Quality — отдельная ветка, чтобы по
+    // сообщению было видно, ЧТО именно не так.
+    const what =
+      lastViolationKind === "quality" ? "with content-quality violations" : "in wrong language";
     throw new InternalError(
-      `LLM returned ${artifactType} in wrong language (${lastViolation}) after ${MAX_LANG_RETRIES} retries`,
+      `LLM returned ${artifactType} ${what} (${lastViolation}) after ${MAX_LANG_RETRIES} retries`,
     );
   }
 
@@ -794,6 +897,97 @@ function findArtifactLanguageViolation(content: unknown, subject: string): strin
     return `subject=${subject} (требуется русский текст)`;
   }
   return null;
+}
+
+/**
+ * Качество содержания для произвольного артефакта (08.10.2026).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ЗАЧЕМ ЭТО, ЕСЛИ ФИЛЬТР ЖИВЁТ В `quality-filter.ts`
+ * ─────────────────────────────────────────────────────────────────────────────
+ * `filterTasks` работает по массиву `tasks` и может выкинуть плохое задание —
+ * так он и применён к рабочему листу. Но у карточек, КТП, плана урока,
+ * презентации и ОГЭ/ЕГЭ другой контейнер, и «выкинуть элемент» там нельзя:
+ * у КТП это тема недели, у презентации — тезис слайда.
+ *
+ * Для них единственный честный способ ЗАСТАВИТЬ модель переделать — повторить
+ * запрос. Так здесь и сделано: тот же цикл retry, что у language guard, только
+ * проверяем не язык, а содержание.
+ *
+ * Почему не «починить текст на месте»: замена чужой математики на русский
+ * текст получается выдумкой — учитель получил бы задание, которого никто не
+ * проверял. Переделать целиком дешевле и честнее.
+ *
+ * Возвращаем строку-причину, чтобы она попала в лог и в сообщение об ошибке:
+ * молча проглоченное нарушение читается как «всё хорошо».
+ */
+function findArtifactQualityViolation(content: unknown, subject: string): string | null {
+  const texts = collectArtifactTexts(content);
+  for (const text of texts) {
+    if (hasDanglingPatternRef(text)) {
+      return `ссылка на образец, которого нет в задании: «${clip(text)}»`;
+    }
+    if (looksLikeForeignMath(text, subject)) {
+      return `математика в задании по предмету «${subject}»: «${clip(text)}»`;
+    }
+    if (isPlaceholderAnswer(text)) {
+      return `ответ-заглушка вместо ответа: «${clip(text)}»`;
+    }
+  }
+  return null;
+}
+
+/** Все осмысленные строки артефакта — рекурсивный обход без технических полей. */
+function collectArtifactTexts(value: unknown, out: string[] = [], depth = 0): string[] {
+  if (depth > 8 || out.length > 400) return out;
+  if (typeof value === "string") {
+    // Короткие служебные значения (даты, слаг, «1») содержанием не являются.
+    if (value.trim().length >= 25) out.push(value);
+    return out;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectArtifactTexts(item, out, depth + 1);
+    return out;
+  }
+  if (value && typeof value === "object") {
+    for (const item of Object.values(value as Record<string, unknown>)) {
+      collectArtifactTexts(item, out, depth + 1);
+    }
+  }
+  return out;
+}
+
+/**
+ * Добавка к промпту при повторной попытке.
+ *
+ * Модели нужна конкретика: «переделай» без указания, что именно не так,
+ * повторяет ту же ошибку. Поэтому здесь называем и причину, и что делать.
+ */
+function retryInstruction(kind: "language" | "quality" | null): string {
+  if (kind === "language") {
+    return (
+      "\n\nВНИМАНИЕ: предыдущая попытка вернула материал на иностранном языке. " +
+      "Это ошибка. Перегенерируй — ВЕСЬ материал строго на русском языке " +
+      "(если предмет не английский/немецкий)."
+    );
+  }
+  return (
+    "\n\nВНИМАНИЕ: предыдущая попытка нарушила требования к содержанию. Это ошибка. " +
+    "Перегенерируй материал с учётом этого:\n" +
+    "· НИКАКОЙ математики в заданиях, если предмет не математический. Проверь каждое " +
+    "задание: оно решается средствами СВОЕГО предмета.\n" +
+    "· НИКАКИХ ссылок на образец, если образца нет в самом задании. Если пишете " +
+    "«по образцу» — приведите этот образец прямо в тексте задания.\n" +
+    "· НИКАКИХ ответов-заглушек («индивидуальный ответ», «зависит от ученика»). " +
+    "Либо конкретный ответ, либо пустой ответ с критериями проверки в пояснении.\n" +
+    "Каждое задание должно даваться ученику этого класса в обычном школьном кабинете."
+  );
+}
+
+/** Обрезка для лога: причина должна помещаться в строку, а не в абзац. */
+function clip(text: string): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  return clean.length > 120 ? `${clean.slice(0, 120)}…` : clean;
 }
 
 function errorMessage(err: unknown): string {

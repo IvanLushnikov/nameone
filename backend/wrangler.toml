@@ -58,9 +58,16 @@ database_name = "rabochielisty"
 database_id = "fb8cc87f-4b51-4994-8d26-af366b448ebe"
 migrations_dir = "src/db"
 
+# Preview-ресурсы для `wrangler dev --remote` (09.10.2026). Без них wrangler
+# отказывается запускать удалённый dev: правило «в development не трогай
+# прод-ресурсы» блокирует всё, включая живой прогон генерации
+# (scripts/live-gen-check.ts). Прод-база и прод-бакет не затрагиваются.
+preview_database_id = "9ed06f58-e5cc-4bc2-8b99-5b355a06a8ce"
+
 [[r2_buckets]]
 binding = "PDFS"
 bucket_name = "rabochielisty-pdfs"
+preview_bucket_name = "uchlist-preview"
 
 # Продакшн-окружение: отдельные URL, тот же набор ресурсов.
 [env.production]
