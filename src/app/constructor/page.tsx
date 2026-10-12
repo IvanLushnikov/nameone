@@ -2216,6 +2216,25 @@ export default function ConstructorPage() {
                             percentage: r.percentage,
                           })
                         }
+                        /* Лимит генераций — тихой строкой под фото-проверкой.
+                           Тот же источник, что у карточки выше: серверный
+                           `useUsage` для залогиненных, localStorage — для
+                           анонимов. `limit: null` = безлимит на платном. */
+                        quota={{
+                          left: serverUsage
+                            ? serverUsage.generationsLimit === -1
+                              ? 0
+                              : Math.max(
+                                  0,
+                                  serverUsage.generationsLimit - serverUsage.generationsToday,
+                                )
+                            : Math.max(0, remaining),
+                          limit: serverUsage
+                            ? serverUsage.generationsLimit === -1
+                              ? null
+                              : serverUsage.generationsLimit
+                            : FREE_GENERATIONS,
+                        }}
                       />
                     </div>
                   )}

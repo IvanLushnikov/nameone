@@ -33,10 +33,12 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PhotoUpload } from "./PhotoUpload";
 import { PhotoCheckResultView } from "./PhotoCheckResult";
+import { CheckSteps, photoCheckSteps } from "./CheckSteps";
 import {
   deletePhotoCheck,
   runPhotoCheck,
   saveManualMarks,
+  ERROR_TEXT,
   type PhotoCheckApiError,
   type PhotoCheckApiErrorCode,
 } from "@/lib/photo-check/api";
@@ -62,6 +64,16 @@ export interface PhotoCheckPanelProps {
   assignmentId: string;
   demoTasks: PhotoCheckTaskInput[];
   onResult?: (r: { source?: string; percentage?: number }) => void;
+  /**
+   * Остаток бесплатных генераций — тихой строкой под экраном.
+   *
+   * Показывается числом и ссылкой на тарифы, БЕЗ цен и БЕЗ карточки: на
+   * экране ошибки тарифы с ценами спорят с текстом ошибки и уводят внимание от
+   * того, что делать. `limit: null` — безлимит на платном тарифе.
+   *
+   * Необязателен: панель рисует фото-проверку и без счётчика, в тестах его нет.
+   */
+  quota?: { left: number; limit: number | null } | null;
 }
 
 type ViewState = "idle" | "pending" | "result" | "error";
@@ -106,6 +118,7 @@ export function PhotoCheckPanel({
   assignmentId,
   demoTasks,
   onResult,
+  quota = null,
 }: PhotoCheckPanelProps) {
   const [files, setFiles] = useState<File[]>([]);
   const [consent, setConsent] = useState(false);
@@ -289,6 +302,31 @@ export function PhotoCheckPanel({
     setState("idle");
   }
 
+  /**
+   * «Проверить ещё одну работа»: та же работа учителя начинается с нуля, поэтому
+   * гасим ещё и выбранные фото и согласие — иначе следующая проверка молча
+   * ушла бы в работу со снимком предыдущей.
+   */
+  function startOver() {
+    setFiles([]);
+    setConsent(false);
+    reset();
+    trackEvent("photo_check_start_over", {});
+  }
+
+  /**
+   * Выйти без входа с экрана отказа.
+   *
+   * Фото и согласие ОСТАЮТСЯ: снимок учителю не придётся переснимать заново,
+   * и вернуться к проверке можно в любой момент.
+   */
+  function skipLogin() {
+    setError(null);
+    setErrorCode(null);
+    setState("idle");
+    trackEvent("photo_check_login_skipped", {});
+  }
+
   /** Сбросить фото: после «не прочиталось» повторять тот же снимок смысла нет. */
   function reshoot() {
     setFiles([]);
@@ -322,17 +360,53 @@ export function PhotoCheckPanel({
     throw new Error(res.message ?? "Не удалось сохранить отметки");
   }
 
+  /**
+   * Отказ по доступу: нужен вход. Отдельным флагом, потому что отказ меняет
+   * весь экран — заголовок, шаги, состав блоков и кнопки, — а не одну плашку.
+   */
+  const needLogin = state === "error" && errorCode !== null && failureKind(errorCode) === "access";
+
   return (
     <Card className="space-y-5">
       <header>
-        <h2 className="text-lg font-semibold text-warm-950">Проверка работ по фото</h2>
+        <h2 className="text-lg font-semibold text-warm-950">
+          {state === "result" && result && result.status !== "failed"
+            ? "Работа проверена"
+            : needLogin
+              ? "Проверка не запустилась: нужен вход"
+              : state === "pending"
+                ? "Проверяем работу"
+                : "Проверка работ по фото"}
+        </h2>
         <p className="text-sm text-warm-600 mt-1">
-          Сфотографируйте до трёх страниц тетради с ответами — по порядку,
-          одна страница на фото.
-          Будем сверять с эталоном по {tasks.length}{" "}
-          {plural(tasks.length, "заданию", "заданиям", "заданиям")}.
+          {needLogin
+            ? "Фото в порядке — оно осталось выбранным."
+            : state === "result" && result && result.status !== "failed"
+              ? "Модель не разобрала часть заданий — отметки по ним ставите вы."
+              : state === "pending"
+                ? "Фото отправлено, идёт разбор."
+                : "Сфотографируйте до трёх страниц тетради с ответами — по порядку, одна страница на фото. Будем сверять с эталоном по " +
+                  tasks.length +
+                  " " +
+                  plural(tasks.length, "заданию", "заданиям", "заданиям") +
+                  "."}
         </p>
       </header>
+
+      {/* Полоса шагов: где учитель находится и сколько шагов осталось.
+          Раньше загрузка, согласие, задания, кнопка и лимит были в одном
+          полотне, и этапы не читались. */}
+      <CheckSteps
+        steps={photoCheckSteps(
+          needLogin
+            ? "access"
+            : state === "result" && result && result.status !== "failed"
+              ? "result"
+              : state === "pending"
+                ? "running"
+                : "upload",
+        )}
+      />
 
       {state === "result" && result ? (
         <div className="space-y-4">
@@ -360,6 +434,7 @@ export function PhotoCheckPanel({
                     if (typeof window !== "undefined") window.print();
                   }}
                   deleting={deleting}
+                  onStartOver={startOver}
                 />
               )}
             </>
@@ -368,16 +443,23 @@ export function PhotoCheckPanel({
       ) : (
         <>
           {/* ── Шаги 1-2: согласие и фото ─────────────────────────────── */}
-          <PhotoUpload
-            files={files}
-            onFilesChange={setFiles}
-            consentAccepted={consent}
-            onConsentChange={setConsent}
-            disabled={state === "pending"}
-          />
+          {/* На экране отказа по доступу загрузка НЕ рисуется: там решается
+              вопрос «войти, посмотреть тарифы или уйти», и полотно с фото,
+              согласием и заданиями отодвигало решение за пределы экрана.
+              Сами снимки при этом не теряются — они в состоянии, и «Выйти без
+              входа» возвращает к загрузке с фото на месте. */}
+          {!needLogin && (
+            <PhotoUpload
+              files={files}
+              onFilesChange={setFiles}
+              consentAccepted={consent}
+              onConsentChange={setConsent}
+              disabled={state === "pending"}
+            />
+          )}
 
           {/* ── Шаг 3: эталон подставляется автоматически ─────────────── */}
-          {tasks.length > 0 && (
+          {!needLogin && tasks.length > 0 && (
             <details
               open={tasksOpen}
               onToggle={(e) => setTasksOpen(e.currentTarget.open)}
@@ -402,24 +484,39 @@ export function PhotoCheckPanel({
             </details>
           )}
 
-          {/* Ошибка сети и ошибка распознавания — разные тексты и разные
-              кнопки: «повторить» и «сфотографировать заново» (ТЗ-18 В5). */}
-          {state === "error" && errorCode && (
-            <FailureNotice
-              kind={failureKind(errorCode)}
+          {/* Отказ по доступу — это не «ещё раз», а выход: вход, тарифы или
+              уход без входа. Учитель не должен упираться в кнопку, которая
+              даёт тот же отказ. */}
+          {needLogin ? (
+            <LoginRequired
               message={error}
-              onRetry={submit}
-              onReshoot={reshoot}
-              canRetry={files.length > 0}
+              code={errorCode}
+              pageCount={files.length}
+              onSkip={skipLogin}
             />
+          ) : (
+            state === "error" && errorCode && (
+              <FailureNotice
+                kind={failureKind(errorCode)}
+                message={error}
+                onRetry={submit}
+                onReshoot={reshoot}
+                canRetry={files.length > 0}
+              />
+            )
           )}
 
           {/* ── Шаг 4: отправка ──────────────────────────────────────── */}
-          {state === "pending" ? (
-            <p role="status" className="text-sm text-warm-700 text-center py-2">
-              <span className="inline-block w-4 h-4 border-2 border-brand-500 border-t-transparent rounded-full animate-spin align-middle mr-2" />
-              Распознаём ответы… обычно 10–30 секунд
-            </p>
+          {needLogin ? null : state === "pending" ? (
+            <div role="status" className="space-y-2">
+              <p className="text-sm text-warm-700 text-center py-2">
+                <span className="inline-block w-4 h-4 border-2 border-brand-500 border-t-transparent rounded-full animate-spin align-middle mr-2" />
+                Проверяем работу
+              </p>
+              <p className="text-xs text-warm-500 text-center m-0">
+                Страниц: {files.length} · заданий: {tasks.length}. Обычно около минуты.
+              </p>
+            </div>
           ) : (
             <div className="flex items-center gap-3">
               <Button
@@ -429,7 +526,7 @@ export function PhotoCheckPanel({
                 // `loading` здесь не нужен: эта ветка рендерится только когда
                 // `state !== "pending"` (ветка выше), так что условие
                 // `state === "pending"` здесь всегда false. Спиннер показывает
-                // та же ветка отдельным блоком с текстом «Распознаём ответы…».
+                // та же ветка отдельным блоком с текстом «Проверяем работу».
               >
                 {state === "error" ? "Проверить ещё раз" : "Проверить"}
               </Button>
@@ -441,6 +538,10 @@ export function PhotoCheckPanel({
               )}
             </div>
           )}
+
+          {/* Лимит — тихой строкой внизу. Карточка с ценами здесь спорила бы с
+              текстом ошибки и уводила от того, что делать. */}
+          <QuotaLine quota={quota} />
         </>
       )}
     </Card>
@@ -494,17 +595,9 @@ function FailureNotice({
   }
 
   if (kind === "access") {
-    return (
-      <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3">
-        <p className="text-sm text-amber-950">
-          {message ?? "Проверка не запустилась."}
-        </p>
-        <p className="text-sm text-amber-900 mt-1">
-          Фото ни при чём — оно в порядке и остаётся выбранным. Разберитесь с
-          доступом или лимитом, потом нажмите «Проверить ещё раз».
-        </p>
-      </div>
-    );
+    // Сюда панель больше не доходит: отказ по доступу разбирает `LoginRequired` —
+    // с кнопкой входа, тарифами и списком «что будет после входа».
+    return null;
   }
 
   return (
@@ -527,6 +620,146 @@ function FailureNotice({
           Сфотографировать заново
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Отказ по доступу = нужен вход. Не «ещё раз», а ВЫХОД (переработанный флоу).
+ *
+ * Раньше здесь была жёлтая плашка и кнопка «Проверить ещё раз», которая даёт
+ * тот же отказ: учитель оказывался в тупике и не понимал, что делать с уже
+ * снятым фото. Теперь у него три выхода — войти, посмотреть тарифы или уйти
+ * без входа, — и видно, что фото при этом не теряется.
+ *
+ * Числа страниц и заданий подставляются из данных, а не из макета.
+ */
+function LoginRequired({
+  message,
+  code,
+  pageCount,
+  onSkip,
+}: {
+  message: string | null;
+  code: PhotoCheckApiErrorCode;
+  pageCount: number;
+  onSkip: () => void;
+}) {
+  // Сервер иногда присылает вместо текста машинный код («unauthorized»). На
+  // экране он читается хуже внятной фразы, поэтому код текстом не считаем и
+  // берём русский текст по типу ошибки.
+  const reason = message && message !== code ? message : ERROR_TEXT[code];
+
+  return (
+    <div className="space-y-3" data-testid="photo-check-login-required">
+      <div
+        role="status"
+        className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4"
+      >
+        <p className="text-sm font-semibold text-amber-950 m-0">
+          Вход нужен, чтобы результат сохранился
+        </p>
+        <p className="text-sm text-amber-900 mt-1 mb-0">
+          Без аккаунта некуда записать отметки: в журнале проверок хранится, кто и
+          как их поставил. Войдите — и проверка запустится с тем же фото, заново
+          ничего фотографировать не придётся.
+        </p>
+        {reason && (
+          <p className="text-xs text-amber-800 mt-1.5 mb-0">{reason}</p>
+        )}
+      </div>
+
+      <dl className="rounded-xl border border-warm-100 bg-warm-50 px-4 py-1">
+        {(
+          [
+            ["Страниц снято", `${pageCount} — остались на месте`],
+            ["Что потеряно", "ничего"],
+            ["Что будет после входа", "проверка запустится сама"],
+          ] as const
+        ).map(([label, value], i, arr) => (
+          <div
+            key={label}
+            className={`flex flex-wrap gap-x-3 gap-y-0.5 py-2.5 ${
+              i < arr.length - 1 ? "border-b border-warm-100" : ""
+            }`}
+          >
+            <dt className="text-sm text-warm-600 w-full sm:w-48 shrink-0">{label}</dt>
+            <dd className="text-sm text-warm-900 m-0">{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <p className="text-xs text-warm-500 m-0">
+        Не хотите входить прямо сейчас? Работу можно проверить позже — фото
+        удалится через неделю, результаты проверок останутся в кабинете.
+      </p>
+
+      <div className="rounded-xl border border-warm-100 bg-white px-4 py-3">
+        <p className="text-sm font-medium text-warm-950 m-0">Что произойдёт после входа</p>
+        <dl className="mt-1">
+          {(
+            [
+              ["Фото", "останутся выбранными — снимать заново не нужно"],
+              [
+                "Проверка",
+                // Число страниц уже названо строкой выше («Страниц снято») —
+                // здесь оно было бы вторым разом и ломало согласование
+                // («на тех же 1 странице»).
+                "запустится сама, на тех же страницах",
+              ],
+              ["Журнал", "результат появится там же, где и у прошлых работ"],
+            ] as const
+          ).map(([label, value], i, arr) => (
+            <div
+              key={label}
+              className={`flex flex-wrap gap-x-3 gap-y-0.5 py-2 ${
+                i < arr.length - 1 ? "border-b border-warm-100" : ""
+              }`}
+            >
+              <dt className="text-sm text-warm-600 w-24 shrink-0">{label}</dt>
+              <dd className="text-sm text-warm-700 m-0 flex-1 min-w-0">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+        <Button type="button" variant="ghost" size="sm" onClick={onSkip}>
+          Выйти без входа
+        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button as="link" href="/pricing" variant="secondary" size="sm">
+            Посмотреть тарифы
+          </Button>
+          <Button as="link" href="/login" size="md">
+            Войти
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Остаток бесплатных генераций — одной строкой, без цен и без карточки.
+ *
+ * Раньше лимит висел отдельной карточкой с тарифами и на экране ошибки спорил
+ * с текстом ошибки: учитель читал про деньги вместо того, чтобы понять, что
+ * делать с работой. Здесь остаётся число и ссылка.
+ */
+function QuotaLine({ quota }: { quota: { left: number; limit: number | null } | null }) {
+  if (!quota) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-warm-100 pt-3">
+      <p className="text-xs text-warm-500 m-0">
+        {quota.limit === null
+          ? "Безлимит на вашем тарифе."
+          : `Осталось ${quota.left} из ${quota.limit} бесплатных генераций.`}
+      </p>
+      <Button as="link" href="/pricing" variant="ghost" size="sm" className="h-auto px-0 py-0">
+        Посмотреть тарифы
+      </Button>
     </div>
   );
 }
