@@ -275,12 +275,21 @@ describe("контрольная: старая запись кэша не дол
     const { fetchMock } = stubProvider(CONTROL_RESPONSE);
     const db = fakeDb();
 
-    // Заранее кладём ровно то, что писал старый код: только `{ worksheet }`.
+    // Заранее кладём ровно то, что писал старый код: `{ worksheet }` и всё.
+    //
+    // ТЗ-25, AD-4: сносятся только записи БЕЗ флагов результата. Поэтому из
+    // заглушки убираются не только `secondVariant`, но и `variants`/`quality` —
+    // именно такой была запись до выкатки ТЗ-25. Если убрать только
+    // `secondVariant`, получится состояние, которого не бывает: новая запись с
+    // флагами, но без флага деградации, — и тест проверял бы несуществующий
+    // случай (см. следующий тест про деградированную запись).
     const seed = await generateWorksheet(ARGS, FAKE_ENV, db as never);
     expect(seed.secondVariant).not.toBeNull();
     const key = onlyCacheKey(db);
-    const stored = db.cache.get(key) as { worksheet: unknown; secondVariant?: unknown };
+    const stored = db.cache.get(key) as Record<string, unknown>;
     delete stored.secondVariant; // ← состояние кэша до выкатки
+    delete stored.variants;
+    delete stored.quality;
     db.cache.set(key, stored);
     const callsAfterSeed = fetchMock.mock.calls.length;
 
@@ -294,6 +303,51 @@ describe("контрольная: старая запись кэша не дол
     // Запись в кэше перезаписана — следующий запрос уже возьмёт её.
     const after = db.cache.get(onlyCacheKey(db)) as { secondVariant?: unknown };
     expect(after.secondVariant).toBeTruthy();
+  });
+
+  /**
+   * ТЗ-25, AD-4: деградированный результат кэшируется СО флагом, и повторный
+   * запрос его НЕ перегенерирует.
+   *
+   * Логика: `saveCache` пишет через `INSERT OR IGNORE`, то есть первая запись по
+   * ключу побеждает навсегда на 30 дней TTL. Если бы мы сносили деградированную
+   * запись, учитель платил бы за каждое повторное открытие РОВНО ОДНОЙ И ТОЙ ЖЕ
+   * неудачи — а модель с большой вероятностью повторит тот же провал.
+   *
+   * Это противоположное правило по отношению к записи БЕЗ флагов (предыдущий
+   * тест), и обе стороны должны быть зафиксированы тестом: правило легко
+   * «упростить» до одного из двух краёв при следующей правке кэша.
+   */
+  it("деградированная запись с флагом результата выживает и не перегенерируется", async () => {
+    // Один вариант вместо двух = деградация с признаком (разрыв 3).
+    stubProvider({
+      variants: [
+        {
+          title: "Вариант 1",
+          subject: "biology",
+          grade: 9,
+          topic: "Клеточное строение",
+          difficulty: "medium",
+          tasks: [
+            { number: 1, text: "Какие органоиды есть в растительной клетке?", answer: "Ядро" },
+          ],
+        },
+      ],
+    });
+    const db = fakeDb();
+
+    const first = await generateWorksheet(ARGS, FAKE_ENV, db as never);
+    // Признак обязан быть в ответе: «модель вернула один вариант».
+    expect(first.variants.degraded).toBe(true);
+    expect(first.variants.expected).toBe(2);
+    expect(first.variants.delivered).toBe(1);
+
+    // Второй запрос — из кэша, денег не тратит.
+    const second = await generateWorksheet(ARGS, FAKE_ENV, db as never);
+    expect(second.meta.cached).toBe(true);
+    // И возвращает ТОТ ЖЕ флаг деградации, а не молчаливый «всё хорошо».
+    expect(second.variants.degraded).toBe(true);
+    expect(second.quality.requested).toBe(first.quality.requested);
   });
 
   it("обычный лист со старой формой ответа из кэша не перегенерируется зря", async () => {

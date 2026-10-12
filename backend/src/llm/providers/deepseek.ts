@@ -75,6 +75,9 @@ export function getDeepSeekProvider(env: Env): Provider {
         const latencyMs = Date.now() - start;
 
         const content = response.choices?.[0]?.message?.content ?? "";
+        // ТЗ-25 разрыв 4: см. комментарий в providers/openai.ts — причина
+        // остановки генерации читается и уходит вверх вместе с ответом.
+        const finishReason = response.choices?.[0]?.finish_reason ?? null;
         const tokensIn = response.usage?.prompt_tokens ?? 0;
         const tokensOut = response.usage?.completion_tokens ?? 0;
         const costUsd = calcCost(req.model, tokensIn, tokensOut);
@@ -90,6 +93,7 @@ export function getDeepSeekProvider(env: Env): Provider {
           costUsd,
           latencyMs,
           cached: false,
+          finishReason,
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

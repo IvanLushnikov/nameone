@@ -98,6 +98,10 @@ examsRouter.post("/generate", async (c) => {
     return c.json({
       ok: true,
       variant: result.variant,
+      // ТЗ-25 разрыв 5: потери ОГЭ/ЕГЭ — в ответе, не только в логе. Для
+      // экзамена это особенно важно: задания считают по баллам, и укороченный
+      // вариант учитель обнаруживает уже на проверке работ.
+      quality: result.quality,
       meta: result.meta,
     });
   } catch (e) {

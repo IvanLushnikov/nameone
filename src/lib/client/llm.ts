@@ -215,11 +215,58 @@ async function smartGenerate<T, TExtra = never>(
   return wrapMock(`NEXT_PUBLIC_API_URL не задан или ${opts.endpoint}/generate недоступен`, mockFn, start);
 }
 
+/**
+ * Признаки потерь материала (ТЗ-25).
+ *
+ * Зеркало `QualityLossInfo` с бэкенда. Клиент НИЧЕГО не досчитывает сам:
+ * единственный честный источник — то, что вернул сервер, потому что фильтр и
+ * дозапрос живут там.
+ */
+export interface QualityLoss {
+  /** Сколько заданий просил учитель (с учётом числа вариантов). */
+  requested: number;
+  /** Сколько заданий в выданном материале. */
+  delivered: number;
+  /** Сколько выкинул фильтр качества. */
+  dropped: number;
+  /** Чем именно выкинул — номера заданий. */
+  droppedPatternRef: number[];
+  droppedForeignMath: number[];
+  cleanedAnswer: number[];
+  /** Сколько добрал дозапросом. */
+  topUpAdded: number;
+  /** Сколько не удалось добрать даже после дозапроса. */
+  stillMissing: number;
+  /** Фильтр сработал агрессивнее трети и был откачен целиком. */
+  filterBackedOff: boolean;
+}
+
+/**
+ * Состояние вариантов контрольной (ТЗ-25).
+ *
+ * У обычного листа `expected = 1` и `degraded = false` — учитель листа не
+ * должен видеть разговор про два варианта.
+ */
+export interface VariantStatus {
+  expected: number;
+  delivered: number;
+  degraded: boolean;
+  degradedReason?: string;
+  retried: boolean;
+}
+
 export interface WorksheetClientResult {
   worksheet: Worksheet;
   /** Второй вариант КОНТРОЛЬНОЙ. `null` у остальных типов и для control, */
   /** если бэк вернул один вариант вместо двух. */
   secondVariant: Worksheet | null;
+  /**
+   * Признаки потерь. Приходят из кэша вместе с материалом, поэтому повторное
+   * открытие показывает то же предупреждение и не тратит деньги (ТЗ-25, AD-4).
+   */
+  quality: QualityLoss;
+  /** Сколько вариантов обещали, сколько пришло, деградировали ли. */
+  variants: VariantStatus;
   source: "llm" | "mock";
   isDemo: boolean;
   costUsd: number;
@@ -247,14 +294,50 @@ export async function generateWorksheetSmart(
   request: GenerationRequest,
   opts?: { bypassCache?: boolean },
 ): Promise<WorksheetClientResult> {
-  const r = await smartGenerate<Worksheet, { secondVariant?: Worksheet | null }>(
+  const r = await smartGenerate<
+    Worksheet,
+    { secondVariant?: Worksheet | null; quality?: QualityLoss; variants?: VariantStatus }
+  >(
     request,
     { endpoint: "worksheets", dataKey: "worksheet", bypassCache: opts?.bypassCache === true },
     () => mockWorksheet(request),
   );
+  const isControl = request.type === "control";
+  const secondVariant = r.extra?.secondVariant ?? null;
+
+  // Признаки потерь приходят из ответа БЭКА. Значения по умолчанию — «ничего не
+  // потеряно», и они НЕ выдумывают проблему: если сервер не прислал признаков,
+  // мы показываем материал как есть.
+  //
+  // Для МОКА (бэк недоступен) потерь не было by construction — заготовка
+  // ровно того размера, о котором попросили, — и `isDemo` у неё уже стоит.
+  const quality: QualityLoss = r.extra?.quality ?? {
+    requested: request.count * (isControl && secondVariant ? 2 : 1),
+    delivered: r.data.tasks?.length ?? 0,
+    dropped: 0,
+    droppedPatternRef: [],
+    droppedForeignMath: [],
+    cleanedAnswer: [],
+    topUpAdded: 0,
+    stillMissing: 0,
+    filterBackedOff: false,
+  };
+  const variants: VariantStatus = r.extra?.variants ?? {
+    expected: isControl ? 2 : 1,
+    delivered: secondVariant ? 2 : 1,
+    // Деградацию заявляем ТОЛЬКО для контрольной: у листа вариантов нет, и
+    // предупреждение «второй вариант не получился» было бы неверным.
+    degraded: isControl && !secondVariant,
+    degradedReason:
+      isControl && !secondVariant ? "второй вариант не был получен" : undefined,
+    retried: false,
+  };
+
   return {
     worksheet: r.data,
-    secondVariant: r.extra?.secondVariant ?? null,
+    secondVariant,
+    quality,
+    variants,
     source: r.source,
     isDemo: r.isDemo,
     costUsd: r.costUsd,

@@ -98,6 +98,10 @@ export function getOpenAIProvider(env: Env): Provider {
         const latencyMs = Date.now() - start;
 
         const content = response.choices?.[0]?.message?.content ?? "";
+        // ТЗ-25 разрыв 4: `finish_reason=length` = ответ оборван. Раньше
+        // причина остановки не читалась вовсе, и обрыв уходил вверх как
+        // обычный успех.
+        const finishReason = response.choices?.[0]?.finish_reason ?? null;
         const tokensIn = response.usage?.prompt_tokens ?? 0;
         const tokensOut = response.usage?.completion_tokens ?? 0;
         const costUsd = calcCost(req.model, tokensIn, tokensOut);
@@ -113,6 +117,7 @@ export function getOpenAIProvider(env: Env): Provider {
           costUsd,
           latencyMs,
           cached: false,
+          finishReason,
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

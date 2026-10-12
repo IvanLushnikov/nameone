@@ -1,0 +1,108 @@
+/**
+ * Честное предупреждение о потерях материала (ТЗ-25, AD-7).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ПОЧЕМУ ОТДЕЛЬНЫЙ МОДУЛЬ, А НЕ ВНУТРИ СТРАНИЦЫ КОНСТРУКТОРА
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Next.js разрешает странице экспортировать только `default` и несколько
+ * служебных символов. Экспорт `buildQualityNotice` прямо из `page.tsx` роняет
+ * сборку типами (`does not satisfy the constraint`) — ошибка видна только при
+ * `next build`, не в vitest.
+ *
+ * Вторая причина важнее первой: решение «показывать блок или нет» должно быть
+ * проверяемым списком чисел. Пока оно живёт в JSX страницы, «блок не нарисован»
+ * и «нарисован пустой» выглядят на скриншоте одинаково.
+ */
+import type { QualityLoss, VariantStatus } from "@/lib/client/llm";
+import { pluralizeTasks } from "@/lib/utils/cn";
+
+export type QualityNoticeTone = "warning" | "info";
+
+export interface QualityNotice {
+  tone: QualityNoticeTone;
+  title: string;
+  /** Строки, каждая — отдельный факт. Не смешиваем причины в одну фразу. */
+  lines: string[];
+}
+
+/**
+ * Собрать предупреждение из признаков ответа API.
+ *
+ * Правила, по которым текст вообще появляется:
+ *   · `stillMissing > 0` — учитель просил N, получил меньше. Главный случай.
+ *   · `variants.degraded` — контрольная без нормального второго варианта.
+ *
+ * Всё остальное (дозапрос, откат фильтра, сколько именно выкинуто) — в текст
+ * попадает как КОНТЕКСТ, а не как отдельное предупреждение: дозапрос сделал
+ * свою работу, и пугать учителя «3 задания выкинули» после того, как их
+ * вернули, значит врать.
+ *
+ * `null` = показывать нечего. Это важно: пустой блок с текстом «всё в порядке» —
+ * тоже молчание, только другого рода.
+ */
+export function buildQualityNotice(
+  quality: QualityLoss | null | undefined,
+  variants: VariantStatus | null | undefined,
+): QualityNotice | null {
+  if (!quality && !variants) return null;
+
+  const lines: string[] = [];
+  let tone: QualityNoticeTone = "info";
+  let title = "";
+
+  // ── 1. Укороченный материал: единственное состояние, где блок обязателен ──
+  if (quality && quality.stillMissing > 0) {
+    tone = "warning";
+    title = `Получено ${quality.delivered} заданий из ${quality.requested}`;
+    lines.push(
+      `Вы просили ${quality.requested} ${pluralizeTasks(quality.requested)}, в материале ${quality.delivered}.`,
+    );
+    if (quality.topUpAdded > 0) {
+      lines.push(
+        `Конвейер добрал ${quality.topUpAdded} ${pluralizeTasks(quality.topUpAdded)}, но не хватило.`,
+      );
+    }
+    if (quality.dropped > 0) {
+      // Причина называется прямо: «выкинули» без причины выглядит как
+      // «учитель попросил не то».
+      const reasons: string[] = [];
+      if (quality.droppedPatternRef.length > 0) {
+        reasons.push("ссылка на образец, которого нет в задании");
+      }
+      if (quality.droppedForeignMath.length > 0) {
+        reasons.push("математика из чужого предмета");
+      }
+      const why =
+        reasons.length > 0 ? reasons.join("; ") : "задания не прошли проверку качества";
+      // Количество названо явно: по заголовку «11 из 15» учитель знает, что не
+      // хватило, но не знает, что это конкретно 3 задания отклонены проверкой
+      // качества, а не «так вышло».
+      lines.push(
+        `${quality.dropped} ${pluralizeTasks(quality.dropped)} отклонено проверкой качества (${why}).`,
+      );
+    }
+    if (quality.filterBackedOff) {
+      lines.push(
+        "Фильтр отсеял слишком много заданий, поэтому часть материала оставлена без изменений.",
+      );
+    }
+  }
+
+  // ── 2. Контрольная без нормального второго варианта ──
+  if (variants && variants.degraded) {
+    tone = "warning";
+    title = title || "Второй вариант контрольной не удался";
+    lines.push(
+      "Заказаны два варианта, но второй получился копией первого — сравнивать результаты класса по нему нельзя.",
+    );
+    if (variants.degradedReason) {
+      lines.push(`Причина: ${variants.degradedReason}.`);
+    }
+    if (variants.retried) {
+      lines.push("Мы попробовали перегенерировать — модель повторила первый вариант снова.");
+    }
+  }
+
+  if (lines.length === 0) return null;
+  return { tone, title: title || "Замечание к материалу", lines };
+}

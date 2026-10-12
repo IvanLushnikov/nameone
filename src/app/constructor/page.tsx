@@ -75,6 +75,8 @@ import {
   generateMaterialsSmart,
   generateBundleSmart,
   BackendError,
+  type QualityLoss,
+  type VariantStatus,
 } from "@/lib/client/llm";
 import { generateWorksheetDocx, downloadBlob } from "@/lib/utils/docx";
 import { verifyWorksheetTasks, type VerifyProgress } from "@/lib/llm/verify-sheet";
@@ -101,6 +103,8 @@ import { EditChat } from "@/components/f08/EditChat";
 import { PhotoCheckPanel } from "@/components/f06/PhotoCheckPanel";
 import { PhotoCheckEntry } from "@/components/f06/PhotoCheckEntry";
 import { ControlVariantSwitch } from "@/components/constructor/ControlVariantSwitch";
+import { QualityNoticeBanner } from "@/components/constructor/QualityNoticeBanner";
+import { buildQualityNotice, type QualityNotice } from "@/lib/constructor/quality-notice";
 
 /** F-04-C: режим wizard. «По теме» — текущий flow. «По номеру» — экзамен → предмет → номера → параметры. */
 type Mode = "topic" | "exam";
@@ -456,6 +460,18 @@ export default function ConstructorPage() {
   const [isDemoResult, setIsDemoResult] = React.useState(false);
   const [remaining, setRemaining] = React.useState<number>(3);
   const [showPaywall, setShowPaywall] = React.useState(false);
+  /**
+   * ТЗ-25 (AD-7): что потерялось при генерации — учитель видит это НА ЭКРАНЕ.
+   *
+   * Раньше укороченный материал и деградировавший второй вариант были молчаливы:
+   * учитель просил 15 заданий, получал 11 и узнавал об этом, только пересчитав
+   * дома. Здесь держим честные признаки ответа API и рисуем предупреждение.
+   *
+   * `null` = потерь не было, блок не рисуется. Важно: отсутствие признака НЕ
+   * значит «всё хорошо» в том смысле, что сервер их не прислал бы при старом
+   * коде; теперь он присылает их всегда (см. routes/worksheets.ts).
+   */
+  const [qualityNotice, setQualityNotice] = React.useState<QualityNotice | null>(null);
   /**
    * F-05: прогресс проверки ответов по кнопке.
    *
@@ -1057,7 +1073,15 @@ export default function ConstructorPage() {
           case "oge":
           case "ege": {
             const r = await generateWorksheetSmart(body);
-            return { kind: "worksheet" as const, payload: r.worksheet, isDemo: r.isDemo };
+            return {
+              kind: "worksheet" as const,
+              payload: r.worksheet,
+              isDemo: r.isDemo,
+              // ТЗ-25: потери заданий бывают у ЛИСТА и ТЕСТА тоже — разрыв 5
+              // бьёт по всем типам работ, а не только по контрольной.
+              quality: r.quality,
+              variants: r.variants,
+            };
           }
           // Контрольная работа — единственный тип, который по определению
           // делается в ДВУХ вариантах (иначе это тест, а «Контрольная на 2
@@ -1090,6 +1114,10 @@ export default function ConstructorPage() {
               payload: r.worksheet,
               isDemo: r.isDemo,
               secondVariant: r.secondVariant ?? null,
+              // ТЗ-25: признаки потерь едут вместе с результатом. Без них
+              // учитель не узнает, что заданий меньше, чем просил.
+              quality: r.quality,
+              variants: r.variants,
             };
           }
           // TZ-16 Этапы 6–7: типы объявлены в TaskType и видны в пикере,
@@ -1174,6 +1202,11 @@ export default function ConstructorPage() {
           setControlVariant1(type === "control" ? ws : null);
           setControlVariant2(type === "control" ? second : null);
           setControlVariant(1);
+          // ТЗ-25: честное сообщение вместо молчаливых потерь. Ставится ЗДЕСЬ,
+          // рядом с раскладкой вариантов, потому что именно здесь известно и
+          // что показано, и что пришло от сервера. `variants` для не-контрольной
+          // работы не деградирует, и блок не появляется.
+          setQualityNotice(buildQualityNotice(result.quality, result.variants));
           artifactTitle = ws.title;
           artifactId = ws.id;
           histSubject = ws.subject as SubjectSlug;
@@ -2013,6 +2046,16 @@ export default function ConstructorPage() {
                         сейчас на экране) делало возврат к первому варианту
                         невозможным. Компонент принимает оба варианта и ничего
                         не знает про `worksheet`. */}
+                    {/* ТЗ-25 (AD-7): предупреждение о потерях материала.
+                        Показывается ВСЕМ типам работ, а не только контрольной:
+                        разрыв 5 бьёт по листу, тесту и ОГЭ одинаково. Блок
+                        появляется только когда есть что сказать — пустой
+                        «всё в порядке» был бы тем же молчанием. */}
+                    {qualityNotice && (
+                      <div className="w-full">
+                        <QualityNoticeBanner notice={qualityNotice} />
+                      </div>
+                    )}
                     {kind === "worksheet" && type === "control" && controlVariant1 && (
                       <ControlVariantSwitch
                         variant1={controlVariant1}
