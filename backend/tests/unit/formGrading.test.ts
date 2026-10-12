@@ -238,6 +238,46 @@ describe("gradeAnswer · short-answer → сверяем сами, essay → т�
     expect(v.needsReview).toBe(true);
   });
 
+  // Находки независимого ревью (12.10.2026): обе проверки закрывают способы
+  // засчитать заведомо неверный ответ как верный.
+
+  it("short-answer: пробелы вокруг разделителя — тот же ответ («7 / 8» = «7/8»)", () => {
+    const t = task({ type: "short-answer", answer: "7/8", points: 2 });
+    for (const value of ["7 / 8", " 7 /8 ", "7/ 8", "7 / 8 "]) {
+      const v = gradeAnswer(t, value);
+      expect(v.isCorrect, `«${value}» должен засчитаться`).toBe(true);
+    }
+  });
+
+  it("short-answer: пробелы вокруг оператора — тот же ответ («2x + 6» = «2x+6»)", () => {
+    const t = task({ type: "short-answer", answer: "2x+6", points: 2 });
+    expect(gradeAnswer(t, "2x + 6").isCorrect).toBe(true);
+    // Пробел МЕЖДУ буквами и цифрами не убираем: «2 x» и «2x» — разные записи,
+    // и склеивать их значит склеивать разные ответы.
+    expect(gradeAnswer(t, "2 x + 6").isCorrect).toBe(false);
+  });
+
+  it("short-answer: разные числа не склеиваются при нормализации", () => {
+    const t = task({ type: "short-answer", answer: "7/8", points: 2 });
+    expect(gradeAnswer(t, "7,8").isCorrect).toBe(false);
+    expect(gradeAnswer(t, "17/8").isCorrect).toBe(false);
+  });
+
+  it("short-answer: эталон из одной пунктуации уходит учителю, а не совпал бы с мусором", () => {
+    // Раньше «?» и «!!!» после нормализации оба сворачивались в пустую строку
+    // и совпадали между собой — ответ «засчитывался» как верный.
+    const v = gradeAnswer(task({ type: "short-answer", answer: "?", points: 2 }), "!!!");
+    expect(v.isCorrect).toBeNull();
+    expect(v.needsReview).toBe(true);
+  });
+
+  it("short-answer: бессмысленный ответ ученика при нормальном эталоне — ноль", () => {
+    const v = gradeAnswer(task({ type: "short-answer", answer: "воздух", points: 2 }), "!!!");
+    expect(v.isCorrect).toBe(false);
+    expect(v.pointsAwarded).toBe(0);
+    expect(v.needsReview).toBe(false);
+  });
+
   it("essay: manual даже если текст совпал с эталоном", () => {
     const v = gradeAnswer(task({ type: "essay", answer: "потому что", points: 5 }), "потому что");
     expect(v.checkMethod).toBe("manual");

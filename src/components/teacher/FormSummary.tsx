@@ -534,6 +534,16 @@ function ResponseRow({
             {response.answers.map((a) => {
               const task = tasks.get(a.taskNumber);
               const shownAnswer = formatStudentAnswer(task, a.studentAnswer);
+              /**
+               * Панель проверки нужна в двух случаях, а не в одном:
+               *  - ответ ждёт учителя (эссе, нет эталона);
+               *  - автосверка поставила минус. Это тот же «тупик», который
+               *    починили: система честно говорит «не совпало», но если
+               *    формулировка верная, а записана иначе, учитель обязан суметь
+               *    поставить балл. Без панели такой ответ закрывался навсегда.
+               */
+              const needsAttention =
+                a.needsReview || (a.checkMethod === "auto" && !a.isCorrect);
               return (
               <li
                 key={a.taskNumber}
@@ -560,12 +570,13 @@ function ResponseRow({
                   </span>
                 </div>
 
-                {a.needsReview ? (
+                {needsAttention ? (
                   <ReviewBox
                     formId={formId}
                     responseId={response.id}
                     answer={a}
                     task={task}
+                    mode={a.needsReview ? "review" : "fix"}
                     onSaved={onReviewed}
                   />
                 ) : (
@@ -606,12 +617,15 @@ function ReviewBox({
   responseId,
   answer,
   task,
+  mode = "review",
   onSaved,
 }: {
   formId: string;
   responseId: string;
   answer: FormResponseAnswer;
   task: FormSourceTask | undefined;
+  /** `review` — ответ ждал учителя. `fix` — автоматика поставила минус, учитель его перебивает. */
+  mode?: "review" | "fix";
   onSaved: () => void;
 }) {
   const [verdict, setVerdict] = React.useState<boolean | null>(null);
@@ -628,12 +642,18 @@ function ReviewBox({
 
     let pointsAwarded: number | undefined;
     if (showPointsField) {
-      const parsed = Number(points);
-      if (!Number.isInteger(parsed) || parsed < 0 || parsed > maxPoints) {
-        setError(`Балл должен быть целым числом от 0 до ${maxPoints}`);
-        return;
+      // Пустое поле — это не «ноль баллов». Учитель нажал «Верно» и просто не
+      // стал трогать поле: Number("") даёт 0, и раньше ответ уезжал как
+      // «верно, 0 баллов». Пустое = полный балл при «Верно», ноль при «Неверно».
+      const trimmed = points.trim();
+      if (trimmed !== "") {
+        const parsed = Number(trimmed);
+        if (!Number.isInteger(parsed) || parsed < 0 || parsed > maxPoints) {
+          setError(`Балл должен быть целым числом от 0 до ${maxPoints}`);
+          return;
+        }
+        pointsAwarded = parsed;
       }
-      pointsAwarded = parsed;
     }
 
     setSaving(true);
@@ -670,6 +690,12 @@ function ReviewBox({
       {formatExpectedAnswer(task) && (
         <p className="mt-1 text-xs text-warm-600">
           Правильный ответ: <span className="text-warm-800">{formatExpectedAnswer(task)}</span>
+        </p>
+      )}
+      {mode === "fix" && (
+        <p className="mt-1 text-xs text-warm-600">
+          Автопроверка не засчитала ответ. Если ученик прав, а записал иначе —
+          поставьте балл здесь.
         </p>
       )}
 

@@ -103,6 +103,68 @@ async function openResponse() {
 }
 
 describe("Сводка по форме — ручная проверка ответа", () => {
+  it("автоматический минус тоже можно перебить — блокирующая находка ревью", async () => {
+    // Сверка поставила ✗ и 0 баллов: needsReview = false, панели не было, и
+    // учитель не мог ничего изменить — ответ закрывался навсегда. Именно этот
+    // тупик коммит и чинил, только в другой форме.
+    renderSummary([
+      {
+        taskNumber: 1,
+        studentAnswer: "7 / 8",
+        isCorrect: false,
+        pointsAwarded: 0,
+        pointsMax: 2,
+        needsReview: false,
+        checkMethod: "auto",
+        teacherComment: null,
+      },
+    ]);
+    await openResponse();
+
+    const box = screen.getByTestId("review-box-1");
+    expect(box.textContent).toContain("Автопроверка не засчитала ответ");
+  });
+
+  it("у верного ответа с баллами панели нет — незачем учителю трогать то, что верно", async () => {
+    renderSummary([
+      {
+        taskNumber: 1,
+        studentAnswer: "воздух",
+        isCorrect: true,
+        pointsAwarded: 2,
+        pointsMax: 2,
+        needsReview: false,
+        checkMethod: "auto",
+        teacherComment: null,
+      },
+    ]);
+    await openResponse();
+
+    expect(screen.queryByTestId("review-box-1")).toBeNull();
+  });
+
+  it("пустое поле балла при «Верно» = полный балл, а не ноль", async () => {
+    renderSummary();
+    await openResponse();
+
+    reviewAnswer.mockResolvedValue({ ok: true, taskNumber: 1, scoreTotal: 2 });
+
+    fireEvent.click(screen.getByTestId("review-yes-1"));
+    // Поле оставили пустым — учитель просто не стал его трогать.
+    fireEvent.click(screen.getByTestId("review-save-1"));
+
+    await waitFor(() => {
+      expect(reviewAnswer).toHaveBeenCalledWith({
+        formId: "frm_1",
+        responseId: "rsp_1",
+        taskNumber: 1,
+        isCorrect: true,
+      });
+    });
+    // pointsAwarded не отправляется — сервер возьмёт полный балл.
+    const call = reviewAnswer.mock.calls[0]![0] as Record<string, unknown>;
+    expect(call.pointsAwarded).toBeUndefined();
+  });
   it("учитель видит текст задания и правильный ответ, которых раньше не было", async () => {
     renderSummary();
     await openResponse();

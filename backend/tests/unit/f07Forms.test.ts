@@ -689,6 +689,33 @@ describe("учительские формы (TZ-12, f07)", () => {
     expect(row?.needs_review).toBe(1);
   });
 
+  // Находка ревью: ветка «балл не передан — берётся полный» была единственной
+  // непокрытой, а именно так фронт шлёт запрос для заданий в 1 балл: поле балла
+  // там скрыто, поэтому pointsAwarded в запрос не попадает.
+  it("F12b: без балла «Верно» = полный балл за задание", async () => {
+    const { formId, responseId } = await formWithPendingAnswer(sessionA, { points: 2 });
+
+    const res = await SELF.fetch(reviewUrl(formId, responseId, 1), {
+      method: "PATCH",
+      headers: authHeaders(sessionA),
+      body: JSON.stringify({ isCorrect: true }),
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { scoreTotal: number }).scoreTotal).toBe(2);
+  });
+
+  it("F12c: без балла «Неверно» = ноль", async () => {
+    const { formId, responseId } = await formWithPendingAnswer(sessionA, { points: 2 });
+
+    const res = await SELF.fetch(reviewUrl(formId, responseId, 1), {
+      method: "PATCH",
+      headers: authHeaders(sessionA),
+      body: JSON.stringify({ isCorrect: false }),
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { scoreTotal: number }).scoreTotal).toBe(0);
+  });
+
   it("F13: чужой учитель не может править чужой ответ — 404", async () => {
     const { formId, responseId } = await formWithPendingAnswer(sessionA, { points: 2 });
 
