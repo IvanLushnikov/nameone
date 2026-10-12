@@ -21,9 +21,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+/** Отдельная ссылка на router.push: ею проверяется, что «Выйти» не зависнет. */
+const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
-    push: vi.fn(),
+    push: pushMock,
     replace: vi.fn(),
     back: vi.fn(),
     forward: vi.fn(),
@@ -44,9 +47,14 @@ vi.mock("@/components/shared/UsageCard", () => ({
 }));
 vi.mock("@/lib/auth/api", () => ({
   fetchUsage: async () => null,
+  // Отдельный мок с проверкой: именно на нём ловится дыра «Выйти закрывает
+  // только экран». Функция написана и покрыта тестами у себя, но из кабинета
+  // её никто не звал, поэтому проверять надо тут.
+  signOutFromApi: vi.fn(async () => undefined),
 }));
 
 import DashboardPage from "@/app/dashboard/page";
+import { signOutFromApi } from "@/lib/auth/api";
 import { setProfile, addToHistory, type FavoriteArtifact } from "@/lib/utils/storage";
 import type { UserProfile, Worksheet, SubjectSlug } from "@/lib/types";
 
@@ -410,5 +418,59 @@ describe("Прочее", () => {
 
     const link = screen.getByRole("link", { name: /настройки/i });
     expect(link).toHaveAttribute("href", "/dashboard/settings");
+  });
+});
+
+/* ─── Выход: логический И серверный ────────────────────────────────────────────
+ *
+ * Дыра, из-за которой «Выйти» закрывал только экран. Локальный выход чистил
+ * устройство, серверная сессия жила, cookie оставалась — и на том же столе
+ * кабинет открывался снова. Функция `signOutFromApi()` была написана и покрыта
+ * своими тестами, но из кабинета её никто не звал, поэтому все её тесты были
+ * зелёными и дыра жила.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+describe("Выход", () => {
+  it("снимает сессию на сервере, а не только чистит устройство", async () => {
+    setProfile(PROFILE);
+    seedHistoryDevice(1);
+    render(<DashboardPage />);
+    await screen.findByText("Лист w0");
+
+    const signOutFromApiMock = vi.mocked(signOutFromApi);
+    signOutFromApiMock.mockClear();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /^Выйти$/ }));
+
+    await waitFor(() => expect(signOutFromApiMock).toHaveBeenCalledTimes(1));
+    // Логическая часть не отменяется из-за серверной: устройство чистим сразу.
+    expect(window.localStorage.getItem("uchlist.profile")).toBeNull();
+  });
+
+  it("выходит локально, даже если сервер не ответил", async () => {
+    setProfile(PROFILE);
+    seedHistoryDevice(1);
+    render(<DashboardPage />);
+    await screen.findByText("Лист w0");
+
+    const signOutFromApiMock = vi.mocked(signOutFromApi);
+    signOutFromApiMock.mockClear();
+    // Бэк лежит: запрос уйдёт, но человек не должен зависнуть на кнопке.
+    signOutFromApiMock.mockImplementation(() => new Promise<void>(() => {}));
+    pushMock.mockClear();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /^Выйти$/ }));
+
+    // Устройство чистится сразу, не дожидаясь сервера.
+    await waitFor(() =>
+      expect(window.localStorage.getItem("uchlist.profile")).toBeNull(),
+    );
+    // И уход со страницы происходит даже при мёртвом бэке — ради этого стоит
+    // ограничение ожидания в handleSignOut.
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/"), {
+      timeout: 6000,
+    });
   });
 });

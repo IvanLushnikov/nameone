@@ -104,7 +104,7 @@ import { getSubject } from "@/lib/content/subjects";
 import { trackEvent } from "@/lib/track";
 import { UsageCard, type UsagePayload } from "@/components/shared/UsageCard";
 import { FREE_QUOTA_SCOPE_NOTE } from "@/lib/content/landing-seo";
-import { fetchUsage } from "@/lib/auth/api";
+import { fetchUsage, signOutFromApi } from "@/lib/auth/api";
 
 /** Размер порции истории: 20 карточек, дальше — «Показать ещё». */
 const PAGE_SIZE = 20;
@@ -334,8 +334,28 @@ export default function DashboardPage() {
     router.push(`/constructor?${params}`);
   };
 
-  const handleSignOut = () => {
+  /**
+   * Выход — логический И серверный.
+   *
+   * Раньше здесь был только локальный выход: кабинет закрывался на экране, а
+   * сессия на сервере жила. Cookie оставалась в браузере, и на том же
+   * компьютере кабинет открывался снова — «Выйти» закрывал дверь, не вынимая
+   * ключ. Для учителя, который закрывает доступ на чужом столе перед уходом,
+   * это ровно тот случай, ради которого пароль и заводится.
+   *
+   * Порядок такой:
+   * 1. локально выходим сразу — интерфейс не должен ждать сеть;
+   * 2. серверную сессию снимаем обязательно, но не бесконечно: если связь
+   *    пропала молча, fetch может висеть дольше, чем человек готов ждать
+   *    кнопку «Выйти», поэтому ждём не дольше 4 секунд и уходим в любом
+   *    случае. Запрос при этом не прерывается — если сервер жив, он дойдёт.
+   */
+  const handleSignOut = async () => {
     signOut();
+    await Promise.race([
+      signOutFromApi(),
+      new Promise<void>((resolve) => setTimeout(resolve, 4000)),
+    ]);
     router.push("/");
     toast({ tone: "info", title: "Вы вышли из аккаунта" });
   };
