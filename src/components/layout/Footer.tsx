@@ -83,6 +83,17 @@ export function Footer() {
 
         <div className="mt-10 pt-6 border-t border-warm-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-warm-500">
           <p>© 2026 УчЛист. Все права защищены. Сделано с ❤ для учителей.</p>
+          <p>
+            Автор:{" "}
+            <a
+              href="https://ilushnikov.ru"
+              target="_blank"
+              rel="noopener nofollow"
+              className="text-warm-600 hover:text-warm-950 transition-colors"
+            >
+              Иван Лушников
+            </a>
+          </p>
           <p>Листы в формате A4 · PDF · DOCX · PPTX</p>
         </div>
       </div>
