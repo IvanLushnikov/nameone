@@ -140,6 +140,20 @@ export async function lookupCache(
   return { response, hitCount: row.hit_count + 1 };
 }
 
+/**
+ * Удалить запись кэша по ключу (12.10.2026).
+ *
+ * Нужна для записей, которые формально «попадание», но содержат устаревшую
+ * форму ответа: до правки жалобы 7 в кэш уходил только первый лист контрольной,
+ * а `saveCache` пишет через `INSERT OR IGNORE` — то есть новая, правильная
+ * запись такую не перезапишет. TTL 30 дней, то есть старая запись жила бы
+ * полмесяца и учитель всё это время получал бы ровно тот ответ, на который
+ * жаловался. Поэтому такую запись сносим и генерируем заново.
+ */
+export async function deleteCache(db: D1Database, key: string): Promise<void> {
+  await db.prepare(`DELETE FROM semantic_cache WHERE cache_key = ?1`).bind(key).run();
+}
+
 export interface SaveCacheParams {
   key: string;
   subject: string;

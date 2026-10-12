@@ -73,6 +73,12 @@ function fakeDb() {
                 }
                 return { success: true };
               }
+              // deleteCache (12.10.2026): без этого в заглушке снос старой
+              // записи кэша был бы виртуальным, и тест проверял бы сам себя.
+              if (sql.includes("DELETE FROM semantic_cache")) {
+                cache.delete(String(args[0]));
+                return { success: true };
+              }
               return { success: true };
             },
           };
@@ -153,6 +159,13 @@ function stubProvider(payload: unknown) {
   });
   vi.stubGlobal("fetch", fetchMock);
   return { fetchMock, bodies };
+}
+
+/** Единственный ключ в кэше заглушки — она пишет по одному. */
+function onlyCacheKey(db: ReturnType<typeof fakeDb>): string {
+  const key = [...db.cache.keys()][0];
+  if (key === undefined) throw new Error("в кэше заглушки нет ни одной записи");
+  return key;
 }
 
 const CONTROL_REQUEST: GenerationRequest = {
@@ -248,6 +261,61 @@ describe("контрольная: два варианта, а не один", ()
     // только для контрольной.
     expect(second.secondVariant).toBeNull();
     void db2;
+  });
+});
+
+describe("контрольная: старая запись кэша не должна жить полмесяца", () => {
+  /**
+   * Запись, сделанная ДО правки жалобы 7, лежит 30 дней (TTL) и не
+   * перезаписывается — `saveCache` пишет `INSERT OR IGNORE`. Значит новая,
+   * правильная запись её не заменит, и учитель по этой теме продолжил бы
+   * получать один вариант. Такую запись обязаны снести и перегенерировать.
+   */
+  it("контрольная без второго варианта в кэше считается промахом и перегенерируется", async () => {
+    const { fetchMock } = stubProvider(CONTROL_RESPONSE);
+    const db = fakeDb();
+
+    // Заранее кладём ровно то, что писал старый код: только `{ worksheet }`.
+    const seed = await generateWorksheet(ARGS, FAKE_ENV, db as never);
+    expect(seed.secondVariant).not.toBeNull();
+    const key = onlyCacheKey(db);
+    const stored = db.cache.get(key) as { worksheet: unknown; secondVariant?: unknown };
+    delete stored.secondVariant; // ← состояние кэша до выкатки
+    db.cache.set(key, stored);
+    const callsAfterSeed = fetchMock.mock.calls.length;
+
+    const res = await generateWorksheet(ARGS, FAKE_ENV, db as never);
+
+    // Пошли к модели, а не отдали старый лист.
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(callsAfterSeed);
+    expect(res.meta.cached).toBe(false);
+    // И вернули оба варианта.
+    expect(res.secondVariant).not.toBeNull();
+    // Запись в кэше перезаписана — следующий запрос уже возьмёт её.
+    const after = db.cache.get(onlyCacheKey(db)) as { secondVariant?: unknown };
+    expect(after.secondVariant).toBeTruthy();
+  });
+
+  it("обычный лист со старой формой ответа из кэша не перегенерируется зря", async () => {
+    const { fetchMock } = stubProvider({
+      title: "Лист",
+      subject: "math",
+      grade: 5,
+      topic: "Обыкновенные дроби",
+      difficulty: "easy",
+      tasks: [{ number: 1, text: "Сократите дробь 8/12", answer: "2/3" }],
+    });
+    const db = fakeDb();
+    const args = { ...ARGS, request: { ...CONTROL_REQUEST, type: "worksheet" as const } };
+
+    await generateWorksheet(args, FAKE_ENV, db as never);
+    const calls = fetchMock.mock.calls.length;
+    const res = await generateWorksheet(args, FAKE_ENV, db as never);
+
+    // У листа второго варианта нет и не бывает — перегенерация тут была бы
+    // лишней тратой денег на ровном месте.
+    expect(res.meta.cached).toBe(true);
+    expect(fetchMock.mock.calls.length).toBe(calls);
   });
 });
 

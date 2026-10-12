@@ -33,7 +33,7 @@ import { logLlmEvent } from "./log";
 import { moderateGenerationRequest } from "./moderation";
 import { checkLlmRateLimit, ipHashFromHeaders } from "./ratelimit";
 import { callWithFallback, pickModel, taskForArtifact } from "./router";
-import { lookupCache, makeCacheKey, saveCache } from "./cache";
+import { deleteCache, lookupCache, makeCacheKey, saveCache } from "./cache";
 import { buildWorksheetPrompt, sanitizeTextLatex } from "./prompts/worksheet-gen";
 import { buildExamPrompt } from "./prompts/exam-gen";
 import type { ArtifactRequest } from "./prompts/artifact-gen";
@@ -146,39 +146,46 @@ export async function generateWorksheet(
   if (!bypassCache) {
     const cached = await lookupCache(db, cacheKey);
     if (cached && typeof cached === "object" && cached.response) {
-      const ws = (cached.response as { worksheet: Worksheet }).worksheet;
-      const meta: GenerateWorksheetMeta = {
-        model: "semantic-cache",
-        provider: "internal",
-        costUsd: 0,
-        latencyMs: Date.now() - start,
-        cached: true,
-        generation: "cached",
-      };
-      await logLlmCall(db, {
-        userId,
-        task,
-        provider: "cache",
-        model: cacheKey.slice(0, 12),
-        plan,
-        tokensIn: 0,
-        tokensOut: 0,
-        costUsd: 0,
-        latencyMs: meta.latencyMs,
-        cached: true,
-        fallback: false,
-      });
-      // Попадание в кэш не тратит токены, поэтому норма не меняется: честно
-      // возвращаем текущее состояние, чтобы UI не показывал «израсходовано».
-      const usage = await getUsageStatus(db, userId, plan);
-      // Второй вариант контрольной (12.10.2026): раньше в кэш уходил только
+      // Второй вариант контрольной (12.10.2026). Раньше в кэш уходил только
       // первый лист, и повторный запрос отдавал `semantic-cache` БЕЗ второго
-      // варианта — учитель получал ровно ту жалобу, которую чинили
-      // («просят два варианта, получают один»). Теперь он лежит в кэше
-      // вместе с первым и возвращается оттуда.
+      // варианта — учитель получал ровно ту жалобу, которую чинили.
       const cachedSecond =
         (cached.response as { secondVariant?: Worksheet | null }).secondVariant ?? null;
-      return { worksheet: ws, meta, usage, secondVariant: cachedSecond };
+      // Записи, сделанные ДО правки, живут 30 дней (TTL) и не перезаписываются
+      // (`INSERT OR IGNORE`) — то есть новая, правильная запись их не заменит.
+      // Для контрольной такая запись непригодна: второго варианта в ней нет
+      // по определению. Сносим её и считаем промахом — иначе жалоба 7
+      // вернётся ровно через полмесяца после выкатки.
+      if (request.type === "control" && !cachedSecond) {
+        await deleteCache(db, cacheKey);
+      } else {
+        const ws = (cached.response as { worksheet: Worksheet }).worksheet;
+        const meta: GenerateWorksheetMeta = {
+          model: "semantic-cache",
+          provider: "internal",
+          costUsd: 0,
+          latencyMs: Date.now() - start,
+          cached: true,
+          generation: "cached",
+        };
+        await logLlmCall(db, {
+          userId,
+          task,
+          provider: "cache",
+          model: cacheKey.slice(0, 12),
+          plan,
+          tokensIn: 0,
+          tokensOut: 0,
+          costUsd: 0,
+          latencyMs: meta.latencyMs,
+          cached: true,
+          fallback: false,
+        });
+        // Попадание в кэш не тратит токены, поэтому норма не меняется: честно
+        // возвращаем текущее состояние, чтобы UI не показывал «израсходовано».
+        const usage = await getUsageStatus(db, userId, plan);
+        return { worksheet: ws, meta, usage, secondVariant: cachedSecond };
+      }
     }
   }
 
