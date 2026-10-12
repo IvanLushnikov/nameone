@@ -39,6 +39,7 @@ import {
   catalogStats,
   examTasksWord,
   NEEDS_FILL,
+  NEEDS_FILL_LABEL,
   operator,
   subjectsWord,
   topicsWord,
@@ -250,8 +251,13 @@ describe("Блок E: /contact/ и юридические данные (Е-4)", 
     const { container } = render(ContactPage());
     const page = text(container);
 
-    expect(page).toContain("{{ ИНН }}");
-    expect(page).toContain("{{ АДРЕС РЕГИСТРАЦИИ }}");
+    // Б-3: пометка читается словами, а не шаблонными скобками `{{ }}`.
+    // Сырые скобки на бою выглядели как недособранная вёрстка.
+    expect(page).toContain(NEEDS_FILL_LABEL);
+    expect(page).not.toContain("{{");
+    // Что именно не заполнено — по подписи строки.
+    expect(page).toContain("ИНН");
+    expect(page).toContain("Адрес регистрации");
   });
 
   it("названы все поля, которые обязан вписать владелец", () => {
@@ -267,17 +273,27 @@ describe("Блок E: /contact/ и юридические данные (Е-4)", 
 
   it("незаполненный реквизит виден как пометка, а не как данные", () => {
     const { container } = render(ContactPage());
-    // Плейсхолдер обёрнут пунктиром — незаполненное поле не спутать с готовым.
-    expect(container.querySelector(".border-dashed")).not.toBeNull();
+    // Пометка читается словами и стоит рядом с подписью поля, поэтому её
+    // нельзя принять за готовые реквизиты.
     expect(text(container)).toContain("вписывает владелец");
+    expect(text(container)).toContain("Значение «[вписывает владелец]»");
+  });
+
+  it("на страницах доверия не осталось сырых шаблонных скобок", () => {
+    // Б-3: `{{ ИНН }}`, `{{ ФОТО АВТОРА }}` и подобные — это след вёрстки,
+    // а не честная пометка. На /about/ их было три, на /contact/ — два.
+    for (const Page of [AboutPage, ContactPage]) {
+      expect(text(render(Page()).container), "сырые {{ }} в тексте страницы")
+        .not.toContain("{{");
+    }
   });
 
   it("в исходниках блока E нет выдуманных реквизитов", () => {
     // Настоящий ИНН — это 10 или 12 цифр подряд. Пока их нет: значение либо
-    // приходит из переменной окружения, либо остаётся плейсхолдером.
+    // приходит из переменной окружения, либо остаётся пометкой.
     expect(operator.inn).not.toMatch(/^\d{10,12}$/);
     expect(operator.address).not.toMatch(/^\d{10,12}$/);
-    expect(operator.inn).toContain("{{");
+    expect(operator.inn).toBe(NEEDS_FILL_LABEL);
   });
 
   it("названы налоговый режим и отсутствие ОГРН у самозанятого", () => {

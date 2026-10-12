@@ -35,10 +35,16 @@ export function TabsList({
   children: React.ReactNode;
   className?: string;
 }) {
+  // Б-1: на телефоне четыре вкладки кабинета не помещались в одну строку,
+  // а `inline-flex` без переноса растягивал список до 561 px — страница целиком
+  // уезжала вбок и «Выданное» уходило за экран. Поэтому на узких экранах
+  // список переносится, а не растягивается: `flex-wrap` + `w-full` держат
+  // ширину по родителю. На 1280/1440 поведение прежнее — одна строка.
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-1 p-1 bg-warm-100 rounded-2xl",
+        "flex w-full flex-wrap items-center gap-1 p-1 bg-warm-100 rounded-2xl",
+        "sm:inline-flex sm:w-auto sm:flex-nowrap",
         className
       )}
       role="tablist"

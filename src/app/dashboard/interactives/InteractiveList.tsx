@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Send, Sparkles } from "lucide-react";
 import { listInteractives } from "@/lib/interactives/api";
+import { hasServerSession } from "@/lib/lk/materials-source";
 import { INTERACTIVE_ERROR_MESSAGE, type InteractiveListItem } from "@/lib/interactives/types";
 import { formatDate } from "@/lib/utils/cn";
 import { formatMeta } from "@/lib/interactives/formats";
@@ -37,6 +38,15 @@ export function InteractiveList() {
 
   const load = React.useCallback(async () => {
     setState({ kind: "loading" });
+    // Б-9: эндпоинт требует входа. Гостю он всегда отвечал 401 — и в консоли
+    // у каждого нового посетителя висела ошибка на ровном месте. Экран при
+    // этом жил, поэтому 401 и был штатным состоянием, а не поломкой.
+    // Без сессии сразу показываем тот же экран «войдите», что и раньше, просто
+    // не тратя запрос на заведомо известный ответ.
+    if (!hasServerSession()) {
+      setState({ kind: "unauthorized" });
+      return;
+    }
     const res = await listInteractives();
     if (!res.ok) {
       if (res.error === "unauthorized") {

@@ -20,6 +20,10 @@ export const errorMiddleware: ErrorHandler<AppEnv> = (err, c) => {
 
   // 1. Наши ApiError → берём status/code/message напрямую.
   if (err instanceof ApiError) {
+    // 502 и 503 в union — не опечатка: их уже бросает самопроверка
+    // (LLM_BAD_RESPONSE / LLM_UNAVAILABLE) и отправка писем
+    // (EmailDeliveryError). Приведение нужно только потому, что c.json()
+    // ждёт закрытый набор ContentfulStatusCode.
     return c.json(
       {
         ok: false,
@@ -27,7 +31,7 @@ export const errorMiddleware: ErrorHandler<AppEnv> = (err, c) => {
         code: err.code,
         ...(err.details !== undefined ? { details: err.details } : {}),
       },
-      err.status as 400 | 401 | 402 | 403 | 404 | 409 | 429 | 500,
+      err.status as 400 | 401 | 402 | 403 | 404 | 409 | 429 | 500 | 502 | 503,
     );
   }
 

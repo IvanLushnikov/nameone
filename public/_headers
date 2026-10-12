@@ -11,10 +11,19 @@
 # источников просто сломает страницы. CSP добавляем отдельным шагом вместе
 # с инвентаризацией внешних доменов — см. docs/SECURITY-REVIEW-2026-10-02.md.
 
-# Не отдавать полную ссылку в Referer: на странице входа токен может стоять
-# в query (?token=...), и без этого правила он утекает в аналитику.
+# Не отдавать ссылку в Referer. На странице входа токен может стоять в query
+# (?token=...), и без этого правила он утекает в аналитику.
+#
+# Б-5: раньше здесь стояло `strict-origin-when-cross-origin`. Страница /form/ и
+# /play/ полагалась на единственный HTML-тег <meta name="referrer" content="no-referrer">,
+# но HTTP-заголовок приоритетнее мета-тега — тег просто не действовал, и
+# защита держалась на одном теге. Теперь то же значение задано сервером.
+# Побочный эффект: Яндекс.Метрика перестанет видеть, с какой страницы пришёл
+# визит (Referer будет пустым). Если аналитика источников нужна — сузьте
+# правило до маршрутов с токеном (/form/*, /play/*, /auth/*), оставив здесь
+# strict-origin-when-cross-origin.
 /*
-  Referrer-Policy: strict-origin-when-cross-origin
+  Referrer-Policy: no-referrer
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Permissions-Policy: camera=(), microphone=(), geolocation=(), interest-cohort=()

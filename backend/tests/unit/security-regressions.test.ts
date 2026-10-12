@@ -444,6 +444,52 @@ describe("К-2: в production ссылка для входа не уходит �
     expect(raw).not.toMatch(/devMagicUrl/);
   });
 
+  it("отказ почты — это 503 EMAIL_DELIVERY_FAILED, а не 500 INTERNAL (12.10.2026)", async () => {
+    // Блокер входа на бою: письмо не уходило, а ручка отвечала 500 с кодом
+    // `INTERNAL`. Для учителя это молчаливый обрыв, для мониторинга — «у нас
+    // баг», хотя сломана внешняя почта. Теперь отказ почты опознаётся отдельно.
+    const failing = prodEnv({ RESEND_API_KEY: "re_invalid_key_for_test" });
+
+    const res = await call(
+      "/api/auth/magic-link",
+      { body: { email: "delivery-503@uchlist.ru" }, origin: null },
+      failing,
+    );
+    const body = (await res.json()) as { ok?: boolean; code?: string; error?: string };
+
+    expect(res.status).toBe(503);
+    expect(body.code).toBe("EMAIL_DELIVERY_FAILED");
+    // Текст не пустой и объясняет, что делать: иначе клиенту нечего показать.
+    expect(body.error, "учитель должен получить внятный текст, а не пустоту").toBeTruthy();
+    expect(body.error).toMatch(/письм/i);
+  });
+
+  it("без настроенной почты вход закрывается честной ошибкой 503, а не 500", async () => {
+    // Тот же контракт для другой причины — ключа просто нет. Раньше обе
+    // причины уезжали в InternalError → 500, и по коду ответа нельзя было
+    // отличить «сломан Resend» от «не задан ключ».
+    const res = await call(
+      "/api/auth/magic-link",
+      { body: { email: "nokey-503@uchlist.ru" }, origin: null },
+      prodEnv({ RESEND_API_KEY: undefined }),
+    );
+    const body = (await res.json()) as { code?: string; error?: string };
+
+    expect(res.status).toBe(503);
+    expect(body.code).toBe("EMAIL_DELIVERY_FAILED");
+    // Состояние конфигурации клиенту не раскрываем: текст одинаков для
+    // любой причины и ничего не говорит о том, задан ли ключ.
+    expect(body.error).not.toMatch(/resend/i);
+    expect(body.error).not.toMatch(/ключ/i);
+
+    // Fail-closed сохранён: пользователь под такой запрос не заводится.
+    const user = await db()
+      .prepare("SELECT id FROM users WHERE email = ?1")
+      .bind("nokey-503@uchlist.ru")
+      .first();
+    expect(user).toBeNull();
+  });
+
   it("сообщение об ошибке не выдаёт, зарегистрирован ли адрес", async () => {
     const failing = prodEnv({ RESEND_API_KEY: "re_invalid_key_for_test" });
     const res = await call(

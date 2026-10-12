@@ -90,6 +90,29 @@ export class ChallengeRequiredError extends ApiError {
   }
 }
 
+/**
+ * 503: письмо отправить не удалось.
+ *
+ * Отдельный класс, а не InternalError, потому что это НЕ баг в коде, а отказ
+ * внешнего сервиса почты (Resend: неверный ключ, не верифицирован домен, лимит
+ * аккаунта, недоступность API). Разница видна не только учителю:
+ *   * 500 / `INTERNAL` в мониторинге — это «сломалось наше», и такой отказ
+ *     никто не читает как «почини ключ у провайдера»;
+ *   * 503 / `EMAIL_DELIVERY_FAILED` — это «внешний сервис не отдал», с понятным
+ *     кодом, по которому ручка входа отличается от прочих 500.
+ *
+ * Текст сообщения — ВСЕГДА одинаковый для любой причины (нет ключа / ключ
+ * отвергнут / домен не верифицирован). Причина пишется только в лог:
+ * клиенту нельзя показывать состояние нашей конфигурации, и текст не должен
+ * отличаться для существующего и несуществующего адреса.
+ */
+export class EmailDeliveryError extends ApiError {
+  constructor(message = "Не удалось отправить письмо", details?: unknown) {
+    super(503, "EMAIL_DELIVERY_FAILED", message, details);
+    this.name = "EmailDeliveryError";
+  }
+}
+
 export class InternalError extends ApiError {
   constructor(message = "Internal Server Error", details?: unknown) {
     super(500, "INTERNAL", message, details);

@@ -15,6 +15,7 @@ import {
   FREE_GENERATIONS,
   type PlanId,
 } from "@/lib/content/plans";
+import { quotaGenerations } from "@/lib/content/landing-seo";
 
 interface Props {
   open: boolean;
@@ -80,7 +81,7 @@ export function PaywallModal({ open, onClose, remaining }: Props) {
           Лимит бесплатных генераций
         </span>
       }
-      description={`Бесплатные генерации закончились (${FREE_GENERATIONS} на весь период). Подписка продолжит работу без ограничения по суткам. Отменить можно в любой момент.`}
+      description={`Бесплатные генерации закончились — ${quotaGenerations()} на весь период. Подписка продолжит работу без ограничения по суткам. Вы можете отменить подписку в любой момент.`}
     >
       {/* sm:grid-cols-3, а не 2: с добавлением «Оптимального» тарифов стало
           три, и в двухколоночной сетке третий уезжал на вторую строку один,

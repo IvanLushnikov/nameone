@@ -20,10 +20,27 @@ import {
 } from "../db/queries";
 import { userId, magicLinkToken, sessionToken } from "../lib/shortid";
 import { sendMagicLinkEmail } from "./email";
-import { InternalError } from "../lib/errors";
+import { EmailDeliveryError } from "../lib/errors";
 
 export const MAGIC_LINK_TTL_SECONDS = 15 * 60; // 15 минут
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 дней
+
+/**
+ * Текст, который видит учитель, когда письмо не ушло.
+ *
+ * ОДИН на все причины — намеренно (12.10.2026):
+ *   * он не должен отличаться для существующего и несуществующего адреса —
+ *     иначе ручка входа становится способом проверить, зарегистрирован ли
+ *     конкретный email;
+ *   * он не должен отличаться для «нет ключа» и «Resend отверг» — состояние
+ *     нашей конфигурации клиенту не показываем. Причина всегда в логе.
+ *
+ * Формулировка отвечает на вопрос учителя «почему я сижу и жду письмо»:
+ * виноваты мы, это временно, повторять можно. Раньше здесь был 500 с
+ * кодом `INTERNAL`, который выглядел как баг и на экране не показывался.
+ */
+const MAIL_UNAVAILABLE_MESSAGE =
+  "Не удалось отправить письмо для входа. Это временная проблема на нашей стороне — попробуйте ещё раз через пару минут.";
 
 // zod-цепочка: сначала trim+lowercase (preprocess), потом email-валидация.
 // Раньше было `.email().transform(trim)`, но trim тогда срабатывал ПОСЛЕ
@@ -85,8 +102,10 @@ export async function requestMagicLink(
   const email = emailSchema.parse(rawEmail);
 
   // ── Безопасность: fail-closed на неверной конфигурации ────────────────────
-  // Если почта не настроена, sendMagicLinkEmail не отправляет письмо, а
-  // ВОЗВРАЩАЕТ готовую ссылку для входа (удобно для локальной разработки).
+  // Если почта не настроена, отправить письмо нечем, и единственный честный
+  // ответ — ошибка (503), а не «мы отправили письмо». Исключение одно и только
+  // явное: ALLOW_DEV_MAGIC_URL=true, тогда ссылка возвращается в ответе вместо
+  // письма (удобно для локальной разработки).
   // Опасные режимы включаются ТОЛЬКО явным флагом, а не отсутствием
   // какого-либо признака. Причина конкретная: 2 октября 2026 выяснилось, что
   // боевой воркер задеплоен с настройками разработки (APP_ENV=development,
@@ -101,13 +120,12 @@ export async function requestMagicLink(
   const devMagicAllowed = env.ALLOW_DEV_MAGIC_URL === "true";
 
   if (!env.RESEND_API_KEY && !devMagicAllowed) {
-    // eslint-disable-next-line no-console
-    console.error(
-      "[auth] КРИТИЧНО: не задан RESEND_API_KEY, а ALLOW_DEV_MAGIC_URL не включён. " +
-        "Письма не отправляются, ссылка для входа не выдаётся — запросы отклоняются, " +
-        "ничего не утекает. Задать ключ: npx wrangler secret put RESEND_API_KEY --name rabochielisty-api",
-    );
-    throw new InternalError("Отправка писем не настроена");
+    logMailFailure({
+      reason: "not_configured",
+      email,
+      hint: "RESEND_API_KEY не задан, ALLOW_DEV_MAGIC_URL не включён. Задать ключ: npx wrangler secret put RESEND_API_KEY --name rabochielisty-api",
+    });
+    throw new EmailDeliveryError(MAIL_UNAVAILABLE_MESSAGE);
   }
 
   // 1. user upsert (find-or-create).
@@ -144,27 +162,27 @@ export async function requestMagicLink(
 
   if (!sendResult.sent) {
     // Пишем в логи — это наш единственный шанс восстановить ссылку, если
-    // Resend упал. В проде мониторинг должен алертить на такие warning'и.
-    // eslint-disable-next-line no-console
-    console.warn(
-      JSON.stringify({
-        msg: "magic-link email delivery failed",
-        email,
-        error: sendResult.error,
-      }),
-    );
-
-    // Раньше здесь был только лог, а ответ уходил как { ok: true, sent: true }.
-    // Из-за этого молча проваливалась реальная поломка: 2 октября 2026
-    // Resend отклонял отправку с 403 «domain is not verified», а учитель на
-    // странице входа видел «Письмо отправлено» и ждал его, не получая.
-    // Ничего не отправленный magic-link не восстановить: токен уже создан,
-    // и без письма человек просто не войдёт.
+    // Resend упал. В проде мониторинг должен алертить на такие записи.
     //
-    // Текст ошибки намеренно НЕГАТИВНЫЙ и одинаковый для любой причины:
-    // он не должен отличаться для существующего и несуществующего адреса.
-    // Детали — в логе.
-    throw new InternalError("Не удалось отправить письмо. Попробуйте позже.");
+    // Причину пишем ПОЛНОСТЬЮ: «send failed» без текста от Resend бесполезно
+    // при разборе, потому что отказов у провайдера три разных вида (неверный
+    // ключ / не верифицирован домен / исчерпан лимит аккаунта) и лечатся они
+    // по-разному.
+    logMailFailure({
+      reason: sendResult.reason ?? "provider_error",
+      email,
+      error: sendResult.error,
+    });
+
+    // Раньше здесь бросался InternalError → HTTP 500 с кодом `INTERNAL`.
+    // Для учителя это был молчаливый обрыв («ничего не нажимается»), а для
+    // мониторинга — неотличим от бага в коде. Теперь это 503 с понятным
+    // кодом EMAIL_DELIVERY_FAILED и текстом, который объясняет ситуацию.
+    //
+    // Ничего не отправленный magic-link не восстановить: токен уже создан,
+    // и без письма человек просто не войдёт. Поэтому «успех» здесь означал бы
+    // прямую ложь на экране — честная ошибка правильнее.
+    throw new EmailDeliveryError(MAIL_UNAVAILABLE_MESSAGE);
   }
 
   // Ссылка для входа уходит клиенту ТОЛЬКО при явном ALLOW_DEV_MAGIC_URL=true.
@@ -231,10 +249,35 @@ function buildMagicLinkUrl(env: Env, token: string): string {
         `FRONTEND_URL="${env.FRONTEND_URL ?? "—"}"). Похоже, воркер задеплоен с настройками разработки. ` +
         `Укажите APP_PUBLIC_URL в [env.production.vars], например "https://<домен>".`,
     );
-    throw new InternalError("Некорректная конфигурация фронта");
+    // Для учителя это то же самое, что «письмо не ушло»: он не сможет войти.
+    // Раньше уходил InternalError → 500 `INTERNAL`, то есть та же самая
+    // невнятная точка отказа. Отличается только текст в логе выше.
+    throw new EmailDeliveryError(MAIL_UNAVAILABLE_MESSAGE);
   }
 
   return `${base}/auth/callback?token=${token}`;
+}
+
+/**
+ * Единая запись об отказе почты.
+ *
+ * Пишется ОДИН раз на любой отказ и всегда одним объектом: метка времени,
+ * адрес (без него разбор «кому не дошло письмо» невозможен), машиночитаемый
+ * `reason` и текст ошибки провайдера. По `reason` записи считаются в
+ * мониторинге — разные причины требуют разных действий владельца:
+ *   not_configured — задать RESEND_API_KEY;
+ *   provider_error — ключ есть, отказ у Resend (смотреть его текст).
+ */
+function logMailFailure(entry: { reason: string; email: string; error?: string; hint?: string }): void {
+  // eslint-disable-next-line no-console
+  console.error(
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      level: "error",
+      msg: "magic-link email not sent",
+      ...entry,
+    }),
+  );
 }
 
 function deriveName(email: string): string {
