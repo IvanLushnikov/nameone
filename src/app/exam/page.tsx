@@ -131,11 +131,26 @@ export default function ExamIndexPage() {
                     {total} {plural(total, "задание", "задания", "заданий")}
                   </p>
 
+                  {/*
+                    Б-6: предметы были обычным <li> без ссылки — курсор
+                    оставался «стрелка», а текст выше звал «выберите предмет».
+                    Маршрут /exam/[exam]/[subject]/ существует, так что список
+                    теперь честно кликабельный, и слово «выберите» в тексте
+                    перестало быть обещанием.
+                  */}
                   <ul className="mt-4 text-sm text-warm-600 space-y-1">
                     {subjects.map((s) => (
                       <li key={s.slug}>
-                        {s.emoji} {subjectLabel(s)} — {s.numbers.length}{" "}
-                        {plural(s.numbers.length, "задание", "задания", "заданий")}
+                        <Link
+                          /* Сегмент маршрута — `subject`, а не `slug`: маршрут
+                             /exam/[exam]/[subject]/ собирается по нему, и
+                             `slug` здесь дал бы 404 вида /exam/oge/oge-math/. */
+                          href={`/exam/${kind}/${s.subject}/`}
+                          className="inline-flex items-center gap-1 hover:text-brand-700"
+                        >
+                          {s.emoji} {subjectLabel(s)} — {s.numbers.length}{" "}
+                          {plural(s.numbers.length, "задание", "задания", "заданий")}
+                        </Link>
                       </li>
                     ))}
                   </ul>

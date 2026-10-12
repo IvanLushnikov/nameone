@@ -39,7 +39,12 @@ export function Comparison() {
   const show = useReveal(inView);
 
   return (
-    <section ref={ref} className="py-20 sm:py-28">
+    // Б-8: карточка «Через УчЛист» до конца анимации стоит со сдвигом
+    // translateX(20px) вправо — на телефоне это 4 px за краем экрана, и главная
+    // прокручивалась вбок. `overflow-x-clip` обрезает сдвиг по горизонтали и
+    // не трогает вертикальную анимацию. Именно clip, а не hidden: hidden
+    // создаёт прокручиваемый контейнер и ломает position: sticky внутри.
+    <section ref={ref} className="py-20 sm:py-28 overflow-x-clip">
       <div className="container-tight">
         <div className="max-w-2xl mx-auto text-center mb-12">
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-600 mb-3">

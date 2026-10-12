@@ -13,6 +13,7 @@ import {
   gradeRange,
   launchDate,
   operator,
+  NEEDS_FILL_LABEL,
   subjectGradesWord,
   subjectsWord,
   topicsWord,
@@ -31,9 +32,9 @@ import { clipDescription, ogImages, twitterCard } from "@/lib/seo/metadata";
  *
  * - Все числа — из таксономии (`catalogStats`), а не вписаны строкой: они
  *   пересчитываются на каждой сборке и не могут разойтись с кодом.
- * - Дата запуска, имена и фото команды — плейсхолдеры `{{ ... }}`. Точной
- *   даты запуска в проекте нет, а выдуманная дата в разделе «Кто мы» — это
- *   именно та выдумка, ради которой страницу и делали.
+ * - Дата запуска, имена и фото команды помечены как «[вписывает владелец]».
+ *   Точной даты запуска в проекте нет, а выдуманная дата в разделе «Кто мы» —
+ *   это именно та выдумка, ради которой страницу и делали.
  * - Отзывов нет: блок `ReviewsBlock` при пустом источнике не рисует ничего.
  */
 
@@ -165,14 +166,13 @@ export default function AboutPage() {
               методистов, которая проверяла бы каждый лист, у нас нет.
             </p>
             <dl className="mt-5">
-              <DetailRow label="Кто" value="{{ ИМЯ }} · {{ РОЛЬ }}" />
+              <DetailRow label="Кто" value={NEEDS_FILL_LABEL} />
               <DetailRow label="Режим работы" value={operator.regime} />
               <DetailRow label="Запуск" value={launchDate} />
             </dl>
             <p className="mt-4 text-sm text-warm-500">
-              Поля с пометками вида <code className="font-mono">{"{{ ... }}"}</code>{" "}
-              пока не заполнены — это осознанно: правдоподобно выдуманные данные
-              о проекте хуже пустого места.
+              Поля, помеченные как «[вписывает владелец]», пока не заполнены.
+              Это осознанно: придуманные данные о проекте хуже пустого места.
             </p>
             <Link
               href="/contact/"
@@ -187,7 +187,7 @@ export default function AboutPage() {
               нельзя. Пока фото нет, показываем явную пометку. */}
           <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-dashed border-warm-300 bg-warm-100/60 p-8 text-center">
             <span className="rounded-md border border-dashed border-accent-300 bg-accent-50/60 px-2 py-0.5 font-mono text-sm text-accent-700">
-              {"{{ ФОТО АВТОРА }}"}
+              {NEEDS_FILL_LABEL}
             </span>
             <p className="mt-3 max-w-sm text-sm text-warm-600">
               Фотографии автора проекта у нас нет. Как появится — поставим здесь.

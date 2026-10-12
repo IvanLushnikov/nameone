@@ -89,7 +89,7 @@ import { generateKtpDocx } from "@/lib/utils/ktp-docx";
 import { generatePptx, pptxFilename } from "@/lib/utils/pptx";
 import { canGenerate, getRemaining, refund, settleGeneration } from "@/lib/utils/limit";
 import { isTouchDevice, subscribeToDeviceChange } from "@/lib/utils/device";
-import { ACADEMIC_YEAR_MONTHS, FREE_GENERATIONS, PLANS, priceLabel, priceShort } from "@/lib/content/plans";
+import { FREE_GENERATIONS, PLANS, priceLabel } from "@/lib/content/plans";
 import { plural, cn } from "@/lib/utils/cn";
 import { pluralizeTasks, pluralizeFiles } from "@/lib/utils/cn";
 import { saveWorksheet, type SaveWorksheetInput } from "@/lib/worksheets/api";
@@ -131,18 +131,62 @@ const TOPICS_PREVIEW_COUNT = 6;
  * Тарифы одним текстом для карточки лимита.
  * Берём из `plans.ts`, чтобы при смене цен карточка не расходилась
  * с тарифной страницей (план: единый источник цен).
- * Слово «год» в значении «годовая подписка» / «/год» запрещено планом —
- * поэтому только «учебный год» (период обучения) и помесячная цена.
+ *
+ * Единицу НЕ дописываем руками: `priceLabel()` уже отдаёт цену вместе с
+ * единицей — «3 800 ₽ за учебный год (9 мес)» и «500 ₽ в месяц». Раньше шаблон
+ * дописывал «за учебный год (9 мес)» вторым разом, и учитель читал
+ * «3 800 ₽ за учебный год (9 мес) за учебный год (9 мес)». Слово «год» в
+ * значении «годовая подписка» запрещено планом — поэтому только «учебный год»
+ * (период обучения) и «в месяц»; слова «помесячно» в русском нет.
  */
-const PLANS_TEXT = `Подписка ${PLANS.base.name} — ${priceLabel(
-  "base",
-  "academicYear",
-)} за учебный год (${ACADEMIC_YEAR_MONTHS} мес) или ${priceShort("base", "month")} помесячно. ${
-  PLANS.plus.name
-} — ${priceLabel("plus", "academicYear")} за учебный год или ${priceShort(
-  "plus",
-  "month",
-)} помесячно.`;
+const PLANS_TEXT =
+  `Подписка ${PLANS.base.name} — ${priceLabel("base", "academicYear")} или ${priceLabel("base", "month")}. ` +
+  `${PLANS.plus.name} — ${priceLabel("plus", "academicYear")} или ${priceLabel("plus", "month")}.`;
+
+/**
+ * Печатная вёрстка конструктора.
+ *
+ * Что было: на странице «Ответы и пояснения» учитель в диалоге печати получал
+ * пункты меню сайта («Банк материалов», «ОГЭ / ЕГЭ», «Тарифы», «Войти»), а
+ * слева строка обрезалась до «анк материалов». Печатные стили в проекте есть
+ * только у карточек (`.cards-print-*` в `lib/utils/cards-print.ts`): общего
+ * правила, прячущего шапку и подвал сайта, не было ни в одном режиме.
+ *
+ * Почему здесь, а не в `globals.css`: тот файл вне зоны этой правки. Приём
+ * тот же, что у карточек — правила приезжают вместе со страницей.
+ *
+ * Правила работают во ВСЕХ режимах печати конструктора (рабочий лист с
+ * ответами, карточки, план урока, презентация, КТП, материалы, урок целиком):
+ * адресуем каркас страницы, а не конкретный тип листа.
+ */
+const CONSTRUCTOR_PRINT_CSS = `
+@media print {
+  /* 1. Служебное окружение сайта на печатном листе не нужно. Класс .no-print на
+        шапке и подвале уже есть, но адресуем их ещё и структурно — печать
+        идёт из разных режимов, и полагаться только на класс нельзя. */
+  body > div > header,
+  body > div > footer,
+  .no-print {
+    display: none !important;
+  }
+  /* 2. Печатаем только лист. Левая колонка мастера скрыта правилом выше,
+        двухколоночная сетка схлопывается в одну, горизонтальные отступы
+        контейнера снимаются: иначе лист печатался в узкой колонке и по краям
+        обрезался. */
+  .ctor-print-root {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+  .ctor-grid {
+    display: block !important;
+    gap: 0 !important;
+  }
+  .ctor-grid > * {
+    width: 100% !important;
+    max-width: none !important;
+  }
+}
+`;
 
 /**
  * Шаги визарда. topic-mode: 3 шага («select» = предмет+класс, «topic», «configure»).
@@ -1601,12 +1645,16 @@ export default function ConstructorPage() {
 
   return (
     <>
-      <div className="container-tight py-8 sm:py-12">
-        <div className={`grid gap-6 lg:gap-8 items-start ${photoLandingFullScreen || (step === "select" && mode === "topic") ? "grid-cols-1" : "lg:grid-cols-[420px_1fr]"}`}>
+      {/* Печатная вёрстка конструктора — см. CONSTRUCTOR_PRINT_CSS выше. */}
+      <style dangerouslySetInnerHTML={{ __html: CONSTRUCTOR_PRINT_CSS }} />
+      <div className="container-tight py-8 sm:py-12 ctor-print-root">
+        <div className={`ctor-grid grid gap-6 lg:gap-8 items-start ${photoLandingFullScreen || (step === "select" && mode === "topic") ? "grid-cols-1" : "lg:grid-cols-[420px_1fr]"}`}>
           {/* Left: form / steps. На экране входа по фото форма не рендерится вовсе:
-              учитель пришёл проверять тетрадь, а не выбирать предмет. */}
+              учитель пришёл проверять тетрадь, а не выбирать предмет.
+              no-print: на печати нужен лист, а не мастер — без этого вся левая
+              колонка уезжала на бумагу вместе с листом. */}
           {!photoLandingFullScreen && (
-          <div className="lg:sticky lg:top-20 space-y-5">
+          <div className="no-print lg:sticky lg:top-20 space-y-5">
             {/* F-04-C: переключатель режима. Доступен на любом шаге. */}
             <ModeToggle mode={mode} onChange={handleModeChange} />
 
@@ -2310,31 +2358,44 @@ function StepHeader({
   examLabel?: string | null;
 }) {
   const subjectData = subject ? getSubject(subject) : null;
-  // Экран «Сценарий» (выбор типа материала) живёт внутри step="select", поэтому
-  // раньше прогресс-бар показывал «Шаг 1 из 3 · ЧТО» и на нём, хотя это отдельный
-  // значимый выбор. Разворачиваем его в отдельный пункт, когда он на экране.
-  const scenarioVisible =
-    mode === "topic" && step === "select" && Boolean(subject) && grade !== null;
-  const items: Array<{ id: Step; label: string }> = mode === "exam"
+  /**
+   * Счётчик не прыгает: в каждом режиме массив шагов ОДИН И ТОТ ЖЕ от начала
+   * до конца, а позиция считается из реального состояния.
+   *
+   * Раньше было наоборот: пункт «Сценарий» добавлялся в массив только после
+   * выбора предмета (3 → 4 пункта), а у «Что» и «Сценарий» был один и тот же
+   * внутренний id `select`, из-за чего `findIndex` всегда находил первый.
+   * Учитель видел «Шаг 1 из 3» → «Шаг 2 из 4» → «Шаг 2 из 3» и не понимал,
+   * сколько осталось.
+   *
+   * `key` отделён от `step`: два пункта ведут в один `step`, но это разные
+   * экраны, и React не должен получать одинаковые ключи.
+   */
+  const items: Array<{ key: string; step: Step; label: string }> = mode === "exam"
     ? [
-        { id: "exam-select", label: "Экзамен" },
-        { id: "exam-subject", label: "Предмет" },
-        { id: "exam-number", label: "Номера" },
-        { id: "configure", label: "Параметры" },
+        { key: "exam", step: "exam-select", label: "Экзамен" },
+        { key: "exam-subject", step: "exam-subject", label: "Предмет" },
+        { key: "exam-number", step: "exam-number", label: "Номера" },
+        { key: "configure", step: "configure", label: "Параметры" },
       ]
-    : scenarioVisible
-      ? [
-          { id: "select", label: "Что" },
-          { id: "select", label: "Сценарий" },
-          { id: "topic", label: "Тема" },
-          { id: "configure", label: "Параметры" },
-        ]
-      : [
-          { id: "select", label: "Что" },
-          { id: "topic", label: "Тема" },
-          { id: "configure", label: "Параметры" },
-        ];
-  const currentIdx = scenarioVisible ? 1 : items.findIndex((i) => i.id === step);
+    : [
+        { key: "what", step: "select", label: "Что" },
+        { key: "scenario", step: "select", label: "Сценарий" },
+        { key: "topic", step: "topic", label: "Тема" },
+        { key: "configure", step: "configure", label: "Параметры" },
+      ];
+  const currentIdx =
+    mode === "exam"
+      ? Math.max(0, items.findIndex((i) => i.step === step))
+      : // «Что» и «Сценарий» — два экрана одного `step`: показываем тот,
+        // на котором учитель реально стоит.
+        step === "select"
+        ? subject && grade !== null
+          ? 1
+          : 0
+        : step === "topic"
+          ? 2
+          : 3;
 
   return (
     <div>
@@ -2355,13 +2416,13 @@ function StepHeader({
           <Badge tone="neutral">{subjectData.emoji} {subjectData.shortTitle}{grade ? ` · ${grade} кл.` : ""}</Badge>
         )}
       </div>
-      {/* 3 (или 4 в exam) точки с подписями. Клик на предыдущую точку = вернуться к шагу. */}
+      {/* 4 точки с подписями (в exam-режиме те же 4). Клик на предыдущую точку = вернуться к шагу. */}
       <div className="grid gap-1.5 mb-5" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
         {items.map((it, i) => (
           <button
-            key={it.id}
+            key={it.key}
             type="button"
-            onClick={() => i < currentIdx && onStep(it.id)}
+            onClick={() => i < currentIdx && onStep(it.step)}
             disabled={i >= currentIdx}
             className="group flex flex-col items-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded"
             aria-label={`Шаг ${i + 1}: ${it.label}`}
@@ -3001,6 +3062,38 @@ function ChipToggle({
 
 // =============== Empty / generating states ===============
 
+/**
+ * Именительный падеж названия предмета → винительный.
+ *
+ * Заголовок «Готовы сгенерировать …» требует винительного: математику, физику,
+ * историю. Раньше здесь стоял `shortTitle.toLowerCase()` — именительный, и
+ * учитель читал «Готовы сгенерировать математика 5 класса».
+ *
+ * Считаем падеж, а не держим список: новый предмет в таксономии не должен
+ * требовать правки этого файла (таксономия — `src/lib/content`, отсюда её не
+ * трогаем). Проверено на всех 21 предмете таксономии:
+ *   • мужской и средний род не меняются — «Русский», «Общество»;
+ *   • сокращения и многословные названия не склоняются — «ОБЖ», «ИЗО»,
+ *     «Физ-ра», «Окр. мир», «Фин. грамотность»;
+ *   • женский род с нулевым окончанием не склоняется — «новость» → «новость»
+ *     (отсюда «Фин. грамотность», если сокращение уберут);
+ *   • остальное женского рода: -а → -у, -я → -ю («математика» → «математику»,
+ *     «алгебра» → «алгебру», «история» → «историю»).
+ */
+function subjectAccusative(shortTitle: string): string {
+  const word = shortTitle.trim();
+  const lower = word.toLowerCase();
+  // Пробел, точка, дефис или слэш — это «Окр. мир» / «Фин. грамотность» /
+  // «Физ-ра»: сокращение склонению не поддаёт.
+  if (/[\s.\-/]/.test(word)) return lower;
+  // «ОБЖ», «ИЗО» — прописными без пробела.
+  if (word.length <= 4 && word === word.toUpperCase()) return lower;
+  if (/(ость|есть)$/i.test(word)) return lower;
+  if (/а$/i.test(word)) return `${lower.slice(0, -1)}у`;
+  if (/я$/i.test(word)) return `${lower.slice(0, -1)}ю`;
+  return lower;
+}
+
 function EmptyPreview({
   mode,
   subject,
@@ -3027,7 +3120,7 @@ function EmptyPreview({
         ? `${exam === "oge" ? "ОГЭ" : "ЕГЭ"} — выберите предмет слева`
         : "Выберите экзамен слева"
     : subject
-      ? `Готовы сгенерировать ${subject.shortTitle.toLowerCase()} ${grade ?? ""} класса`
+      ? `Готовы сгенерировать ${subjectAccusative(subject.shortTitle)} ${grade ?? ""} класса`
       : "Выберите предмет слева";
 
   // F-09: превью выбранного типа — образец, чтобы пользователь понимал, что получит.

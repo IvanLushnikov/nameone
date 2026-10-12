@@ -2,11 +2,14 @@
  * Email-сервис — Resend wrapper.
  *
  * Изолируем всё общение с почтой здесь, чтобы:
- *   * /api/auth/magic-link не падал, если Resend API недоступен (только лог).
- *   * В дев-режиме (нет RESEND_API_KEY) ссылка просто пишется в console.info
- *     — разработчик копирует её оттуда.
+ *   * вызывающий получал ЧЕСТНЫЙ результат — `sent: true` только если письмо
+ *     действительно ушло. Раньше при пустом RESEND_API_KEY здесь возвращался
+ *     безусловный `sent: true`, и вход на проде выглядел рабочим при
+ *     нерабочей почте (12.10.2026);
+ *   * в дев-режиме (нет RESEND_API_KEY + явный ALLOW_DEV_MAGIC_URL=true)
+ *     ссылка пишется в console.info и возвращается в ответе.
  *
- * Subject и HTML hardcoded здесь (минимальный брендинг RабочиеЛисты AI),
+ * Subject и HTML hardcoded здесь (минимальный брендинг УчЛист),
  * могут быть вынесены в шаблон позже (T2/T3 не трогают — это email-domain).
  */
 
@@ -17,6 +20,8 @@ export interface SendMagicLinkResult {
   sent: boolean;
   /** Только при ошибке — строка от Resend / сети. */
   error?: string;
+  /** Машиночитаемая причина отказа (для логов и мониторинга). */
+  reason?: "not_configured" | "provider_error";
   /** Только в dev-режиме: фактически сгенерированный magic-link URL (для логов). */
   url?: string;
 }
@@ -27,23 +32,37 @@ const SUBJECT = "Войти в УчЛист";
 /**
  * Отправить magic-link email пользователю через Resend.
  *
- * Если RESEND_API_KEY не задан — пишем URL в console.info (dev-режим) и
- * возвращаем `{ sent: true, url }`. Никаких HTTP-вызовов.
+ * Без RESEND_API_KEY письмо отправить НЕЧЕМ. Единственное исключение —
+ * явно разрешённый локальный режим ALLOW_DEV_MAGIC_URL=true: там ссылка
+ * возвращается в ответе, и это осознанный обмен «почта» на «отдай ссылку».
  *
- * Если RESEND задан — пытаемся отправить; ошибка пишется в console.warn и
- * возвращается { sent: false, error }. Не бросаем — вызывающий код решает,
- * насколько это критично (для /api/auth/magic-link это не критично).
+ * ВАЖНО (12.10.2026). Раньше здесь стояло безусловное `return { sent: true }`
+ * при пустом ключе — то есть функция сообщала «письмо отправлено», не отправив
+ * ничего. Для вызывающего это выглядело как успех, и вход на проде выглядел бы
+ * рабочим при полностью нерабочей почте. Теперь `sent: true` возможно только
+ * когда письмо действительно ушло (Resend вернул id) или когда dev-режим
+ * включён флагом. Иначе — честный `sent: false` с причиной.
+ *
+ * Ошибки не бросаем: вызывающий сам решает, что делать (вызывающий — ручка
+ * входа, которая отвечает учителю).
  */
 export async function sendMagicLinkEmail(
   env: Env,
   to: string,
   url: string,
 ): Promise<SendMagicLinkResult> {
-  // Dev fallback: нет ключа → не делаем HTTP, пишем в логи.
   if (!env.RESEND_API_KEY) {
-    // eslint-disable-next-line no-console
-    console.info(`[magic-link] dev-mode to=${to} url=${url}`);
-    return { sent: true, url };
+    // Явно разрешённый dev-режим: ссылка уходит в ответ вместо письма.
+    if (env.ALLOW_DEV_MAGIC_URL === "true") {
+      // eslint-disable-next-line no-console
+      console.info(`[magic-link] dev-mode to=${to} url=${url}`);
+      return { sent: true, url };
+    }
+    return {
+      sent: false,
+      reason: "not_configured",
+      error: "RESEND_API_KEY не задан, ALLOW_DEV_MAGIC_URL не включён",
+    };
   }
 
   const resend = new Resend(env.RESEND_API_KEY);
@@ -62,14 +81,22 @@ export async function sendMagicLinkEmail(
     if (error) {
       // eslint-disable-next-line no-console
       console.warn(JSON.stringify({ msg: "resend error", to, error }));
-      return { sent: false, error: typeof error === "string" ? error : (error.message ?? "resend error") };
+      return {
+        sent: false,
+        reason: "provider_error",
+        error: typeof error === "string" ? error : (error.message ?? "resend error"),
+      };
     }
-    return { sent: Boolean(data?.id), url };
+    // Resend принял письмо (вернул id) — только теперь утверждаем, что оно ушло.
+    if (!data?.id) {
+      return { sent: false, reason: "provider_error", error: "resend вернул ответ без id" };
+    }
+    return { sent: true, url };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     // eslint-disable-next-line no-console
     console.warn(JSON.stringify({ msg: "resend exception", to, error: msg }));
-    return { sent: false, error: msg };
+    return { sent: false, reason: "provider_error", error: msg };
   }
 }
 
