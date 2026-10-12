@@ -7,11 +7,44 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
-import { Mail, ArrowRight, Sparkles, Rocket } from "lucide-react";
+import { Mail, ArrowRight, Sparkles, Rocket, Lock, AlertCircle } from "lucide-react";
+import { cn } from "@/lib/utils/cn";
 import { trackEvent } from "@/lib/track";
-import { requestMagicLink } from "@/lib/auth/api";
+import { requestMagicLink, loginWithPassword, LOGIN_REFUSED_TEXT } from "@/lib/auth/api";
+import { verifyLoginCode } from "@/lib/superpower-totp-api";
+import type { AuthUser } from "@/lib/auth/api";
 import { MAGIC_LINK_READY } from "@/lib/auth/magic-link-status";
+import { PROFILE_CHANGED_EVENT } from "@/lib/events";
+import { setProfile } from "@/lib/utils/storage";
+import type { UserProfile } from "@/lib/types";
 import { DEMO_USER_NAME, enterDemoMode, isDemoLoginEnabled } from "@/lib/dev/demo-login";
+
+/** Правила пароля (ТЗ §7.1): длина 8…128, обязательны буква и цифра. */
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MAX_LENGTH = 128;
+
+/** Подпись под полем, пока учитель ничего не нарушил. */
+const PASSWORD_HINT = "От 8 до 128 символов, нужна буква и цифра";
+
+/**
+ * Проверка пароля ДО запроса (ТЗ §12.7): показывает требование у поля и
+ * никуда не отправляет.
+ *
+ * Буква — любая, включая русскую: ТЗ §7.1 прямо говорит про русскую раскладку,
+ * поэтому `\p{L}`, а не `[a-z]`. Цифра — тоже любая (`\p{N}`).
+ * Возвращает текст нарушения или null, если пароль годится.
+ */
+function passwordProblem(password: string): string | null {
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    return `Минимум ${PASSWORD_MIN_LENGTH} символов`;
+  }
+  if (password.length > PASSWORD_MAX_LENGTH) {
+    return `Максимум ${PASSWORD_MAX_LENGTH} символов`;
+  }
+  if (!/\p{L}/u.test(password)) return "Нужна хотя бы одна буква";
+  if (!/\p{N}/u.test(password)) return "Нужна хотя бы одна цифра";
+  return null;
+}
 
 
 export default function LoginPage() {
@@ -21,6 +54,25 @@ export default function LoginPage() {
   const [email, setEmail] = React.useState("");
   const [step, setStep] = React.useState<"email" | "sent">("email");
   const [loading, setLoading] = React.useState(false);
+  // Два пути входа рядом (ТЗ §6). Переключатель ничего не спрашивает у бэка про
+  // введённый адрес — иначе форма проверяла бы, зарегистрирован ли он.
+  const [mode, setMode] = React.useState<"link" | "password">("link");
+  const [password, setPassword] = React.useState("");
+  /** Нарушение правил пароля — показываем у поля, запрос не уходит. */
+  const [passwordError, setPasswordError] = React.useState<string | null>(null);
+  /**
+   * Второй шаг входа администратора (ТЗ-24 §8.1).
+   *
+   * Здесь и живёт экран с шестью цифрами: пароль уже проверен, но сессия ещё
+   * не выдана. Отдельное состояние, а не «ещё один шаг» в общей машине, —
+   * потому что у этого шага другая природа: код живёт 30 секунд, и счётчик
+   * ошибок у него свой.
+   */
+  const [mfaPending, setMfaPending] = React.useState<string | null>(null);
+  const [mfaCode, setMfaCode] = React.useState("");
+  const [mfaError, setMfaError] = React.useState<string | null>(null);
+  /** Отказ сервера или сети. Текст единственный — см. loginWithPassword. */
+  const [loginError, setLoginError] = React.useState<string | null>(null);
   // С 01.09.2025 (156-ФЗ, ч. 4 ст. 9 152-ФЗ) согласие на обработку ПДн —
   // отдельный документ, а не строчка в оферте. Без явной отметки magic link
   // не отправляем: это и есть отправка ПДн за границу без согласия.
@@ -30,16 +82,65 @@ export default function LoginPage() {
     trackEvent("login_view");
   }, []);
 
+  /**
+   * Профиль → событие для шапки → /dashboard. Тот же путь, что после входа по
+   * ссылке из письма (AuthCallbackInner), чтобы оба способа давали одинаковое
+   * состояние кабинета.
+   */
+  const openCabinet = (u: AuthUser) => {
+    const profile: UserProfile = {
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      plan: u.plan,
+      generationsTotal: u.generationsTotal ?? 0,
+      generationsToday: u.generationsToday ?? 0,
+      // generationsLimit: -1 у base/plus трактуется как безлимит.
+      generationsLimit: u.generationsLimit ?? (u.plan === "free" ? 3 : -1),
+      createdAt: u.createdAt ?? new Date().toISOString(),
+    };
+    setProfile(profile);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event(PROFILE_CHANGED_EVENT));
+    }
+    setPassword("");
+    router.push("/dashboard");
+  };
+
+  const switchMode = (next: "link" | "password") => {
+    setMode(next);
+    // Старое сообщение относится к прошлому пути и только путает.
+    setLoginError(null);
+    setPasswordError(null);
+  };
+
+  /** Одно требование согласия на оба пути: текст зависит от выбранного пути. */
+  const consentToast = () =>
+    toast({
+      title: "Нужно согласие на обработку данных",
+      description:
+        mode === "password"
+          ? "Отметьте согласие на обработку персональных данных — без него мы не пустим в кабинет."
+          : "Отметьте согласие на обработку персональных данных — без него мы не можем отправить ссылку на почту.",
+      tone: "error",
+    });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.includes("@")) return;
-    if (!consentPdn) {
+    if (mode === "password") {
+      await submitPassword();
+      return;
+    }
+    if (!email.includes("@")) {
       toast({
-        title: "Нужно согласие на обработку данных",
-        description:
-          "Отметьте согласие на обработку персональных данных — без него мы не можем отправить ссылку на почту.",
+        title: "Проверьте адрес",
+        description: "Похоже, в адресе опечатка — письмо туда не придёт.",
         tone: "error",
       });
+      return;
+    }
+    if (!consentPdn) {
+      consentToast();
       return;
     }
     const emailDomain = email.split("@")[1] ?? "unknown";
@@ -72,6 +173,86 @@ export default function LoginPage() {
     }
   };
 
+  /**
+   * Вход по паролю (ТЗ §6).
+   *
+   * Порядок проверок: правила пароля → адрес → согласие. Первые две не уходят
+   * в сеть, поэтому экран не может превратиться в способ проверить, заведён ли
+   * этот адрес (ТЗ §3, разрыв 4).
+   */
+  const submitPassword = async () => {
+    const problem = passwordProblem(password);
+    if (problem) {
+      setPasswordError(problem);
+      return;
+    }
+    if (!email.includes("@")) {
+      // Тот же единый отказ: адрес не дописан, и проверить его нечем.
+      setLoginError(LOGIN_REFUSED_TEXT);
+      return;
+    }
+    if (!consentPdn) {
+      consentToast();
+      return;
+    }
+
+    setPasswordError(null);
+    setLoginError(null);
+    setLoading(true);
+    const emailDomain = email.split("@")[1] ?? "unknown";
+    trackEvent("login_password_submit", { emailDomain });
+    const result = await loginWithPassword(email, password);
+    setLoading(false);
+
+    if (result.ok) {
+      // Пароль верен, но у администратора включён код подтверждения: второй шаг.
+      if ("mfaRequired" in result && result.mfaRequired) {
+        setMfaPending(result.pendingToken);
+        setMfaCode("");
+        setMfaError(null);
+        return;
+      }
+      // Дальше по типу остаётся только ветка с пользователем: ветка с
+      // mfaRequired выше уже вернулась.
+      if (!("user" in result)) return;
+      trackEvent("login_password_success", { emailDomain });
+      openCabinet(result.user);
+      return;
+    }
+    // Причина отказа в аналитику не пишется: текст единственный, разбирать
+    // причины по нему бессмысленно, а в базе опаснее.
+    trackEvent("login_password_failed", { emailDomain });
+    setLoginError(result.error);
+  };
+
+  /**
+   * Второй шаг: отправить код из приложения.
+   *
+   * На ошибке экран НЕ сбрасывается — человеку нужно просто ввести код заново,
+   * стирать введённое было бы наказанием за опечатку. Сбрасывается только код.
+   */
+  const handleMfaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mfaPending || mfaCode.length !== 6) return;
+
+    setLoading(true);
+    setMfaError(null);
+    const { data, error: err } = await verifyLoginCode(mfaCode, mfaPending);
+    setLoading(false);
+
+    if (err || !data) {
+      setMfaError(err ?? "Код не подошёл");
+      setMfaCode("");
+      return;
+    }
+
+    // Сессия выдана сервером и лежит в cookie. Дальше кабинет открывается
+    // обычным путём — как после обычного входа.
+    setMfaPending(null);
+    trackEvent("login_password_success", {});
+    router.push("/dashboard");
+  };
+
   const handleDemoLogin = () => {
     trackEvent("dev_demo_login");
     enterDemoMode();
@@ -86,7 +267,7 @@ export default function LoginPage() {
   return (
     <div className="container-tight py-12 sm:py-20 max-w-md mx-auto">
       <Card>
-        {step === "email" && (
+        {step === "email" && mfaPending === null && (
           <>
             <div className="text-center mb-6">
               <div className="w-12 h-12 rounded-xl bg-brand-500 text-white grid place-items-center mx-auto mb-4 shadow-brand">
@@ -95,7 +276,9 @@ export default function LoginPage() {
               <h1 className="text-2xl font-semibold text-warm-950">Войти в УчЛист</h1>
               <p className="text-sm text-warm-500 mt-1">
                 {MAGIC_LINK_READY
-                  ? "Magic link — без пароля. Откроем письмо, нажмёте кнопку — и готово."
+                  ? mode === "password"
+                    ? "Введите почту и пароль — кабинет откроется сразу, письмо не понадобится."
+                    : "Пришлём письмо со ссылкой — откроете её и войдёте в кабинет."
                   : "Кабинет сохраняет ваши листы, избранное и историю. Пока его можно начать без регистрации."}
               </p>
             </div>
@@ -112,6 +295,27 @@ export default function LoginPage() {
                   required
                 />
 
+                {/* Второй путь входа. Поле появляется только по выбору учителя и
+                    не спрашивает у бэка, задан ли пароль у этой почты. */}
+                {mode === "password" && (
+                  <Input
+                    label="Пароль"
+                    type="password"
+                    autoComplete="current-password"
+                    placeholder="Не короче 8 символов, буква и цифра"
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (passwordError) setPasswordError(null);
+                    }}
+                    leftIcon={<Lock className="w-4 h-4" />}
+                    hint={PASSWORD_HINT}
+                    error={passwordError ?? undefined}
+                    data-testid="login-password"
+                    required
+                  />
+                )}
+
                 {/* Согласие на обработку ПДн — отдельная форма, отдельный документ.
                     Не прячем в текст оферты: так требует ч. 4 ст. 9 152-ФЗ. */}
                 <div className="rounded-xl border border-warm-200 bg-warm-50/60 p-3.5">
@@ -126,9 +330,11 @@ export default function LoginPage() {
                     <span className="text-sm text-warm-700">
                       Согласен на обработку персональных данных
                       <span className="block text-xs text-warm-600 mt-1">
-                        Мы используем адрес электронной почты, чтобы отправить ссылку
-                        для входа и сохранить вашу историю генераций. Текст согласия —
-                        отдельный документ,{" "}
+                        {/* Формулировка общая для обоих путей: почта нужна и чтобы
+                            получить ссылку, и чтобы войти по паролю. */}
+                        Мы используем адрес электронной почты, чтобы войти
+                        в кабинет и сохранить вашу историю генераций. Текст
+                        согласия — отдельный документ,{" "}
                         <Link
                           href="/legal/consent"
                           className="text-brand-600 hover:text-brand-700 underline"
@@ -149,9 +355,25 @@ export default function LoginPage() {
                   loading={loading}
                   disabled={!consentPdn}
                   rightIcon={<ArrowRight className="w-4 h-4" />}
+                  data-testid="login-submit"
                 >
-                  Получить ссылку на почту
+                  {mode === "password"
+                    ? "Войти по паролю"
+                    : "Получить ссылку на почту"}
                 </Button>
+
+                {/* Отказ живёт под кнопкой, а не в тосте: учителю нужно ввести
+                    пароль заново, а тост через четыре секунды исчезает. */}
+                {mode === "password" && loginError && (
+                  <p
+                    role="alert"
+                    data-testid="login-password-error"
+                    className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50/60 px-3.5 py-3 text-sm text-rose-700"
+                  >
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+                    <span>{loginError}</span>
+                  </p>
+                )}
               </form>
             ) : (
               /* Входа по почте нет: домен для писем ещё не подтверждён (см.
@@ -168,6 +390,54 @@ export default function LoginPage() {
                 </p>
               </div>
             )}
+
+            {/* Два пути входа рядом (ТЗ §6). Показывается только когда вход по
+                ссылке включён: если письма не уходят, один из двух пунктов
+                вёл бы в никуда. */}
+            {MAGIC_LINK_READY && (
+              <div className="mt-6 pt-6 border-t border-warm-100">
+                <p className="mb-3 text-center text-xs uppercase tracking-wider text-[color:var(--text-muted)]">
+                  Как войти
+                </p>
+                <div className="grid grid-cols-2 gap-2" role="group" aria-label="Способ входа">
+                  <button
+                    type="button"
+                    onClick={() => switchMode("link")}
+                    aria-pressed={mode === "link"}
+                    data-testid="login-mode-link"
+                    className={cn(
+                      "min-h-11 rounded-xl border px-3 py-2 text-sm font-medium transition-colors",
+                      mode === "link"
+                        ? "border-brand-500 bg-brand-50 text-brand-700"
+                        : "border-warm-200 bg-white text-warm-600 hover:border-warm-300 hover:text-warm-900",
+                    )}
+                  >
+                    Получить ссылку на почту
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => switchMode("password")}
+                    aria-pressed={mode === "password"}
+                    data-testid="login-mode-password"
+                    className={cn(
+                      "min-h-11 rounded-xl border px-3 py-2 text-sm font-medium transition-colors",
+                      mode === "password"
+                        ? "border-brand-500 bg-brand-50 text-brand-700"
+                        : "border-warm-200 bg-white text-warm-600 hover:border-warm-300 hover:text-warm-900",
+                    )}
+                  >
+                    Войти по паролю
+                  </button>
+                </div>
+                {mode === "password" && (
+                  <p className="mt-2.5 text-center text-xs text-warm-500">
+                    Забыли пароль? Выберите «Получить ссылку на почту» — письмо придёт на
+                    эту почту.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="my-6 flex items-center gap-3">
               <div className="flex-1 h-px bg-warm-100" />
               <span className="text-xs uppercase tracking-wider text-[color:var(--text-muted)]">
@@ -264,6 +534,57 @@ export default function LoginPage() {
           </>
         )}
 
+        {/* Второй шаг входа администратора (ТЗ-24 §8.1). Показывается вместо
+            формы пароля: пароль уже проверен, осталось подтвердить вход кодом. */}
+        {mfaPending !== null && (
+          <form onSubmit={handleMfaSubmit}>
+            <div className="flex flex-col items-center text-center mb-6">
+              <div className="w-14 h-14 rounded-full bg-brand-50 flex items-center justify-center mb-4">
+                <Mail className="w-6 h-6 text-brand-600" />
+              </div>
+              <h1 className="text-xl font-semibold text-warm-900 mb-2">
+                Подтвердите вход кодом
+              </h1>
+              <p className="text-warm-600 text-sm max-w-xs">
+                Введите шесть цифр из приложения-аутентификатора. Подойдёт и резервный
+                код, если телефон недоступен.
+              </p>
+            </div>
+
+            <input
+              value={mfaCode}
+              onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="000000"
+              aria-label="Код подтверждения"
+              className="w-full px-4 py-3 rounded-xl border border-warm-200 text-center text-2xl tracking-[0.4em] font-mono focus:outline-none focus:border-brand-500 mb-3"
+            />
+
+            {mfaError && (
+              <div className="rounded-xl bg-accent-50 border border-accent-200 px-4 py-3 text-sm text-accent-800 mb-3">
+                {mfaError}
+              </div>
+            )}
+
+            <Button type="submit" size="lg" fullWidth disabled={loading || mfaCode.length !== 6}>
+              {loading ? "Проверяю…" : "Войти"}
+            </Button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMfaPending(null);
+                setMfaCode("");
+                setMfaError(null);
+              }}
+              className="mt-4 w-full text-sm text-warm-600 hover:text-warm-900"
+            >
+              Вернуться ко входу
+            </button>
+          </form>
+        )}
+
         {step === "sent" && (
           <div className="text-center">
             <div className="w-12 h-12 rounded-xl bg-emerald-500 text-white grid place-items-center mx-auto mb-4">
@@ -271,7 +592,7 @@ export default function LoginPage() {
             </div>
             <h2 className="text-xl font-semibold text-warm-950">Проверьте почту</h2>
             <p className="text-sm text-warm-600 mt-2">
-              Отправили magic link на <strong>{email}</strong>. Откройте письмо и нажмите кнопку «Войти».
+              Отправили письмо на <strong>{email}</strong>. Откройте его и нажмите «Войти в УчЛист».
             </p>
             <p className="text-xs text-warm-500 mt-4">
               Не пришло? Проверьте папку «Спам» или повторите через минуту.
