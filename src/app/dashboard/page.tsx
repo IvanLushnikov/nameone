@@ -104,7 +104,7 @@ import { getSubject } from "@/lib/content/subjects";
 import { trackEvent } from "@/lib/track";
 import { UsageCard, type UsagePayload } from "@/components/shared/UsageCard";
 import { FREE_QUOTA_SCOPE_NOTE } from "@/lib/content/landing-seo";
-import { fetchUsage } from "@/lib/auth/api";
+import { fetchUsage, signOutFromApi } from "@/lib/auth/api";
 
 /** Размер порции истории: 20 карточек, дальше — «Показать ещё». */
 const PAGE_SIZE = 20;
@@ -334,7 +334,17 @@ export default function DashboardPage() {
     router.push(`/constructor?${params}`);
   };
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    // Сначала сервер. Раньше кнопка «Выйти» чистила только память устройства:
+    // запрос /api/auth/logout не уходил, cookie session и строка в таблице sessions
+    // оставались живы. Проверено на живом сайте 12.10.2026 — после нажатия cookie
+    // на месте, а аккаунт формально закрыт. На общем компьютере следующий, кто
+    // откроет сайт, окажется залогинен под этим аккаунтом.
+    //
+    // signOutFromApi сама глотает ошибки сети: если сервер недоступен, выход из
+    // интерфейса всё равно должен состояться, но cookie тогда переживёт сессию
+    // на устройстве — это цена работы без сети.
+    await signOutFromApi();
     signOut();
     router.push("/");
     toast({ tone: "info", title: "Вы вышли из аккаунта" });
