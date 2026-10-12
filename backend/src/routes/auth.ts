@@ -66,12 +66,16 @@ authRouter.post("/callback", async (c) => {
   //
   // Когда переедем на один eTLD+1 (например uchlist.ru apex + api.uchlist.ru),
   // можно вернуть SameSite=Lax — это безопаснее (CSRF mitigation).
+  const cookieDomain = c.env.SESSION_COOKIE_DOMAIN || undefined;
   setCookie(c, "session", result.sessionToken, {
     httpOnly: true,
     secure: true,
-    sameSite: "None",
+    // Свой домен → cookie first-party для uchlist.ru и SameSite=Lax (плюс CSRF).
+    // workers.dev → cookie сторонняя, браузеры её блокируют и всё отдаёт 401.
+    sameSite: cookieDomain ? "Lax" : "None",
     maxAge: 30 * 24 * 60 * 60, // 30 дней
     path: "/",
+    ...(cookieDomain ? { domain: cookieDomain } : {}),
   });
 
   return c.json({
@@ -98,7 +102,11 @@ authRouter.post("/logout", async (c) => {
   if (token) {
     await deleteSession(c.env.DB, token);
   }
-  deleteCookie(c, "session", { path: "/" });
+  const cookieDomain = c.env.SESSION_COOKIE_DOMAIN || undefined;
+  deleteCookie(c, "session", {
+    path: "/",
+    ...(cookieDomain ? { domain: cookieDomain } : {}),
+  });
   return c.json({ ok: true });
 });
 

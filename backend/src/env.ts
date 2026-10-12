@@ -63,6 +63,20 @@ export interface Env {
   RECURRING_BILLING_ENABLED?: string;
   FRONTEND_URL: string;
 
+  /**
+   * Домен cookie сессии (`.uchlist.ru`). Задан с 12.10.2026, когда бэк переехал
+   * с `*.workers.dev` на собственный домен api.uchlist.ru.
+   *
+   * Не задано = старое поведение: cookie на хосте воркера с SameSite=None. Для
+   * сайта uchlist.ru такая cookie сторонняя, и Safari / Firefox / Chrome с
+   * Privacy Sandbox её не передают: вход проходит, сессия в базе живая, а любой
+   * запрос к бэку получает 401. Воспроизведено на живом сайте 12.10.2026.
+   *
+   * Задавать ТОЛЬКО вместе с NEXT_PUBLIC_API_URL фронта = https://api.uchlist.ru,
+   * иначе cookie уйдёт на .uchlist.ru, а запросы придут на workers.dev.
+   */
+  SESSION_COOKIE_DOMAIN?: string;
+
   // secrets (все опциональны — наличие проверяется в нужных роутах)
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;

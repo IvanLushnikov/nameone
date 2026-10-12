@@ -97,6 +97,12 @@ ALLOW_DEMO_PAYMENTS = "false"
 # Рекуррент НЕ включаем, пока менеджер ЮKassa не разрешит автоплатежи на
 # боевом магазине и не пройдёт тест на тестовой карте (см. env.ts).
 RECURRING_BILLING_ENABLED = "false"
+# 2026-10-12: бэк живёт на api.uchlist.ru (custom domain воркера), поэтому cookie
+# сессии ставится на .uchlist.ru и становится first-party для сайта. Раньше она
+# жила на rabochielisty-api.*.workers.dev и была сторонней — часть браузеров её
+# не передавала, и вход молча давал 401 на каждом запросе.
+# Менять только вместе с NEXT_PUBLIC_API_URL фронта (см. .github/workflows/deploy.yml).
+SESSION_COOKIE_DOMAIN = ".uchlist.ru"
 
 [[env.production.d1_databases]]
 binding = "DB"
