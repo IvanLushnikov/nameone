@@ -211,7 +211,11 @@ authRouter.post("/callback", async (c) => {
   // Когда переедем на один eTLD+1 (например uchlist.ru apex + api.uchlist.ru),
   // можно вернуть SameSite=Lax — это безопаснее (CSRF mitigation).
   //
-  // Сам код cookie — в setSessionCookie, общий с входом по паролю.
+  // Сам код cookie — в setSessionCookie: он общий с входом по паролю и уже
+  // несёт поведение из origin/main (SESSION_COOKIE_DOMAIN → домен + SameSite=Lax,
+  // без домена → SameSite=None для workers.dev). Дублировать setCookie здесь
+  // нельзя: через год два места разойдутся, и одна из них перестанет ставить
+  // cookie на правильный домен.
   setSessionCookie(c, result.sessionToken);
 
   return c.json({
@@ -363,7 +367,11 @@ authRouter.post("/logout", async (c) => {
   if (token) {
     await deleteSession(c.env.DB, token);
   }
-  deleteCookie(c, "session", { path: "/" });
+  const cookieDomain = c.env.SESSION_COOKIE_DOMAIN || undefined;
+  deleteCookie(c, "session", {
+    path: "/",
+    ...(cookieDomain ? { domain: cookieDomain } : {}),
+  });
   return c.json({ ok: true });
 });
 

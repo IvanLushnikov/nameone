@@ -105,11 +105,12 @@ RECURRING_BILLING_ENABLED = "false"
 #
 # Теперь бэк живёт на собственном домене api.uchlist.ru (custom domain воркера),
 # cookie становится first-party для uchlist.ru, браузеры её не трогают, а
-# SameSite в auth.ts автоматически переключается на Lax (безопаснее, чем None).
+# SameSite в auth.ts автоматически переключается на Lax (безезопаснее, чем None).
 #
 # ПЕРЕКЛЮЧЕНИЕ ДОЛЖНО БЫТЬ СОВМЕСТНЫМ: эту переменную нельзя выкатывать, пока
 # NEXT_PUBLIC_API_URL на фронте ещё указывает на workers.dev — тогда cookie уйдёт
-# на .uchlist.ru, а запросы придут на workers.dev, и все разлогинятся.
+# на .uchlist.ru, а запросы придут на workers.dev, и все разлогинятся. То же самое
+# касается NEXT_PUBLIC_API_URL на фронте — см. .github/workflows/deploy.yml.
 SESSION_COOKIE_DOMAIN = ".uchlist.ru"
 
 [[env.production.d1_databases]]
