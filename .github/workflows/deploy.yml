@@ -82,7 +82,12 @@ jobs:
           # а src/lib/llm/index.ts уходил в локальный мок — учитель получал
           # правдоподобный, но выдуманный лист. Проверяется так: в бандле
           # pages.dev/_next/static/chunks/... должен встречаться этот домен.
-          NEXT_PUBLIC_API_URL: https://rabochielisty-api.ivanlusnikov159.workers.dev
+          # 2026-10-12: бэк переехал на собственный домен api.uchlist.ru (custom domain
+          # воркера). Причина не косметическая: на rabochielisty-api.*.workers.dev cookie
+          # сессии была «сторонней» для uchlist.ru, и Safari / Firefox / Chrome с
+          # Privacy Sandbox её не передавали — вход проходил, а любой запрос к бэку
+          # получал 401. На api.uchlist.ru cookie first-party и уходит нормально.
+          NEXT_PUBLIC_API_URL: https://api.uchlist.ru
           # Реквизиты оператора ПДн — уходят в публичную оферту и в согласие
           # на обработку персональных данных. Без ФИО+адреса согласие
           # недействительно по ч. 4 ст. 9 152-ФЗ (штраф 300–700 тыс. ₽).
