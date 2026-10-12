@@ -122,10 +122,18 @@ const DAY = 86400;
  * час назад» окажется подпиской с периодом в будущем.
  */
 const NOW = Math.floor(Date.now() / 1000);
-/** Цена базового помесячного тарифа, копейки. Дублируем намеренно (см. PRICES). */
-const BASE_MONTHLY = 500_00;
-const PLUS_MONTHLY = 1_500_00;
-const BASE_YEAR = 3_800_00;
+/**
+ * Цены тарифов, копейки. Дублируем намеренно (см. PRICES).
+ *
+ * ОБНОВЛЕНО 12.10.2026 под снижение цен (docs/36). Здесь стояли 500 / 1 500 /
+ * 3 800 ₽. Из-за этого тестовые вебхуки несли сумму, которой в PRICES уже нет,
+ * и бэк их справедливо отклонял («сумма в уведомлении не совпадает с ценой
+ * тарифа») — а следом падало всё, что зависело от созданной подписки. То есть
+ * падали не проверки автопродления, а фикстуры из прошлой экономики.
+ */
+const BASE_MONTHLY = 249_00;
+const PLUS_MONTHLY = 999_00;
+const BASE_YEAR = 1_890_00;
 
 const db = () => (env as unknown as { DB: D1Database }).DB;
 
@@ -376,7 +384,8 @@ describe("Списание по крону", () => {
     expect(requests[0]?.payment_method_id).toBe("pm_sub_charge");
     expect(requests[0]?.confirmation).toBeUndefined();
     expect(requests[0]?.capture).toBe(true);
-    expect(requests[0]?.amount).toEqual({ value: "500.00", currency: "RUB" });
+    // Сумма списания — из PRICES, поэтому после снижения цен это 249 ₽.
+    expect(requests[0]?.amount).toEqual({ value: "249.00", currency: "RUB" });
 
     const payment = await db()
       .prepare(
@@ -949,7 +958,7 @@ describe("Мелочи, на которых обычно и ломается", (
 
   it("цена «Плюс» в письме считается из прайса, а не из воздуха", () => {
     // Напоминание обязано называть точную сумму списания; цена живёт в PRICES.
-    expect(BASE_MONTHLY).toBe(500_00);
-    expect(PLUS_MONTHLY).toBe(1_500_00);
+    expect(BASE_MONTHLY).toBe(249_00);
+    expect(PLUS_MONTHLY).toBe(999_00);
   });
 });

@@ -138,8 +138,8 @@ describe("состояния блока подписки", () => {
         return okResponse({
           ok: true,
           payments: [
-            { id: "pay_1", plan: "plus", amountRub: 1500, status: "succeeded", createdAt: nowSec - 10 * DAY, completedAt: nowSec - 10 * DAY, receiptUrl: "https://yookassa.example/receipt/1" },
-            { id: "pay_2", plan: "plus", amountRub: 1500, status: "pending", createdAt: nowSec - DAY, completedAt: null, receiptUrl: null },
+            { id: "pay_1", plan: "plus", amountRub: 999, status: "succeeded", createdAt: nowSec - 10 * DAY, completedAt: nowSec - 10 * DAY, receiptUrl: "https://yookassa.example/receipt/1" },
+            { id: "pay_2", plan: "plus", amountRub: 999, status: "pending", createdAt: nowSec - DAY, completedAt: null, receiptUrl: null },
           ],
         });
       }
@@ -187,11 +187,11 @@ describe("честный расчёт цены", () => {
   it("первая покупка — полная цена выбранного периода", () => {
     const q = quotePlanChange({ from: "free", to: "base", period: "month", now: nowSec, periodEndsAt: null });
     expect(q.kind).toBe("start");
-    expect(q.payNowRub).toBe(500);
+    expect(q.payNowRub).toBe(249);
   });
 
   it("повышение — только разница за оставшиеся дни, не полный месяц", () => {
-    // Базовый за месяц (500 ₽) оплачен, осталось 15 дней из 30, переходим на Плюс.
+    // Базовый за месяц (249 ₽) оплачен, осталось 15 дней из 30, переходим на Плюс.
     const q = quotePlanChange({
       from: "base",
       to: "plus",
@@ -200,14 +200,14 @@ describe("честный расчёт цены", () => {
       periodEndsAt: nowSec + 15 * DAY,
     });
     expect(q.kind).toBe("upgrade");
-    expect(q.payNowRub).toBe(750); // 1500 * 15/30
-    expect(q.nextPriceRub).toBe(1500);
+    expect(q.payNowRub).toBe(499); // 999 × 15/30 = 499,5 → округление вниз
+    expect(q.nextPriceRub).toBe(999);
     expect(q.effectiveAt).toBe(nowSec);
   });
 
   it("повышение за один день до конца периода стоит копейки, а не месяца", () => {
-    // Учебный год = 270 дней, «Плюс» = 11 000 ₽. Остался 1 день:
-    // 11000 * 1/270 ≈ 40 ₽. Проверяем, что платится ДОЛЯ периода, а не 11 000.
+    // Учебный год = 270 дней, «Плюс» = 7 330 ₽. Остался 1 день:
+    // 7330 * 1/270 ≈ 27 ₽. Проверяем, что платится ДОЛЯ периода, а не 7 330.
     const q = quotePlanChange({
       from: "base",
       to: "plus",
@@ -216,7 +216,7 @@ describe("честный расчёт цены", () => {
       periodEndsAt: nowSec + 1 * DAY,
     });
     expect(q.kind).toBe("upgrade");
-    expect(q.payNowRub).toBe(40);
+    expect(q.payNowRub).toBe(27);
     expect(q.payNowRub).toBeLessThan(100);
   });
 
@@ -238,7 +238,7 @@ describe("честный расчёт цены", () => {
     const q = quotePlanChange({ from: "plus", to: "base", period: "month", now: nowSec, periodEndsAt: endsAt });
     expect(q.kind).toBe("downgrade");
     expect(q.payNowRub).toBe(0);
-    expect(q.nextPriceRub).toBe(500);
+    expect(q.nextPriceRub).toBe(249);
     expect(q.effectiveAt).toBe(endsAt);
   });
 
@@ -315,12 +315,12 @@ describe("серверные методы биллинга", () => {
   it("история платежей читается из ответа сервера", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => okResponse({ ok: true, payments: [{ id: "pay_1", plan: "base", amountRub: 3800, status: "succeeded", createdAt: nowSec, completedAt: nowSec, receiptUrl: "https://yoomoney.example/r/1" }] })),
+      vi.fn(async () => okResponse({ ok: true, payments: [{ id: "pay_1", plan: "base", amountRub: 1890, status: "succeeded", createdAt: nowSec, completedAt: nowSec, receiptUrl: "https://yoomoney.example/r/1" }] })),
     );
     const res = await fetchPaymentHistory();
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.payments).toHaveLength(1);
-    expect(res.payments[0].amountRub).toBe(3800);
+    expect(res.payments[0].amountRub).toBe(1890);
   });
 });

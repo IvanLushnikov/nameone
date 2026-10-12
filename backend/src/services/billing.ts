@@ -69,12 +69,16 @@ export const ACADEMIC_YEAR_MONTHS = 9;
  * Тест гоняет ФРОНТОВЫЙ прогон, см. ci.yml → job frontend.
  */
 export const PRICES = {
-  base: { monthly: 500_00, academicYear: 3_800_00 },
+  // Снижение цен 12.10.2026. Расчёт маржи — docs/35-price-cut-margin-2026-10-12.md,
+  // план — docs/36-price-cut-implementation-plan-2026-10-12.md. База для расчёта —
+  // сценарий нагрузки В (20 уроков в неделю). Нормы менялись вместе с ценой:
+  // см. PLAN_NORM_PER_MONTH в services/usage.ts.
+  base: { monthly: 249_00, academicYear: 1_890_00 },
   // Тариф «Оптимальный» (ТЗ-21 п.4): закрывает провал между «Базовым» и
-  // «Плюсом» — школьный учитель с 3–4 предметами. Норма втрое выше базовой
-  // за вдвое большую цену, маржа 83–86% (расчёт в plans.ts, NORM_STANDARD).
-  standard: { monthly: 990_00, academicYear: 7_600_00 },
-  plus: { monthly: 1_500_00, academicYear: 11_000_00 },
+  // «Плюсом» — школьный учитель с 3–4 предметами. Норма втрое выше базовой,
+  // цена вдвое выше, маржа 82,9% на сценарии В (plans.ts, NORM_STANDARD).
+  standard: { monthly: 499_00, academicYear: 3_830_00 },
+  plus: { monthly: 999_00, academicYear: 7_330_00 },
   school: { monthly: 3_000_00, academicYear: null },
 } as const;
 

@@ -21,6 +21,18 @@
  * числа разошлись. Это единственное место, где сверка возможна.
  *
  * Этот файл отвечает за то, что бэк вообще держит правильные числа.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ОБНОВЛЕНО 12.10.2026: снижение цен
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Здесь стояли 500 / 3 800 / 1 500 / 11 000 ₽. После решения владельца о снижении
+ * цен (docs/36-price-cut-implementation-plan-2026-10-12.md, расчёт маржи —
+ * docs/35-price-cut-margin-2026-10-12.md) в `PRICES` живут 249 / 1 890 /
+ * 499 / 3 830 / 999 / 7 330 ₽, а тест продолжал ждать старые числа и падал.
+ *
+ * Сверка «бэк и фронт говорят одно и то же» здесь невозможна и живёт в
+ * tests/integration/plans-price-sources.test.ts; этот файл фиксирует сами
+ * значения, чтобы их нельзя было поменять молча.
  */
 
 import { describe, it, expect } from "vitest";
@@ -39,20 +51,20 @@ import {
 } from "../../src/services/billing";
 
 describe("PRICES", () => {
-  it("base monthly = 500 ₽ = 50000 kop", () => {
-    expect(PRICES.base.monthly).toBe(500_00);
+  it("base monthly = 249 ₽ = 24900 kop", () => {
+    expect(PRICES.base.monthly).toBe(249_00);
   });
 
-  it("base academic year = 3 800 ₽ = 380000 kop", () => {
-    expect(PRICES.base.academicYear).toBe(3_800_00);
+  it("base academic year = 1 890 ₽ = 189000 kop", () => {
+    expect(PRICES.base.academicYear).toBe(1_890_00);
   });
 
-  it("plus monthly = 1 500 ₽ = 150000 kop", () => {
-    expect(PRICES.plus.monthly).toBe(1_500_00);
+  it("plus monthly = 999 ₽ = 99900 kop", () => {
+    expect(PRICES.plus.monthly).toBe(999_00);
   });
 
-  it("plus academic year = 11 000 ₽ = 1100000 kop", () => {
-    expect(PRICES.plus.academicYear).toBe(11_000_00);
+  it("plus academic year = 7 330 ₽ = 733000 kop", () => {
+    expect(PRICES.plus.academicYear).toBe(7_330_00);
   });
 
   it("school = 3 000 ₽/мес за класс, учебного года у класса нет", () => {
@@ -61,12 +73,12 @@ describe("PRICES", () => {
   });
 
   it("getPriceKopecks отдаёт цену периода", () => {
-    expect(getPriceKopecks("base", "monthly")).toBe(500_00);
-    expect(getPriceKopecks("plus", "academicYear")).toBe(11_000_00);
+    expect(getPriceKopecks("base", "monthly")).toBe(249_00);
+    expect(getPriceKopecks("plus", "academicYear")).toBe(7_330_00);
   });
 
   it("учебный год дешевле, чем 9 помесячных платежей", () => {
-    // Скидка за год заложена во фронте: 9 × 500 = 4 500 против 3 800.
+    // Скидка за год заложена во фронте: 9 × 249 = 2 241 против 1 890.
     expect(PRICES.base.academicYear!).toBeLessThan(PRICES.base.monthly * ACADEMIC_YEAR_MONTHS);
     expect(PRICES.plus.academicYear!).toBeLessThan(PRICES.plus.monthly * ACADEMIC_YEAR_MONTHS);
   });

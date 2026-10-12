@@ -54,14 +54,26 @@ const authRouter = new Hono<AppEnv>();
  * Общий код для обоих входов: cookie от входа по паролю должна быть РОВНО такой
  * же, как от входа по ссылке (контракт §2.3). Копия «почти такая же» рано или
  * поздно разъедется, и одна из форм входа перестанет работать.
+ *
+ * Домен и SameSite — не «значения до ТЗ-23», а следствие того, ГДЕ живёт бэк.
+ * SESSION_COOKIE_DOMAIN задан (`.uchlist.ru`) с 12.10.2026, когда бэк переехал с
+ * `*.workers.dev` на собственный домен api.uchlist.ru. Cookie на своём домене —
+ * «своя» для uchlist.ru, и браузеры её не блокируют; SameSite=Lax при этом
+ * ещё и защищает от CSRF. Пока переменная не задана (локальная разработка,
+ * старый деплой) — поведение прежнее: SameSite=None без домена.
+ *
+ * ВАЖНО: cookie ставится сразу после привязки домена и одновременно с
+ * переключением NEXT_PUBLIC_API_URL фронта. Одно без другого ломает вход.
  */
 function setSessionCookie(c: Context<AppEnv>, token: string): void {
+  const cookieDomain = c.env.SESSION_COOKIE_DOMAIN || undefined;
   setCookie(c, "session", token, {
     httpOnly: true,
     secure: true,
-    sameSite: "None",
+    sameSite: cookieDomain ? "Lax" : "None",
     maxAge: 30 * 24 * 60 * 60, // 30 дней
     path: "/",
+    ...(cookieDomain ? { domain: cookieDomain } : {}),
   });
 }
 
