@@ -111,8 +111,8 @@ const pricingJsonLd = {
       priceCurrency: "RUB",
       availability: "https://schema.org/InStock",
       url: `${SITE_URL}/pricing`,
-      // Период оплаты — обязательное поле для подписки: без него 11 000 рублей
-      // читались бы как разовая покупка, а это девять месяцев.
+      // Период оплаты — обязательное поле для подписки: без него сумма за
+      // учебный год читалась бы как разовая покупка, а это девять месяцев.
       priceSpecification: {
         "@type": "PriceSpecification",
         price: price.amount,

@@ -40,6 +40,7 @@ import { ktpRouter } from "./routes/ktp";
 import { cardsRouter } from "./routes/cards";
 import { materialsRouter } from "./routes/materials";
 import { trackRouter } from "./routes/track";
+import { totpRouter as adminTotpRouter } from "./routes/admin-totp";
 import { turnstileRouter } from "./routes/turnstile";
 import { accountRouter } from "./routes/account";
 import { f06Router } from "./routes/f06";
@@ -222,6 +223,9 @@ app.route("/api/interactives", interactivesRouter); // TZ-13: ЛК учител�
 app.route("/api/public/interactives", publicInteractivesRouter); // TZ-13: игра ученика, БЕЗ авторизации
 app.route("/api/turnstile", turnstileRouter); // проверка капчи антифрода (409 → капча → повтор)
 app.route("/api/admin", adminRouter);
+// Код подтверждения администратора (ТЗ-24 §8.1). Отдельный роутер: проверка
+// кода при входе происходит ДО сессии, и смешивать её с админ-API нельзя.
+app.route("/api/admin", adminTotpRouter);
 
 // Пять типов материалов, которых на сервере не было: фронт рисовал типовую
 // заготовку вместо готового материала. Ключи ответа — lessonPlan,

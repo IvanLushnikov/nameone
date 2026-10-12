@@ -24,6 +24,16 @@ export default defineWorkersConfig({
         miniflare: {
           compatibilityFlags: ["nodejs_compat"],
           compatibilityDate: "2026-09-01",
+          // Ключ шифрования секрета кода подтверждения (ТЗ-24 §8.1).
+          //
+          // Тестовый и только для тестов: 32 байта в base64. Без него роут
+          // настройки кода подтверждения отвечал бы «на сервере не задан
+          // ключ», и проверять было бы нечего. В боевом окружении ключ ставится
+          // через `wrangler secret put TOTP_ENCRYPTION_KEY` и в репозиторий
+          // не попадает.
+          bindings: {
+            TOTP_ENCRYPTION_KEY: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+          },
         },
       },
     },

@@ -16,14 +16,34 @@ import {
   createMagicLink,
   createSession,
   createUser,
+  deleteUserPassword,
   getUserByEmail,
+  getUserPassword,
+  getUserPasswordState,
+  setUserPassword,
 } from "../db/queries";
 import { userId, magicLinkToken, sessionToken } from "../lib/shortid";
+import {
+  burnPasswordTime,
+  checkPasswordPolicy,
+  hashPassword,
+  verifyPassword,
+} from "../lib/password";
 import { sendMagicLinkEmail } from "./email";
 import { EmailDeliveryError } from "../lib/errors";
 
 export const MAGIC_LINK_TTL_SECONDS = 15 * 60; // 15 минут
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 дней
+
+/**
+ * ОДИН текст отказа на «неверный пароль» и «нет такого аккаунта»
+ * (ТЗ-23 §6, контракт API §2.2). Строки символ в символ совпадают, и
+ * ответ не должен различаться ни по тексту, ни по времени.
+ */
+export const LOGIN_FAILED_MESSAGE = "Не получилось войти. Проверьте почту и пароль";
+
+/** Отказ по ограничению попыток — тоже без различения причины (контракт §2.2). */
+export const LOGIN_RATE_LIMIT_MESSAGE = "Слишком много попыток. Попробуйте через 15 минут";
 
 /**
  * Текст, который видит учитель, когда письмо не ушло.
@@ -158,7 +178,11 @@ export async function requestMagicLink(
 
   // 3. Собрать URL и попытаться отправить email.
   const url = buildMagicLinkUrl(env, token);
-  const sendResult = await sendMagicLinkEmail(env, email, url);
+  // Строка «вы вошли без пароля» добавляется ТОЛЬКО тем, у кого пароль уже
+  // есть (ТЗ-23 §7.4): учитель без пароля её видеть не должен. Сама ссылка
+  // работает в обоих случаях — пароль делается как раз для случая «почты нет».
+  const hasPassword = (await getUserPasswordState(db, user.id)).hasPassword;
+  const sendResult = await sendMagicLinkEmail(env, email, url, { hasPassword });
 
   if (!sendResult.sent) {
     // Пишем в логи — это наш единственный шанс восстановить ссылку, если
@@ -199,6 +223,24 @@ export interface ConsumeMagicLinkResult {
 }
 
 /**
+ * Создать сессию для пользователя.
+ *
+ * Общий код для ВСЕХ входов — по ссылке и по паролю (ТЗ-23 §6.3, контракт
+ * §2.3). Отдельная копия для входа по паролю означала бы, что со временем
+ * срок сессии или формат токена разъедутся, и сессия от входа по ссылке
+ * перестанет подходить от входа по паролю.
+ */
+async function createSessionForUser(
+  db: D1Database,
+  user: UserRow,
+): Promise<{ sessionToken: string; sessionExpiresAt: number }> {
+  const sessToken = sessionToken();
+  await createSession(db, { token: sessToken, userId: user.id, ttlSeconds: SESSION_TTL_SECONDS });
+  const sessionExpiresAt = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
+  return { sessionToken: sessToken, sessionExpiresAt };
+}
+
+/**
  * "Обменять" magic-link токен на session-токен.
  *
  * Атомарность: consumeMagicLink в db/queries.ts уже делает
@@ -220,11 +262,102 @@ export async function consumeMagicLinkAndCreateSession(
   const user = await getUserByEmail(db, consumed.email);
   if (!user) return null;
 
-  const sessToken = sessionToken();
-  await createSession(db, { token: sessToken, userId: user.id, ttlSeconds: SESSION_TTL_SECONDS });
-  const sessionExpiresAt = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
+  const session = await createSessionForUser(db, user);
+  return { user, sessionToken: session.sessionToken, sessionExpiresAt: session.sessionExpiresAt };
+}
 
-  return { user, sessionToken: sessToken, sessionExpiresAt };
+// ─────────────────────────────────────────────────────────────────────────────
+// Вход по паролю (ТЗ-23)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface LoginWithPasswordResult {
+  user: UserRow;
+  sessionToken: string;
+  sessionExpiresAt: number;
+}
+
+/**
+ * Вход по паролю.
+ *
+ * Возвращает null на ЛЮБУЮ неудачу — «нет такого аккаунта», «пароль не задан»
+ * и «пароль не подошёл» неразличимы: иначе ручка входа становится способом
+ * проверить, зарегистрирован ли конкретный адрес (ТЗ-23 §3, разрыв 4).
+ * Текст отказа — один на все случаи, см. LOGIN_FAILED_MESSAGE.
+ *
+ * На «нет пользователя / нет записи» всё равно считается один хеш (в никуда):
+ * без этого время ответа отличалось бы на десятки миллисекунд и раскрывало
+ * бы существование адреса даже при побайтово одинаковых текстах.
+ */
+export async function loginWithPassword(
+  db: D1Database,
+  rawEmail: string,
+  password: string,
+): Promise<LoginWithPasswordResult | null> {
+  const email = emailSchema.parse(rawEmail);
+
+  const user = await getUserByEmail(db, email);
+  const record = user ? await getUserPassword(db, user.id) : null;
+
+  if (!user || !record) {
+    await burnPasswordTime();
+    return null;
+  }
+
+  if (!(await verifyPassword(password, record))) return null;
+
+  const session = await createSessionForUser(db, user);
+  return { user, sessionToken: session.sessionToken, sessionExpiresAt: session.sessionExpiresAt };
+}
+
+/**
+ * Задать пароль пользователю (первый раз) или перезаписать (смена).
+ *
+ * Проверка правил живёт здесь, а не только в роуте: правило должно быть одно
+ * на все входы, а не «в этой ручке». Возвращает updated_at (unix seconds).
+ */
+export async function setUserPasswordWithPolicy(
+  db: D1Database,
+  userId: string,
+  password: string,
+): Promise<number> {
+  const policyError = checkPasswordPolicy(password);
+  if (policyError) throw new Error(policyError);
+
+  const record = await hashPassword(password);
+  return setUserPassword(db, userId, record);
+}
+
+/**
+ * Смена пароля: ТРЕБУЕТ старый (ТЗ-23 §5).
+ *
+ * Без старого любой, кто открыл вкладку на чужом компьютере, сменил бы пароль
+ * и остался внутри кабинета. Возвращает updated_at (unix seconds) при успехе
+ * и null, если старый пароль не подошёл; вызывающий отвечает на это тем же 401
+ * и тем же текстом, что и на «нет сессии», чтобы и по тексту нельзя было
+ * отличить одно от другого (контракт §5).
+ */
+export async function changeUserPassword(
+  db: D1Database,
+  userId: string,
+  currentPassword: string,
+  nextPassword: string,
+): Promise<number | null> {
+  const record = await getUserPassword(db, userId);
+  // Сменить пароль, которого нет, нельзя: currentPassword тогда просто
+  // не с чем сверять. Возвращаем null, а не «записать новый».
+  if (!record) return null;
+  if (!(await verifyPassword(currentPassword, record))) return null;
+
+  const policyError = checkPasswordPolicy(nextPassword);
+  if (policyError) throw new Error(policyError);
+
+  const next = await hashPassword(nextPassword);
+  return setUserPassword(db, userId, next);
+}
+
+/** Убрать пароль. После этого вход — только по ссылке из письма. */
+export async function removeUserPassword(db: D1Database, userId: string): Promise<void> {
+  await deleteUserPassword(db, userId);
 }
 
 function buildMagicLinkUrl(env: Env, token: string): string {

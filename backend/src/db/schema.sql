@@ -46,6 +46,101 @@ CREATE TABLE IF NOT EXISTS user_roles (
 
 CREATE INDEX IF NOT EXISTS idx_user_roles_role ON user_roles(role);
 
+-- Пароль для входа без письма (ТЗ-23 §4).
+--
+-- Отдельная таблица, а НЕ колонка в users — ровно по той же причине, что и
+-- user_roles выше: миграция здесь = повторный прогон всего schema.sql
+-- (npm run db:migrate:local), а ALTER TABLE ADD COLUMN в SQLite НЕ идемпотентен
+-- и второй прогон упал бы. Отдельная таблица заодно даёт ON DELETE CASCADE:
+-- при удалении пользователя пароль уносится сам, чистить руками не нужно.
+--
+-- user_id, а не id: у пользователя максимум один пароль, отдельный
+-- идентификатор ему не нужен (тот же приём, что в user_roles).
+--
+-- iterations обязателен: старый хеш должен помнить, по скольким итерациям он
+-- посчитан. Иначе подъём константы в коде молча заставил бы всех нынешних
+-- учителей потерять пароль.
+CREATE TABLE IF NOT EXISTS user_passwords (
+  user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  hash       TEXT NOT NULL,      -- base64, PBKDF2-HMAC-SHA256
+  salt       TEXT NOT NULL,      -- base64, 16 случайных байт на пользователя
+  iterations INTEGER NOT NULL,   -- сколько итераций посчитано ЭТИМ хешем
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Код подтверждения администратора (ТЗ-24, раздел 8.1)
+--
+-- ЧТО ЗДЕСЬ И ЧЕГО НЕ ЗДЕСЬ
+-- -------------------------
+-- Только администратор. Учителям код не добавляется: решение владельца от
+-- 12.10.2026, см. `docs/tz/23-password-auth.md` («2FA не делаем» там — про
+-- учительский вход) и `docs/tz/24-superpower-dashboard.md` §8.1.
+--
+-- ПОЧЕМУ СЕКРЕТ ЗАШИФРОВАН, А НЕ ХЕШ
+-- -----------------------------------
+-- Пароль лежит хешем (PBKDF2) — восстановить его нельзя, и не нужно. Секрет
+-- TOTP иначе: его приходится сравнивать с каждым входом, то есть читать из
+-- базы. Поэтому он зашифрован AES-256-GCM ключом из `TOTP_ENCRYPTION_KEY`
+-- (env) и лежит двумя полями: шифротекст и вектор инициализации.
+--
+-- Секрет появляется здесь только ПОСЛЕ подтверждения пробным кодом. До
+-- подтверждения строка лежит с `pending_at`, и вход по ней невозможен —
+-- иначе «настроил и забыл» превратилось бы в «заперт снаружи».
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS admin_totp (
+  user_id        TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  secret_enc     TEXT NOT NULL,   -- base64, AES-256-GCM
+  secret_iv      TEXT NOT NULL,   -- base64, 12 байт
+  -- Момент создания. `confirmed_at` отличается от него, когда код настроен, но
+  -- ещё не подтверждён — такое состояние живёт недолго и вход не даёт.
+  created_at     INTEGER NOT NULL,
+  confirmed_at   INTEGER,
+  last_used_at   INTEGER           -- когда в последний раз код сработал
+);
+
+-- Резервные коды. Хранятся хешем (SHA-256), как и пароль: одноразовые,
+-- пользователю показываются ровно один раз, и держать их в открытом виде
+-- незачем — показываются один раз, а из базы их читать не должна.
+CREATE TABLE IF NOT EXISTS admin_backup_codes (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash  TEXT NOT NULL,        -- base64, SHA-256 от нормализованного кода
+  used_at    INTEGER,              -- NULL = ещё не использован
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_backup_codes_user ON admin_backup_codes(user_id, used_at);
+
+-- Аварийный вход: администратор может временно снять себе код, если телефон
+-- потерян. Событие обязано быть видно: именно после него в системе живёт
+-- администратор без второго фактора, и об этом должно остаться в истории.
+CREATE TABLE IF NOT EXISTS admin_totp_recovery (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reason     TEXT,
+  disabled_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+-- «Половина входа»: пароль проверен, а код подтверждения — ещё нет.
+--
+-- Токен короткоживущий (5 минут) и одноразовый: сессия создаётся только после
+-- успешного кода, и вместе с ней токен удаляется. Иначе перехваченный токен
+-- был бы вечным ключом до входа в админку.
+--
+-- В токене лежит ТОЛЬКО id пользователя. Ни почты, ни тарифа, ни выручки.
+CREATE TABLE IF NOT EXISTS admin_login_pending (
+  token      TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_login_pending_user ON admin_login_pending(user_id);
+
 CREATE TABLE IF NOT EXISTS magic_links (
   token       TEXT PRIMARY KEY,
   email       TEXT NOT NULL,
@@ -175,6 +270,70 @@ CREATE TABLE IF NOT EXISTS llm_logs (
 
 CREATE INDEX IF NOT EXISTS idx_llm_logs_user_created ON llm_logs(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_llm_logs_task_created ON llm_logs(task, created_at);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Фактические списания от провайдера (ТЗ-24)
+--
+-- ЗАЧЕМ ОТДЕЛЬНАЯ ТАБЛИЦА, А НЕ КОЛОНКА В llm_logs
+-- -----------------------------------------------
+-- В `llm_logs.cost_usd` лежит НАШ расчёт по прайсу из `llm/config.ts`. Это
+-- оценка: снимок прайса polza.ai снят 06.10.2026 и с каждым днём устаревает всё
+-- сильнее (курс, наценка, округление).
+--
+-- polza.ai в каждом ответе отдаёт `usage.cost_rub` — фактическое списание в
+-- рублях, уже проведённое провайдером. Оно и пишется сюда.
+--
+-- Почему не колонка в `llm_logs`: ALTER TABLE ADD COLUMN в SQLite не идемпотентен
+-- (см. решение В-5 в ТЗ-21), а миграция в этом проекте = повторный прогон
+-- schema.sql. Отдельная таблица решается CREATE TABLE IF NOT EXISTS и не ломает
+-- повторный прогон. Дублирование данных здесь не порок, а суть: это две разные
+-- величины, и их расхождение — сам по себе показатель, ради которого всё затевалось.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS llm_costs_actual (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT REFERENCES users(id) ON DELETE SET NULL,
+  task        TEXT NOT NULL,
+  provider    TEXT NOT NULL,
+  model       TEXT NOT NULL,
+  -- Фактическое списание в рублях от провайдера. НЕ ноль: NULL означает
+  -- «провайдер не отдал сумму», и это честное состояние, в отличие от нуля,
+  -- который тихо занизил бы расходы.
+  cost_rub    REAL NOT NULL,
+  -- Наш расчёт по прайсу на тот же вызов — чтобы считать расхождение на экране.
+  cost_usd_est REAL,
+  latency_ms  INTEGER,
+  created_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_llm_costs_actual_created ON llm_costs_actual(created_at);
+CREATE INDEX IF NOT EXISTS idx_llm_costs_actual_provider ON llm_costs_actual(provider, created_at);
+
+-- Снимок баланса на стороне провайдера, раз в сутки.
+--
+-- Зачем: по ТЗ-24 «пополнения» — это рост баланса между снимками. Кошелька у
+-- учителей нет, речь о нашем расчётном счёте у polza.ai, но именно его пополнение
+-- и есть расходная статья владельца.
+--
+-- Поля — ровно те, что отдаёт GET /api/v2/balance
+-- (https://polza.ai/docs/api-reference/other/balance-v2). Суммы приходят
+-- строками с восемью знаками, поэтому храним REAL.
+CREATE TABLE IF NOT EXISTS polza_balance_snapshots (
+  id              TEXT PRIMARY KEY,
+  -- Баланс кошелька в рублях.
+  amount_rub      REAL NOT NULL,
+  -- Сколько реально доступно к трате (за вычетом резерва под текущие запросы).
+  available_rub   REAL,
+  -- Зарезервировано под выполняющиеся запросы.
+  reserved_rub    REAL,
+  -- Потрачено организацией за всё время.
+  spent_rub       REAL,
+  -- Момент, за который отвечает провайдер.
+  provider_updated_at TEXT,
+  created_at      INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_polza_balance_created ON polza_balance_snapshots(created_at);
 
 CREATE TABLE IF NOT EXISTS semantic_cache (
   id            TEXT PRIMARY KEY,

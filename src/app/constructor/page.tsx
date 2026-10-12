@@ -89,7 +89,7 @@ import { generateKtpDocx } from "@/lib/utils/ktp-docx";
 import { generatePptx, pptxFilename } from "@/lib/utils/pptx";
 import { canGenerate, getRemaining, refund, settleGeneration } from "@/lib/utils/limit";
 import { isTouchDevice, subscribeToDeviceChange } from "@/lib/utils/device";
-import { FREE_GENERATIONS, PLANS, priceLabel } from "@/lib/content/plans";
+import { FREE_GENERATIONS, PLANS, isPaidPlan, priceLabel } from "@/lib/content/plans";
 import { plural, cn } from "@/lib/utils/cn";
 import { pluralizeTasks, pluralizeFiles } from "@/lib/utils/cn";
 import { saveWorksheet, type SaveWorksheetInput } from "@/lib/worksheets/api";
@@ -968,7 +968,10 @@ export default function ConstructorPage() {
      * генерации. Решение об оплате принимает бэк (402 → paywall), поэтому
      * клиентский чек — только против недопустимой генерации у бесплатного.
      */
-    const isPaid = serverUsage?.plan === "base" || serverUsage?.plan === "plus";
+    // Платный тариф = любой не «free». Список тарифов здесь намеренно не пишется:
+    // 12.10.2026 стояло `base || plus`, и подписчик «Оптимального» упирался в
+    // бесплатные 3 генерации, хотя бэк его принимал.
+    const isPaid = isPaidPlan(serverUsage?.plan);
     if (!isPaid && !canGenerate()) {
       setShowPaywall(true);
       return;

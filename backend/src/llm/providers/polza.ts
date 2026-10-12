@@ -145,6 +145,20 @@ export function getPolzaProvider(env: Env): Provider {
            */
           completion_tokens_details?: { reasoning_tokens?: number };
           reasoning_tokens?: number;
+          /**
+           * Фактическое списание в рублях — polza.ai кладёт его в каждый ответ
+           * вместе с токенами («готовая стоимость в рублях, уже списанная»,
+           * https://polza.ai/docs/osobennosti/usage). До 12.10.2026 это поле
+           * приходило и молча игнорировалось: в `llm_logs` попадал только наш
+           * расчёт по прайсу-снимку, а по счёту провайдера никто не сверялся.
+           *
+           * Поле опциональное и может прийти строкой (у polza суммы — строки с
+           * восемью знаками, как и в balance API), поэтому Number(...) с проверкой
+           * на NaN, а не прямое присваивание.
+           */
+          cost_rub?: number | string;
+          /** Алиас polza.ai к cost_rub. */
+          cost?: number | string;
         };
         model?: string;
       };
@@ -166,12 +180,30 @@ export function getPolzaProvider(env: Env): Provider {
       // Подробности: docs/tz/11-photo-check.md §2.5 (расхождение №2).
       const costUsd = calcCost(args.model, tokensIn, tokensOut);
 
+      // Фактическое списание от провайдера. Если поля нет (старый ответ,
+      // другой формат) — остаётся null, и работа продолжается на расчёте по
+      // прайсу: НЕ подставляем ноль и НЕ падаем. Ноль здесь был бы ложью
+      // («потратили 0 рублей»), и именно он потом тихо занизил бы расходы в
+      // /superpower.
+      const rawCostRub = data.usage?.cost_rub ?? data.usage?.cost;
+      const parsedCostRub = rawCostRub === undefined ? Number.NaN : Number(rawCostRub);
+      const costRub = Number.isFinite(parsedCostRub) ? parsedCostRub : null;
+
+      if (costRub === null && rawCostRub !== undefined) {
+        logLlmEvent("warn", "polza: usage.cost_rub не число — фактическое списание не записано", {
+          provider: "polza",
+          model: data.model ?? args.model,
+          rawCostRub,
+        });
+      }
+
       logLlmEvent("info", "polza.complete ok", {
         provider: "polza",
         model: data.model ?? args.model,
         inputTokens: tokensIn,
         outputTokens: tokensOut,
         costUsd,
+        costRub,
         latencyMs,
         finishReason,
       });
@@ -227,6 +259,7 @@ export function getPolzaProvider(env: Env): Provider {
         tokensIn,
         tokensOut,
         costUsd,
+        costRub,
         latencyMs,
         cached: cachedTokens > 0,
         raw: data,

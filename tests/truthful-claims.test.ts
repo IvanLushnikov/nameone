@@ -229,19 +229,21 @@ describe("Д-5 — честный блок «чего мы не умеем»", (
 });
 
 describe("Д-6/Д-7 — цены и лимиты не поехали", () => {
-  it("суммы тарифов остались прежними", () => {
-    // Правки трогали формулировки. Любая сдвинутая цифра здесь — откат.
-    expect(priceFor("base", "month").amount).toBe(500);
-    expect(priceFor("base", "academicYear").amount).toBe(3800);
-    expect(priceFor("standard", "month").amount).toBe(990);
-    expect(priceFor("standard", "academicYear").amount).toBe(7600);
-    expect(priceFor("plus", "month").amount).toBe(1500);
-    expect(priceFor("plus", "academicYear").amount).toBe(11000);
+  it("суммы тарифов те, что заявлены в решении от 12.10.2026", () => {
+    // Тест ловит сдвиг любой цифры, но после сознательного изменения цен
+    // «прежними» они прежними быть не могут — здесь зафиксированы новые.
+    // Правка цен: docs/36-price-cut-implementation-plan-2026-10-12.md.
+    expect(priceFor("base", "month").amount).toBe(249);
+    expect(priceFor("base", "academicYear").amount).toBe(1890);
+    expect(priceFor("standard", "month").amount).toBe(499);
+    expect(priceFor("standard", "academicYear").amount).toBe(3830);
+    expect(priceFor("plus", "month").amount).toBe(999);
+    expect(priceFor("plus", "academicYear").amount).toBe(7330);
     expect(PLANS.free.prices.month.amount).toBe(0);
   });
 
   it("лимит в листах помечен как оценка", () => {
-    // «До 900 листов» — пересчёт нормы в токенах по среднему листу, а не
+    // «До 1 500 листов» — пересчёт нормы в токенах по среднему листу, а не
     // обещание объёма. Учитель делает один лист в день, поэтому цифру без
     // пояснения оставлять нельзя.
     expect(userText("src/app/pricing/page.tsx")).toMatch(/Лимиты в листах — оценка/);

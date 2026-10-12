@@ -64,16 +64,23 @@ export interface Env {
   FRONTEND_URL: string;
 
   /**
-   * Домен cookie сессии (`.uchlist.ru`). Задан с 12.10.2026, когда бэк переехал
-   * с `*.workers.dev` на собственный домен api.uchlist.ru.
+   * Домен, на который ставится cookie сессии (сейчас `.uchlist.ru`).
    *
-   * Не задано = старое поведение: cookie на хосте воркера с SameSite=None. Для
-   * сайта uchlist.ru такая cookie сторонняя, и Safari / Firefox / Chrome с
-   * Privacy Sandbox её не передают: вход проходит, сессия в базе живая, а любой
-   * запрос к бэку получает 401. Воспроизведено на живом сайте 12.10.2026.
+   * НЕ ЗАДАНО = старое поведение: cookie ставится на хост, который ответил
+   * (раньше это был `*.workers.dev`), с SameSite=None. Такая cookie — «чужая»
+   * для сайта uchlist.ru, и браузеры, блокирующие сторонние cookie (Safari,
+   * Firefox, Chrome с Privacy Sandbox), её не передают: вход проходит, сессия
+   * в базе живая, а каждый запрос к бэку получает 401. Воспроизведено на живом
+   * сайте 12.10.2026.
    *
-   * Задавать ТОЛЬКО вместе с NEXT_PUBLIC_API_URL фронта = https://api.uchlist.ru,
-   * иначе cookie уйдёт на .uchlist.ru, а запросы придут на workers.dev.
+   * Задано = бэк живёт на собственном домене `api.uchlist.ru` (custom domain
+   * воркера), cookie становится first-party для uchlist.ru, браузеры её не
+   * трогают, а SameSite в auth.ts переключается на Lax — это ещё и защита
+   * от CSRF. Подробности в `setSessionCookie` (backend/src/routes/auth.ts).
+   *
+   * ВАЖНО: переменную можно задавать ТОЛЬКО вместе с переключением
+   * NEXT_PUBLIC_API_URL фронта на `https://api.uchlist.ru`. Иначе cookie уйдёт
+   * на .uchlist.ru, а запросы продолжат идти на workers.dev — и все разлогинятся.
    */
   SESSION_COOKIE_DOMAIN?: string;
 
@@ -90,6 +97,17 @@ export interface Env {
   YOOKASSA_SHOP_ID?: string;
   YOOKASSA_SECRET_KEY?: string;
   JWT_SECRET: string;
+  /**
+   * Ключ шифрования секрета кода подтверждения администратора (ТЗ-24 §8.1).
+   *
+   * Ровно 32 байта в base64. Без него код подтверждения включить нельзя —
+   * хранить секрет открытым текстом в таблице администратора нельзя, и
+   * «пока не задали ключ» не должно превращаться в «секрет в дампе D1».
+   *
+   * Генерация: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`,
+   * установка: `wrangler secret put TOTP_ENCRYPTION_KEY`.
+   */
+  TOTP_ENCRYPTION_KEY?: string;
   /**
    * Соль для отпечатка посетителя (SHA-256(ip + UA + cf.* + соль)).
    *

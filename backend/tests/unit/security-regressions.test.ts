@@ -311,7 +311,7 @@ describe("К-1: подделка вебхука не выдаёт подписк
     await db()
       .prepare(
         `INSERT INTO payments (id, user_id, plan, period, amount_rub, yookassa_payment_id, status, created_at)
-         VALUES ('pay_ok', ?1, 'plus', 'academicYear', 1100000, 'yk_ok_1', 'pending', ?2)`,
+         VALUES ('pay_ok', ?1, 'plus', 'academicYear', 733000, 'yk_ok_1', 'pending', ?2)`,
       )
       .bind(userId, now)
       .run();
@@ -325,7 +325,10 @@ describe("К-1: подделка вебхука не выдаёт подписк
           object: {
             id: "yk_ok_1",
             status: "succeeded",
-            amount: { value: "11000.00", currency: "RUB" },
+            // 7 330 ₽ — учебный год тарифа «Плюс» после снижения цен 12.10.2026.
+            // Фикстура обязана совпадать с PRICES: код сверяет сумму вебхука с
+            // ценой тарифа, и расхождение честно отклоняет вебхук как подделку.
+            amount: { value: "7330.00", currency: "RUB" },
           },
         },
         origin: null,
@@ -383,7 +386,7 @@ describe("К-1: подделка вебхука не выдаёт подписк
     await db()
       .prepare(
         `INSERT INTO payments (id, user_id, plan, period, amount_rub, yookassa_payment_id, status, created_at)
-         VALUES ('pay_replay', ?1, 'base', 'monthly', 50000, 'yk_replay_1', 'pending', ?2)`,
+         VALUES ('pay_replay', ?1, 'base', 'monthly', 24900, 'yk_replay_1', 'pending', ?2)`,
       )
       .bind(userId, now)
       .run();
@@ -394,7 +397,8 @@ describe("К-1: подделка вебхука не выдаёт подписк
       object: {
         id: "yk_replay_1",
         status: "succeeded",
-        amount: { value: "500.00", currency: "RUB" },
+        // 249 ₽ — месяц «Базового» после снижения цен 12.10.2026.
+        amount: { value: "249.00", currency: "RUB" },
       },
     };
 
@@ -769,8 +773,11 @@ describe("Маршруты: заглушка /api/track не съедает со
     expect(res.status).toBe(404);
   });
 
-  it("сам /api/track отвечает 501 — трекинг правда не реализован", async () => {
+  // Обновлено 12.10.2026 (ТЗ-24): трекер реализован, 501 больше не бывает.
+  // Проверка остаётся той же по смыслу — «заглушка не отвечает 501 нигде»,
+  // просто на /api/track теперь честный отказ по телу, а не «не сделано».
+  it("сам /api/track больше не отвечает 501 — трекер реализован", async () => {
     const res = await call("/api/track", { method: "POST" });
-    expect(res.status).toBe(501);
+    expect(res.status).not.toBe(501);
   });
 });

@@ -105,11 +105,15 @@ describe("plans — тарифы", () => {
     expect(PLANS.school.prices.academicYear).toBeNull();
   });
 
-  it("цены известны: Базовый 3 800/500, Плюс 11 000/1 500, Школа 3 000 помесячно", () => {
-    expect(priceFor("base", "academicYear").amount).toBe(3800);
-    expect(priceFor("base", "month").amount).toBe(500);
-    expect(priceFor("plus", "academicYear").amount).toBe(11000);
-    expect(priceFor("plus", "month").amount).toBe(1500);
+  // Цены снижены 12.10.2026. «Оптимальный» тоже проверяем: до этого
+  // тариф не был в этом тесте и мог разъехаться с бэком незаметно.
+  it("цены известны: Базовый 1 890/249, Оптимальный 3 830/499, Плюс 7 330/999, Школа 3 000 помесячно", () => {
+    expect(priceFor("base", "academicYear").amount).toBe(1890);
+    expect(priceFor("base", "month").amount).toBe(249);
+    expect(priceFor("standard", "academicYear").amount).toBe(3830);
+    expect(priceFor("standard", "month").amount).toBe(499);
+    expect(priceFor("plus", "academicYear").amount).toBe(7330);
+    expect(priceFor("plus", "month").amount).toBe(999);
     expect(priceFor("school", "month").amount).toBe(3000);
   });
 
@@ -120,26 +124,26 @@ describe("plans — тарифы", () => {
   it("в подписях цен учебный год всегда 9 месяцев, а не 12", () => {
     // NBSP (\u00A0) между разрядами и перед ₽ — чтобы подпись не рвалась переносом.
     expect(priceLabel("base", "academicYear")).toBe(
-      "3\u00A0800\u00A0₽ за учебный год (9 мес)"
+      "1\u00A0890\u00A0₽ за учебный год (9 мес)"
     );
-    expect(priceShort("base", "academicYear")).toBe("3\u00A0800\u00A0₽/9 мес");
-    expect(priceShort("base", "month")).toBe("500\u00A0₽/мес");
+    expect(priceShort("base", "academicYear")).toBe("1\u00A0890\u00A0₽/9 мес");
+    expect(priceShort("base", "month")).toBe("249\u00A0₽/мес");
     expect(priceShort("school", "month")).toBe("3\u00A0000\u00A0₽/мес за класс");
   });
 
   it("скидка за учебный год считается от 9 месяцев и объясняет полную цену", () => {
     expect(academicYearSaving("base")).toBe(
-      "на 15,5 % дешевле, чем 500\u00A0₽ × 9 месяцев"
+      "на 15,7 % дешевле, чем 249\u00A0₽ × 9 месяцев"
     );
-    // 9 × 500 ₽ = 4 500 ₽ — «полная» цена учебного года, а не 12 × 500.
+    // 9 × 249 ₽ = 2 241 ₽ — «полная» цена учебного года, а не 12 × 249.
     // Формулировка показывает, из чего складывается сравнение с помесячной ценой.
-    expect(academicYearSaving("base")).toContain("500\u00A0₽ × 9 месяцев");
-    expect(academicYearSaving("base")).toContain("15,5 %");
+    expect(academicYearSaving("base")).toContain("249\u00A0₽ × 9 месяцев");
+    expect(academicYearSaving("base")).toContain("15,7 %");
   });
 
   it("сводная строка цены не упоминает 12 месяцев", () => {
     expect(priceSummary("base")).toBe(
-      "500\u00A0₽/мес · 3\u00A0800\u00A0₽ за учебный год (9 мес)"
+      "249\u00A0₽/мес · 1\u00A0890\u00A0₽ за учебный год (9 мес)"
     );
   });
 });

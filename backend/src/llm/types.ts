@@ -82,6 +82,20 @@ export interface LLMResponse {
   /** Tokens, записанные в prompt cache (Anthropic). */
   cacheWriteTokens?: number;
   costUsd: number;
+  /**
+   * ФАКТИЧЕСКОЕ списание в рублях, если провайдер его отдаёт.
+   *
+   * polza.ai в каждом ответе кладёт `usage.cost_rub` — «готовая стоимость в
+   * рублях, уже списанная» (https://polza.ai/docs/osobennosti/usage). Это факт
+   * со стороны провайдера, тогда как `costUsd` выше — наш расчёт по прайсу,
+   * зашитому в `llm/config.ts`. Две разные цифры, и обе нужны: расхождение
+   * между ними и есть сигнал, что прайс устарел.
+   *
+   * null/undefined у провайдеров, которые такого поля не отдают (OpenAI,
+   * Anthropic, DeepSeek напрямую). В этом случае падать нельзя — работаем на
+   * расчёте по прайсу.
+   */
+  costRub?: number | null;
   latencyMs: number;
   /** True, если провайдер явно сообщил, что ответ взят из кэша (на уровне провайдера). */
   cached: boolean;
