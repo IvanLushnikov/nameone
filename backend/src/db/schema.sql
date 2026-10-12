@@ -46,6 +46,29 @@ CREATE TABLE IF NOT EXISTS user_roles (
 
 CREATE INDEX IF NOT EXISTS idx_user_roles_role ON user_roles(role);
 
+-- Пароль для входа без письма (ТЗ-23 §4).
+--
+-- Отдельная таблица, а НЕ колонка в users — ровно по той же причине, что и
+-- user_roles выше: миграция здесь = повторный прогон всего schema.sql
+-- (npm run db:migrate:local), а ALTER TABLE ADD COLUMN в SQLite НЕ идемпотентен
+-- и второй прогон упал бы. Отдельная таблица заодно даёт ON DELETE CASCADE:
+-- при удалении пользователя пароль уносится сам, чистить руками не нужно.
+--
+-- user_id, а не id: у пользователя максимум один пароль, отдельный
+-- идентификатор ему не нужен (тот же приём, что в user_roles).
+--
+-- iterations обязателен: старый хеш должен помнить, по скольким итерациям он
+-- посчитан. Иначе подъём константы в коде молча заставил бы всех нынешних
+-- учителей потерять пароль.
+CREATE TABLE IF NOT EXISTS user_passwords (
+  user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  hash       TEXT NOT NULL,      -- base64, PBKDF2-HMAC-SHA256
+  salt       TEXT NOT NULL,      -- base64, 16 случайных байт на пользователя
+  iterations INTEGER NOT NULL,   -- сколько итераций посчитано ЭТИМ хешем
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS magic_links (
   token       TEXT PRIMARY KEY,
   email       TEXT NOT NULL,

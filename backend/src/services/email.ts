@@ -26,6 +26,23 @@ export interface SendMagicLinkResult {
   url?: string;
 }
 
+/**
+ * Что дописать в письмо (ТЗ-23 §7.4).
+ *
+ * Строка про «вошли без пароля» нужна ТОЛЬКО тем, у кого пароль уже есть:
+ * именно им письмо показывает, что кто-то вошёл в кабинет в обход пароля.
+ * Учителю без пароля она бы просто смущала — «какого пароля?».
+ *
+ * Сама ссылка работает всегда и ломаться не должна: пароль делается как раз
+ * для случая «почты под рукой нет».
+ */
+export interface MagicLinkEmailOptions {
+  hasPassword?: boolean;
+}
+
+const PASSWORD_LOGIN_WARNING =
+  "Вы вошли без пароля. Если это были не вы — смените пароль в настройках";
+
 const FROM = "УчЛист <noreply@uchlist.ru>";
 const SUBJECT = "Войти в УчЛист";
 
@@ -50,6 +67,7 @@ export async function sendMagicLinkEmail(
   env: Env,
   to: string,
   url: string,
+  options: MagicLinkEmailOptions = {},
 ): Promise<SendMagicLinkResult> {
   if (!env.RESEND_API_KEY) {
     // Явно разрешённый dev-режим: ссылка уходит в ответ вместо письма.
@@ -67,8 +85,8 @@ export async function sendMagicLinkEmail(
 
   const resend = new Resend(env.RESEND_API_KEY);
 
-  const html = buildHtml(url);
-  const text = buildText(url);
+  const html = buildHtml(url, options.hasPassword === true);
+  const text = buildText(url, options.hasPassword === true);
 
   try {
     const { data, error } = await resend.emails.send({
@@ -100,7 +118,7 @@ export async function sendMagicLinkEmail(
   }
 }
 
-function buildHtml(url: string): string {
+function buildHtml(url: string, hasPassword: boolean): string {
   return `<!doctype html>
 <html lang="ru">
   <head><meta charset="utf-8"><title>${escapeHtml(SUBJECT)}</title></head>
@@ -130,6 +148,15 @@ function buildHtml(url: string): string {
               ${escapeHtml(url)}
             </p>
           </td></tr>
+          ${
+            hasPassword
+              ? `<tr><td style="padding:16px 32px 0 32px;">
+            <p style="margin:0;color:#57534e;font-size:13px;line-height:1.5;">
+              ${PASSWORD_LOGIN_WARNING}
+            </p>
+          </td></tr>`
+              : ""
+          }
           <tr><td style="padding:24px 32px 32px 32px;">
             <p style="margin:0;color:#a8a29e;font-size:12px;line-height:1.5;">
               Если вы не запрашивали вход — просто проигнорируйте письмо. Никто кроме вас эту ссылку не получит.
@@ -143,15 +170,17 @@ function buildHtml(url: string): string {
 </html>`;
 }
 
-function buildText(url: string): string {
-  return [
+function buildText(url: string, hasPassword: boolean): string {
+  const lines = [
     "УчЛист — войти в аккаунт",
     "",
     "Нажмите ссылку, чтобы войти (действует 15 минут):",
     url,
     "",
-    "Если вы не запрашивали вход — просто проигнорируйте письмо.",
-  ].join("\n");
+  ];
+  if (hasPassword) lines.push(PASSWORD_LOGIN_WARNING, "");
+  lines.push("Если вы не запрашивали вход — просто проигнорируйте письмо.");
+  return lines.join("\n");
 }
 
 function escapeHtml(input: string): string {
