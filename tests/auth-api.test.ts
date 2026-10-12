@@ -171,8 +171,8 @@ describe("verifyMagicLink", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       // 401 → AuthApiError(isAuthError=true) → humanError переводит в
-      // "Ссылка истекла или уже использована" (UI-формат).
-      expect(r.error).toBe("Ссылка истекла или уже использована");
+      // "Ссылка для входа не сработала" (UI-формат).
+      expect(r.error).toBe("Ссылка для входа не сработала");
     }
   });
 

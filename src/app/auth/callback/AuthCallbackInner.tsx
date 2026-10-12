@@ -81,7 +81,7 @@ export function AuthCallbackInner() {
         const message =
           err instanceof AuthApiError
             ? err.isAuthError
-              ? "Ссылка истекла или уже использована"
+              ? "Ссылка для входа не сработала"
               : err.message
             : "Не получилось подтвердить вход";
         trackEvent("auth_callback_error", {
@@ -146,11 +146,12 @@ export function AuthCallbackInner() {
                 <AlertTriangle className="w-6 h-6" />
               </div>
               <h1 className="text-xl font-semibold text-warm-950">
-                Ссылка истекла
+                Не получилось войти
               </h1>
               <p className="text-sm text-warm-600 mt-2">{state.message}</p>
               <p className="text-xs text-warm-500 mt-3">
-                Magic link живёт 15 минут и используется только один раз.
+                Ссылка для входа действует 15 минут и срабатывает один раз.
+                Запросите новую — она придёт на ту же почту.
               </p>
               <div className="mt-6">
                 <Button

@@ -118,14 +118,14 @@ export async function verifyMagicLink(
     return {
       ok: false,
       error:
-        (res as ApiErr).error ?? "Ссылка истекла или уже использована",
+        (res as ApiErr).error ?? "Ссылка для входа не сработала",
     };
   } catch (err) {
     const isAuth = err instanceof AuthApiError && err.isAuthError;
     return {
       ok: false,
       error: isAuth
-        ? "Ссылка истекла или уже использована"
+        ? "Ссылка для входа не сработала"
         : humanError(err, "Не получилось подтвердить вход"),
     };
   }
