@@ -125,6 +125,25 @@ describe("Сводка по форме — ручная проверка отв�
     expect(box.textContent).toContain("Автопроверка не засчитала ответ");
   });
 
+  it("пропущенное задание панели не получает — «записал иначе» тут бессмысленно", async () => {
+    renderSummary([
+      {
+        taskNumber: 1,
+        studentAnswer: null,
+        isCorrect: false,
+        pointsAwarded: 0,
+        pointsMax: 2,
+        needsReview: false,
+        checkMethod: "auto",
+        teacherComment: null,
+      },
+    ]);
+    await openResponse();
+
+    expect(screen.queryByTestId("review-box-1")).toBeNull();
+    expect(document.body.textContent).toContain("без ответа");
+  });
+
   it("у верного ответа с баллами панели нет — незачем учителю трогать то, что верно", async () => {
     renderSummary([
       {

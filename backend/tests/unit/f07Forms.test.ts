@@ -568,7 +568,15 @@ describe("учительские формы (TZ-12, f07)", () => {
   /** Форма с одним заданием на 2 балла + ответ ученика, ждущий проверки. */
   async function formWithPendingAnswer(
     session: string,
-    opts: { points?: number; taskType?: string; answer?: string; suffix?: string } = {},
+    opts: {
+      points?: number;
+      taskType?: string;
+      answer?: string;
+      suffix?: string;
+      /** Ответ, который автосверка уже закрыла как неверный (needs_review = 0). */
+      autoGraded?: boolean;
+      answerText?: string | null;
+    } = {},
   ): Promise<{ formId: string; token: string; responseId: string }> {
     const points = opts.points ?? 2;
     const taskType = opts.taskType ?? "essay";
@@ -578,6 +586,8 @@ describe("учительские формы (TZ-12, f07)", () => {
     const sfx = opts.suffix ?? "1";
     const responseId = `rsp_rev${sfx}`;
     const answerId = `ans_rev${sfx}`;
+    const auto = opts.autoGraded === true;
+    const studentText = opts.answerText === undefined ? "мой ответ" : opts.answerText;
     const created = (
       await (
         await createForm(session, {
@@ -602,9 +612,18 @@ describe("учительские формы (TZ-12, f07)", () => {
       .prepare(
         `INSERT INTO form_answers (id, response_id, task_number, task_type, student_answer,
                                    is_correct, points_awarded, points_max, needs_review, check_method, created_at)
-         VALUES (?1, ?2, 1, ?3, 'мой ответ', NULL, 0, ?4, 1, 'manual', ?5)`,
+         VALUES (?1, ?2, 1, ?3, ?4, NULL, 0, ?5, ?6, ?7, ?8)`,
       )
-      .bind(answerId, responseId, taskType, points, now)
+      .bind(
+        answerId,
+        responseId,
+        taskType,
+        studentText,
+        points,
+        auto ? 0 : 1,
+        auto ? "auto" : "manual",
+        now,
+      )
       .run();
     return { formId: created.formId, token: created.token, responseId };
   }
@@ -714,6 +733,66 @@ describe("учительские формы (TZ-12, f07)", () => {
     });
     expect(res.status).toBe(200);
     expect(((await res.json()) as { scoreTotal: number }).scoreTotal).toBe(0);
+  });
+
+  it("F21: учитель может перебить ответ, который автосверка уже закрыла как неверный", async () => {
+    // Ключевой путь всей починки. Ответ пришёл с check_method = auto и
+    // needs_review = 0 — то есть система его уже оценила и закрыла. Сервер
+    // обязан принять правку учителя. Если завтра кто-то добавит запрет
+    // «править можно только needs_review = 1», этот тест обязан покраснеть:
+    // без него поломка прошла бы молча, и учитель снова не смог бы ничего.
+    const { formId, responseId } = await formWithPendingAnswer(sessionA, {
+      points: 2,
+      taskType: "short-answer",
+      answer: "7/8",
+      autoGraded: true,
+      answerText: "7 / 8",
+      suffix: "auto",
+    });
+
+    const res = await SELF.fetch(reviewUrl(formId, responseId, 1), {
+      method: "PATCH",
+      headers: authHeaders(sessionA),
+      body: JSON.stringify({ isCorrect: true, pointsAwarded: 2 }),
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { scoreTotal: number }).scoreTotal).toBe(2);
+
+    const row = await env.DB
+      .prepare(
+        `SELECT is_correct, points_awarded, needs_review, check_method FROM form_answers
+         WHERE response_id = ?1`,
+      )
+      .bind(responseId)
+      .first<{ is_correct: number; points_awarded: number; needs_review: number; check_method: string }>();
+    expect(row).toMatchObject({ is_correct: 1, points_awarded: 2, needs_review: 0, check_method: "manual" });
+  });
+
+  it("F22: неотвеченное задание не должно попадать под ручную проверку", async () => {
+    // Пустой ответ ученика при непустом эталоне — это ноль баллов, а не
+    // «ждут проверки». Панель проверки на таком задании не появляется,
+    // но сервер примет правку, если учитель всё-таки решит поставить балл.
+    const { formId, responseId } = await formWithPendingAnswer(sessionA, {
+      points: 2,
+      taskType: "short-answer",
+      answer: "воздух",
+      autoGraded: true,
+      answerText: null,
+      suffix: "blank",
+    });
+
+    const row = await env.DB
+      .prepare(`SELECT needs_review, points_awarded FROM form_answers WHERE response_id = ?1`)
+      .bind(responseId)
+      .first<{ needs_review: number; points_awarded: number }>();
+    expect(row).toMatchObject({ needs_review: 0, points_awarded: 0 });
+
+    const res = await SELF.fetch(reviewUrl(formId, responseId, 1), {
+      method: "PATCH",
+      headers: authHeaders(sessionA),
+      body: JSON.stringify({ isCorrect: true }),
+    });
+    expect(res.status).toBe(200);
   });
 
   it("F13: чужой учитель не может править чужой ответ — 404", async () => {
