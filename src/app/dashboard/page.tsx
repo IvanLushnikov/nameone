@@ -103,6 +103,7 @@ import { PLANS, priceShort } from "@/lib/content/plans";
 import { getSubject } from "@/lib/content/subjects";
 import { trackEvent } from "@/lib/track";
 import { UsageCard, type UsagePayload } from "@/components/shared/UsageCard";
+import { FREE_QUOTA_SCOPE_NOTE } from "@/lib/content/landing-seo";
 import { fetchUsage } from "@/lib/auth/api";
 
 /** Размер порции истории: 20 карточек, дальше — «Показать ещё». */
@@ -385,6 +386,14 @@ export default function DashboardPage() {
           показывает предложение, а не блокировку: порог мягкий. */}
       <div className="mt-6">
         <UsageCard usage={usage} loading={usageLoading} />
+        {/* Блок Ф: счётчик сам по себе не говорит, на что тратятся
+            генерации. UsageCard общий — правим строку здесь, рядом с ним.
+            Текст общий с лендингом и `/oge/` (FREE_QUOTA_SCOPE_NOTE).
+            Показываем только там, где квота вообще применяется: на base/plus
+            её нет, и строка про «3 генерации» была бы шумом. */}
+        {usage?.plan === "free" && (
+          <p className="mt-2 text-xs text-warm-500">{FREE_QUOTA_SCOPE_NOTE}</p>
+        )}
       </div>
 
       {/* F-06.1: точка входа в проверку домашки из ЛК.

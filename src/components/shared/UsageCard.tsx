@@ -43,6 +43,7 @@ import {
   type PlanId,
 } from "@/lib/content/plans";
 import { syncFromServer } from "@/lib/utils/limit";
+import { quotaGenerations } from "@/lib/content/landing-seo";
 
 /** Форма ответа /api/users/usage (backend/src/routes/users.ts). */
 export interface UsagePayload {
@@ -108,7 +109,7 @@ export function UsageCard({ usage, loading }: Props) {
           <div>
             <h3 className="font-semibold text-warm-900">Бесплатные генерации</h3>
             <p className="text-sm text-warm-500 mt-0.5">
-              {FREE_GENERATIONS} генерации на весь период — без сброса по суткам
+              {quotaGenerations()} на весь период — без сброса по суткам
             </p>
           </div>
           <Badge tone={done ? "accent" : "brand"}>

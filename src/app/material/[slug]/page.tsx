@@ -17,6 +17,7 @@ import {
   type MaterialEntry,
 } from "@/lib/content/materials-catalog";
 import { getSubject, getTopic } from "@/lib/content/subjects";
+import { isEditorialMaterial, materialRobots } from "@/components/materials/materialOrigin";
 import { SITE_URL } from "@/lib/site";
 import { absoluteUrl, clipDescription, ogImages, twitterCard } from "@/lib/seo/metadata";
 
@@ -44,6 +45,12 @@ export function generateMetadata({ params }: Props): Metadata {
   return {
     title,
     description,
+    // Решается по автору записи, а не по маршруту: `/material/*` обслуживает
+    // и редакционный каталог, и (в будущей Фазе 2) материалы учителей.
+    // Редакционные карточки — наш SEO-актив, их индексируем; материалы
+    // учителей идут с `noindex, follow`. Подробно в
+    // `src/components/materials/materialOrigin.ts`.
+    robots: materialRobots(material),
     alternates: { canonical },
     openGraph: {
       title,
@@ -125,11 +132,22 @@ export default function MaterialPage({ params }: Props) {
               <Badge tone="brand">{MATERIAL_PURPOSE_LABELS[material.purpose]}</Badge>
               <Badge tone="warm">{materialArtifactLabel(material.artifactType)}</Badge>
               {topic?.fgosRef && <Badge tone="info">{topic.fgosRef}</Badge>}
+              {/* Материал учителя помечаем явно: он не проходил редакционную
+                  проверку и отдаётся с noindex. На редакционных карточках
+                  метки нет — подпись «материал учителя» должна означать
+                  именно пользовательский материал, а не любой материал банка. */}
+              {!isEditorialMaterial(material) && <Badge tone="accent">Материал учителя</Badge>}
             </div>
 
             <h1 className="mt-4 text-3xl sm:text-4xl font-display font-bold tracking-tight text-warm-950 text-balance">
               {material.title}
             </h1>
+
+            {/* Автор. Для редакционной карточки это «Редакция УчЛист» —
+                правдивое имя, а не выдуманное ФИО. */}
+            <p className="mt-3 text-sm text-warm-500">
+              Автор: {material.author}
+            </p>
 
             <p className="mt-4 text-base sm:text-lg text-warm-700 leading-relaxed">
               {material.description}

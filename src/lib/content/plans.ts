@@ -283,10 +283,17 @@ export const PLANS: Record<PlanId, Plan> = {
   free: {
     id: "free",
     name: "Бесплатно",
-    description: "Попробовать и понять, нужно ли. Без карты",
+    // Аудит 11.10, Д-2: было «Попробовать и понять, нужно ли» — и рядом цена
+    // «0 ₽ навсегда». «Навсегда» к тарифу с тремя генерациями отношения не
+    // имеет: обещание, которое продукт не выполняет. Теперь строка говорит то же
+    // самое конкретно — сколько листов и зачем.
+    description: `${FREE_QUOTA_LABEL}, чтобы понять, подходит ли. Без карты`,
     shortDescription: `${FREE_QUOTA_LABEL}, без карты`,
     features: [
       FREE_QUOTA_LABEL,
+      // Честная пара к «навсегда»: квота общая и не восстанавливается
+      // (FREE_TOTAL_GENERATIONS = 3, сброса нет — см. бэкенд services/usage.ts).
+      "Квота не пополняется — это 3 листа на всё время",
       "Все предметы, 1–11 классов",
       "PDF с ответами и пояснениями",
       interviewQuotaLabel("free"),
@@ -305,8 +312,12 @@ export const PLANS: Record<PlanId, Plan> = {
     normPerMonth: null,
     costPerNormRub: null,
     prices: {
-      academicYear: { amount: 0, unit: "навсегда", perMonth: 0 },
-      month: { amount: 0, unit: "навсегда", perMonth: 0 },
+      // Аудит 11.10, Д-2: было `unit: "навсегда"` при цене 0. Квота — три
+      // генерации на весь срок, поэтому подпись стала «на пробу». Слово
+      // «навсегда» возвращаться не должно: его ловит
+      // tests/truthful-claims.test.ts.
+      academicYear: { amount: 0, unit: "на пробу", perMonth: 0 },
+      month: { amount: 0, unit: "на пробу", perMonth: 0 },
     },
   },
   base: {

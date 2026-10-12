@@ -22,11 +22,12 @@ import {
   getGrade,
   subjects,
 } from "@/lib/content/subjects";
-import type { Topic, TopicExample } from "@/lib/types";
+import type { TopicExample } from "@/lib/types";
 import { SITE_URL } from "@/lib/site";
 import { plural, topicTitleWithUmk, quotedTopic } from "@/lib/utils/cn";
 import { clipDescription } from "@/lib/seo/metadata";
 import { Breadcrumb } from "@/components/seo";
+import { getTopicNeighbors } from "@/lib/content/topic-neighbors";
 import { AnswerToggle } from "./AnswerToggle";
 
 type Props = { params: { subject: string; grade: string; topic: string } };
@@ -132,9 +133,20 @@ export function generateMetadata({ params }: Props): Metadata {
   };
 }
 
-// TZ-10 §6.1: Related topics — откатил, блокирует билд (таймауты static generation).
-// Компонент RelatedTopics.tsx оставлен, JSON-LD компоненты Breadcrumb/FaqBlock —
-// оставлены. Подключим в отдельной сессии с профилированием.
+// TZ-10 §6.1: Related topics. Раньше здесь стоял откат:
+// «TZ-10 §6.1: Related topics — откатил, блокирует билд (таймауты static
+// generation)». Причина отката — в контракте компонента
+// `components/seo/RelatedTopics.tsx`: он просит `allTopics`, то есть плоский
+// список тем ВСЕХ предметов и классов (1075 штук), и трижды фильтрует его
+// внутри страницы. Глобальная работа на каждой из 1075 страниц плюс до 26
+// ссылок на страницу вместо 4–8.
+//
+// Возвращено 11.10.2026 (блок Г) без этого компонента: `getTopicNeighbors`
+// в `src/lib/content/topic-neighbors.ts` работает с `getGrade(subject, grade)`
+// — списком тем одного класса (максимум 30 штук) — и кеширует его по ключу
+// «предмет/класс», то есть считает 141 раз за сборку вместо 1075.
+// Компонент RelatedTopics.tsx остался неподключённым: его контракт с
+// глобальным `allTopics` как раз и был дорогим.
 
 export default function TopicPage({ params }: Props) {
   const subject = getSubject(params.subject);
@@ -143,7 +155,19 @@ export default function TopicPage({ params }: Props) {
 
   if (!subject || !grade || !topic) return notFound();
 
-  const otherTopics = grade.topics.filter((t: Topic) => t.slug !== topic.slug);
+  // Блок Г (docs/30-audit-plan-2026-10-11.md): соседние темы для перелинковки.
+//
+// Раньше здесь стоял `otherTopics` — ВСЕ темы класса без ограничения. У 15 из
+// 141 пар «предмет × класс» их больше восьми (algebra/9 — 30 тем, 29 ссылок),
+// и страница превращалась в простыню ссылок. `getTopicNeighbors` берёт из того
+// же класса 4–8 тем и упорядочивает их тематически: сначала соседи по разделу
+// ФГОС, потом ближайшие по порядку программы. Список тем класса кешируется в
+// `topic-neighbors.ts`, поэтому считается один раз на класс, а не на страницу.
+const neighbors = getTopicNeighbors(
+  params.subject,
+  grade.num,
+  params.topic,
+);
 
   // ТЗ-21 п.6 / SEO-аудит P0-6: перелинковка артефактов.
   //
@@ -163,7 +187,7 @@ export default function TopicPage({ params }: Props) {
   // каждая ссылка — на конкретный, уже существующий (collectible через
   // generateStaticParams во всех трёх роутах) артефакт этой же темы.
   //
-  // СМ. ТАКЖЕ комментарий к `otherTopics` ниже: блок соседних тем «Смотрите
+  // СМ. ТАКЖЕ комментарий к `neighbors` ниже: блок соседних тем «Смотрите
   // также» уже существует в этой странице отдельной секцией, поэтому второго
   // такого блока не делаем — одинаковые списки дублей на одной странице.
   const artifactLinks: Array<{
@@ -442,27 +466,24 @@ export default function TopicPage({ params }: Props) {
         </div>
       </section>
 
-      {/* Other topics — это и есть блок «Смотрите также»: соседние темы того же
-          предмета и класса. Отдельный второй блок не делаем (ТЗ-21 п.6). */}
-      {otherTopics.length > 0 && (
+      {/* Соседние темы — блок Г. Раньше здесь рендерились все темы класса
+          без ограничения (до 29 ссылок на algebra/9); теперь 4–8 тем,
+          подобранных по тематической близости. */}
+      {neighbors.length > 0 && (
         <section className="py-12 sm:py-16">
           <div className="container-tight">
             <h2 className="text-2xl sm:text-3xl font-display font-bold mb-6">
-              Другие темы · {subject.shortTitle} {grade.num} класс
+              Смотрите также · {subject.shortTitle} {grade.num} класс
             </h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {otherTopics.map((t: Topic) => (
-                <Link
-                  key={t.slug}
-                  href={`/subject/${subject.slug}/${grade.num}/${t.slug}`}
-                  className="group"
-                >
+              {neighbors.map((n) => (
+                <Link key={n.href} href={n.href} className="group">
                   <Card hover className="h-full">
                     <h3 className="font-medium text-warm-950 group-hover:text-brand-700 transition-colors">
-                      {t.title}
+                      {n.title}
                     </h3>
                     <div className="mt-2 text-xs text-warm-500 line-clamp-1 font-mono">
-                      {t.examples[0]?.text}
+                      {n.hint}
                     </div>
                   </Card>
                 </Link>
@@ -507,7 +528,10 @@ export default function TopicPage({ params }: Props) {
       </section>
 
       {/* TZ-10 §6.2 / §9.5: FAQPage JSON-LD откатил вместе с FaqBlock — таймауты static generation. Подключим позже. */}
-      {/* TZ-10 §6.1 / §9.12: Related topics откатил — таймауты static generation. */}
+      {/* TZ-10 §6.1 / §9.12: Related topics откатывал — таймауты static generation.
+          Откат был из-за контракта компонента (глобальный allTopics на каждой
+          странице), а не из-за самих ссылок. Перелинковка возвращена в виде
+          блока «Смотрите также» на `neighbors` — см. комментарий выше. */}
     </>
   );
 }

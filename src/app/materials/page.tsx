@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, Sparkles, Layers, BookOpen } from "lucide-react";
+import { ArrowRight, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { MaterialCard } from "@/components/materials/MaterialCard";
+import { MaterialsFilter, type MaterialFilterItem } from "@/components/materials/MaterialsFilter";
 import {
   MATERIALS_CATALOG,
   MATERIAL_PURPOSE_HINTS,
@@ -11,7 +11,6 @@ import {
   MATERIAL_PURPOSE_ORDER,
   getMaterialsByPurpose,
   getSubjectCounts,
-  getFeaturedMaterials,
 } from "@/lib/content/materials-catalog";
 import { getSubject, subjects } from "@/lib/content/subjects";
 import { getUMK } from "@/lib/content/umk";
@@ -64,8 +63,83 @@ const featuredTopics = (() => {
   return [...counts.values()].sort((a, b) => b.hits - a.hits || a.grade - b.grade).slice(0, 12);
 })();
 
+/**
+ * Проекция каталога для фильтра.
+ *
+ * Раньше страница рисовала все 150 карточек `MaterialCard` прямо на сервере
+ * («Весь каталог»). Каждая карточка — это ~1,4 КБ разметки с длинными
+ * Tailwind-классами, и в RSC-payload она уезжала второй раз. Итог: 819 КБ
+ * HTML, из которых половина — дублирующая копия одной и той же выдачи.
+ *
+ * Фильтру нужны только слаг, заголовок и признаки для отбора. Всё остальное
+ * (описание на 250–800 символов, текст темы, счётчик заданий, сложность,
+ * автор) лежит на странице самого материала и в фильтре не используется —
+ * поэтому в проекцию не входит. Замерено: тонкая проекция весит 47 КБ
+ * против 166 КБ у полного каталога, а 150 карточек разметки не рендерятся
+ * вовсе — фильтр выводит первые 12 и добавляет по 24 по кнопке.
+ */
+const filterItems: MaterialFilterItem[] = MATERIALS_CATALOG.map((m) => ({
+  slug: m.slug,
+  title: m.title,
+  subject: m.subject,
+  grade: m.grade,
+  purpose: m.purpose,
+}));
+
+/** Эмодзи и короткое имя предмета — рисуются в карточке фильтра. */
+const subjectMeta = Object.fromEntries(
+  subjects
+    .filter((s) => (getSubject(s.slug) ?? null) !== null)
+    .map((s) => [s.slug, { emoji: s.emoji, shortTitle: s.shortTitle }]),
+);
+
+/**
+ * Оформление списка УМК задано один раз на контейнере через
+ * arbitrary-варианты Tailwind (`[&>div]:…`, `[&>div>a]:…`).
+ *
+ * В списке 126 учебников в 21 строке. Когда строки классов стояли на каждой
+ * ссылке и на каждой строке, они уезжали и в разметку, и в RSC-payload —
+ * почти 40 КБ на страницу. Здесь класс один, а элементы внутри чистые.
+ * Вид не меняется: это те же utility-классы, просто заданные выше.
+ */
+const UMK_LIST_CLASS = [
+  "space-y-5",
+  "[&>div]:flex [&>div]:flex-wrap [&>div]:items-center [&>div]:gap-2",
+  "[&>div>span]:text-sm [&>div>span]:font-medium [&>div>span]:text-warm-800",
+  "[&>div>span]:w-full [&>div>span]:sm:w-auto [&>div>span]:sm:min-w-[11rem]",
+  "[&>div>a]:inline-flex [&>div>a]:items-center [&>div>a]:px-3.5 [&>div>a]:py-1.5",
+  "[&>div>a]:rounded-full [&>div>a]:border [&>div>a]:border-warm-200 [&>div>a]:bg-white",
+  "[&>div>a]:text-sm [&>div>a]:text-warm-700 [&>div>a]:transition-colors",
+  "[&>div>a]:hover:border-brand-300 [&>div>a]:hover:bg-brand-50",
+].join(" ");
+
+/**
+ * Оформление ссылок «Каталога по цели» — по той же причине, что и у УМК.
+ *
+ * Селектор проходит через `li`: ссылка лежит внутри элемента списка, поэтому
+ * `[&>div>ul>a]` не срабатывал и плашки выглядели как обычный текст.
+ */
+const PURPOSE_LIST_CLASS = [
+  "space-y-8",
+  "[&>div>ul]:flex [&>div>ul]:flex-wrap [&>div>ul]:gap-2 [&>div>ul]:list-none [&>div>ul]:p-0",
+  "[&>div>ul>li>a]:rounded-full [&>div>ul>li>a]:border [&>div>ul>li>a]:border-warm-200",
+  "[&>div>ul>li>a]:bg-white [&>div>ul>li>a]:px-3.5 [&>div>ul>li>a]:py-1.5",
+  "[&>div>ul>li>a]:text-sm [&>div>ul>li>a]:text-warm-700 [&>div>ul>li>a]:transition-colors",
+  "[&>div>ul>li>a]:hover:border-brand-300 [&>div>ul>li>a]:hover:bg-brand-50",
+  "[&>div>ul>li>a]:hover:text-brand-800",
+].join(" ");
+
+/** Оформление ссылок «Избранных тем» — как у остальных списков на странице. */
+const TOPIC_LIST_CLASS = [
+  "flex flex-wrap gap-2",
+  "[&>li>a]:group [&>li>a]:inline-flex [&>li>a]:items-center [&>li>a]:gap-2 [&>li>a]:h-9",
+  "[&>li>a]:rounded-full [&>li>a]:border [&>li>a]:border-warm-200 [&>li>a]:bg-white",
+  "[&>li>a]:px-4 [&>li>a]:text-sm [&>li>a]:text-warm-800 [&>li>a]:transition-colors",
+  "[&>li>a]:hover:border-brand-300 [&>li>a]:hover:bg-brand-50 [&>li>a]:hover:text-brand-800",
+  "[&>li>a>span]:text-[color:var(--text-muted)]",
+].join(" ");
+
 export default function MaterialsHubPage() {
-  const topMaterials = getFeaturedMaterials(6);
   const subjectCounts = getSubjectCounts();
   /** Предметы, у которых задан хотя бы один УМК, — для блока «По учебнику». */
   const umkSubjects = subjects.filter((s) => (getUMK(s.slug) ?? []).length > 0);
@@ -107,26 +181,34 @@ export default function MaterialsHubPage() {
         </div>
       </section>
 
-      {/* Начало каталога. Заголовок про «чаще всего берут» убрали вместе с
-          выдуманным счётчиком: обещать учителю популярность, которую мы не
-          считали, нельзя. */}
-      <section className="py-12 sm:py-16">
+      {/*
+        Каталог с фильтрами.
+
+        Раньше здесь стояли шесть карточек `MaterialCard`, а ниже — ещё 150 в
+        блоке «Весь каталог», плюс 30 в «Каталоге по цели». Всего страница
+        рендерила 186 карточек: это и есть раздувание, из-за которого файл
+        весил 819 КБ вместо 150.
+
+        Теперь выдача одна и она фильтруется. Заголовок про «чаще всего
+        берут» убрали раньше вместе с выдуманным счётчиком: обещать учителю
+        популярность, которую мы не считали, нельзя.
+      */}
+      <section id="catalog" className="py-12 sm:py-16">
         <div className="container-tight">
-          <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-display font-bold tracking-tight">
-                Начало каталога
-              </h2>
-              <p className="mt-2 text-sm text-warm-500">
-                Карточки обновляются вместе с каталогом
-              </p>
-            </div>
+          <div className="mb-6">
+            <h2 className="text-2xl sm:text-3xl font-display font-bold tracking-tight">
+              Каталог материалов
+            </h2>
+            <p className="mt-2 text-sm text-warm-500">
+              Выберите предмет и класс — список сузится. Кнопки и подписи работают
+              с клавиатуры.
+            </p>
           </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {topMaterials.map((m) => (
-              <MaterialCard key={m.slug} material={m} />
-            ))}
-          </div>
+          <MaterialsFilter
+            items={filterItems}
+            purposeLabels={MATERIAL_PURPOSE_LABELS}
+            subjectMeta={subjectMeta}
+          />
         </div>
       </section>
 
@@ -136,6 +218,11 @@ export default function MaterialsHubPage() {
         Виленкину». Список собирается из `umk.ts` — того же источника, что и
         фильтр в конструкторе. Предметы берём из таксономии, чтобы не дублировать
         список вручную; пустой блок не выводится.
+
+        Иконку `BookOpen` из ссылок убрали: список содержит 126 УМК, а одна
+        отрисованная иконка — 452 байта, то есть 57 КБ инлайнового SVG на
+        страницу (замерено). Иконка не несла смысла: рядом стоит название
+        учебника текстом, а ссылка и так подписана.
       */}
       {umkSubjects.length > 0 && (
         <section className="py-12 sm:py-16">
@@ -147,19 +234,12 @@ export default function MaterialsHubPage() {
               Задания собираются под конкретный УМК, а не «по предмету вообще» — так они совпадают с
               тем, что вы проходите на уроке.
             </p>
-            <div className="space-y-5">
+            <div className={UMK_LIST_CLASS}>
               {umkSubjects.map((s) => (
-                <div key={s.slug} className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-warm-800 w-full sm:w-auto sm:min-w-[11rem]">
-                    {s.title}
-                  </span>
+                <div key={s.slug}>
+                  <span>{s.title}</span>
                   {(getUMK(s.slug) ?? []).map((entry) => (
-                    <Link
-                      key={entry.id}
-                      href={`/subject/${s.slug}?umk=${entry.id}`}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-warm-200 bg-white hover:border-brand-300 hover:bg-brand-50 transition-colors text-sm text-warm-700"
-                    >
-                      <BookOpen className="w-4 h-4 text-warm-600 shrink-0" />
+                    <Link key={entry.id} href={`/subject/${s.slug}?umk=${entry.id}`}>
                       {umkEntryLabel(entry)}
                     </Link>
                   ))}
@@ -170,7 +250,19 @@ export default function MaterialsHubPage() {
         </section>
       )}
 
-      {/* Категории по цели */}
+      {/*
+        Категории по цели.
+
+        Раньше здесь стояло 30 карточек `MaterialCard` — 42 КБ разметки и
+        столько же в RSC-payload. Карточки показывали те же записи каталога,
+        что и фильтр выше, поэтому заменили их ссылкой-плашкой: ссылка на
+        `/material/<slug>/` остаётся (она нужна перелинковке), а оболочки
+        карточки с превью и бейджами — нет.
+
+        Как и в блоке УМК, оформление ссылок задано один раз на контейнере:
+        30 ссылок × длинная строка классов × два места (разметка и
+        RSC-payload) — это ровно тот вес, который уносил страницу за 200 КБ.
+      */}
       <section id="categories" className="py-12 sm:py-16 bg-warm-50 border-y border-warm-100">
         <div className="container-tight">
           <h2 className="text-2xl sm:text-3xl font-display font-bold tracking-tight mb-2">
@@ -180,24 +272,22 @@ export default function MaterialsHubPage() {
             Пять категорий — как у крупных каталогов. Выбирайте то, что вам нужно прямо сейчас.
           </p>
 
-          <div className="space-y-10">
+          <div className={PURPOSE_LIST_CLASS}>
             {MATERIAL_PURPOSE_ORDER.map((purpose) => {
               const items = getMaterialsByPurpose(purpose, 6);
               return (
                 <div key={purpose}>
-                  <div className="flex flex-wrap items-baseline gap-3 mb-4">
-                    <h3 className="text-xl font-semibold text-warm-950">
-                      {MATERIAL_PURPOSE_LABELS[purpose]}
-                    </h3>
-                    <span className="text-sm text-warm-500">
-                      {MATERIAL_PURPOSE_HINTS[purpose]}
-                    </span>
+                  <div className="[&>h3]:text-xl [&>h3]:font-semibold [&>h3]:text-warm-950 [&>span]:text-sm [&>span]:text-warm-500 mb-3 flex flex-wrap items-baseline gap-3">
+                    <h3>{MATERIAL_PURPOSE_LABELS[purpose]}</h3>
+                    <span>{MATERIAL_PURPOSE_HINTS[purpose]}</span>
                   </div>
-                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <ul>
                     {items.map((m) => (
-                      <MaterialCard key={m.slug} material={m} compact />
+                      <li key={m.slug}>
+                        <Link href={`/material/${m.slug}/`}>{m.title}</Link>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
               );
             })}
@@ -236,46 +326,42 @@ export default function MaterialsHubPage() {
         </div>
       </section>
 
-      {/* Избранные темы */}
+      {/*
+        Избранные темы. Иконку `Layers` убрали по той же причине, что и
+        `BookOpen` в блоке УМК: она повторялась в каждой ссылке, а рядом
+        текстом стоит название темы. Ссылка и так подписана.
+      */}
       <section className="py-12 sm:py-16 bg-warm-50 border-y border-warm-100">
         <div className="container-tight">
           <h2 className="text-2xl sm:text-3xl font-display font-bold tracking-tight mb-6">
             Избранные темы
           </h2>
-          <div className="flex flex-wrap gap-2">
+          <ul className={TOPIC_LIST_CLASS}>
             {featuredTopics.map((t) => (
-              <Link
-                key={`${t.subject}:${t.grade}:${t.topicSlug}`}
-                href={`/subject/${t.subject}/${t.grade}/${t.topicSlug}/`}
-                className="group inline-flex items-center gap-2 rounded-full border border-warm-200 bg-white px-4 h-9 text-sm text-warm-800 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-800"
-              >
-                <Layers className="w-3.5 h-3.5 text-warm-600 group-hover:text-brand-500" aria-hidden />
-                {t.topicTitle}
-                <span className="text-[color:var(--text-muted)]">{t.grade} класс</span>
-              </Link>
+              <li key={`${t.subject}:${t.grade}:${t.topicSlug}`}>
+                <Link href={`/subject/${t.subject}/${t.grade}/${t.topicSlug}/`}>
+                  {t.topicTitle}
+                  <span>{t.grade} класс</span>
+                </Link>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       </section>
 
-      {/* Весь каталог */}
+      {/*
+        «Весь каталог» раньше рисовал все 150 карточек `MaterialCard` —
+        205 КБ чистой разметки, плюс столько же в RSC-payload. Это был
+        главный источник раздувания страницы.
+
+        Все 150 записей уже доступны учителю: через фильтр выше (с названием
+        предмета, классом и целью) и через страницы предметов. Дублировать
+        их третьим способом на хабе незачем, поэтому здесь осталась только
+        ссылка на конструктор.
+      */}
       <section className="py-12 sm:py-16">
         <div className="container-tight">
-          <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
-            <h2 className="text-2xl sm:text-3xl font-display font-bold tracking-tight">
-              Весь каталог
-            </h2>
-            <p className="text-sm text-warm-500">
-              {MATERIALS_CATALOG.length} материалов
-            </p>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {MATERIALS_CATALOG.map((m) => (
-              <MaterialCard key={m.slug} material={m} compact />
-            ))}
-          </div>
-
-          <div className="mt-12 rounded-2xl border border-brand-100 bg-brand-50/60 p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="rounded-2xl border border-brand-100 bg-brand-50/60 p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <p className="text-base sm:text-lg text-warm-800 leading-snug sm:max-w-xl">
               Не нашли нужный формат? Соберите свой лист по теме и классу — это занимает
               меньше минуты.

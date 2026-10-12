@@ -5,18 +5,26 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/shared/Logo";
 import { Button } from "@/components/ui/Button";
-import { Menu, X, Sparkles, GraduationCap, LayoutDashboard, Library } from "lucide-react";
+import { Menu, X, Sparkles, GraduationCap, Library } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { getProfile } from "@/lib/utils/storage";
 import type { UserProfile } from "@/lib/types";
 import { PROFILE_CHANGED_EVENT } from "@/lib/events";
 
+/**
+ * Пункты меню.
+ *
+ * Аудит 11.10, Д-3: здесь был пункт «Кабинет», и рядом с ним — кнопка входа.
+ * Два входа в одно место с одинаковым весом: гость видел «Кабинет» (которого у
+ * него нет) рядом с «Войти», а залогиненный — «Кабинет» в меню и ещё одну
+ * кнопку входа справа. Кабинет убран из списка: теперь ровно одна точка входа,
+ * и она зависит от состояния — гость видит «Войти», залогиненный «Кабинет».
+ */
 const nav = [
   { href: "/constructor", label: "Генератор", icon: Sparkles },
   { href: "/materials", label: "Банк материалов", icon: Library },
   { href: "/oge", label: "ОГЭ / ЕГЭ", icon: GraduationCap },
   { href: "/pricing", label: "Тарифы", icon: null },
-  { href: "/dashboard", label: "Кабинет", icon: LayoutDashboard },
 ];
 
 export function Header() {
@@ -97,15 +105,20 @@ export function Header() {
           </nav>
 
           <div className="hidden md:flex items-center gap-2">
+            {/* Одна кнопка на состояние: гость — «Войти», свой кабинет —
+                «Кабинет». Имя рядом с надписью оставлено намеренно: учителю
+                полезно видеть, под кем он вошёл. */}
             {profile ? (
               <Button
                 as="link"
                 href="/dashboard"
                 variant="ghost"
                 size="md"
-                aria-label={`Открыть кабинет: ${profile.name}`}
+                className="inline-flex items-center gap-2"
+                aria-label={`Кабинет: ${profile.name}`}
               >
-                {profile.name} →
+                <span className="max-w-[9rem] truncate text-warm-500">{profile.name}</span>
+                <span>Кабинет</span>
               </Button>
             ) : (
               <Button
@@ -165,8 +178,15 @@ export function Header() {
             })}
             <div className="grid grid-cols-2 gap-2 pt-2">
               {profile ? (
-                <Button as="link" href="/dashboard" variant="secondary" size="md" fullWidth>
-                  {profile.name}
+                <Button
+                  as="link"
+                  href="/dashboard"
+                  variant="secondary"
+                  size="md"
+                  fullWidth
+                  aria-label={`Кабинет: ${profile.name}`}
+                >
+                  Кабинет
                 </Button>
               ) : (
                 <Button

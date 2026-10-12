@@ -32,6 +32,18 @@ const cols = [
       { href: "/legal/cookies", label: "Использование cookie-файлов" },
     ],
   },
+  // Аудит 11.10.2026, блок E: страницы доверия отдавали 404, поэтому на них
+  // невозможно было ни зайти с главной, ни найти в подвале. Колонка добавлена
+  // рядом с документами — по смыслу это тоже «о проекте и его условиях».
+  {
+    title: "О проекте",
+    links: [
+      { href: "/about", label: "О сервисе" },
+      { href: "/methodology", label: "Методика" },
+      { href: "/contact", label: "Контакты и реквизиты" },
+      { href: "/register", label: "Регистрация" },
+    ],
+  },
 ];
 
 export function Footer() {
@@ -39,7 +51,10 @@ export function Footer() {
     // no-print: подвал с контактами и ссылками — не часть рабочего листа.
     <footer className="no-print bg-warm-100 border-t border-warm-200 mt-20">
       <div className="container-tight py-14">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-10">
+        {/* md:grid-cols-6, а не 5: колонок стало четыре (добавилась «О проекте»),
+            плюс блок логотипа на col-span-2. На пяти треках последняя колонка
+            уезжала на вторую строку и подвал выглядел сломанным. */}
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-10">
           <div className="col-span-2">
             <Logo />
             <p className="mt-4 text-sm text-warm-600 max-w-xs leading-relaxed">
@@ -83,6 +98,17 @@ export function Footer() {
 
         <div className="mt-10 pt-6 border-t border-warm-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-warm-500">
           <p>© 2026 УчЛист. Все права защищены. Сделано с ❤ для учителей.</p>
+          <p>
+            Автор:{" "}
+            <a
+              href="https://ilushnikov.ru"
+              target="_blank"
+              rel="noopener nofollow"
+              className="text-warm-600 hover:text-warm-950 transition-colors"
+            >
+              Иван Лушников
+            </a>
+          </p>
           <p>Листы в формате A4 · PDF · DOCX · PPTX</p>
         </div>
       </div>

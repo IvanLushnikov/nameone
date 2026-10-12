@@ -1,17 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { useInView } from "@/hooks/useInView";
 import {
   TimerIllustration,
   ShieldIllustration,
-  FileCheckIllustration,
   LayersIllustration,
-  SmartphoneIllustration,
-  SparklesIllustration,
 } from "@/components/shared/Illustrations";
-import { ArrowRight } from "lucide-react";
 import * as React from "react";
 
 /**
@@ -25,77 +20,46 @@ function useReveal(inView: boolean) {
   return !mounted || inView;
 }
 
+/**
+ * Главная — вокруг рабочих листов (аудит 11.10, Д-4).
+ *
+ * БЫЛО: десять карточек, из которых четыре — другие продукты (план урока,
+ * презентация, КТП, проверка по фото). Учитель выбирал из девяти продуктов и
+ * не понимал, за что платить. Эти функции остались в продукте — их место в
+ * кабинете, на них ведут ссылки из блока «Что происходит с листом дальше».
+ * Здесь осталось то, ради чего учитель приходит на главную.
+ *
+ * ЧЕСТНОСТЬ ПРО ПРОВЕРКУ (Д-1). Старая формулировка обещала результат
+ * («решает заново и сверяет с ключом»). Что происходит на самом деле, видно
+ * по коду: проверку запускает сам учитель кнопкой «Проверить ответы»
+ * (src/app/constructor/page.tsx), она идёт по одному заданию за раз, 5–20 секунд
+ * на задание и 1–3 минуты на лист (замеры на проде 06.10.2026,
+ * src/lib/llm/verify-sheet.ts). Результат — не «правильно», а три состояния
+ * на задание: «ИИ-проверено», «Требует проверки», «не проверено»
+ * (components/constructor/VerifiedBadge.tsx). Поэтому здесь честная рамка:
+ * система даёт черновик разбора, решение остаётся за учителем.
+ */
 const features = [
   {
     Illustration: TimerIllustration,
-    title: "Готово за 30 секунд",
+    title: "Рабочий лист за 30 секунд",
     description:
-      "Выбираете класс, предмет и тему — получаете PDF с заданиями, ответами и пояснениями, готовый к печати.",
+      "Выбираете класс, предмет и тему — получаете PDF с заданиями, ответами и пояснениями, готовый к печати. Задания распределены по уровням сложности: ФГОС 2021 для 1–9 классов, действующий ФГОС СОО для 10–11.",
+    accent: "from-brand-400 to-brand-600",
+  },
+  {
+    Illustration: LayersIllustration,
+    title: "Варианты для всего класса",
+    description:
+      "Делаете 2–3 варианта одной темы, чтобы у разных учеников были разные задания. Два варианта — в один клик.",
     accent: "from-brand-400 to-brand-600",
   },
   {
     Illustration: ShieldIllustration,
-    title: "Проверка ответов",
+    title: "Ответы — на сверку, не на веру",
     description:
-      "Проверка по вашей команде: нейросеть решает каждое задание заново и сверяет с ключом. Не сошлось — жёлтая отметка, решение за вами.",
+      "По вашей команде нейросеть решает каждое задание заново и сверяет с вашим ключом. Что сошлось — отмечено, что спорно — жёлтым «требует проверки». Это черновик разбора: 5–20 секунд на задание, 1–3 минуты на лист, решение остаётся за вами.",
     accent: "from-accent-400 to-accent-600",
-  },
-  {
-    Illustration: FileCheckIllustration,
-    title: "Подходит для ФГОС",
-    description:
-      "Задания распределены по уровням сложности. Для 1–9 классов — по ФГОС 2021, для 10–11 классов — по действующему ФГОС СОО. Задания — по уровню ученика.",
-    accent: "from-warm-400 to-warm-600",
-  },
-  {
-    Illustration: LayersIllustration,
-    title: "Несколько вариантов",
-    description:
-      "Делайте 2–3 варианта одной темы, чтобы дать разным ученикам разные задания. Два варианта — в один клик.",
-    accent: "from-brand-400 to-brand-600",
-  },
-  {
-    Illustration: SmartphoneIllustration,
-    title: "Печать с телефона",
-    description:
-      "Открываете PDF на телефоне, отправляете на принтер или в Telegram. Никаких приложений и регистраций.",
-    accent: "from-accent-400 to-accent-600",
-  },
-  {
-    Illustration: SparklesIllustration,
-    title: "История и шаблоны",
-    description:
-      "Сохраняйте любимые настройки. Возвращайтесь к прошлым листам. Копируйте удачные шаблоны для новых учеников.",
-    accent: "from-warm-400 to-warm-600",
-  },
-  {
-    Illustration: TimerIllustration,
-    title: "План урока по ФГОС за минуту",
-    description:
-      "Конспект на 45 минут: цели, ход урока, домашнее задание. Готов для проверки методистом и администрацией школы.",
-    accent: "from-accent-400 to-accent-600",
-  },
-  {
-    Illustration: ShieldIllustration,
-    title: "Презентация к уроку",
-    description:
-      "5–20 слайдов с заметками для учителя. Скачивайте в PPTX и редактируйте в PowerPoint.",
-    accent: "from-warm-400 to-warm-600",
-  },
-  {
-    Illustration: LayersIllustration,
-    title: "КТП на год",
-    description:
-      "Календарно-тематическое планирование для 1–11 классов. Готовая таблица для администрации.",
-    accent: "from-brand-400 to-brand-600",
-  },
-  {
-    Illustration: FileCheckIllustration,
-    title: "Проверка работ по фото",
-    description:
-      "Снимаете тетрадь — получаете балл, оценку и разбор по заданиям. Если что-то вызывает вопросы, составляем 3–5 вопросов, чтобы задать их вслух и разобраться вместе с учеником.",
-    accent: "from-accent-400 to-accent-600",
-    href: "/constructor?photo=1",
   },
 ];
 
@@ -108,13 +72,15 @@ export function Features() {
       <div className="container-tight">
         <div className="max-w-2xl mx-auto text-center mb-12 sm:mb-16">
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-600 mb-3">
-            Почему УчЛист
+            Что здесь есть
           </p>
           <h2 className="text-3xl sm:text-4xl font-display font-bold tracking-tight">
-            Листы точно по&nbsp;программе. Делаются за&nbsp;30&nbsp;секунд. Проверяем ответы и&nbsp;отсеиваем явные ошибки.
+            Рабочие листы. Остальное&nbsp;— в&nbsp;кабинете.
           </h2>
           <p className="mt-4 text-lg text-warm-600">
-            Десять причин выбрать УчЛист вместо шаблонов и&nbsp;ручной&nbsp;работы.
+            Лист, варианты для класса и сверка ответов. План урока, презентация,
+            КТП и проверка по&nbsp;фото тоже работают&nbsp;— но их место в
+            кабинете, а&nbsp;не на главной.
           </p>
           {/* Один раз расшифровываем сокращение: дальше по сайту — «ИИ». */}
           <p className="mt-3 text-sm text-warm-500">
@@ -143,7 +109,7 @@ function FeatureCard({
   index: number;
   show: boolean;
 }) {
-  const { Illustration, title, description, accent, href } = feature;
+  const { Illustration, title, description, accent } = feature;
   return (
     <Card
       hover
@@ -165,20 +131,6 @@ function FeatureCard({
         </div>
         <h3 className="text-lg font-semibold text-warm-950 mb-2 transition-colors group-hover:text-brand-700">{title}</h3>
         <p className="text-sm text-warm-600 leading-relaxed">{description}</p>
-        {/* Точка входа: карточки без href остаются обычными, с href — ссылкой
-          на весь блок. Подпись внизу нужна, чтобы было видно, что блок ведёт
-          дальше, а не просто раскрывается. */}
-        {href && (
-          <span className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-brand-600 group-hover:text-brand-700">
-            Попробовать
-            <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
-          </span>
-        )}
-        {href && (
-          <Link href={href} className="absolute inset-0" aria-label={title}>
-            <span className="sr-only">{title}</span>
-          </Link>
-        )}
       </div>
     </Card>
   );

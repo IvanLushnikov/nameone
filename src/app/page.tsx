@@ -4,8 +4,10 @@ import { WeeklyTopicBlock } from "@/components/landing/WeeklyTopic";
 import { MaterialsBankBlock } from "@/components/landing/MaterialsBankBlock";
 import { RealStats } from "@/components/landing/Stats";
 import { Features } from "@/components/landing/Features";
+import { Limitations } from "@/components/landing/Limitations";
 import { HiddenFeatures } from "@/components/landing/HiddenFeatures";
 import { Seasonal } from "@/components/landing/Seasonal";
+import { OgeTeaser } from "@/components/exam/OgeTeaser";
 import { Comparison } from "@/components/landing/Comparison";
 import { Subjects } from "@/components/landing/Subjects";
 import { PricingTeaser } from "@/components/landing/PricingTeaser";
@@ -106,9 +108,15 @@ export default function Home() {
       <Hero />
       <RealStats />
       <Features />
+      {/* Аудит 11.10, Д-5: честный блок ограничений сразу после обещаний —
+          обещаний больше трёх, ограничения читаются до оплаты, а не после. */}
+      <Limitations />
       {/* ТЗ-21 п.3: четыре функции, которые работают, но на сайт не выведены. */}
       <HiddenFeatures />
       <Seasonal />
+      {/* Блок A (аудит 11.10): ссылки на /exam/oge/ и /exam/ege/ — вход в
+          218 страниц заданий, до любой из них отсюда ровно два клика. */}
+      <OgeTeaser />
       <Subjects />
       <Comparison />
       <PricingTeaser />

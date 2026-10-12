@@ -1,4 +1,6 @@
+import { createElement } from "react";
 import { describe, it, expect } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
   MATERIALS_CATALOG,
   MATERIAL_PURPOSE_LABELS,
@@ -13,6 +15,7 @@ import {
   type MaterialArtifactType,
   type MaterialEntry,
 } from "@/lib/content/materials-catalog";
+import MaterialsHubPage from "@/app/materials/page";
 import { getSubject, getTopic } from "@/lib/content/subjects";
 import type { SubjectSlug } from "@/lib/types";
 
@@ -63,6 +66,73 @@ const REQUIRED_SUBJECTS = [
   "physics",
   "chemistry",
 ] as const satisfies readonly SubjectSlug[];
+
+describe("Банк материалов: страница не раздувается каталогом", () => {
+  // Тест ловит конкретный старый дефект: страница рендерила на сервере все
+  // 150 карточек каталога плюс 30 карточек «по цели» — 186 штук, по ~1,4 КБ
+  // разметки на карточку. Проверяется не размер файла (сборка медленная и
+  // зависит от окружения), а сам факт: сколько карточек вошло в HTML.
+  //
+  // На сломанном коде этот тест падал: 186 ссылок `/material/...` и 366 КБ
+  // разметки. Сейчас на странице остаются только те карточки, которые видит
+  // фильтр, — их handful, а не весь каталог.
+  it("рендерит не больше 60 карточек, а не весь каталог", () => {
+    const html = renderToStaticMarkup(createElement(MaterialsHubPage));
+    const links = html.match(/href="\/material\/[^"]+"/g) ?? [];
+
+    // 42 ссылки: 12 карточек фильтра в первой отрисовке + 30 ссылок
+    // в «Каталоге по цели». Каталог при этом — 150 записей.
+    expect(
+      links.length,
+      `страница отдала ${links.length} карточек — весь каталог на сервере рендерить нельзя`,
+    ).toBeLessThanOrEqual(60);
+    expect(links.length).toBeGreaterThan(0);
+    // Главное: выдача страницы заведомо меньше каталога.
+    expect(links.length).toBeLessThan(MATERIALS_CATALOG.length);
+  });
+
+  it("разметка страницы весит меньше 150 КБ", () => {
+    const html = renderToStaticMarkup(createElement(MaterialsHubPage));
+    const bytes = Buffer.byteLength(html, "utf8");
+
+    // Старая версия — 366 КБ только здесь, плюс столько же в RSC-payload.
+    // Порог с запасом: 150 КБ на разметку + полет RSC укладываются в 200 КБ,
+    // которые проверяются на собранном файле (`out/materials/index.html`).
+    expect(bytes, `разметка страницы: ${bytes} байт`).toBeLessThan(150 * 1024);
+  });
+
+  // Причина раздувания была не в том, что каталог уезжал пропсом в клиентский
+  // компонент: компонентов с "use client" на странице не было, раздувало
+  // серверное рендерение. Проверяем, что описание записи на странице хаба не
+  // рендерится: фильтру нужен заголовок, предмет, класс и цель — описание
+  // на 250–800 символов живёт на странице самого материала.
+  //
+  // Берём хвост описания: там CTA-фраза («…в конструкторе за 30 секунд»),
+  // которой в заголовке карточки нет, поэтому совпадение не случайно.
+  // На сломанном коде тест ловил 6 карточек из блока «Начало каталога» —
+  // они рендерились с описанием.
+  it("описания материалов не рендерятся в разметку страницы", () => {
+    const html = renderToStaticMarkup(createElement(MaterialsHubPage));
+
+    for (const m of MATERIALS_CATALOG.slice(0, 20)) {
+      const tail = m.description.slice(-70);
+      expect(
+        html.includes(tail),
+        `описание материала ${m.slug} попало в разметку страницы`,
+      ).toBe(false);
+    }
+  });
+
+  // 126 УМК, у каждого раньше была инлайновая иконка BookOpen по 452 байта —
+  // 57 КБ SVG на страницу. Иконка не несла смысла, рядом стоит название
+  // учебника текстом. На странице осталось 15 иконок: герой, темы, кнопки.
+  it("ссылки УМК не тащат инлайновые иконки", () => {
+    const html = renderToStaticMarkup(createElement(MaterialsHubPage));
+    const svgs = (html.match(/<svg/g) ?? []).length;
+
+    expect(svgs, `инлайновых SVG на странице: ${svgs}`).toBeLessThan(30);
+  });
+});
 
 describe("Банк материалов: каталог", () => {
   it("набирает не меньше 120 записей", () => {

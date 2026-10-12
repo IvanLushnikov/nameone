@@ -17,6 +17,7 @@ import {
   ListChecks,
 } from "lucide-react";
 import { EXAM_SUBJECTS, getExamNumber, type ExamKind } from "@/lib/content/exam-taxonomy";
+import { getExamExampleBlock, getRelatedTopics } from "@/lib/content/exam-examples";
 import { Breadcrumb, JsonLd } from "@/components/seo";
 import { absoluteUrl, clipDescription, ogImages, twitterCard } from "@/lib/seo/metadata";
 
@@ -166,6 +167,17 @@ export default function ExamNumberPage({ params }: Props) {
   })();
 
   const ctaHref = `/constructor?exam=${item.exam}&subject=${item.subject}&number=${item.number}`;
+
+  // Блок B: настоящие примеры заданий из таксономии программы либо честный
+  // блок «Что проверяет это задание» — заглушки на странице больше нет.
+  const exampleBlock = getExamExampleBlock(item.exam, item.subject, item.number);
+  // Лимит на смежные темы: 8 обычно, но на страницах с честным блоком в этот
+  // же список добавляется ссылка на все темы предмета («Все темы предмета»),
+  // и без ужатия получалось 9 ссылок вместо допустимых 5–8.
+  const relatedTopics = getRelatedTopics(item.exam, item.subject, item.number).slice(
+    0,
+    exampleBlock.kind === "honest" ? 7 : 8,
+  );
 
   const url = absoluteUrl(`/exam/${item.exam}/${item.subject}/${item.number}`);
 
@@ -325,18 +337,107 @@ export default function ExamNumberPage({ params }: Props) {
               <h2 className="text-2xl sm:text-3xl font-display font-bold mt-10 mb-2">
                 Примеры заданий
               </h2>
-              <Card>
-                <div className="flex items-start gap-3">
-                  <span className="worksheet-task-num shrink-0">i</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-warm-700 leading-relaxed italic">
-                      Скоро здесь появятся примеры заданий этого типа. Пока вы можете
-                      сгенерировать свой лист в генераторе — он сразу даст 5–30 заданий
-                      именно этого номера ФИПИ.
-                    </p>
+              <p className="text-warm-600 mb-4">
+                {exampleBlock.kind === "examples"
+                  ? "Такие же задания встречаются в вариантах экзамена. Примеры взяты из тем школьной программы — по каждой теме есть отдельная страница с разбором."
+                  : "Готовых примеров по этому номеру у нас пока нет — не будем придумывать. Ниже — что именно проверяет задание по кодификатору ФИПИ."}
+              </p>
+
+              {exampleBlock.kind === "examples" ? (
+                <div className="space-y-3">
+                  {exampleBlock.examples.map((ex, i) => (
+                    <Card key={`${ex.topicHref}-${i}`}>
+                      <div className="flex items-start gap-3">
+                        <span className="worksheet-task-num shrink-0">{i + 1}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm sm:text-base text-warm-900 leading-relaxed">
+                            {ex.text}
+                          </p>
+                          <p className="mt-2 text-sm text-warm-700">
+                            <span className="text-warm-500">Ответ:</span>{" "}
+                            <span className="font-medium text-warm-950">{ex.answer}</span>
+                          </p>
+                          <Link
+                            href={ex.topicHref}
+                            className="mt-2 inline-flex items-center gap-1 text-xs text-brand-700 hover:text-brand-600 hover:underline"
+                          >
+                            Тема программы: {ex.topicTitle}
+                            <ArrowRight className="w-3 h-3" aria-hidden />
+                          </Link>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <Card className="bg-warm-50/60 border-warm-100">
+                  <h3 className="font-semibold text-warm-950 mb-2">
+                    Что проверяет это задание
+                  </h3>
+                  <p className="text-base text-warm-800 leading-relaxed">
+                    {exampleBlock.block.checks}
+                  </p>
+                  <p className="mt-3 text-sm text-warm-600">
+                    Раздел ФИПИ: {exampleBlock.block.fgosRef}
+                  </p>
+                </Card>
+              )}
+
+              {/* Переход на список всех заданий предмета (хаб /exam/[exam]/[subject]) */}
+              <div className="mt-6">
+                <Link
+                  href={`/exam/${item.exam}/${item.subject}/`}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-brand-700 hover:text-brand-600 hover:underline"
+                >
+                  Все задания предмета — {subjectLabel} {examLabel.full}
+                  <ArrowRight className="w-4 h-4" aria-hidden />
+                </Link>
+              </div>
+
+              {/* Смежные темы программы: 5–8 ссылок на существующие страницы тем.
+                  На страницах с честным блоком сюда же уходит ссылка на все
+                  темы предмета — иначе счёт ссылок уезжал за 8. */}
+              {(relatedTopics.length > 0 || exampleBlock.kind === "honest") && (
+                <div className="mt-10">
+                  <h2 className="text-2xl sm:text-3xl font-display font-bold mb-2">
+                    Смежные темы программы
+                  </h2>
+                  <p className="text-warm-600 mb-4">
+                    Задание {item.number} опирается на эти темы — на каждой есть свои примеры с ответами.
+                  </p>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {relatedTopics.map((t) => (
+                      <Link
+                        key={t.href}
+                        href={t.href}
+                        className="group flex items-center justify-between gap-3 rounded-xl border border-warm-100 bg-white px-4 py-3 hover:border-brand-200 hover:bg-brand-50/50 transition-colors"
+                      >
+                        <span className="text-sm text-warm-800 group-hover:text-brand-700">
+                          {t.title}
+                        </span>
+                        <ArrowRight
+                          className="w-4 h-4 shrink-0 text-warm-400 group-hover:text-brand-600"
+                          aria-hidden
+                        />
+                      </Link>
+                    ))}
+                    {exampleBlock.kind === "honest" && (
+                      <Link
+                        href={exampleBlock.block.subjectHref}
+                        className="group flex items-center justify-between gap-3 rounded-xl border border-warm-100 bg-white px-4 py-3 hover:border-brand-200 hover:bg-brand-50/50 transition-colors"
+                      >
+                        <span className="text-sm font-medium text-brand-700 group-hover:text-brand-800">
+                          Все темы предмета «{exampleBlock.block.subjectTitle}»
+                        </span>
+                        <ArrowRight
+                          className="w-4 h-4 shrink-0 text-warm-400 group-hover:text-brand-600"
+                          aria-hidden
+                        />
+                      </Link>
+                    )}
                   </div>
                 </div>
-              </Card>
+              )}
 
               {/* CTA: переход в конструктор с предзаполненными exam/subject/number */}
               <div className="mt-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-2xl border border-brand-100 bg-brand-50/60 p-5 sm:p-6">

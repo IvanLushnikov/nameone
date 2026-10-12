@@ -11,11 +11,23 @@
 import React from "react";
 import JSZip from "jszip";
 import { describe, it, expect } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import type { GenerationRequest, MaterialBundle } from "@/lib/types";
 import { mockMaterials } from "@/lib/mock/materials";
 import { generateMaterialsZip, materialFilename } from "@/lib/utils/materials-zip";
 import { MaterialsPreview } from "@/components/constructor/MaterialsPreview";
+import {
+  MaterialsFilter,
+  type MaterialFilterItem,
+} from "@/components/materials/MaterialsFilter";
+import {
+  EDITORIAL_AUTHOR,
+  isEditorialMaterial,
+  materialRobots,
+} from "@/components/materials/materialOrigin";
+import { MATERIALS_CATALOG } from "@/lib/content/materials-catalog";
+import { getMaterialBySlug } from "@/lib/content/materials-catalog";
+import MaterialPage, { generateMetadata } from "@/app/material/[slug]/page";
 
 const baseReq = (
   overrides: Partial<GenerationRequest> = {}
@@ -206,5 +218,216 @@ describe("MaterialsPreview — рендер", () => {
     expect(container.textContent).toContain("Файлы не собрались");
     expect(container.textContent).toContain("ne-suschestvuyuschiy-slug-xyz");
     expect(container.textContent).not.toContain("Скачать ZIP");
+  });
+});
+
+/**
+ * Фильтры по предмету и классу на `/materials/` (блок C, пункт C2).
+ *
+ * Сайт собирается статическим экспортом, поэтому фильтр работает на клиенте:
+ * состояние в React, URL не меняется, отдельных страниц под фильтры нет.
+ * Та же выдача, что и на сервере, — проекция строится из MATERIALS_CATALOG.
+ */
+describe("MaterialsFilter — фильтры по предмету и классу", () => {
+  /** Небольшой набор из настоящего каталога — берём по 3 записи на пару. */
+  const items: MaterialFilterItem[] = [
+    { slug: "a-1", title: "Математика 5, тема один", subject: "math", grade: 5, purpose: "check" },
+    { slug: "a-2", title: "Математика 5, тема два", subject: "math", grade: 5, purpose: "explain" },
+    { slug: "a-3", title: "Математика 6, тема три", subject: "math", grade: 6, purpose: "check" },
+    { slug: "b-1", title: "Русский 5, тема один", subject: "russian", grade: 5, purpose: "check" },
+    { slug: "b-2", title: "Русский 7, тема два", subject: "russian", grade: 7, purpose: "ready" },
+    { slug: "b-3", title: "Русский 5, тема три", subject: "russian", grade: 5, purpose: "decorate" },
+  ];
+  const purposeLabels = { check: "Проверить", explain: "Объяснить", ready: "Под ключ", decorate: "Оформить" };
+  const subjectMeta = {
+    math: { emoji: "🔢", shortTitle: "Математика" },
+    russian: { emoji: "📖", shortTitle: "Русский" },
+  };
+
+  const setup = (pageSize?: number) =>
+    render(
+      React.createElement(MaterialsFilter, {
+        items,
+        purposeLabels,
+        subjectMeta,
+        pageSize,
+      }),
+    );
+
+  it("без фильтров показывает всю выдачу", () => {
+    setup();
+    // Счётчик в формате «показано N из M»: 6 записей, все 6 в первой
+    // отрисовке — ни одна не спрятана под «показать ещё».
+    expect(screen.getByRole("status")).toHaveTextContent("показано 6 из 6");
+    expect(screen.getByText("Математика 5, тема один")).toBeInTheDocument();
+    expect(screen.getByText("Русский 7, тема два")).toBeInTheDocument();
+  });
+
+  it("выбор предмета сужает выдачу", () => {
+    setup();
+    fireEvent.change(screen.getByLabelText("Предмет"), { target: { value: "math" } });
+
+    // Остались только записи математики
+    expect(screen.getByText("Математика 5, тема один")).toBeInTheDocument();
+    expect(screen.queryByText("Русский 7, тема два")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("показано 3 из 3");
+  });
+
+  it("предмет + класс сужают выдачу сильнее", () => {
+    setup();
+    fireEvent.change(screen.getByLabelText("Предмет"), { target: { value: "math" } });
+    fireEvent.change(screen.getByLabelText("Класс"), { target: { value: "5" } });
+
+    expect(screen.getByText("Математика 5, тема один")).toBeInTheDocument();
+    expect(screen.getByText("Математика 5, тема два")).toBeInTheDocument();
+    expect(screen.queryByText("Математика 6, тема три")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("показано 2 из 2");
+  });
+
+  it("выбор класса без предмета тоже сужает выдачу", () => {
+    setup();
+    fireEvent.change(screen.getByLabelText("Класс"), { target: { value: "5" } });
+
+    expect(screen.getByRole("status")).toHaveTextContent("показано 4 из 4");
+    expect(screen.queryByText("Математика 6, тема три")).not.toBeInTheDocument();
+  });
+
+  it("счётчик честно различает показано и всего: не выдаёт весь каталог за одну страницу", () => {
+    // 30 записей, в первой отрисовке 12. Если бы счётчик показывал только
+    // «30», учитель думал бы, что видит всю выдачу. Обязаны быть оба числа.
+    const many: MaterialFilterItem[] = Array.from({ length: 30 }, (_, i) => ({
+      slug: `s-${i}`,
+      title: `Материал ${i}`,
+      subject: "math",
+      grade: 5 + (i % 2),
+      purpose: "check",
+    }));
+    render(
+      React.createElement(MaterialsFilter, {
+        items: many,
+        purposeLabels,
+        subjectMeta,
+      }),
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("показано 12 из 30");
+    // И кнопка, которая доводит выдачу до конца.
+    expect(screen.getByRole("button", { name: /Показать ещё/ })).toBeInTheDocument();
+  });
+
+  it("сброс возвращает полную выдачу", () => {
+    setup();
+    fireEvent.change(screen.getByLabelText("Предмет"), { target: { value: "russian" } });
+    expect(screen.getByRole("status")).toHaveTextContent("показано 3 из 3");
+
+    fireEvent.click(screen.getByRole("button", { name: "Сбросить" }));
+    expect(screen.getByRole("status")).toHaveTextContent("показано 6 из 6");
+    expect(screen.getByText("Математика 5, тема один")).toBeInTheDocument();
+  });
+
+  // Пустая выдача — не ошибка, а понятное состояние: учитель видит, что
+  // под этот выбор ничего нет, и получает ссылку в конструктор.
+  //
+  // Список классов строится только по тем классам, где материалы есть, поэтому
+  // пустую выдачу воспроизводим данными, а не кликом по «несуществующему»
+  // классу — такого варианта в списке просто нет.
+  it("пустая выдача показывает понятное состояние, а не пустую страницу", () => {
+    render(
+      React.createElement(MaterialsFilter, {
+        items: [],
+        purposeLabels,
+        subjectMeta,
+      }),
+    );
+
+    expect(screen.getByText("По этому выбору материалов нет")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Открыть конструктор" })).toHaveAttribute(
+      "href",
+      "/constructor",
+    );
+  });
+
+  // Доступность с клавиатуры: у обоих списков есть настоящие подписи,
+  // связанные через label/for — выбор списка без мыши работает, и скринридер
+  // читает «Предмет, список», а не «список, без имени».
+  it("у фильтров есть подписи, доступные с клавиатуры", () => {
+    setup();
+    const subjectSelect = screen.getByLabelText("Предмет");
+    const gradeSelect = screen.getByLabelText("Класс");
+
+    expect(subjectSelect.tagName).toBe("SELECT");
+    expect(gradeSelect.tagName).toBe("SELECT");
+    expect(subjectSelect).toHaveAttribute("id", "materials-subject");
+    expect(gradeSelect).toHaveAttribute("id", "materials-grade");
+  });
+
+  // Класс, для которого у выбранного предмета нет материалов, не предлагается:
+  // пустой список выглядит как баг. После смены предмета несовместимый класс
+  // сбрасывается, чтобы не показывать «0 материалов».
+  it("классы предлагаются только те, где есть материалы выбранного предмета", () => {
+    setup();
+    fireEvent.change(screen.getByLabelText("Предмет"), { target: { value: "math" } });
+
+    const gradeSelect = screen.getByLabelText("Класс") as unknown as HTMLSelectElement;
+    const values = [...gradeSelect.options].map((o) => o.value);
+    expect(values).toContain("5");
+    expect(values).toContain("6");
+    expect(values).not.toContain("7"); // у математики нет 7 класса
+  });
+});
+
+/**
+ * `/material/<slug>/` — robots и подпись автора (блок C, пункт C3).
+ */
+describe("Страница материала — robots и автор", () => {
+  const editorial = MATERIALS_CATALOG[0];
+
+  it("у материала учителя стоит noindex, follow", () => {
+    // Авторские публикации учителей появятся в Фазе 2 (ТЗ-15 §14). Пока их
+    // нет в каталоге, берём запись и меняем только автора — так проверяется
+    // именно решение по автору, а не по маршруту.
+    const teacherMaterial = { ...editorial, author: "Иванова Мария Петровна" };
+    const meta = generateMetadata({ params: { slug: editorial.slug } });
+
+    // Запись каталога редакционная — её индексируем.
+    expect(meta.robots).toEqual({ index: true, follow: true });
+
+    // Тот же материал от учителя — уже нет.
+    expect(materialRobots(teacherMaterial)).toEqual({ index: false, follow: true });
+  });
+
+  it("robots редакционного материала — index, follow", () => {
+    const meta = generateMetadata({ params: { slug: editorial.slug } });
+    expect(meta.robots).toEqual({ index: true, follow: true });
+  });
+
+  it("несуществующий слаг отдаёт «Материал не найден» без robots", () => {
+    const meta = generateMetadata({ params: { slug: "nesushchestvuyushchiy-slug" } });
+    expect(meta.title).toBe("Материал не найден");
+    expect(meta.robots).toBeUndefined();
+  });
+
+  it("редакционный материал отличается от материала учителя", () => {
+    expect(isEditorialMaterial({ author: EDITORIAL_AUTHOR })).toBe(true);
+    expect(isEditorialMaterial({ author: "Иванова Мария Петровна" })).toBe(false);
+    // У всего каталога сейчас один автор — редакционный. Это проверка на то,
+    // что разделение по автору вообще имеет смысл: если у записей появятся
+    // другие авторы, тест начнёт ловить расхождение.
+    for (const m of MATERIALS_CATALOG) {
+      expect(m.author).toBe(EDITORIAL_AUTHOR);
+    }
+  });
+
+  it("страница материала показывает автора", () => {
+    const material = getMaterialBySlug(editorial.slug)!;
+    // Автор на странице — настоящее имя из каталога, а не выдуманное ФИО.
+    expect(material.author).toBe(EDITORIAL_AUTHOR);
+
+    const { container } = render(
+      React.createElement(MaterialPage, { params: { slug: editorial.slug } }),
+    );
+    expect(container.textContent).toContain(`Автор: ${EDITORIAL_AUTHOR}`);
+    // Редакционная карточка не помечается как «материал учителя».
+    expect(container.textContent).not.toContain("Материал учителя");
   });
 });

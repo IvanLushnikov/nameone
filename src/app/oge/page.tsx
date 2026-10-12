@@ -25,6 +25,11 @@
  * `useSearchParams()`: хук при `output: "export"` требует границы <Suspense>,
  * а её fallback («Загрузка…») закрывал собой всю страницу на 3–4 секунды,
  * пока догружается JS. Статический HTML теперь сразу содержит контент.
+ *
+ * СЧЁТЧИК БЕСПЛАТНЫХ ГЕНЕРАЦИЙ. Число под этим текстом приходит с сервера
+ * (GET /api/users/usage), localStorage — только оптимистичный кэш, чтобы
+ * ответ был мгновенным. Разбор и почему так — в комментарии над
+ * `refreshFromServer` ниже.
  */
 
 import * as React from "react";
@@ -56,12 +61,17 @@ import {
   CheckCircle2,
   Circle,
   RefreshCw,
+  ArrowRight,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
-import { plural } from "@/lib/utils/cn";
-import { getRemaining, FREE_LIMIT, settleGeneration } from "@/lib/utils/limit";
-import { priceLabel } from "@/lib/content/plans";
+import { getRemaining, FREE_LIMIT, settleGeneration, syncFromServer } from "@/lib/utils/limit";
+import { priceLabel, FREE_QUOTA_LABEL, FREE_GENERATIONS } from "@/lib/content/plans";
+import { fetchUsage } from "@/lib/auth/api";
+import {
+  FREE_QUOTA_EXHAUSTED_NOTE,
+  FREE_QUOTA_SCOPE_NOTE,
+} from "@/lib/content/landing-seo";
 import {
   generateExam,
   loadDemoVariant,
@@ -169,10 +179,44 @@ export default function OgeHubInner() {
 
   const busy = phase.kind === "generating";
 
-  // Лимит живёт в localStorage — читаем только на клиенте.
+  /**
+   * ─── ГДЕ ЖИВЁТ ЧИСЛО НА `/oge/` (аудит 11.10.2026, блок Ф) ───
+   *
+   * Раньше страница брала остаток только из localStorage, поэтому очистка
+   * браузера давала учителю «3 из 3» при серверном остатке 0 — а текст под этим
+   * числом обещает, что счёт ведётся на сервере. Обещание против поведения.
+   *
+   * Теперь порядок тот же, что в кабинете (`components/shared/UsageCard.tsx`
+   * + `dashboard/page.tsx`), а не свой: локальный счётчик — быстрый оптимистичный
+   * кэш, источник правды — `GET /api/users/usage`, тот же запрос и та же
+   * функция `syncFromServer()`. Ничего нового не изобретаем, потому что рядом
+   * уже есть работающая реализация.
+   *
+   * Что видит учитель после очистки браузера: страница сначала мигнёт
+   * локальным значением (его уже нет → 0 использованных), затем покажет то,
+   * что ответил сервер. Если сервер недоступен или учитель не вошёл
+   * (401 — endpoint требует входа), остаётся локальное значение: это ровно то
+   * же поведение, что было раньше, и решение о доступе всё равно принимает бэк
+   * (429 при исчерпанной квоте).
+   */
+  const refreshFromServer = React.useCallback(async () => {
+    try {
+      const usage = await fetchUsage();
+      if (!usage || usage.plan !== "free" || usage.freeRemaining == null) return;
+      // Сервер — источник правды: приводим к нему и кэш, и цифру на экране.
+      syncFromServer(FREE_GENERATIONS - usage.freeRemaining);
+      setRemaining(usage.freeRemaining);
+    } catch {
+      // Сеть или 5xx. Молча: карточка с числом не должна ломать страницу, а
+      // доступ всё равно решает бэк — вернёт 429 и мы перечитаем счётчик.
+    }
+  }, []);
+
+  // Быстрый ответ из кэша — сразу, правдивое число с сервера — следом.
   React.useEffect(() => {
     setRemaining(getRemaining());
-  }, []);
+    void refreshFromServer();
+  }, [refreshFromServer]);
 
   /**
    * Собрать вариант. Один вход на все сценарии: клик по карточке, автостарт
@@ -242,6 +286,10 @@ export default function OgeHubInner() {
           });
           return;
         }
+        // 429 — сервер только что сказал, что бесплатные генерации кончились.
+        // Перечитываем остаток с него же: устаревшие «3 из 3» на экране отказа —
+        // ровно то расхождение, которое здесь убираем.
+        if (failure.reason === "rate_limit") void refreshFromServer();
         clearPending();
         setPhase({
           kind: "blocked",
@@ -254,7 +302,7 @@ export default function OgeHubInner() {
         setLoadingSubject(null);
       }
     },
-    [toast],
+    [toast, refreshFromServer],
   );
 
   /**
@@ -358,9 +406,15 @@ export default function OgeHubInner() {
         >
           {exhausted ? <Lock className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5" />}
           {exhausted
-            ? "Бесплатные варианты закончились"
+            ? "Бесплатные генерации закончились"
             : `Осталось генераций: ${remaining} из ${FREE_LIMIT}`}
         </div>
+        {/* Блок Ф: по коду квота общая для всех генераций, но вариант экзамена
+            недоступен на «Бесплатном» — тариф проверяется раньше квоты. Без
+            этой строки учитель гадает, общий счёт или раздельный. */}
+        <p className="mt-3 text-sm text-warm-500 max-w-xl mx-auto">
+          {exhausted ? FREE_QUOTA_EXHAUSTED_NOTE : FREE_QUOTA_SCOPE_NOTE}
+        </p>
       </div>
 
       {/* Tabs ОГЭ/ЕГЭ */}
@@ -534,19 +588,39 @@ export default function OgeHubInner() {
         ))}
       </section>
 
-      {/* B2C link */}
+      {/* Блок F: старый текст обещал «бесплатно доступно 3 варианта», хотя
+          вариант экзамена выдаётся только на «Плюс» (проверка тарифа в
+          routes/exams.ts стоит выше проверки квоты). Плюс обратные ссылки на
+          хаб экзаменов — раньше `/oge/` ссылался на него только в одну
+          сторону, и хаб оставался без входящей ссылки. */}
       <div className="text-center mt-12">
         <p className="text-sm text-warm-600">
-          Бесплатно доступно{" "}
-          {FREE_LIMIT} {plural(FREE_LIMIT, "вариант", "варианта", "вариантов")} — на весь период, а не на день. Счётчик вариантов снимается на тарифе «Плюс» ({priceLabel("plus", "month")}).
+          Сборка варианта с проверкой и пошаговым разбором входит в тариф «Плюс» ({priceLabel("plus", "month")}).{" "}
+          {FREE_QUOTA_LABEL} — общий счётчик на рабочие листы, карточки и конспекты: варианты экзамена из него не вычитаются.
         </p>
-        <Link
-          href="/pricing"
-          className="mt-2 inline-flex items-center gap-1.5 text-sm text-warm-500 hover:text-warm-900"
-        >
-          <Lock className="w-3.5 h-3.5" />
-          Смотреть тарифы
-        </Link>
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-4">
+          <Link
+            href="/exam/oge/"
+            className="inline-flex items-center gap-1.5 text-sm text-brand-700 hover:text-brand-900"
+          >
+            Все задания ОГЭ по номерам ФИПИ
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+          <Link
+            href="/exam/"
+            className="inline-flex items-center gap-1.5 text-sm text-warm-500 hover:text-warm-900"
+          >
+            Все экзамены и предметы
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+          <Link
+            href="/pricing"
+            className="inline-flex items-center gap-1.5 text-sm text-warm-500 hover:text-warm-900"
+          >
+            <Lock className="w-3.5 h-3.5" />
+            Смотреть тарифы
+          </Link>
+        </div>
       </div>
     </div>
   );
