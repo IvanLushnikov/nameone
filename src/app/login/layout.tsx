@@ -20,7 +20,7 @@ import { absoluteUrl } from "@/lib/seo/metadata";
 export const metadata: Metadata = {
   title: "Вход в кабинет",
   description:
-    "Войдите в кабинет УчЛист по ссылке из письма — без пароля. Пришлём новую ссылку в один клик.",
+    "Войдите в кабинет УчЛист по ссылке из письма или по паролю. Не помните пароль — пришлём новую ссылку.",
   alternates: { canonical: absoluteUrl("/login") },
   robots: { index: false, follow: true },
 };

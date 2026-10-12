@@ -338,12 +338,16 @@ describe("Блок E: /register/ ведёт к регистрации (Е-5)", (
     expect(rawHrefs(container).filter((href) => href.includes("mode=register"))).toEqual([]);
   });
 
-  it("объясняет вход по одноразовой ссылке и не обещает пароль", () => {
+  it("объясняет вход по одноразовой ссылке и не обещает, что пароля нет", () => {
     const { container } = render(RegisterPage());
     const page = text(container);
 
     expect(page).toMatch(/одноразов/);
-    expect(page).toMatch(/Пароля нет/i);
+    // ТЗ-23: пароль в сервисе появился, поэтому обещать его отсутствие нельзя —
+    // это обещание стало неправдой (docs/tz/23-password-auth.md §8). Раньше тест
+    // требовал обратного и тем самым закреплял старое поведение.
+    expect(page).toMatch(/парол/i);
+    expect(page).not.toMatch(/Пароля нет/i);
   });
 
   it("ссылается на согласие на обработку данных", () => {

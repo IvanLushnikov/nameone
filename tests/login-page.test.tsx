@@ -42,7 +42,11 @@ describe("Страница входа — вход по ссылке готов"
     // вход включён. Пока MAGIC_LINK_READY был false, форма была скрыта и вместо
     // неё показывалось честное «входа пока нет».
     expect(MAGIC_LINK_READY).toBe(true);
-    expect(screen.getByRole("button", { name: /получить ссылку/i })).toBeTruthy();
+    // Кнопка ищется по data-testid, а не по подписи: после ТЗ-23 на странице
+    // появился переключатель двух путей, и подпись «Получить ссылку на почту»
+    // теперь есть у пункта переключателя и у кнопки отправки. Поиск по тексту
+    // находит две и падает, хотя форма на месте.
+    expect(screen.getByTestId("login-submit")).toBeTruthy();
     expect(screen.getByLabelText(/^email$/i)).toBeTruthy();
     expect(screen.queryByText(/вход по ссылке из письма — пока недоступен/i)).toBeNull();
   });

@@ -19,9 +19,9 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Экран НЕ начинается с требования войти. Имя, классы и блок подписки работают
  * без аккаунта; отличается только то, что переносится между устройствами, и
- * об этом сказано прямо в подписях. Единственный блок, который объясняет
- * отсутствие данных, — список устройств: устройств на сервере без входа
- * физически нет, и выдумывать их нельзя.
+ * об этом сказано прямо в подписях. Блоки, которые объясняют отсутствие
+ * данных, — «Устройства» и «Вход по паролю»: и устройств, и пароля на сервере
+ * без входа физически нет, и выдумывать их нельзя.
  */
 
 import * as React from "react";
@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { ProfileSection } from "@/components/lk/ProfileSection";
 import { ClassesSection } from "@/components/lk/ClassesSection";
+import { PasswordSection } from "@/components/lk/PasswordSection";
 import { SessionsSection } from "@/components/lk/SessionsSection";
 import { SubscriptionPanel } from "@/components/lk/SubscriptionPanel";
 import { deviceView, loadProfile, type TeacherProfileView } from "@/lib/lk/profile-api";
@@ -100,7 +101,7 @@ export default function SettingsPage() {
           </h1>
           <p className="text-sm text-warm-600 mt-1">
             {view.source === "account"
-              ? "Профиль, классы, подписка и устройства — всё в одном месте."
+              ? "Профиль, классы, подписка, пароль и устройства — всё в одном месте."
               : "Профиль, классы и подписка. Хранятся на этом устройстве: вход в аккаунт сегодня отключён, и это не мешает ими пользоваться."}
           </p>
         </div>
@@ -115,6 +116,10 @@ export default function SettingsPage() {
       <ClassesSection view={view} onChange={setView} />
 
       <SubscriptionPanel />
+
+      {/* Пароль и устройства — один разговор про «кто ещё может зайти»,
+          поэтому карточки стоят рядом (ТЗ-23 §5). */}
+      <PasswordSection view={view} onChange={setView} ready={!loading} />
 
       <SessionsSection hasAccount={view.source === "account"} />
     </div>

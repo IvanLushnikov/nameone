@@ -32,6 +32,10 @@ const PRICE_SURFACES = [
   "src/components/landing/PricingTeaser.tsx",
   "src/app/dashboard/page.tsx",
   "src/components/shared/PaywallModal.tsx",
+  // До 12.10.2026 лендинг сравнения писал «от 500 ₽ в месяц» руками и никем не
+  // проверялся. Теперь берёт цену из plans.ts, а этот файл в списке — чтобы
+  // следующая смена цены не оставила лендинг врать.
+  "src/components/landing/Comparison.tsx",
 ];
 
 /** Страницы, которые тоже обязаны читать цены из plans.ts. */
@@ -64,6 +68,16 @@ const RETIRED_PRICES = [
   "375", // «375 ₽/мес при оплате за год»
   "4500",
   "12000",
+  // Цены до снижения 12.10.2026 — вместе с учебным годом.
+  "500 ₽",
+  "990 ₽",
+  "1 500 ₽",
+  "3 800",
+  "7 600",
+  "11 000",
+  // Нормы расхода до пересчёта под сценарий В.
+  "1 440 000",
+  "16 000 000",
 ];
 
 function read(file: string): string {
@@ -117,7 +131,7 @@ describe("в пользовательских компонентах нет за
     expect(hits).toEqual([]);
   });
 
-  it.each(ALL_SURFACES)("%s: старых цен (4 500 / 12 000 / 375) в исходнике нет", (file) => {
+  it.each(ALL_SURFACES)("%s: старых цен в исходнике нет", (file) => {
     const src = read(file);
     const hits = RETIRED_PRICES.filter((price) => src.includes(price));
 
@@ -146,7 +160,7 @@ describe("цены фронта и бэка совпадают", () => {
   const PLANS = "src/lib/content/plans.ts";
 
   /** Достаём числа из `base: { monthly: 500_00, academicYear: 3_800_00 }`. */
-  function billingPrices(plan: "base" | "plus" | "school") {
+  function billingPrices(plan: "base" | "standard" | "plus" | "school") {
     const src = read(BILLING);
     const block = new RegExp(`${plan}:\\s*\\{([^}]*)\\}`).exec(src);
     expect(block, `в ${BILLING} нет блока ${plan}`).not.toBeNull();
@@ -160,7 +174,7 @@ describe("цены фронта и бэка совпадают", () => {
   }
 
   /** Достаём числа из plans.ts — цены там в рублях, не в копейках. */
-  function planAmounts(plan: "base" | "plus" | "school") {
+  function planAmounts(plan: "base" | "standard" | "plus" | "school") {
     const src = read(PLANS);
     // Вырезаем блок тарифа и ищем academicYear/month с amount.
     const start = src.indexOf(`  ${plan}: {`);
@@ -175,13 +189,13 @@ describe("цены фронта и бэка совпадают", () => {
     };
   }
 
-  it.each(["base", "plus", "school"] as const)("%s: помесячная цена одна и та же", (plan) => {
-    // Бэк хранит копейки, фронт — рубли. 500_00 копеек = 500 ₽.
+  it.each(["base", "standard", "plus", "school"] as const)("%s: помесячная цена одна и та же", (plan) => {
+    // Бэк хранит копейки, фронт — рубли. 249_00 копеек = 249 ₽.
     expect(billingPrices(plan).monthly, `${plan}: фронт и бэк разошлись`)
       .toBe(planAmounts(plan).monthly! * 100);
   });
 
-  it.each(["base", "plus"] as const)("%s: цена учебного года одна и та же", (plan) => {
+  it.each(["base", "standard", "plus"] as const)("%s: цена учебного года одна и та же", (plan) => {
     expect(billingPrices(plan).academicYear, `${plan}: фронт и бэк разошлись`)
       .toBe(planAmounts(plan).academicYear! * 100);
   });

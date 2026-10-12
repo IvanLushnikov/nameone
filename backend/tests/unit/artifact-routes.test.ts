@@ -109,15 +109,23 @@ describe("маршрутизация: пять эндпоинтов не пер�
     expect(JSON.stringify(json)).not.toContain("tracking ещё не реализован");
   });
 
-  it("A2b. Сам /api/track остаётся 501 — трекинг действительно не сделан", async () => {
+  // Обновлено 12.10.2026 (ТЗ-24). Раньше здесь стояло ожидание 501: тест
+  // закреплял заглушку «трекинг не реализован». Трекер сделан, и теперь та же
+  // ручка проверяет живое поведение: пустое тело — 400, а не 501. Проверять
+  // «501 больше не возвращается» всё ещё нужно: именно его не должно быть ни
+  // на одном адресе под /api.
+  it("A2b. /api/track больше не отвечает 501 — трекер реализован (ТЗ-24)", async () => {
     const res = await SELF.fetch("https://uchlist.test/api/track", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
     });
-    const json = await res.json().catch(() => null);
-    expect(res.status).toBe(501);
-    expect(JSON.stringify(json)).toContain("tracking ещё не реализован");
+    // Проверяем именно то, что тут ловилось: заглушка больше не отвечает на
+    // /api/track. Конкретный код не проверяем — тест работает без схемы БД
+    // (см. шапку файла), а трекер теперь пишет в `events` и упирается в
+    // rate_limits. Живое поведение с настоящей схемой проверяет
+    // tests/unit/track-endpoint.test.ts.
+    expect(res.status).not.toBe(501);
   });
 
   it("A3. Регистрация идёт выше catch-all /api/*", () => {

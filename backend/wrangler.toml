@@ -97,11 +97,20 @@ ALLOW_DEMO_PAYMENTS = "false"
 # Рекуррент НЕ включаем, пока менеджер ЮKassa не разрешит автоплатежи на
 # боевом магазине и не пройдёт тест на тестовой карте (см. env.ts).
 RECURRING_BILLING_ENABLED = "false"
-# 2026-10-12: бэк живёт на api.uchlist.ru (custom domain воркера), поэтому cookie
-# сессии ставится на .uchlist.ru и становится first-party для сайта. Раньше она
-# жила на rabochielisty-api.*.workers.dev и была сторонней — часть браузеров её
-# не передавала, и вход молча давал 401 на каждом запросе.
-# Менять только вместе с NEXT_PUBLIC_API_URL фронта (см. .github/workflows/deploy.yml).
+# ✅ 2026-10-12: cookie сессии уходит на .uchlist.ru, а не на хост воркера.
+# Раньше cookie жила на `*.workers.dev`, то есть была «чужой» для uchlist.ru.
+# Safari, Firefox и Chrome с Privacy Sandbox такие cookie не передают: вход
+# проходит, сессия в базе живая, а любой запрос к бэку получает 401. Воспроизведено
+# на живом сайте 12.10.2026.
+#
+# Теперь бэк живёт на собственном домене api.uchlist.ru (custom domain воркера),
+# cookie становится first-party для uchlist.ru, браузеры её не трогают, а
+# SameSite в auth.ts автоматически переключается на Lax (безезопаснее, чем None).
+#
+# ПЕРЕКЛЮЧЕНИЕ ДОЛЖНО БЫТЬ СОВМЕСТНЫМ: эту переменную нельзя выкатывать, пока
+# NEXT_PUBLIC_API_URL на фронте ещё указывает на workers.dev — тогда cookie уйдёт
+# на .uchlist.ru, а запросы придут на workers.dev, и все разлогинятся. То же самое
+# касается NEXT_PUBLIC_API_URL на фронте — см. .github/workflows/deploy.yml.
 SESSION_COOKIE_DOMAIN = ".uchlist.ru"
 
 [[env.production.d1_databases]]
