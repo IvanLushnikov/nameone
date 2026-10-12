@@ -189,7 +189,9 @@ describe("отказ по доступу: выход, а не тупик", () =>
     // И что произойдёт после входа — три пункта, а не одно «удалите фото».
     expect(block.textContent).toContain("Что произойдёт после входа");
     expect(block.textContent).toContain("останутся выбранными");
-    expect(block.textContent).toContain("запустится сама");
+    // Не «запустится сама»: после входа учитель жмёт «Проверить» сам —
+    // панель не переживает переход через /login. Обещать то, чего нет, нельзя.
+    expect(block.textContent).toContain("когда вы нажмёте «Проверить»");
     expect(block.textContent).toContain("Журнал");
   });
 
