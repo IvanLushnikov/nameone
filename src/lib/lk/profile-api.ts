@@ -39,7 +39,6 @@
  */
 
 import { getProfile, setProfile } from "@/lib/utils/storage";
-import { getCurrentUser } from "@/lib/auth/api";
 import type { PlanId } from "@/lib/content/plans";
 import type { UserProfile } from "@/lib/types";
 
@@ -71,6 +70,10 @@ export interface TeacherProfileView {
   emailIsLocal: boolean;
   /** Незавершённый запрос смены почты (серверный источник). */
   pendingEmailChange: { newEmail: string; createdAt: number; expiresAt: number } | null;
+  /** Задан ли пароль для входа. В режиме `device` всегда false (контракт §4). */
+  hasPassword: boolean;
+  /** Когда пароль поставили или последний раз меняли, ISO 8601. null — пароля нет. */
+  passwordSetAt: string | null;
 }
 
 export interface TeacherClass {
@@ -92,6 +95,8 @@ export type ProfileApiError =
   | "validation"
   | "conflict"
   | "email_unavailable"
+  /** 429: слишком много попыток (ТЗ-23 §7.3). */
+  | "rate_limited"
   | "internal";
 
 export type LoadProfileResult =
@@ -266,6 +271,10 @@ export function deviceView(): TeacherProfileView {
     // никто его не проверит. Сказать «почта подтверждена» здесь нельзя.
     emailIsLocal: true,
     pendingEmailChange: null,
+    // Аккаунта на сервере нет — пароля тоже. Не «возможно, есть», а честное нет:
+    // карточка объясняет это и предлагает войти по почте.
+    hasPassword: false,
+    passwordSetAt: null,
   };
 }
 
@@ -275,6 +284,7 @@ export function deviceView(): TeacherProfileView {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 const ACCOUNT_BASE = "/api/account";
+const AUTH_BASE = "/api/auth";
 
 type ServerProfilePayload = {
   id: string;
@@ -317,6 +327,9 @@ async function request<T>(
   // некому». Отдельная ветка, чтобы интерфейс не обещал письмо, которого нет.
   if (res.status === 503) return { ok: false, error: "email_unavailable" };
   if (res.status === 400) return { ok: false, error: "validation" };
+  // 429 на пароле — это перебор, а не поломка сервера: интерфейс должен сказать
+  // «подождите», иначе учитель решит, что пароль сломан.
+  if (res.status === 429) return { ok: false, error: "rate_limited" };
   if (res.status >= 500) return { ok: false, error: "internal" };
   if (!res.ok) return { ok: false, error: "internal" };
   return { ok: true, body: (body ?? {}) as T };
@@ -410,8 +423,97 @@ export async function cancelEmailChangeRequest(): Promise<
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
+ * Пароль для входа (ТЗ-23)
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/** Что `/api/auth/me` говорит о пароле: контракт §3, оба поля — из одного ответа. */
+export interface AuthMeState {
+  id: string;
+  plan: PlanId;
+  hasPassword: boolean;
+  passwordSetAt: string | null;
+}
+
+/**
+ * GET /api/auth/me — одна ручка, два факта: кто вошёл и задан ли пароль.
+ *
+ * Своя функция вместо `getCurrentUser()` из `@/lib/auth/api` намеренно: тот файл
+ * правит другая задача, и если бы мы меняли его вдвоём, тип `AuthUser` разъехался
+ * бы (контракт §4). Здесь же дата установки пароля приезжает тем же ответом —
+ * второй запрос за ней не делается (ТЗ §12.1).
+ *
+ * Любая неудача — это не ошибка, а обычный анонимный случай: возвращаем null,
+ * и экран продолжает работать с устройством.
+ */
+export async function fetchAuthMe(): Promise<AuthMeState | null> {
+  const res = await request<{ user?: unknown }>(`${AUTH_BASE}/me`);
+  if (!res.ok) return null;
+
+  const user = res.body.user;
+  if (!user || typeof user !== "object") return null;
+  const raw = user as Record<string, unknown>;
+  if (typeof raw.id !== "string" || !raw.id) return null;
+
+  return {
+    id: raw.id,
+    // План приходит с сервером; в локальный профиль он попадает через
+    // profilePlan, потому что набор тарифов там уже, чем в планах.
+    plan: (typeof raw.plan === "string" ? raw.plan : "free") as PlanId,
+    // Отсутствие флага читаем как «пароля нет»: дата при этом НЕ выдумывается,
+    // карточка просто не покажет её, пока сервер её не пришлёт.
+    hasPassword: raw.hasPassword === true,
+    passwordSetAt: typeof raw.passwordSetAt === "string" ? raw.passwordSetAt : null,
+  };
+}
+
+/**
+ * POST /api/auth/password — поставить или сменить пароль.
+ *
+ * `currentPassword` обязателен для смены и уходит только при его наличии:
+ * без старого любой, кто открыл вкладку на чужом компьютере, сменил бы пароль
+ * и остался внутри (ТЗ §5).
+ */
+export async function setPassword(input: {
+  password: string;
+  currentPassword?: string;
+}): Promise<{ ok: true; setAt: string | null } | { ok: false; error: ProfileApiError }> {
+  const res = await request<{ setAt?: unknown }>(`${AUTH_BASE}/password`, {
+    method: "POST",
+    body: JSON.stringify({
+      password: input.password,
+      ...(input.currentPassword ? { currentPassword: input.currentPassword } : {}),
+    }),
+  });
+  if (!res.ok) return res;
+  // Дату берём из ответа сервера. Если её нет — отдаём null, и карточка покажет
+  // «Пароль задан» без даты, а не выдуманную сегодняшнюю.
+  return { ok: true, setAt: typeof res.body.setAt === "string" ? res.body.setAt : null };
+}
+
+/** DELETE /api/auth/password — убрать пароль. Вход по ссылке из письма остаётся. */
+export async function removePassword(): Promise<
+  { ok: true } | { ok: false; error: ProfileApiError }
+> {
+  const res = await request(`${AUTH_BASE}/password`, { method: "DELETE" });
+  if (!res.ok) return res;
+  return { ok: true };
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
  * Сборка вида настроек: устройство + сервер
  * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * План в локальный профиль.
+ *
+ * `PlanId` шире, чем `UserProfile["plan"]` (в планах есть «school», в профиле —
+ * нет), поэтому значение проверяется, а не кастуется: неизвестный тариф не
+ * должен молча записаться в профиль как «school».
+ */
+function profilePlan(plan: PlanId): UserProfile["plan"] {
+  const known = plan === "free" || plan === "base" || plan === "standard" || plan === "plus";
+  return known ? plan : "free";
+}
 
 /**
  * Собрать настройки для экрана.
@@ -426,8 +528,8 @@ export async function cancelEmailChangeRequest(): Promise<
 export async function loadProfile(): Promise<LoadProfileResult> {
   const local = deviceView();
 
-  const user = await getCurrentUser();
-  if (!user) return { status: "ready", view: local };
+  const me = await fetchAuthMe();
+  if (!me) return { status: "ready", view: local };
 
   const res = await fetchServerProfile();
   if (!res.ok) {
@@ -450,6 +552,9 @@ export async function loadProfile(): Promise<LoadProfileResult> {
     source: "account",
     emailIsLocal: false,
     pendingEmailChange: server.pendingEmailChange,
+    // Тот же ответ `/api/auth/me`, из которого мы узнали, что сессия жива.
+    hasPassword: me.hasPassword,
+    passwordSetAt: me.passwordSetAt,
   };
 
   // Зеркалим на устройство: следующий визит без сети обязан показать то же
@@ -458,10 +563,10 @@ export async function loadProfile(): Promise<LoadProfileResult> {
   if (view.name || view.email) {
     const current = getProfile();
     setProfile({
-      id: current?.id ?? user.id,
+      id: current?.id ?? me.id,
       email: view.email,
       name: view.name,
-      plan: user.plan,
+      plan: profilePlan(me.plan),
       generationsTotal: current?.generationsTotal ?? 0,
       generationsToday: current?.generationsToday ?? 0,
       generationsLimit: current?.generationsLimit ?? 0,
