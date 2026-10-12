@@ -215,6 +215,106 @@ export async function resetUserDailyGenerations(db: D1Database, id: string): Pro
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Пароль для входа без письма (ТЗ-23)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface UserPasswordRow {
+  user_id: string;
+  hash: string;
+  salt: string;
+  iterations: number;
+  created_at: number;
+  updated_at: number;
+}
+
+/**
+ * Записать пароль пользователя (создать или перезаписать).
+ *
+ * UPSERT, а не пара INSERT/UPDATE: у пользователя пароль ровно один, и
+ * гонки «две вкладки открыли настройки» не должны приводить к ошибке UNIQUE.
+ * created_at при перезаписи НЕ трогается — это дата, когда пароль поставили
+ * впервые; updated_at — дата последней смены, и именно её показывает вкладка
+ * «Пароль задан …» (контракт API §3).
+ *
+ * Возвращает updated_at (unix seconds) — ручке нужен для поля setAt.
+ */
+export async function setUserPassword(
+  db: D1Database,
+  userId: string,
+  params: { hash: string; salt: string; iterations: number },
+): Promise<number> {
+  const now = Math.floor(Date.now() / 1000);
+  await db
+    .prepare(
+      `INSERT INTO user_passwords (user_id, hash, salt, iterations, created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?5)
+       ON CONFLICT(user_id) DO UPDATE SET
+         hash = ?2,
+         salt = ?3,
+         iterations = ?4,
+         updated_at = ?5`,
+    )
+    .bind(userId, params.hash, params.salt, params.iterations, now)
+    .run();
+  return now;
+}
+
+/** Прочитать запись пароля по user_id. null = пароль не задан. */
+export async function getUserPassword(db: D1Database, userId: string): Promise<UserPasswordRow | null> {
+  const row = await db
+    .prepare(
+      `SELECT user_id, hash, salt, iterations, created_at, updated_at
+       FROM user_passwords WHERE user_id = ?1`,
+    )
+    .bind(userId)
+    .first<UserPasswordRow>();
+  return row ?? null;
+}
+
+/** Убрать пароль (DELETE /api/auth/password). Удаление уже отсутствующего — не ошибка. */
+export async function deleteUserPassword(db: D1Database, userId: string): Promise<void> {
+  await db.prepare(`DELETE FROM user_passwords WHERE user_id = ?1`).bind(userId).run();
+}
+
+export interface UserPasswordState {
+  hasPassword: boolean;
+  /** unix seconds последней установки/смены; null, если пароля нет. */
+  updatedAt: number | null;
+}
+
+/**
+ * Признак «пароль задан» + когда установлен — для /api/auth/me.
+ *
+ * Отдельная функция, а не переиспользование getUserPassword, потому что /me
+ * зовут на каждой загрузке личного кабинета и тянуть туда соль с хешем незачем:
+ * они бы никуда не ушли, но лишние данные в ручке, которую читают постоянно, —
+ * лишний риск.
+ */
+export async function getUserPasswordState(
+  db: D1Database,
+  userId: string,
+): Promise<UserPasswordState> {
+  try {
+    const row = await db
+      .prepare(`SELECT updated_at FROM user_passwords WHERE user_id = ?1`)
+      .bind(userId)
+      .first<{ updated_at: number }>();
+    if (!row) return { hasPassword: false, updatedAt: null };
+    return { hasPassword: true, updatedAt: row.updated_at };
+  } catch (e) {
+    // Отсутствие таблицы не должно ронять весь личный кабинет на каждом
+    // запросе: /me зовут постоянно, и 500 здесь равносилен «кабинет не грузится».
+    // Тот же приём, что в getUserRole. Признак «пароля нет» тут честнее, чем 500.
+    console.warn(
+      `[db] getUserPasswordState: user_passwords недоступна (${
+        e instanceof Error ? e.message : String(e)
+      }), пароль считается незаданным`,
+    );
+    return { hasPassword: false, updatedAt: null };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Magic links
 // ─────────────────────────────────────────────────────────────────────────────
 

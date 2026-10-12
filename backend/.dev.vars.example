@@ -43,5 +43,11 @@ RECURRING_BILLING_ENABLED=true
 # Сессии — замени на 32-байтную hex-строку перед прод-деплоем
 JWT_SECRET=dev-only-replace-in-prod-with-32-byte-hex
 
+# Ключ шифрования секрета кода подтверждения администратора (ТЗ-24 §8.1).
+# Ровно 32 байта в base64. В проде — `wrangler secret put TOTP_ENCRYPTION_KEY`.
+# Сгенерировать: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+# Значение ниже — ТЕСТОВОЕ и годится только для локальной разработки.
+TOTP_ENCRYPTION_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+
 # Опционально: кто считается админом (для /api/admin/*)
 ADMIN_EMAIL=

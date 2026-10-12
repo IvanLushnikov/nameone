@@ -30,7 +30,18 @@ import { Hono } from "hono";
 import type { AppEnv } from "../types";
 import { ForbiddenError, BadRequestError } from "../lib/errors";
 import { requireAuth } from "../middleware/auth";
+import { rateLimitMiddleware } from "../middleware/ratelimit";
 import { getUsageStatus, PLAN_NORM_PER_MONTH } from "../services/usage";
+import {
+  currentMonth,
+  getOverview,
+  getScreens,
+  getGenerations,
+  getCostByUser,
+  getTopups,
+  monthRange as statsMonthRange,
+  writeAdminAudit,
+} from "../services/admin-stats";
 
 const adminRouter = new Hono<AppEnv>();
 
@@ -202,6 +213,124 @@ adminRouter.get("/usage/:userId", async (c) => {
     (user.plan as "free" | "base" | "standard" | "plus") ?? "free",
   );
   return c.json({ ok: true, user: { id: user.id, plan: user.plan }, usage: status });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Экраны `/superpower` (ТЗ-24, раздел 7)
+ *
+ * Отдельный блок от `/usage` выше не потому, что данные другие, а потому что
+ * там был предохранитель для одного человека («кто ушёл в минус»), а тут —
+ * четыре экрана для владельца продукта. Логика агрегатов вынесена в
+ * `services/admin-stats.ts`, в роутере остаётся только разбор запроса.
+ *
+ * ВСЕ ЧЕТЫРЕ ЗАКРЫТЫ ОДИНАКОВО: requireAdmin + ограничение частоты. Цифры не
+ * отдаются никому, кроме администратора, даже если адрес страницы известен —
+ * страница `/superpower` отдаётся всем, закрыты данные, а не вёрстка.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+/** Потолок окна в днях: меньше не бывает, больше — никто не смотрит. */
+const MAX_DAYS = 90;
+
+function parseMonth(c: Parameters<typeof requireAuth>[0]): string {
+  const month = c.req.query("month") ?? currentMonth();
+  if (!statsMonthRange(month)) {
+    throw new BadRequestError("Ожидается месяц в формате YYYY-MM", { month });
+  }
+  return month;
+}
+
+function parseDays(c: Parameters<typeof requireAuth>[0]): number {
+  const raw = c.req.query("days");
+  const days = raw ? Number(raw) : 30;
+  if (!Number.isFinite(days) || days < 1 || days > MAX_DAYS) {
+    throw new BadRequestError(`Ожидается число дней от 1 до ${MAX_DAYS}`, { days: raw ?? null });
+  }
+  return Math.floor(days);
+}
+
+/**
+ * Ограничение частоты для админских эндпоинтов.
+ *
+ * 240 в час на админа — с запасом больше, чем нужно живому человеку (он
+ * открывает экран десятки раз), и сильно меньше, чем нужно перебору.
+ */
+const adminRateLimit = rateLimitMiddleware({
+  limit: 240,
+  windowSec: 3600,
+  bucket: "admin",
+});
+
+/** Экран 1 — светофор. */
+adminRouter.get("/overview", adminRateLimit, async (c) => {
+  const admin = requireAdmin(c);
+  const month = parseMonth(c);
+  const overview = await getOverview(c.env.DB, month);
+  return c.json({ ok: true, adminId: admin.id, ...overview });
+});
+
+/** Экран 2 — экраны и воронка. */
+adminRouter.get("/screens", adminRateLimit, async (c) => {
+  requireAdmin(c);
+  const days = parseDays(c);
+  return c.json({ ok: true, ...(await getScreens(c.env.DB, days)) });
+});
+
+/** Экран 3 — генерации. */
+adminRouter.get("/generations", adminRateLimit, async (c) => {
+  requireAdmin(c);
+  const days = parseDays(c);
+  return c.json({ ok: true, ...(await getGenerations(c.env.DB, days)) });
+});
+
+/**
+ * Экран 4 — деньги подробно. Единственный экран, который пишет в аудит-лог:
+ * открыть выручку и себестоимость — это действие, о котором потом может идти
+ * спор.
+ */
+adminRouter.get("/money", adminRateLimit, async (c) => {
+  const admin = requireAdmin(c);
+  const month = parseMonth(c);
+  const range = statsMonthRange(month)!;
+
+  const [overview, costByUser, topups, payments, subscriptions] = await Promise.all([
+    getOverview(c.env.DB, month),
+    getCostByUser(c.env.DB, range.from, range.to),
+    getTopups(c.env.DB, range.from, range.to),
+    c.env.DB
+      .prepare(
+        `SELECT id, user_id, plan, amount_rub, status, created_at
+         FROM payments WHERE created_at >= ?1 AND created_at < ?2
+         ORDER BY created_at DESC LIMIT 100`,
+      )
+      .bind(range.from, range.to)
+      .all(),
+    c.env.DB
+      .prepare(
+        `SELECT id, user_id, plan, status, period, auto_renew, starts_at, ends_at
+         FROM subscriptions ORDER BY ends_at DESC LIMIT 100`,
+      )
+      .all(),
+  ]);
+
+  await writeAdminAudit(c.env.DB, {
+    actorId: admin.id,
+    action: "superpower.money.view",
+    targetType: "finance",
+    payload: { month, costByUser: costByUser.length, payments: payments.results.length },
+  });
+
+  return c.json({
+    ok: true,
+    month,
+    summary: overview.money,
+    providerBalance: overview.providerBalance,
+    topups,
+    costByUser,
+    payments: payments.results,
+    subscriptions: subscriptions.results,
+  });
 });
 
 export { adminRouter };

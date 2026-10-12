@@ -118,6 +118,12 @@ export interface GenerateWorksheetMeta {
   model: string;
   provider: string;
   costUsd: number;
+  /**
+   * Фактическое списание в рублях от провайдера, если он его отдаёт
+   * (`usage.cost_rub` у polza.ai). null у провайдеров без такого поля —
+   * тогда единственный источник расхода остаётся `costUsd`.
+   */
+  costRub?: number | null;
   latencyMs: number;
   cached: boolean;
   generation: GenerationMode;

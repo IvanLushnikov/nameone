@@ -229,12 +229,56 @@ describe("выгрузка результата: чья это отметка (�
       />,
     );
 
-    expect(document.body.textContent).toContain("Решил");
-    // Машинная строка помечена как ИИ, ручная — как «вы».
+    // Заголовок колонки называет, ЧЕГО она отвечает, а не как звучит бейдж:
+    // учитель ищет по смыслу, а не по слову из интерфейса.
+    expect(document.body.textContent).toContain("Кто поставил");
+
+    // Машинная строка помечена как ИИ, ручная — как «вы». Метки в обеих
+    // вёрстках (таблица и карточка для телефона), поэтому по всем вхождениям.
     expect(screen.getAllByText("ИИ").length).toBeGreaterThan(0);
-    expect(screen.getByText("вы")).toBeTruthy();
-    // Учитель согласился с заданием, которое машина посчитала неверным —
-    // это обязано быть видно, иначе правка выглядит как ошибка распознавания.
-    expect(document.body.textContent).toContain("ИИ считал: Неверно");
+    expect(screen.getAllByText("вы").length).toBeGreaterThan(0);
+  });
+
+  it("при правке прежняя отметка остаётся зачёркнутой, а в колонке — «было: ИИ»", () => {
+    const { container } = render(
+      <PhotoCheckResultView
+        result={result as unknown as PhotoCheckResult}
+        onDeletePhoto={vi.fn()}
+        onPrint={vi.fn()}
+        checkId="pc_print01"
+      />,
+    );
+
+    // Учитель согласился с заданием, которое машина посчитала неверным.
+    // Без прежней отметки зачёркнутой правка выглядит как ошибка
+    // распознавания, и по распечатке не понять, ЧТО именно исправили.
+    const struck = container.querySelectorAll(".line-through");
+    expect(struck.length).toBeGreaterThan(0);
+    expect(struck[0].textContent).toContain("Неверно");
+
+    // В колонке «Кто поставил» — «было: ИИ», а не только «вы».
+    expect(document.body.textContent).toContain("было:");
+    expect(document.body.textContent).toContain("ИИ");
+  });
+
+  it("правка не теряется на телефоне: строка есть и в карточках", () => {
+    const { container } = render(
+      <PhotoCheckResultView
+        result={result as unknown as PhotoCheckResult}
+        onDeletePhoto={vi.fn()}
+        onPrint={vi.fn()}
+        checkId="pc_print01"
+      />,
+    );
+
+    // Узкая вёрстка — список карточек с теми же данными. Без неё на 390px
+    // таблица из шести колонок либо разъезжается, либо уезжает в
+    // горизонтальную прокрутку.
+    const mobileList = container.querySelector("ul.sm\\:hidden");
+    expect(mobileList).toBeTruthy();
+    expect(mobileList!.querySelectorAll("li").length).toBe(result.items.length);
+    // Метка «кто поставил» читается и на телефоне.
+    expect(mobileList!.textContent).toContain("Кто поставил");
+    expect(mobileList!.textContent).toContain("было:");
   });
 });

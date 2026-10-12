@@ -267,7 +267,10 @@ describe("Проверьте сами", () => {
     });
     await submitPhoto();
 
-    expect(await screen.findByText("Верно")).toBeInTheDocument();
+    // Отметка есть в обеих вёрстках строки: широкой (таблица) и узкой
+    // (карточка для телефона). Обе в DOM, но на экране видна только одна —
+    // поэтому ищем все вхождения, а не единственное.
+    expect((await screen.findAllByText("Верно")).length).toBeGreaterThan(0);
     expect(screen.queryByRole("heading", { name: /Проверьте сами/ })).not.toBeInTheDocument();
   });
 });

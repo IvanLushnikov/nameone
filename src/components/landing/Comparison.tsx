@@ -3,6 +3,7 @@
 import { Card } from "@/components/ui/Card";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useInView } from "@/hooks/useInView";
+import { priceFor, formatRub } from "@/lib/content/plans";
 import { Check, X, Sparkles, Loader2 } from "lucide-react";
 import * as React from "react";
 
@@ -29,7 +30,9 @@ const OUR_ROW = [
   "Уровни сложности: ФГОС 2021 для 1–9, действующий ФГОС СОО для 10–11",
   "PDF в формате A4 с ответами и пояснениями",
   "Проверка по кнопке: где ответ не сошёлся — видно сразу",
-  "Без зарубежной карты, оплата в рублях, от 500 ₽ в месяц",
+  // Цена берётся из plans.ts, а не пишется здесь руками: лендинг и тарифы
+  // обязаны показывать одно и то же число (tests/integration/plans-price-sources.test.ts).
+  `Без зарубежной карты, оплата в рублях, от ${formatRub(priceFor("base", "month").amount)} в месяц`,
   "Планы уроков, презентации, КТП — в одном сервисе",
 ];
 

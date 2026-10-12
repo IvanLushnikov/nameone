@@ -1,14 +1,17 @@
 /**
- * Unit-тесты для services/auth.ts — magic-link бизнес-логика.
+ * Unit-тесты для services/auth.ts — magic-link бизнес-логика + вход по паролю.
  *
  * Покрывает:
  *   - parseAdminEmails   — парсинг ADMIN_EMAILS/ADMIN_EMAIL env
  *   - emailSchema        — zod-валидация email (lowercase, trim, max 254)
  *   - requestMagicLink   — find-or-create user + magic_link + email (dev-режим)
  *   - consumeMagicLinkAndCreateSession — атомарный swap, повторное использование → null
+ *   - ТЗ-23 §9.6 п.6     — семь сценариев входа по паролю, через настоящие ручки
  *
  * D1 используется реальный (workerd-pool через @cloudflare/vitest-pool-workers).
  * Email — мок через RESEND_API_KEY=undefined → dev-режим (URL возвращается в devMagicUrl).
+ * Сценарии входа по паролю идут через собранное приложение из src/index: их суть —
+ * в ответах ручек (текст отказа, cookie, 429, 401), а не во внутренних функциях.
  *
  * Схема вставлена прямо в файл потому что workerd-runtime тестов не имеет
  * реализованного node:fs (readFileSync бросает assert.fail). Чтобы не
@@ -21,9 +24,11 @@
 // dist/pool/index.mjs, рассчитанный на Node-runtime vitest.config.ts.
 /// <reference types="@cloudflare/vitest-pool-workers" />
 import { env, applyD1Migrations } from "cloudflare:test";
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach } from "vitest";
+import type { D1Database } from "@cloudflare/workers-types";
 
 declare module "cloudflare:test" {
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   interface ProvidedEnv extends Env {}
 }
 
@@ -32,9 +37,16 @@ import {
   emailSchema,
   requestMagicLink,
   consumeMagicLinkAndCreateSession,
+  LOGIN_FAILED_MESSAGE,
+  LOGIN_RATE_LIMIT_MESSAGE,
 } from "../../src/services/auth";
 import { MAGIC_LINK_REUSE_SECONDS } from "../../src/db/queries";
 import type { Env } from "../../src/env";
+// Настоящее приложение целиком — та же схема, что в security-regressions.test.ts.
+// Сценарии ТЗ §9.6 проверяют ответ ручек (текст отказа побайтово, cookie, 429,
+// 401), а не внутренние функции: собранная вручную Hono-приложение без
+// origin/auth/error middleware проверяла бы не тот код, который в проде.
+import { app } from "../../src/index";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Встроенная копия src/db/schema.sql (см. комментарий в шапке).
@@ -59,6 +71,19 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_plan  ON users(plan);
+
+-- ТЗ-23: пароль учителя. Отдельная таблица, а не колонка в users: миграция
+-- это повторный прогон schema.sql, а ALTER TABLE ADD COLUMN не идемпотентен.
+-- Копия таблицы из src/db/schema.sql — держим вручную по той же причине,
+-- по которой здесь копия всего остального.
+CREATE TABLE IF NOT EXISTS user_passwords (
+  user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  hash       TEXT NOT NULL,
+  salt       TEXT NOT NULL,
+  iterations INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS magic_links (
   token       TEXT PRIMARY KEY,
@@ -418,5 +443,397 @@ describe("requestMagicLink + consumeMagicLinkAndCreateSession (D1)", () => {
   it("consume non-existent token → null", async () => {
     const r = await consumeMagicLinkAndCreateSession(env.DB, "definitely-no-such-token-xyz");
     expect(r).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ТЗ-23 §9.6 п.6 — семь сценариев, которые обязаны быть закрыты тестами.
+//
+// Почему через настоящее `app`, а не через вызов сервисных функций: половина
+// этих сценариев — про ОТВЕТ ручки. Побайтовое совпадение текстов отказа, код
+// 429, cookie с её флагами, 401 при смене без старого пароля — это всё
+// middleware и роутер. Тест на `loginWithPassword()` ничего из этого не проверяет.
+//
+// Тот же приём, что в security-regressions.test.ts: настоящий Hono, настоящий
+// D1 из workerd, настоящая сборка middleware (cors → origin → auth → error).
+// ═══════════════════════════════════════════════════════════════════════════
+
+const db = (): D1Database => (env as unknown as { DB: D1Database }).DB;
+
+/**
+ * Окружение для запросов — development.
+ *
+ * Именно development, а не production: в проде без RESEND_API_KEY запрос
+ * magic-link уходит в 503 и НЕ заводит пользователя (fail-closed). Это верное
+ * поведение, но для подготовки фикстур нужен работающий вход.
+ */
+function devEnv(): Env {
+  return {
+    ...(env as unknown as Env),
+    APP_ENV: "development",
+    RESEND_API_KEY: undefined,
+    FRONTEND_URL: "http://localhost:3000",
+    APP_PUBLIC_URL: "http://localhost:3000",
+    ALLOW_DEV_MAGIC_URL: "true",
+  };
+}
+
+/**
+ * Один запрос к настоящему приложению.
+ *
+ * `ip` задаётся явно, потому что сценарий 5 проверяет ключ ограничения: без
+ * заголовка все запросы приходят с одного адреса "0.0.0.0", и это даже лучше
+ * для доказательства «ключ по email» — но явный IP делает намерение читаемым.
+ */
+async function call(
+  path: string,
+  init: { method?: string; body?: unknown; token?: string; ip?: string } = {},
+  environment: Env = devEnv(),
+): Promise<Response> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (init.token) headers["X-Session-Token"] = init.token;
+  if (init.ip) headers["CF-Connecting-IP"] = init.ip;
+
+  return app.fetch(
+    new Request(`https://api.test${path}`, {
+      method: init.method ?? "POST",
+      headers,
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    }),
+    environment as never,
+  );
+}
+
+/**
+ * Завести учителя и его сессию.
+ *
+ * Пользователя пишем прямо в D1, а не через /magic-link: письмо тут ни при
+ * чём, а лишняя зависимость от почтового сервиса в тесте про пароль — это
+ * лишний повод упасть не по делу. Пароль ниже ставится НАСТОЯЩЕЙ ручкой
+ * POST /api/auth/password, то есть по боевому пути.
+ */
+async function seedUser(email: string): Promise<{ sessionToken: string }> {
+  const userId = `usr_${crypto.randomUUID()}`;
+  const sessionToken = `sess_${crypto.randomUUID()}`;
+  const now = Math.floor(Date.now() / 1000);
+
+  await db()
+    .prepare(
+      `INSERT INTO users (id, email, name, plan, created_at, updated_at)
+       VALUES (?1, ?2, ?3, 'free', ?4, ?5)`,
+    )
+    .bind(userId, email, `Учитель ${email}`, now, now)
+    .run();
+  await db()
+    .prepare(
+      `INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES (?1, ?2, ?3, ?4)`,
+    )
+    .bind(sessionToken, userId, now + 86400, now)
+    .run();
+
+  return { sessionToken };
+}
+
+/** Задать пароль боевой ручкой. Возвращает ответ, чтобы тест сам проверял код. */
+function setPasswordViaApi(
+  sessionToken: string,
+  password: string,
+  currentPassword?: string,
+): Promise<Response> {
+  return call(
+    "/api/auth/password",
+    {
+      body: currentPassword === undefined ? { password } : { password, currentPassword },
+      token: sessionToken,
+    },
+  );
+}
+
+/** Попытка входа по паролю. */
+function login(email: string, password: string, ip?: string): Promise<Response> {
+  return call("/api/auth/login", { body: { email, password }, ip });
+}
+
+/**
+ * Разобрать Set-Cookie ручки ответа в Map по имени.
+ *
+ * Берём обычный `headers.get("set-cookie")`, а не `getSetCookie()`: в типах
+ * этого репозитория такого метода нет, а ручка входа ставит ровно одну cookie
+ * — разбирать список из нескольких тут нечего. Так же сделано в
+ * security-regressions.test.ts.
+ */
+function setCookieMap(res: Response): Map<string, string> {
+  const map = new Map<string, string>();
+  const header = res.headers.get("set-cookie");
+  if (!header) return map;
+  for (const part of header.split(/,\s*(?=[^;,\s]+=)/)) {
+    const [pair] = part.split(";");
+    const eq = pair?.indexOf("=") ?? -1;
+    if (eq > 0) map.set(pair!.slice(0, eq).trim(), pair!.slice(eq + 1).trim());
+  }
+  return map;
+}
+
+describe("ТЗ-23 §9.6 — вход по паролю (настоящие ручки)", () => {
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, [{ name: "schema", queries: [SCHEMA_SQL] }]);
+  });
+
+  // Чистая база на каждый тест: счётчики ограничения попыток живут в общей
+  // таблице rate_limits, и без сброса шестая попытка в одном тесте заблокировала
+  // бы первый же вход в следующем.
+  beforeEach(async () => {
+    await db().prepare(`DELETE FROM rate_limits`).run();
+    await db().prepare(`DELETE FROM user_passwords`).run();
+    await db().prepare(`DELETE FROM sessions`).run();
+    await db().prepare(`DELETE FROM users`).run();
+  });
+
+  // ── Сценарий 1 ───────────────────────────────────────────────────────────
+  it("пароль есть → вход по паролю работает", async () => {
+    const email = "s1-ok@example.com";
+    const { sessionToken } = await seedUser(email);
+    const set = await setPasswordViaApi(sessionToken, "uchlist2026");
+    expect(set.status).toBe(200);
+
+    const res = await login(email, "uchlist2026");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; user: { email: string } };
+    expect(body.ok).toBe(true);
+    expect(body.user.email).toBe(email);
+
+    // Сессионная cookie ставится — и она именно сессионная, а не «какая-то».
+    const cookies = setCookieMap(res);
+    expect(cookies.has("session")).toBe(true);
+  });
+
+  // ── Сценарий 2 ───────────────────────────────────────────────────────────
+  it("пароль есть → неверный пароль отклонён", async () => {
+    const email = "s2-wrong@example.com";
+    const { sessionToken } = await seedUser(email);
+    await setPasswordViaApi(sessionToken, "uchlist2026");
+
+    const res = await login(email, "uchlist2027");
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe(LOGIN_FAILED_MESSAGE);
+    // Отказ не должен оставлять сессионной cookie.
+    expect(setCookieMap(res).has("session")).toBe(false);
+  });
+
+  // ── Сценарий 3 ───────────────────────────────────────────────────────────
+  it("пароля нет → вход по паролю отклонён С ТЕМ ЖЕ текстом", async () => {
+    // Пользователь существует, пароль ему никто не задавал — самая частая
+    // реальная ситуация: учитель только что пришёл по ссылке.
+    const email = "s3-nopass@example.com";
+    await seedUser(email);
+
+    const res = await login(email, "uchlist2026");
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe(LOGIN_FAILED_MESSAGE);
+
+    // Ровно та же строка, что и на неверный пароль: сравнение с константой
+    // сервиса, а не «похожий текст».
+    expect(body.error).toBe("Не получилось войти. Проверьте почту и пароль");
+  });
+
+  // ── Сценарий 4 ───────────────────────────────────────────────────────────
+  it("чужой пароль отвечает так же, как несуществующий аккаунт (побайтово)", async () => {
+    const email = "s4-real@example.com";
+    const { sessionToken } = await seedUser(email);
+    await setPasswordViaApi(sessionToken, "uchlist2026");
+
+    const wrongPassword = await login(email, "uchlist2027");
+    const noAccount = await login("s4-ghost@example.com", "uchlist2026");
+
+    expect(wrongPassword.status).toBe(noAccount.status);
+    // Побайтово, а не по полям: любое лишнее поле в теле (hint, reason)
+    // снова отличило бы ответы, и ручка стала бы способом проверить адрес.
+    expect(await wrongPassword.text()).toBe(await noAccount.text());
+  });
+
+  // ── Сценарий 5 ───────────────────────────────────────────────────────────
+  it("шестая неудачная попытка блокируется по email, а посторонний учитель входит спокойно", async () => {
+    // Оба учителя — с ОДНОГО IP: ровно тот случай, из-за которого ключ
+    // ограничения не может быть по IP (вся школа на одном Wi-Fi).
+    const SCHOOL_IP = "203.0.113.10";
+    const victim = "s5-victim@example.com";
+    const neighbour = "s5-neighbour@example.com";
+
+    const victimSession = await seedUser(victim);
+    await setPasswordViaApi(victimSession.sessionToken, "uchlist2026");
+    const neighbourSession = await seedUser(neighbour);
+    await setPasswordViaApi(neighbourSession.sessionToken, "uchlist2026");
+
+    // Пять неудачных попыток — лимит ещё не выбран.
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      const res = await login(victim, `wrong-${attempt}`, SCHOOL_IP);
+      expect(res.status, `попытка ${attempt} ещё должна была дойти до хендлера`).toBe(401);
+    }
+
+    // Шестая — блокировка по этому email.
+    const sixth = await login(victim, "wrong-6", SCHOOL_IP);
+    expect(sixth.status).toBe(429);
+    expect(((await sixth.json()) as { error: string }).error).toBe(LOGIN_RATE_LIMIT_MESSAGE);
+
+    // Проверяющий учитель с того же IP в это же время входит без помех:
+    // счётчик по email, а не по IP.
+    const other = await login(neighbour, "uchlist2026", SCHOOL_IP);
+    expect(other.status).toBe(200);
+  });
+
+  // ── Сценарий 6 ───────────────────────────────────────────────────────────
+  it("смена пароля без старого отклоняется, со старым — проходит", async () => {
+    const email = "s6-change@example.com";
+    const { sessionToken } = await seedUser(email);
+    await setPasswordViaApi(sessionToken, "uchlist2026");
+
+    // Без старого — даже при верной новом пароле.
+    const noOld = await setPasswordViaApi(sessionToken, "uchlist2027");
+    expect(noOld.status).toBe(401);
+    // Тот же текст, что на «нет сессии»: по тексту нельзя отличить одно от другого.
+    expect(((await noOld.json()) as { error: string }).error).toBe("Требуется вход в аккаунт");
+
+    // Со старым, но неверным.
+    const wrongOld = await setPasswordViaApi(sessionToken, "uchlist2027", "wrongpass1");
+    expect(wrongOld.status).toBe(401);
+    expect(((await wrongOld.json()) as { error: string }).error).toBe("Требуется вход в аккаунт");
+
+    // Со старым верным — проходит.
+    const changed = await setPasswordViaApi(sessionToken, "uchlist2027", "uchlist2026");
+    expect(changed.status).toBe(200);
+    const setAt = ((await changed.json()) as { ok: boolean; setAt: string }).setAt;
+    // setAt — ISO 8601, тот же формат, что у createdAt в /callback.
+    expect(setAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+
+    // И пароль действительно сменился: старый больше не входит, новый входит.
+    expect((await login(email, "uchlist2026")).status).toBe(401);
+    expect((await login(email, "uchlist2027")).status).toBe(200);
+  });
+
+  // ── Сценарий 7 ───────────────────────────────────────────────────────────
+  it("удаление пароля возвращает состояние «пароля нет», и вход отклоняется тем же текстом", async () => {
+    const email = "s7-remove@example.com";
+    const { sessionToken } = await seedUser(email);
+    await setPasswordViaApi(sessionToken, "uchlist2026");
+
+    // До удаления: пароль есть, дата есть.
+    const before = (await (
+      await call("/api/auth/me", { method: "GET", token: sessionToken })
+    ).json()) as { user: { hasPassword: boolean; passwordSetAt: string | null } };
+    expect(before.user.hasPassword).toBe(true);
+    expect(before.user.passwordSetAt).not.toBeNull();
+
+    const removed = await call("/api/auth/password", { method: "DELETE", token: sessionToken });
+    expect(removed.status).toBe(200);
+    expect(((await removed.json()) as { ok: boolean }).ok).toBe(true);
+
+    // Состояние «пароля нет» — оба поля сразу, одним запросом.
+    const after = (await (
+      await call("/api/auth/me", { method: "GET", token: sessionToken })
+    ).json()) as { user: { hasPassword: boolean; passwordSetAt: string | null } };
+    expect(after.user.hasPassword).toBe(false);
+    expect(after.user.passwordSetAt).toBeNull();
+
+    // Бывший пароль больше не входит — и отказ тот же единый.
+    const res = await login(email, "uchlist2026");
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toBe(LOGIN_FAILED_MESSAGE);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Проверки из контракта §2.3 / §3 и ловушка из §6 — они не в списке
+  // «семи сценариев», но без них ручка может разъехаться с /callback.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  it("cookie входа по паролю — ровно такая же, как у входа по ссылке", async () => {
+    const email = "cookie@example.com";
+    const { sessionToken } = await seedUser(email);
+    await setPasswordViaApi(sessionToken, "uchlist2026");
+
+    const byPassword = await login(email, "uchlist2026");
+    const header = byPassword.headers.get("set-cookie");
+    expect(header, "вход по паролю должен ставить сессионную cookie").not.toBeNull();
+
+    expect(header).toContain("session=");
+    expect(header).toContain("HttpOnly");
+    expect(header).toContain("Secure");
+    expect(header).toContain("SameSite=None");
+    expect(header).toContain("Path=/");
+    // 30 дней = 2592000 секунд.
+    expect(header).toContain("Max-Age=2592000");
+  });
+
+  it("ограничение попыток читает тело, но хендлер всё равно получает email и password", async () => {
+    // Ловушка из контракта §6: keyFn выполняется ДО хендлера, и если прочитать
+    // тело в нём — хендлер получит пустое, то есть ручка сломается всегда.
+    // Успешный вход ниже — и есть доказательство, что тело доживает до хендлера.
+    const email = "body-not-eaten@example.com";
+    const { sessionToken } = await seedUser(email);
+    await setPasswordViaApi(sessionToken, "uchlist2026");
+
+    const res = await login(email, "uchlist2026");
+    expect(res.status).toBe(200);
+    // Если бы тело съедалось, zod упал бы на пустом теле — был бы 400.
+    expect(((await res.json()) as { user: { email: string } }).user.email).toBe(email);
+  });
+
+  it("ключ ограничения по НОРМАЛИЗОВАННОМУ email: другой регистр и пробелы не сбрасывают счётчик", async () => {
+    // Иначе лимит обходится элементарно — набрать адрес с заглавной буквы.
+    const email = "case@example.com";
+    const { sessionToken } = await seedUser(email);
+    await setPasswordViaApi(sessionToken, "uchlist2026");
+    const ip = "198.51.100.7";
+
+    const variants = [
+      email,
+      email.toUpperCase(),
+      `  ${email}  `,
+      "Case@Example.Com",
+      `\t${email.toUpperCase()}\n`,
+    ];
+    for (const variant of variants) {
+      const res = await login(variant, "wrong-password", ip);
+      expect(res.status).toBe(401);
+    }
+    // Пять попыток съели лимит (все пять нормализовались в один ключ) — шестая
+    // заблокирована. Если бы ключ считался по сырому телу, каждая попытка была бы
+    // отдельным адресом и шестая прошла бы.
+    const sixth = await login(email, "wrong-password", ip);
+    expect(sixth.status).toBe(429);
+    expect(((await sixth.json()) as { error: string }).error).toBe(LOGIN_RATE_LIMIT_MESSAGE);
+  });
+
+  it("пароль, соль и хеш не возвращаются в ответах ручек", async () => {
+    const email = "no-leak@example.com";
+    const { sessionToken } = await seedUser(email);
+    await setPasswordViaApi(sessionToken, "uchlist2026");
+
+    const loginBody = await (await login(email, "uchlist2026")).text();
+    const meBody = await (await call("/api/auth/me", { method: "GET", token: sessionToken })).text();
+    const setBody = await (
+      await setPasswordViaApi(sessionToken, "uchlist2028", "uchlist2026")
+    ).text();
+
+    for (const [where, body] of [
+      ["login", loginBody],
+      ["me", meBody],
+      ["password", setBody],
+    ] as const) {
+      expect(body, `${where}: хеш наружу`).not.toContain("hash");
+      expect(body, `${where}: соль наружу`).not.toContain("salt");
+      expect(body, `${where}: итерации наружу`).not.toContain("iterations");
+      expect(body, `${where}: сам пароль наружу`).not.toContain("uchlist2026");
+    }
+  });
+
+  it("вход без сессии на /me остаётся прежним: { ok: true, user: null }", async () => {
+    const res = await call("/api/auth/me", { method: "GET" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; user: null };
+    expect(body.ok).toBe(true);
+    expect(body.user).toBeNull();
   });
 });

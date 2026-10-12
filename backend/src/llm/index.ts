@@ -448,6 +448,8 @@ export async function generateWorksheet(
     tokensIn: number;
     tokensOut: number;
     costUsd: number;
+    /** Рубли по этому вызову (currency-работа на main). null, если провайдер не считал. */
+    costRub: number | null;
     latencyMs: number;
     generation: string;
   }> = [];
@@ -479,6 +481,7 @@ export async function generateWorksheet(
       tokensIn: r.response.tokensIn,
       tokensOut: r.response.tokensOut,
       costUsd: r.response.costUsd,
+      costRub: r.response.costRub ?? null,
       latencyMs: r.response.latencyMs,
       generation: r.generation,
     });
@@ -634,7 +637,7 @@ export async function generateWorksheet(
     throw new InternalError("LLM returned invalid JSON for worksheet");
   }
 
-  /** Прогнать вариант через фильтр с отчётом. */
+/** Прогнать вариант через фильтр с отчётом. */
   const readVariant = (raw: Worksheet | undefined) => {
     if (!raw) return null;
     const filtered = Array.isArray(raw.tasks)
@@ -881,6 +884,12 @@ export async function generateWorksheet(
     provider: resultFinal.provider,
     // Сумма по ВСЕМ вызовам: ретрай и дозапрос тоже стоили денег (AD-5).
     costUsd: calls.reduce((sum, c) => sum + c.costUsd, 0),
+    // Суммируем только те вызовы, у которых провайдер вернул рубли: null — это
+    // «не считал», а не «ноль», и складывать его с нулём значило бы выдумать
+    // цену, которой нет.
+    costRub: calls.some((c) => c.costRub != null)
+      ? calls.reduce((sum, c) => sum + (c.costRub ?? 0), 0)
+      : null,
     latencyMs: Date.now() - start,
     cached: false,
     generation: resultFinal.generation as GenerateWorksheetMeta["generation"],
@@ -897,6 +906,7 @@ export async function generateWorksheet(
       tokensIn: call.tokensIn,
       tokensOut: call.tokensOut,
       costUsd: call.costUsd,
+      costRub: call.costRub,
       latencyMs: call.latencyMs,
       cached: false,
       fallback: call.generation === "boost",
@@ -1166,6 +1176,7 @@ export async function generateExam(
     model: result.model,
     provider: result.provider,
     costUsd: result.response.costUsd,
+    costRub: result.response.costRub ?? null,
     latencyMs: Date.now() - start,
     cached: false,
     generation: result.generation,
@@ -1180,6 +1191,7 @@ export async function generateExam(
     tokensIn: result.response.tokensIn,
     tokensOut: result.response.tokensOut,
     costUsd: result.response.costUsd,
+    costRub: result.response.costRub ?? null,
     latencyMs: meta.latencyMs,
     cached: false,
     fallback: result.generation === "boost",
@@ -1447,6 +1459,7 @@ export async function generateStructuredArtifact<T extends object>(
     model: result.model,
     provider: result.provider,
     costUsd: result.response.costUsd,
+    costRub: result.response.costRub ?? null,
     latencyMs: Date.now() - start,
     cached: false,
     generation: result.generation,
@@ -1474,6 +1487,7 @@ export async function generateStructuredArtifact<T extends object>(
     tokensIn: result.response.tokensIn,
     tokensOut: result.response.tokensOut,
     costUsd: result.response.costUsd,
+    costRub: result.response.costRub ?? null,
     latencyMs: meta.latencyMs,
     cached: false,
     fallback: result.generation === "boost",
@@ -1818,6 +1832,7 @@ export async function validateWorksheet(
     model: result.model,
     provider: result.provider,
     costUsd: result.response.costUsd,
+    costRub: result.response.costRub ?? null,
     latencyMs: Date.now() - start,
     cached: false,
     generation: "primary",
@@ -1832,6 +1847,7 @@ export async function validateWorksheet(
     tokensIn: result.response.tokensIn,
     tokensOut: result.response.tokensOut,
     costUsd: result.response.costUsd,
+    costRub: result.response.costRub ?? null,
     latencyMs: meta.latencyMs,
     cached: false,
     fallback: false,
@@ -2133,6 +2149,7 @@ export async function verifySelfTask(
       tokensIn: step.res.response.tokensIn,
       tokensOut: step.res.response.tokensOut,
       costUsd: step.res.response.costUsd,
+      costRub: step.res.response.costRub ?? null,
       latencyMs,
       cached: false,
       fallback: step.res.generation === "boost",
@@ -2144,6 +2161,7 @@ export async function verifySelfTask(
       tokensIn: step.res.response.tokensIn,
       tokensOut: step.res.response.tokensOut,
       costUsd: step.res.response.costUsd,
+    costRub: step.res.response.costRub ?? null,
     });
   }
 
@@ -2376,6 +2394,9 @@ export interface CheckPhotoResult {
   model: string;
   provider: string;
   costUsd: number;
+  /** Фактическое списание в рублях от провайдера (`usage.cost_rub`), null если
+   *  провайдер такого поля не отдаёт. См. LLMResponse.costRub. */
+  costRub?: number | null;
   latencyMs: number;
   /** Оценка ожидаемой стоимости ДО вызова — для логов и лимитов. */
   estimatedCostUsd: number;
@@ -2471,6 +2492,7 @@ export async function checkPhoto(
     tokensIn: result.response.tokensIn,
     tokensOut: result.response.tokensOut,
     costUsd: result.response.costUsd,
+    costRub: result.response.costRub ?? null,
     latencyMs,
     cached: false,
     fallback: result.generation === "boost",
@@ -2481,6 +2503,7 @@ export async function checkPhoto(
     model: result.model,
     provider: result.provider,
     costUsd: result.response.costUsd,
+    costRub: result.response.costRub ?? null,
     latencyMs,
     estimatedCostUsd,
     estimatedImageTokens,
@@ -2511,6 +2534,16 @@ export interface LogLlmCallParams {
   tokensIn: number;
   tokensOut: number;
   costUsd: number;
+  /**
+   * Фактическое списание в рублях от провайдера (`usage.cost_rub` у polza.ai).
+   *
+   * Опционально НЕ для удобства, а потому что большинство провайдеров такого
+   * поля не отдаёт: там фактических денег у нас просто нет, и выдумывать их
+   * из `costUsd` нельзя (это разные величины). Если значения нет — в
+   * `llm_costs_actual` ничего не пишется, и расход по этому провайдеру
+   * считается исключительно по нашему расчёту.
+   */
+  costRub?: number | null;
   latencyMs: number;
   cached: boolean;
   fallback: boolean;
@@ -2543,6 +2576,30 @@ export async function logLlmCall(db: D1Database, params: LogLlmCallParams): Prom
         Math.floor(Date.now() / 1000),
       )
       .run();
+
+    // Фактические деньги — отдельной строкой и только если провайдер их назвал.
+    // Пишем после llm_logs, потому что главная запись важнее: если упадёт она,
+    // теряется наблюдаемость вызова, а не отчётность по деньгам.
+    if (typeof params.costRub === "number" && Number.isFinite(params.costRub)) {
+      await db
+        .prepare(
+          `INSERT INTO llm_costs_actual
+             (id, user_id, task, provider, model, cost_rub, cost_usd_est, latency_ms, created_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+        )
+        .bind(
+          `act_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+          params.userId,
+          params.task,
+          params.provider,
+          params.model,
+          params.costRub,
+          params.costUsd,
+          params.latencyMs,
+          Math.floor(Date.now() / 1000),
+        )
+        .run();
+    }
   } catch (e) {
     logLlmEvent("error", "logLlmCall failed", { error: String(e) });
   }

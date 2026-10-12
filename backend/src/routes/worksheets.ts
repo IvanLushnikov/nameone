@@ -26,7 +26,7 @@ import {
   ForbiddenError,
   PaymentRequiredError,
 } from "../lib/errors";
-import type { AppEnv, GenerateWorksheetRequest, Worksheet, SubjectSlug } from "../types";
+import type { AppEnv, GenerateWorksheetRequest, GenerationRequest, Worksheet, SubjectSlug } from "../types";
 import { moderateGenerationRequest } from "../llm/moderation";
 import { shortId, worksheetId as makeWorksheetId } from "../lib/shortid";
 import { requireAuth } from "../middleware/auth";
@@ -135,6 +135,22 @@ worksheetsRouter.post("/generate", async (c) => {
   }
 
   if (!body.request) throw new BadRequestError("Missing 'request' field");
+
+  // Обязательные поля проверяем здесь, а не только типами: тело приходит с
+  // сети, TypeScript его не спасает. Без проверки запрос без count/type падал
+  // позже, уже при записи в кэш, и учитель получал «Internal Server Error»
+  // вместо понятного ответа. Воспроизведено 12.10.2026: POST без count → 500
+  // с D1_TYPE_ERROR внутри saveCache.
+  const req = body.request as Partial<GenerationRequest>;
+  const missing = (["subject", "grade", "topic", "type", "count", "difficulty"] as const).filter(
+    (k) => req[k] === undefined || req[k] === null || req[k] === "",
+  );
+  if (missing.length) {
+    throw new BadRequestError(`Не заполнено: ${missing.join(", ")}`, { missing });
+  }
+  if (typeof req.count !== "number" || !Number.isInteger(req.count) || req.count < 1 || req.count > 100) {
+    throw new BadRequestError("count должен быть целым числом от 1 до 100", { field: "count" });
+  }
 
   // Pre-moderation (defense in depth)
   const mod = moderateGenerationRequest({ subject: body.request.subject, topic: body.request.topic });

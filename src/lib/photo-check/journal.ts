@@ -18,6 +18,15 @@ const BASE = "/api/journal";
 /** Откуда взялась отметка в журнале. */
 export type JournalSource = "machine" | "teacher" | "mixed";
 
+/**
+ * Метка работы в журнале.
+ *
+ * `pending` — НЕ источник: отметки ещё нет, ждать нужно учителя. Источник при
+ * этом остаётся тем же, поэтому в бейдже показывается «ждёт вас», а не
+ * «проверил ИИ» — по разобранной наполовину работе учитель ждёт себя.
+ */
+export type JournalBadge = JournalSource | "pending";
+
 export interface JournalEntry {
   id: string;
   checkId: string;
@@ -35,18 +44,36 @@ export interface JournalEntry {
 }
 
 /** Человеческие подписи бейджа источника. Слова — из опыта учителя, не из API. */
-export const SOURCE_LABEL: Record<JournalSource, string> = {
+export const SOURCE_LABEL: Record<JournalBadge, string> = {
   machine: "проверил ИИ",
   teacher: "вы правили вручную",
   mixed: "частично вручную",
+  pending: "ждёт вас",
 };
 
-/** Что бейдж значит на словах — одной строкой под списком, один раз. */
-export const SOURCE_HINT: Record<JournalSource, string> = {
-  machine: "Отметку поставила модель, вы не смотрели",
-  teacher: "Все спорные задания вы решили сами",
-  mixed: "Часть поправили вы, часть осталась за моделью",
+/**
+ * Что бейдж значит на словах — одной строкой под списком, один раз.
+ *
+ * Формулировки короткие и без заглавной буквы: в легенде они идут в один ряд
+ * с меткой и читаются как продолжение, а не как отдельное предложение.
+ */
+export const SOURCE_HINT: Record<JournalBadge, string> = {
+  machine: "вы не смотрели",
+  teacher: "спорное решили сами",
+  mixed: "часть поправили вы",
+  pending: "отметки ещё нет",
 };
+
+/**
+ * Какой бейдж показать у работы.
+ *
+ * Пока учитель не закрыл спорные задания, отметки нет — и главный вопрос в
+ * журнале не «кто поставил», а «кого ждём». Поэтому незакрытая работа
+ * получает «ждёт вас» независимо от источника.
+ */
+export function journalBadge(entry: { source: JournalSource; pendingTasks: number }): JournalBadge {
+  return entry.pendingTasks > 0 ? "pending" : entry.source;
+}
 
 function fail(error: PhotoCheckApiErrorCode, message?: string, status?: number): PhotoCheckApiError {
   return { ok: false, error, message: message || ERROR_TEXT[error], status };

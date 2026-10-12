@@ -21,6 +21,14 @@ export interface AuthUser {
   email: string;
   name: string;
   plan: "free" | "base" | "standard" | "plus";
+  /**
+   * Признак администратора — из `/api/auth/me` (ТЗ-24).
+   *
+   * Опциональный: `/api/auth/callback` и вход по паролю это поле не отдают,
+   * и выдумывать его там нельзя — тогда охрана `/superpower` решила бы, что
+   * админ вошёл, на самом деле не проверив. Неизвестно = не админ.
+   */
+  isAdmin?: boolean;
   generationsToday?: number;
   generationsLimit?: number;
   generationsTotal?: number;
@@ -118,16 +126,116 @@ export async function verifyMagicLink(
     return {
       ok: false,
       error:
-        (res as ApiErr).error ?? "Ссылка истекла или уже использована",
+        (res as ApiErr).error ?? "Ссылка для входа не сработала",
     };
   } catch (err) {
     const isAuth = err instanceof AuthApiError && err.isAuthError;
     return {
       ok: false,
       error: isAuth
-        ? "Ссылка истекла или уже использована"
+        ? "Ссылка для входа не сработала"
         : humanError(err, "Не получилось подтвердить вход"),
     };
+  }
+}
+
+/**
+ * ЕДИНЫЙ текст отказа входа по паролю (контракт §2.2, ТЗ §6).
+ *
+ * Один и тот же — на «нет такого аккаунта» и «пароль не подошёл». Разные тексты
+ * на эти два случая — та же утечка, что и предзапрос «есть ли пароль у этого
+ * email» (ТЗ §3, разрыв 4): по тексту ответа проверяется, зарегистрирован ли
+ * конкретный адрес. Текст бэка сюда не пробрасывается — собираем отказ в одном
+ * месте на фронте, даже если бэк по ошибке пришлёт другое.
+ */
+export const LOGIN_REFUSED_TEXT =
+  "Не получилось войти. Проверьте почту и пароль";
+
+/**
+ * Отказ по числу попыток (контракт §2.2). Причину не раскрывает — только факт,
+ * поэтому общий для входа и для смены пароля.
+ */
+export const RATE_LIMITED_TEXT =
+  "Слишком много попыток. Попробуйте через 15 минут";
+
+/**
+ * POST /api/auth/login — вход по паролю.
+ *
+ * Отказ всегда один и тот же: `LOGIN_REFUSED_TEXT` на 401/403 и на «200 с
+ * ok:false». 429 — отдельный отказ, он тоже не различает причину. Сеть и
+ * нечитаемый ответ отдаются своими текстами: они не сказали бэку ни слова об
+ * этой почте, поэтому ничего о существовании аккаунта не выдают — а «проверьте
+ * почту и пароль» в такой ситуамости сбило бы учителя с толку.
+ */
+export async function loginWithPassword(
+  email: string,
+  password: string,
+): Promise<
+  | { ok: true; user: AuthUser }
+  // Второй шаг для администратора (ТЗ-24 §8.1): пароль верен, но сессия ещё
+  // не выдана — нужен код из приложения. Почты в ответе нет намеренно: первый
+  // шаг не должен подтверждать, что адрес зарегистрирован.
+  | { ok: true; mfaRequired: true; pendingToken: string }
+  | { ok: false; error: string }
+> {
+  try {
+    const res = (await postJson("/api/auth/login", { email, password })) as
+      | (ApiOk & { user: AuthUser; mfaRequired?: boolean; pendingToken?: string })
+      | ApiErr;
+    if (res.ok === true && res.mfaRequired === true && res.pendingToken) {
+      return { ok: true, mfaRequired: true, pendingToken: res.pendingToken };
+    }
+    if (res.ok === true && res.user) return { ok: true, user: res.user };
+    return { ok: false, error: LOGIN_REFUSED_TEXT };
+  } catch (err) {
+    return { ok: false, error: loginErrorText(err) };
+  }
+}
+
+/**
+ * POST /api/auth/password — задать пароль или сменить существующий.
+ *
+ * Смена требует `currentPassword` (ТЗ §5): иначе любой, кто открыл вкладку на
+ * чужом компьютере, сменил бы пароль и остался внутри. Отказ на «нет сессии» и
+ * на «неверный currentPassword» — один текст (контракт §5).
+ *
+ * `setAt` — единственный источник даты «Пароль задан …» (контракт §2.1), поэтому
+ * он `string | null`: если бэк её не прислал, карточка обязана это обработать,
+ * а не напечатать «Invalid Date».
+ */
+export async function setPassword(
+  password: string,
+  currentPassword?: string,
+): Promise<{ ok: true; setAt: string | null } | { ok: false; error: string }> {
+  try {
+    const body: { password: string; currentPassword?: string } = { password };
+    if (currentPassword !== undefined) body.currentPassword = currentPassword;
+    const res = (await postJson("/api/auth/password", body)) as
+      | (ApiOk & { setAt?: string })
+      | ApiErr;
+    if (res.ok === true) {
+      return { ok: true, setAt: res.setAt ?? null };
+    }
+    return { ok: false, error: passwordSaveErrorText(res) };
+  } catch (err) {
+    return { ok: false, error: passwordSaveErrorText(err) };
+  }
+}
+
+/**
+ * DELETE /api/auth/password — убрать пароль.
+ *
+ * После этого работает только вход по ссылке из письма (ТЗ §12.6).
+ */
+export async function removePassword(): Promise<
+  { ok: true } | { ok: false; error: string }
+> {
+  try {
+    const res = (await deleteJson("/api/auth/password")) as ApiOk | ApiErr;
+    if (res.ok === true) return { ok: true };
+    return { ok: false, error: passwordRemoveErrorText(res) };
+  } catch (err) {
+    return { ok: false, error: passwordRemoveErrorText(err) };
   }
 }
 
@@ -205,6 +313,67 @@ async function postJson<T = unknown>(path: string, body: unknown): Promise<T> {
 
 async function getJson<T = unknown>(path: string): Promise<T> {
   return jsonFetch<T>(path, { method: "GET" });
+}
+
+/** DELETE без тела — так отдаёт ручка снятия пароля (контракт §2). */
+async function deleteJson<T = unknown>(path: string): Promise<T> {
+  return jsonFetch<T>(path, { method: "DELETE" });
+}
+
+/** Сеть упала — про аккаунт бэк не узнал ничего, поэтому текст свой. */
+const NETWORK_TEXT =
+  "Нет связи с сервером. Проверьте подключение к интернету";
+
+/** Бэк не настроен (нет NEXT_PUBLIC_API_URL) — учителю имя переменной не нужно. */
+const NO_API_TEXT = "Вход недоступен. Попробуйте позже.";
+
+/** Правила пароля (ТЗ §7.1) — их и показываем, и требуем на бэке. */
+const PASSWORD_RULES_TEXT =
+  "Пароль: от 8 до 128 символов, нужна буква и цифра";
+
+/**
+ * Отказ на 401 у смены пароля: «нет сессии» и «неверный текущий пароль» дают
+ * один и тот же текст (контракт §5) — отличить их на экране нельзя.
+ */
+const PASSWORD_CHANGE_REFUSED_TEXT =
+  "Не получилось сменить пароль — проверьте текущий пароль";
+
+/**
+ * Отказ входа по паролю.
+ *
+ * Единый текст собирается здесь, а не берётся из ответа бэка: так «нет такого
+ * аккаунта» и «пароль не подошёл» физически не могут разойтись на экране,
+ * даже если бэк по ошибке пришлёт разные тексты.
+ */
+function loginErrorText(err: unknown): string {
+  if (err instanceof AuthApiError) {
+    if (err.status === 429) return RATE_LIMITED_TEXT;
+    if (err.code === "NETWORK") return NETWORK_TEXT;
+    if (err.code === "NO_API_URL") return NO_API_TEXT;
+  }
+  // Любой другой статус (401, 403, 400, 500) — один и тот же отказ.
+  return LOGIN_REFUSED_TEXT;
+}
+
+function passwordSaveErrorText(source: unknown): string {
+  if (source instanceof AuthApiError) {
+    if (source.status === 429) return RATE_LIMITED_TEXT;
+    if (source.status === 400) return PASSWORD_RULES_TEXT;
+    if (source.code === "NETWORK") return NETWORK_TEXT;
+    if (source.code === "NO_API_URL") return NO_API_TEXT;
+    return PASSWORD_CHANGE_REFUSED_TEXT;
+  }
+  return "Не получилось сохранить пароль";
+}
+
+function passwordRemoveErrorText(source: unknown): string {
+  if (source instanceof AuthApiError) {
+    if (source.status === 429) return RATE_LIMITED_TEXT;
+    if (source.code === "NETWORK") return NETWORK_TEXT;
+    if (source.code === "NO_API_URL") return NO_API_TEXT;
+    if (source.isAuthError) return "Не получилось убрать пароль — войдите в кабинет заново";
+  }
+  return "Не получилось убрать пароль";
 }
 
 function humanError(err: unknown, fallback: string): string {

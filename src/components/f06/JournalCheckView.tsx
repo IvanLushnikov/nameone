@@ -31,20 +31,18 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { ManualMarksEditor, type ManualMarkDraft } from "@/components/f06/ManualMarksEditor";
+import { MarkBadges, WhoCell, markAttribution } from "@/components/f06/MarkAttribution";
 import { loadPhotoCheck, saveManualMarks, ERROR_TEXT } from "@/lib/photo-check/api";
 import { partitionByDecision } from "@/lib/photo-check/confidence";
-import type { PhotoCheckItem, PhotoCheckResult, PhotoVerdict } from "@/lib/photo-check/types";
+import type { PhotoCheckItem, PhotoCheckResult } from "@/lib/photo-check/types";
 
 type State =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "ready"; result: PhotoCheckResult; marksError: string | null };
 
-const VERDICT_LABEL: Record<PhotoVerdict, string> = {
-  correct: "зачтено",
-  incorrect: "не зачтено",
-  unclear: "модель не разобрала",
-};
+// Подписи вердиктов живут в `MarkAttribution` — вместе с «кто поставил»,
+// иначе на двух экранах появятся разные слова об одном и том же.
 
 export function JournalCheckView({ checkId }: { checkId: string }) {
   const [state, setState] = React.useState<State>({ kind: "loading" });
@@ -190,7 +188,8 @@ export function JournalCheckView({ checkId }: { checkId: string }) {
               <tr className="text-left text-xs text-warm-500 border-b border-warm-200">
                 <th scope="col" className="py-2 pr-2 font-medium w-8">№</th>
                 <th scope="col" className="py-2 pr-3 font-medium">Задание</th>
-                <th scope="col" className="py-2 pr-3 font-medium w-28">Решил</th>
+                <th scope="col" className="py-2 pr-3 font-medium w-40">Отметка</th>
+              <th scope="col" className="py-2 pr-2 font-medium w-32">Кто поставил</th>
                 <th scope="col" className="py-2 pr-2 font-medium w-14 text-right">Балл</th>
               </tr>
             </thead>
@@ -218,14 +217,16 @@ export function Frame({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Строка таблицы. Ключевое здесь — колонка «Решил»: слово, а не цвет.
+ * Строка таблицы. Ключевое здесь — колонка «Кто поставил»: слово, а не цвет.
  * Распечатка это первое, что попадёт учителю через месяц, и по ней должно быть
  * видно, чья это была отметка, даже если цвет не печатался.
+ *
+ * Поправленная строка показывает обе отметки — прежнюю зачёркнутой и новую —
+ * ровно как в живой проверке: одна разметка на обоих экранах, иначе через
+ * месяц они разъедутся.
  */
 function Row({ item }: { item: PhotoCheckItem }) {
-  const byTeacher = item.decidedBy === "teacher";
-  const modelVerdict: PhotoVerdict = item.modelVerdict ?? item.verdict;
-  const changed = byTeacher && modelVerdict !== item.verdict;
+  const { byTeacher, modelVerdict, changed } = markAttribution(item);
 
   return (
     <tr className={item.needsReview ? "bg-amber-50/60" : "border-b border-warm-100"}>
@@ -237,20 +238,16 @@ function Row({ item }: { item: PhotoCheckItem }) {
         )}
       </td>
       <td className="py-2.5 pr-3 align-top">
-        <Badge tone={byTeacher ? "brand" : item.needsReview ? "warm" : "neutral"}>
-          {byTeacher ? "вы" : "ИИ"}
-        </Badge>
-        <span className="block text-xs text-warm-600 mt-1">
-          {VERDICT_LABEL[item.verdict]}
-        </span>
-        {/* Если учитель поправил машину — показываем, что именно было. */}
-        {changed && (
-          <span className="block text-xs text-warm-500 mt-0.5">
-            ИИ считал: {VERDICT_LABEL[modelVerdict]}
-          </span>
-        )}
+        <MarkBadges
+          verdict={item.verdict}
+          modelVerdict={modelVerdict}
+          changed={changed}
+        />
+      </td>
+      <td className="py-2.5 pr-2 align-top">
+        <WhoCell byTeacher={byTeacher} changed={changed} />
         {item.needsReview && !byTeacher && (
-          <span className="block text-xs text-amber-800 mt-0.5">ждёт вашего решения</span>
+          <span className="block text-xs text-amber-800 mt-1">ждёт вашего решения</span>
         )}
       </td>
       <td className="py-2.5 pr-2 align-top text-right text-warm-900 tabular-nums">
