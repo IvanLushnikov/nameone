@@ -448,6 +448,21 @@ export default function ConstructorPage() {
   }, []);
   /** F-06: видна ли inline-панель проверки фото тетради (только worksheet). */
   const [photoCheckOpen, setPhotoCheckOpen] = React.useState(false);
+  /**
+   * Жалоба 1 (12.10.2026): учитель нажимает «Попробовать» на карточке
+   * «Проверка работ по фото» и попадает в генератор.
+   *
+   * Причина была не в ссылке: правая колонка с экраном входа скрыта
+   * условием `step === "select"`, а первый экран генератора — это как раз
+   * шаг «select». Экран входа физически не мог появиться раньше, чем
+   * учитель сам выберет предмет, класс и сценарий.
+   *
+   * Теперь на первом экране колонка с формой убирается, а вход занимает
+   * всю ширину — учитель сразу видит то, куда пришёл. Этот флаг отличает
+   * «только что пришёл с карточки» от «уже нажал Сделать лист»: во втором
+   * случае генератор должен вернуться на первый экран.
+   */
+  const [photoCheckLanded, setPhotoCheckLanded] = React.useState(false);
   /** TZ-12: открыта ли модалка «Выдать классу». */
   const [shareFormOpen, setShareFormOpen] = React.useState(false);
   /**
@@ -1571,11 +1586,26 @@ export default function ConstructorPage() {
     setPhotoCheckOpen((v) => !v);
   }, []);
 
+  /**
+   * Жалоба 1 (12.10.2026): приход с карточки «Проверка работ по фото».
+   *
+   * Пока учитель ничего не выбрал и ещё не нажал «Сделать лист», показываем
+   * ТОЛЬКО экран входа — на всю ширину. Так карточка «Попробовать» наконец
+   * приводит в проверку, а не в генератор (жалоба «клик открывает генератор,
+   * а не проверку»).
+   */
+  const photoLandingFullScreen =
+    photoCheckOpen && !photoCheckLanded && !worksheet && !generating && (!subject || grade === null);
+  /** Правую колонку прячем только на первом экране И когда вход не показан. */
+  const showSidePanel = photoLandingFullScreen || !(step === "select" && mode === "topic");
+
   return (
     <>
       <div className="container-tight py-8 sm:py-12">
-        <div className={`grid gap-6 lg:gap-8 items-start ${step === "select" && mode === "topic" ? "grid-cols-1" : "lg:grid-cols-[420px_1fr]"}`}>
-          {/* Left: form / steps */}
+        <div className={`grid gap-6 lg:gap-8 items-start ${photoLandingFullScreen || (step === "select" && mode === "topic") ? "grid-cols-1" : "lg:grid-cols-[420px_1fr]"}`}>
+          {/* Left: form / steps. На экране входа по фото форма не рендерится вовсе:
+              учитель пришёл проверять тетрадь, а не выбирать предмет. */}
+          {!photoLandingFullScreen && (
           <div className="lg:sticky lg:top-20 space-y-5">
             {/* F-04-C: переключатель режима. Доступен на любом шаге. */}
             <ModeToggle mode={mode} onChange={handleModeChange} />
@@ -1737,9 +1767,12 @@ export default function ConstructorPage() {
               />
             )}
           </div>
+          )}
 
-          {/* Right: preview / empty state (hidden on Шаг 1, full width for subject picker) */}
-          {!(step === "select" && mode === "topic") && (
+          {/* Right: preview / empty state (hidden on Шаг 1, full width for subject picker).
+              Исключение — вход по фото: он и есть то, куда пришёл учитель,
+              поэтому на первом экране он занимает всю ширину (жалоба 1). */}
+          {showSidePanel && (
           <div>
             {/* Приход по `?photo=1` с карточки «Проверка работ по фото» — показываем
                 ВХОД в проверку, а не генератор (08.10.2026). Раньше флаг
@@ -1759,6 +1792,9 @@ export default function ConstructorPage() {
                   // пока нет листа (`!worksheet`).
                   setMode("topic");
                   setStep("select");
+                  // Снятие флага «только что пришёл с карточки»: дальше
+                  // учитель выбирает предмет и класс — возвращаем генератор.
+                  setPhotoCheckLanded(true);
                 }}
                 onOpenHistory={() => {
                   setPhotoCheckOpen(false);

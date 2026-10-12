@@ -171,7 +171,14 @@ export async function generateWorksheet(
       // Попадание в кэш не тратит токены, поэтому норма не меняется: честно
       // возвращаем текущее состояние, чтобы UI не показывал «израсходовано».
       const usage = await getUsageStatus(db, userId, plan);
-      return { worksheet: ws, meta, usage };
+      // Второй вариант контрольной (12.10.2026): раньше в кэш уходил только
+      // первый лист, и повторный запрос отдавал `semantic-cache` БЕЗ второго
+      // варианта — учитель получал ровно ту жалобу, которую чинили
+      // («просят два варианта, получают один»). Теперь он лежит в кэше
+      // вместе с первым и возвращается оттуда.
+      const cachedSecond =
+        (cached.response as { secondVariant?: Worksheet | null }).secondVariant ?? null;
+      return { worksheet: ws, meta, usage, secondVariant: cachedSecond };
     }
   }
 
@@ -189,7 +196,14 @@ export async function generateWorksheet(
       ],
       responseFormat: "json",
       temperature: 0.7,
-      maxTokens: 4096,
+      // КОНТРОЛЬНАЯ возвращает ДВА полных листа одним ответом (`variants`).
+      // На один лист 4096 хватает, на два — нет: ответ обрывался по
+      // `finish_reason=length`, и учитель получал либо 500 («пустой content»),
+      // либо «LLM returned invalid JSON» — то есть ровно ту жалобу, которую
+      // чинили. Потолок двойной, как и объём ответа. Раньше других типов
+      // здесь стояло 4096 независимо от объёма (см. maxTokens у presentation
+      // 8000 и ktp 16000 в ARTIFACT_SPECS).
+      maxTokens: request.type === "control" ? 8192 : 4096,
       // Кэш — по свойству модели, а не по тарифу (см. supportsPromptCache).
       cacheSystemPrompt: supportsPromptCache(decision.primary?.model ?? "gpt-6-luna"),
     },
@@ -290,17 +304,8 @@ export async function generateWorksheet(
     generation: result.generation,
   };
 
-  // 6. Save to cache
-  await saveCache(db, {
-    key: cacheKey,
-    subject: request.subject,
-    grade: request.grade,
-    topic: request.topic,
-    difficulty: request.difficulty,
-    count: request.count,
-    type: request.type,
-    response: { worksheet },
-  });
+  // 6. Save to cache — ПОСЛЕ сборки второго варианта контрольной (ниже),
+  //    иначе в кэш уходил бы только первый лист.
 
   // 7. Log
   await logLlmCall(db, {
@@ -359,6 +364,19 @@ export async function generateWorksheet(
     (secondVariant as Worksheet & { createdAt: string }).createdAt =
       (worksheet as Worksheet & { createdAt?: string }).createdAt ?? new Date().toISOString();
   }
+
+  // 6. Save to cache. Второй вариант контрольной кладём рядом с первым:
+  //    без этого повторный запрос отдавал один лист вместо двух (12.10.2026).
+  await saveCache(db, {
+    key: cacheKey,
+    subject: request.subject,
+    grade: request.grade,
+    topic: request.topic,
+    difficulty: request.difficulty,
+    count: request.count,
+    type: request.type,
+    response: { worksheet, secondVariant },
+  });
 
   return { worksheet, meta, usage, secondVariant };
 }
