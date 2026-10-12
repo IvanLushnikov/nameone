@@ -153,15 +153,15 @@ export default function MaterialsHubPage() {
           <div className="max-w-3xl">
             <Badge tone="brand" className="mb-4">
               <Sparkles className="w-3 h-3" />
-              {MATERIALS_CATALOG.length} материалов · редакция
+              Банк наполняется
             </Badge>
             <h1 className="text-4xl sm:text-5xl font-display font-bold tracking-tight text-balance">
               Банк материалов — готовые материалы по школьной программе
             </h1>
             <p className="mt-5 text-lg text-warm-600 text-pretty max-w-2xl">
-              Контрольные, рабочие листы, интерактивы, конспекты уроков и презентации.
-              Нашли подходящий — нажмите «Сгенерировать такой лист», и конструктор соберёт
-              такой же материал под ваш класс за 30 секунд.
+              Здесь будут материалы, которые вы сами создали: рабочие листы, карточки,
+              конспекты уроков и презентации. Банк наполняется по мере генерации —
+              каждый созданный вами материал попадает сюда.
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-3">
               <Button

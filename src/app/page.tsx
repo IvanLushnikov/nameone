@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Hero } from "@/components/landing/Hero";
 import { WeeklyTopicBlock } from "@/components/landing/WeeklyTopic";
-import { MaterialsBankBlock } from "@/components/landing/MaterialsBankBlock";
 import { RealStats } from "@/components/landing/Stats";
 import { Features } from "@/components/landing/Features";
 import { Limitations } from "@/components/landing/Limitations";
@@ -122,7 +121,10 @@ export default function Home() {
       <PricingTeaser />
       <FAQ />
       <WeeklyTopicBlock />
-      <MaterialsBankBlock />
+      {/* Блок «Банк материалов» снят с главной 12.10.2026: реального банка
+          ещё нет — учительские материалы должны появляться по ходу генерации.
+          До этого момента витрина обещала учителю 150 материалов, которых на
+          сайте не лежало, и кнопку «Открыть банк материалов». */}
       <CTA />
       <PageTracker eventName="landing_view" data={{ source: "home" }} />
     </>

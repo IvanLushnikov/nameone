@@ -22,7 +22,9 @@ import { PROFILE_CHANGED_EVENT } from "@/lib/events";
  */
 const nav = [
   { href: "/constructor", label: "Генератор", icon: Sparkles },
-  { href: "/materials", label: "Банк материалов", icon: Library },
+  // «Банк материалов» убран из меню 12.10.2026 вместе с витриной на главной:
+  // реального банка ещё нет, материалы должны появляться по ходу генерации.
+  // Пункт в меню обещал учителю то, чего на сайте не лежало.
   { href: "/oge", label: "ОГЭ / ЕГЭ", icon: GraduationCap },
   { href: "/pricing", label: "Тарифы", icon: null },
 ];
