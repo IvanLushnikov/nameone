@@ -557,4 +557,318 @@ describe("учительские формы (TZ-12, f07)", () => {
     const publicRes = await SELF.fetch(`https://worker.test/api/public/forms/${created.token}`);
     expect(publicRes.status).toBe(404);
   });
+
+  // ── F10–F14: ручная проверка ответа (12.10.2026) ──────────────────────────
+  //
+  // Эти тесты закрывают тот самый тупик: сводка показывала «ждут проверки N»,
+  // а поставить балл было нечем. Сверх проверки самого механизма они ловят две
+  // ошибки, из которых одна тихая: забытый пересчёт score_total (учитель поставил
+  // балл, а на карточке формы остались нули).
+
+  /** Форма с одним заданием на 2 балла + ответ ученика, ждущий проверки. */
+  async function formWithPendingAnswer(
+    session: string,
+    opts: { points?: number; taskType?: string; answer?: string; suffix?: string } = {},
+  ): Promise<{ formId: string; token: string; responseId: string }> {
+    const points = opts.points ?? 2;
+    const taskType = opts.taskType ?? "essay";
+    const expected = opts.answer ?? "";
+    // id привязаны к суффиксу: тесты в общей базе, фиксированный id упал бы
+    // на UNIQUE при втором вызове хелпера.
+    const sfx = opts.suffix ?? "1";
+    const responseId = `rsp_rev${sfx}`;
+    const answerId = `ans_rev${sfx}`;
+    const created = (
+      await (
+        await createForm(session, {
+          payload: {
+            tasks: [
+              { number: 1, text: "Что такое атмосфера?", type: taskType, answer: expected, points },
+            ],
+          },
+        })
+      ).json()
+    ) as { formId: string; token: string };
+    const now = Math.floor(Date.now() / 1000);
+    await env.DB
+      .prepare(
+        `INSERT INTO form_responses (id, form_id, student_name, student_label, score_total, score_max,
+                                     status, duration_sec, submitted_at, created_at)
+         VALUES (?1, ?2, 'Аня', '5А', 0, ?3, 'submitted', 120, ?4, ?4)`,
+      )
+      .bind(responseId, created.formId, points, now)
+      .run();
+    await env.DB
+      .prepare(
+        `INSERT INTO form_answers (id, response_id, task_number, task_type, student_answer,
+                                   is_correct, points_awarded, points_max, needs_review, check_method, created_at)
+         VALUES (?1, ?2, 1, ?3, 'мой ответ', NULL, 0, ?4, 1, 'manual', ?5)`,
+      )
+      .bind(answerId, responseId, taskType, points, now)
+      .run();
+    return { formId: created.formId, token: created.token, responseId };
+  }
+
+  function reviewUrl(formId: string, responseId: string, taskNumber: number): string {
+    return `https://worker.test/api/assignments/forms/${formId}/responses/${responseId}/answers/${taskNumber}`;
+  }
+
+  it("F10: учитель ставит «верно» с частичным баллом — оценка сохранена, итог пересчитан", async () => {
+    const { formId, responseId } = await formWithPendingAnswer(sessionA, { points: 2 });
+
+    const res = await SELF.fetch(reviewUrl(formId, responseId, 1), {
+      method: "PATCH",
+      headers: authHeaders(sessionA),
+      body: JSON.stringify({ isCorrect: true, pointsAwarded: 1, comment: "Хорошо, но без запятой" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { answer: Record<string, unknown>; scoreTotal: number };
+    expect(body.answer).toMatchObject({
+      taskNumber: 1,
+      isCorrect: true,
+      pointsAwarded: 1,
+      pointsMax: 2,
+      needsReview: false,
+      teacherComment: "Хорошо, но без запятой",
+    });
+    // Главная цифра на сводке обязана поехать вместе с оценкой.
+    expect(body.scoreTotal).toBe(1);
+
+    const view = await SELF.fetch(`https://worker.test/api/assignments/forms/${formId}`, {
+      headers: { Cookie: `session=${sessionA}` },
+    });
+    const viewBody = (await view.json()) as {
+      responses: Array<{
+        scoreTotal: number;
+        answers: Array<{ needsReview: number; isCorrect: number | null; pointsAwarded: number; teacherComment: string | null }>;
+      }>;
+    };
+    expect(viewBody.responses[0]!.scoreTotal).toBe(1);
+    expect(viewBody.responses[0]!.answers[0]).toMatchObject({
+      needsReview: 0,
+      isCorrect: 1,
+      pointsAwarded: 1,
+      teacherComment: "Хорошо, но без запятой",
+    });
+  });
+
+  it("F11: повторная проверка не удваивает балл", async () => {
+    const { formId, responseId } = await formWithPendingAnswer(sessionA, { points: 2 });
+
+    for (const pointsAwarded of [1, 1]) {
+      const res = await SELF.fetch(reviewUrl(formId, responseId, 1), {
+        method: "PATCH",
+        headers: authHeaders(sessionA),
+        body: JSON.stringify({ isCorrect: true, pointsAwarded }),
+      });
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { scoreTotal: number }).scoreTotal).toBe(1);
+    }
+
+    const row = await env.DB
+      .prepare(`SELECT score_total FROM form_responses WHERE id = ?1`)
+      .bind(responseId)
+      .first<{ score_total: number }>();
+    expect(row?.score_total).toBe(1);
+  });
+
+  it("F12: балл больше максимума отклоняется, а не обрезается молча", async () => {
+    const { formId, responseId } = await formWithPendingAnswer(sessionA, { points: 2 });
+
+    const res = await SELF.fetch(reviewUrl(formId, responseId, 1), {
+      method: "PATCH",
+      headers: authHeaders(sessionA),
+      body: JSON.stringify({ isCorrect: true, pointsAwarded: 5 }),
+    });
+    expect(res.status).toBe(400);
+
+    const row = await env.DB
+      .prepare(`SELECT needs_review FROM form_answers WHERE response_id = ?1`)
+      .bind(responseId)
+      .first<{ needs_review: number }>();
+    expect(row?.needs_review).toBe(1);
+  });
+
+  it("F13: чужой учитель не может править чужой ответ — 404", async () => {
+    const { formId, responseId } = await formWithPendingAnswer(sessionA, { points: 2 });
+
+    const res = await SELF.fetch(reviewUrl(formId, responseId, 1), {
+      method: "PATCH",
+      headers: authHeaders(sessionB),
+      body: JSON.stringify({ isCorrect: true }),
+    });
+    expect(res.status).toBe(404);
+
+    const row = await env.DB
+      .prepare(`SELECT needs_review FROM form_answers WHERE response_id = ?1`)
+      .bind(responseId)
+      .first<{ needs_review: number }>();
+    expect(row?.needs_review).toBe(1);
+  });
+
+  it("F14: ответ из другой формы не правится, даже если форма своя", async () => {
+    const { formId } = await formWithPendingAnswer(sessionA, { points: 2, suffix: "a" });
+    const other = await formWithPendingAnswer(sessionA, { points: 1, suffix: "b" });
+
+    // rid принадлежит второй форме, а адрес — первой: проверка обязана это отбить,
+    // иначе учитель правил бы чужую работу, подставив id в URL.
+    const res = await SELF.fetch(reviewUrl(formId, other.responseId, 1), {
+      method: "PATCH",
+      headers: authHeaders(sessionA),
+      body: JSON.stringify({ isCorrect: true }),
+    });
+    expect(res.status).toBe(404);
+
+    const row = await env.DB
+      .prepare(`SELECT score_total FROM form_responses WHERE id = ?1`)
+      .bind(other.responseId)
+      .first<{ score_total: number }>();
+    expect(row?.score_total).toBe(0);
+    expect(other.formId).not.toBe(formId);
+  });
+
+  // ── F15: короткий ответ сверяется сам, а не уходит учителю ────────────────
+  //
+  // До 12.10.2026 short-answer всегда давал needs_review, и ученик после
+  // правильного ответа видел «0 баллов». Это треть всех заданий на проде.
+
+  async function submitShortAnswer(token: string, value: string): Promise<Response> {
+    return SELF.fetch(`https://worker.test/api/public/forms/${token}/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ studentName: "Аня", answers: [{ taskNumber: 1, value }] }),
+    });
+  }
+
+  async function createShortAnswerForm(session: string, answer: string) {
+    const created = (
+      await (
+        await createForm(session, {
+          payload: {
+            tasks: [{ number: 1, text: "Что такое атмосфера?", type: "short-answer", answer, points: 2 }],
+          },
+        })
+      ).json()
+    ) as { formId: string; token: string };
+    return created;
+  }
+
+  it("F15: короткий ответ, совпавший с эталоном, засчитывается сразу", async () => {
+    const created = await createShortAnswerForm(sessionA, "воздух");
+    const res = await submitShortAnswer(created.token, "Воздух");
+    // Публичная отправка отвечает 201 Created — ответ ученика создан.
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      scoreTotal: number;
+      perTask: Array<{ status: string }>;
+    };
+    expect(body.scoreTotal).toBe(2);
+    expect(body.perTask[0]!.status).toBe("correct");
+
+    const pending = await env.DB
+      .prepare(`SELECT COUNT(*) AS cnt FROM form_answers WHERE needs_review = 1`)
+      .first<{ cnt: number }>();
+    expect(pending?.cnt).toBe(0);
+  });
+
+  it("F16: ответ с другой формулировкой — минус, а не «ждут проверки»", async () => {
+    const created = await createShortAnswerForm(sessionA, "воздух");
+    const body = (await (await submitShortAnswer(created.token, "вода")).json()) as {
+      scoreTotal: number;
+      perTask: Array<{ status: string }>;
+    };
+    expect(body.scoreTotal).toBe(0);
+    expect(body.perTask[0]!.status).toBe("wrong");
+  });
+
+  it("F17: пустой ответ при непустом эталоне — минус, а не «ждут проверки»", async () => {
+    const created = await createShortAnswerForm(sessionA, "воздух");
+    const res = await SELF.fetch(`https://worker.test/api/public/forms/${created.token}/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ studentName: "Аня", answers: [] }),
+    });
+    const body = (await res.json()) as { perTask: Array<{ status: string }> };
+    expect(body.perTask[0]!.status).toBe("wrong");
+  });
+
+  it("F18: без эталона ответ честно уходит учителю, а не ставится наугад", async () => {
+    const created = await createShortAnswerForm(sessionA, "");
+    const body = (await (await submitShortAnswer(created.token, "что-то")).json()) as {
+      perTask: Array<{ status: string }>;
+    };
+    expect(body.perTask[0]!.status).toBe("unreviewed");
+  });
+
+  // ── F19–F20: выдача листа из кабинета и чужие листы ────────────────────────
+  //
+  // Кнопка «Выдать классу» переехала в кабинет: забытый лист больше не
+  // приходится заново генерировать. И там же всплыла дыра — лист брался по id
+  // без проверки владельца, то есть знающий id чужого листа мог выдать его классу
+  // и увидеть чужие задания с эталонами.
+
+  it("F19: выдать свой сохранённый лист по id можно", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    await env.DB
+      .prepare(
+        `INSERT INTO worksheets (id, user_id, subject, grade, topic, difficulty, type, count,
+                              title, payload_json, created_at)
+         VALUES ('ws_mine', ?1, 'Математика', 5, 'Дроби', 'easy', 'worksheet', 1,
+                 'Мой лист', ?2, ?3)`,
+      )
+      .bind(
+        TEACHER_A,
+        JSON.stringify({
+          id: "ws_mine",
+          title: "Мой лист",
+          subject: "Математика",
+          grade: 5,
+          tasks: [{ number: 1, text: "2+2", type: "computation", answer: "4", points: 1 }],
+        }),
+        now,
+      )
+      .run();
+
+    const res = await SELF.fetch("https://worker.test/api/assignments/forms", {
+      method: "POST",
+      headers: authHeaders(sessionA),
+      body: JSON.stringify({
+        title: "Мой лист",
+        subject: "Математика",
+        grade: 5,
+        worksheetId: "ws_mine",
+      }),
+    });
+    expect(res.status).toBe(201);
+    const created = (await res.json()) as { ok: boolean; formId: string; url: string };
+    expect(created.ok).toBe(true);
+    // Задания взялись из листа, а не из тела запроса.
+    const view = await SELF.fetch(`https://worker.test/api/assignments/forms/${created.formId}`, {
+      headers: { Cookie: `session=${sessionA}` },
+    });
+    const viewBody = (await view.json()) as { form: { tasks: Array<{ text: string }> } };
+    expect(viewBody.form.tasks[0]?.text).toBe("2+2");
+  });
+
+  it("F20: чужой лист выдать нельзя — 404, и его задания не утекают", async () => {
+    const res = await SELF.fetch("https://worker.test/api/assignments/forms", {
+      method: "POST",
+      headers: authHeaders(sessionB),
+      body: JSON.stringify({
+        title: "Чужой лист",
+        subject: "Математика",
+        grade: 5,
+        worksheetId: "ws_mine",
+      }),
+    });
+    // 404, а не 403: по коду ответа иначе можно перебором узнать, какие id есть.
+    expect(res.status).toBe(404);
+
+    // У учителя B не появилось ни одной формы — чужие задания не утекли.
+    const list = await SELF.fetch("https://worker.test/api/assignments/forms", {
+      headers: { Cookie: `session=${sessionB}` },
+    });
+    const listBody = (await list.json()) as { forms: unknown[] };
+    expect(listBody.forms).toHaveLength(0);
+  });
 });

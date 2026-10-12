@@ -21,6 +21,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { D1Database } from "@cloudflare/workers-types";
 import type { AppEnv } from "../types";
+import type { Env } from "../env";
 import { requireAuth } from "../middleware/auth";
 import { rateLimitMiddleware } from "../middleware/ratelimit";
 import { BadRequestError, NotFoundError } from "../lib/errors";
@@ -87,9 +88,19 @@ const createLimit = rateLimitMiddleware({
   keyFn: (c) => `user:${c.get("user")?.id ?? "anon"}`,
 });
 
-/** Публичная ссылка на игру: `<FRONTEND_URL>/play/?t=<token>` (ТЗ Б-4). */
-function buildPlayUrl(frontendUrl: string | undefined, token: string): string {
-  const base = (frontendUrl ?? "").split(",")[0]?.trim().replace(/\/+$/u, "") || "";
+/**
+ * Публичная ссылка на игру: `<origin>/play/?t=<token>` (ТЗ Б-4).
+ *
+ * Берём `APP_PUBLIC_URL` — тот же ОДИН origin, что и для ссылок на формы
+ * (`buildFormUrl` в `f07.ts`). Раньше здесь стояло `FRONTEND_URL.split(",")[0]`,
+ * а это в проде СПИСОК доменов для CORS: первым в нём идёт рабочий сайт, но
+ * стоит его переставить — и QR интерактивов молча уедет на технический
+ * preview-домен. Именно этот баг уже чинили для форм (коммит afc120d), а для
+ * интерактивов остался: работало только потому, что порядок доменов удачный.
+ */
+function buildPlayUrl(env: Env, token: string): string {
+  const raw = env.APP_PUBLIC_URL ?? env.FRONTEND_URL?.split(",")[0] ?? "";
+  const base = raw.trim().replace(/\/+$/u, "");
   return `${base}/play/?t=${token}`;
 }
 
@@ -334,9 +345,9 @@ interactivesRouter.post("/", createLimit, async (c) => {
       ok: true,
       id,
       shareToken: token,
-      url: buildPlayUrl(c.env.FRONTEND_URL, token),
+      url: buildPlayUrl(c.env, token),
       // Тот же токен едет в QR: фронт рисует `qrPayload` как обычную строку.
-      qrPayload: buildPlayUrl(c.env.FRONTEND_URL, token),
+      qrPayload: buildPlayUrl(c.env, token),
       format,
       title: packed.config.title,
       items: packed.config.items.length,
@@ -449,7 +460,7 @@ interactivesRouter.get("/:id", async (c) => {
       attemptsCount: summary.attempts,
       createdAt: row.created_at,
       // Ссылка для QR: фронт кладёт её в обёртку.
-      shareUrl: buildPlayUrl(c.env.FRONTEND_URL, row.share_token),
+      shareUrl: buildPlayUrl(c.env, row.share_token),
     },
   });
 });

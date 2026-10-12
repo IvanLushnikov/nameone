@@ -104,6 +104,11 @@ export interface FormRecord extends FormListItem {
   showAnswers: boolean;
   checkMode: string;
   closedAt: number | null;
+  /**
+   * Снимок заданий С ЭТАЛОНАМИ — нужен учителю, чтобы проверять ответ.
+   * Бэк отдаёт его только учителю; ученик эталонов не видит никогда.
+   */
+  tasks: FormSourceTask[];
 }
 
 export interface FormResponseAnswer {
@@ -115,6 +120,19 @@ export interface FormResponseAnswer {
   pointsMax: number;
   needsReview: boolean;
   checkMethod: FormCheckMethod;
+  /** Комментарий учителя. Ученику не показывается, остаётся в кабинете. */
+  teacherComment?: string | null;
+}
+
+/** Тело ручной проверки одного ответа. */
+export interface ReviewAnswerInput {
+  formId: string;
+  responseId: string;
+  taskNumber: number;
+  isCorrect: boolean;
+  /** Не передан = полный балл при isCorrect, иначе 0. */
+  pointsAwarded?: number;
+  comment?: string;
 }
 
 /** Один ученик в сводке. */

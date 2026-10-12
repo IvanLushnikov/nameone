@@ -47,8 +47,11 @@ export interface ShareFormDialogProps {
   grade: number;
   /** ID сохранённого на сервере листа — если есть, бэк снимет задания сам. */
   worksheetId?: string;
-  /** Снимок заданий для анонимного пути (лист ещё не сохранён на сервере). */
-  tasks: FormSourceTask[];
+  /**
+   * Снимок заданий для анонимного пути (лист ещё не сохранён на сервере).
+   * При выдаче из кабинета не нужен: лист уже в базе, задания снимет сервер.
+   */
+  tasks?: FormSourceTask[];
   /** Код класса учитель уже вводил раньше — подставляем, чтобы не вводить заново. */
   initialClassCode?: string;
 }
@@ -99,7 +102,7 @@ export function ShareFormDialog({
       showAnswers,
       // Если лист лежит только в браузере, отдаём задания напрямую: эталон
       // нужен серверу для сверки, но в публичный API он не попадёт.
-      payload: worksheetId ? undefined : { tasks },
+      payload: worksheetId ? undefined : { tasks: tasks ?? [] },
     });
 
     setLoading(false);

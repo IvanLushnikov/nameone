@@ -26,6 +26,7 @@ import type {
   FormResponse,
   FormTask,
   PublicForm,
+  ReviewAnswerInput,
   SubmitFormInput,
   SubmitFormOk,
 } from "./types";
@@ -186,6 +187,43 @@ export async function patchForm(
     ok: true,
     token: typeof obj.token === "string" ? obj.token : undefined,
     url: typeof obj.url === "string" ? obj.url : undefined,
+  };
+}
+
+export type ReviewAnswerResult =
+  | { ok: true; taskNumber: number; scoreTotal: number }
+  | FormApiError;
+
+/**
+ * PATCH .../responses/:rid/answers/:taskNumber — ручная проверка ответа.
+ *
+ * Это тот самый шаг, которого не было: сводка показывала «ждут проверки N», а
+ * поставить балл было нечем. Теперь учитель может поставить верно/неверно,
+ * свой балл (например 1 из 2) и комментарий — после чего ответ перестаёт ждать
+ * проверки, а итоговый балл ученика пересчитывается на сервере.
+ */
+export async function reviewAnswer(
+  input: ReviewAnswerInput,
+): Promise<ReviewAnswerResult> {
+  const res = await request<Record<string, unknown>>(
+    `${TEACHER_BASE}/${encodeURIComponent(input.formId)}` +
+      `/responses/${encodeURIComponent(input.responseId)}` +
+      `/answers/${input.taskNumber}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        isCorrect: input.isCorrect,
+        ...(input.pointsAwarded === undefined ? {} : { pointsAwarded: input.pointsAwarded }),
+        ...(input.comment ? { comment: input.comment } : {}),
+      }),
+    },
+  );
+  if (!res.ok) return res;
+  if (res.body?.ok !== true) return { ok: false, error: "internal" };
+  return {
+    ok: true,
+    taskNumber: input.taskNumber,
+    scoreTotal: typeof res.body.scoreTotal === "number" ? res.body.scoreTotal : 0,
   };
 }
 
