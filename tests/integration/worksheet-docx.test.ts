@@ -118,6 +118,30 @@ function tableCells(xml: string): string[] {
   return xml.match(/<w:tc>[\s\S]*?<\/w:tc>/g) ?? [];
 }
 
+/**
+ * Ширина колонки в процентах из готового OOXML.
+ *
+ * Почему не «просто достать число регуляркой»: docx 9.7 писал проценты
+ * строкой `w:w="8%"`, docx 9.8 — как `w:w="400"`, где 400 это сотые доли
+ * процента по OOXML. Регулярка `/w:w="(\d+)"/` на старом формате не
+ * находила НИЧЕГО, и проверка ширин проходила вхолостую: все значения были
+ * `undefined`, `new Set([undefined, undefined, undefined]).size === 1`.
+ *
+ * Здесь разбор обязателен: если формат снова поменяется, тест упадёт с
+ * внятным сообщением, а не пройдёт на пустых значениях.
+ */
+function widthsPct(cells: string[]): number[] {
+  return cells.map((cell, i) => {
+    const m = cell.match(/<w:tcW[^>]*\sw:w="(\d+)(%?)"/);
+    if (!m) {
+      throw new Error(
+        `Ячейка ${i} без разбираемой ширины: ${cell.slice(0, 160)} — формат OOXML поменялся, тест надо обновить`,
+      );
+    }
+    return m[2] === "%" ? Number(m[1]) : Number(m[1]) / 50;
+  });
+}
+
 describe("таблица ответов в DOCX (Ж1)", () => {
   it("у таблицы зафиксирован layout: fixed", () => {
     const layout = documentXml.match(/<w:tblLayout[^>]*>/g) ?? [];
@@ -145,12 +169,20 @@ describe("таблица ответов в DOCX (Ж1)", () => {
     // ячейках шапки, а строки данных шли без `w:tcW`.
     expect(withWidth).toHaveLength(EXPECTED_CELLS);
 
-    // В шапке и в строке данных ширины одинаковые по колонкам — иначе
+    // В шапке и в строке данных ширины одинаковые ПО КОЛОНКАМ — иначе
     // первая же строка растянет колонки по своему содержимому.
-    const headerWidths = cells.slice(0, 3).map((c) => c.match(/w:w="(\d+)"/)?.[1]);
-    const dataWidths = cells.slice(3, 6).map((c) => c.match(/w:w="(\d+)"/)?.[1]);
-    expect(new Set(headerWidths).size).toBe(1);
-    expect(headerWidths).toEqual(dataWidths);
+    expect(widthsPct(cells.slice(0, 3))).toEqual(widthsPct(cells.slice(3, 6)));
+  });
+
+  it("колонки держат задуманные пропорции 8 / 32 / 60", () => {
+    const cells = tableCells(documentXml);
+    const widths = widthsPct(cells.slice(0, 3));
+
+    // Номера задания — узкая колонка, ответ — средняя, пояснение — широкая.
+    // Раньше здесь стояло `expect(new Set(headerWidths).size).toBe(1)` —
+    // «все три ширины одинаковые», что противоречит самим пропорциям.
+    expect(widths).toEqual([8, 32, 60]);
+    expect(widths.reduce((a, b) => a + b, 0)).toBe(100);
   });
 
   it("дробные задания едут нативной математикой OMML, а не строкой «3/4»", () => {
