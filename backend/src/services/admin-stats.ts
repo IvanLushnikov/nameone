@@ -213,7 +213,7 @@ export async function getOverview(db: D1Database, month: string): Promise<Overvi
   const dayStart = nowSec - 24 * 3600;
   const thirtyStart = nowSec - 30 * 24 * 3600;
 
-  const [todayEvents, monthEvents, activeUsers, monthGens, signups, revenue, actual, estimate, subs, balance] =
+  const [todayEvents, monthEvents, activeUsers, monthGens, revenue, actual, estimate, subs, balance] =
     await Promise.all([
       db
         .prepare(`SELECT COUNT(*) AS n FROM events WHERE created_at >= ?1`)
@@ -235,10 +235,6 @@ export async function getOverview(db: D1Database, month: string): Promise<Overvi
           `SELECT COUNT(*) AS n FROM llm_logs
            WHERE created_at >= ?1 AND created_at < ?2 AND error IS NULL`,
         )
-        .bind(range.from, range.to)
-        .first<{ n: number }>(),
-      db
-        .prepare(`SELECT COUNT(*) AS n FROM users WHERE created_at >= ?1 AND created_at < ?2`)
         .bind(range.from, range.to)
         .first<{ n: number }>(),
       db

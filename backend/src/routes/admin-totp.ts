@@ -20,7 +20,6 @@ import { requireAuth } from "../middleware/auth";
 import { rateLimitMiddleware } from "../middleware/ratelimit";
 import { BadRequestError } from "../lib/errors";
 import {
-  createPendingToken,
   startTotpSetup,
   confirmTotpSetup,
   replaceBackupCodes,
@@ -193,14 +192,6 @@ totpRouter.post("/totp/verify", codeRateLimit, async (c) => {
 
   return c.json({ ok: true, method: result.method, token: sessionToken });
 });
-
-/**
- * Временные токены второго шага — отдельная таблица, а не запись в кэше.
- *
- * Одноразовость важна: токен, которым уже вошли, повторно использовать
- * нельзя, иначе перехваченный токен был бы вечным ключом до сессии.
- */
-const PENDING_TTL_SECONDS = 300;
 
 interface PendingRow {
   user_id: string;
