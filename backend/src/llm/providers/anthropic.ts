@@ -131,6 +131,10 @@ export function getAnthropicProvider(env: Env): Provider {
           costUsd,
           latencyMs,
           cached: false,
+          // ТЗ-25 разрыв 4: у Anthropic причина остановки называется
+          // `stop_reason`, и `max_tokens` означает ровно то же, что
+          // `finish_reason=length` у остальных: ответ оборван.
+          finishReason: response.stop_reason ?? null,
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

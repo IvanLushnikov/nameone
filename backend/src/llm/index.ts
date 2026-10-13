@@ -34,7 +34,12 @@ import { moderateGenerationRequest } from "./moderation";
 import { checkLlmRateLimit, ipHashFromHeaders } from "./ratelimit";
 import { callWithFallback, pickModel, taskForArtifact } from "./router";
 import { deleteCache, lookupCache, makeCacheKey, saveCache } from "./cache";
-import { buildWorksheetPrompt, sanitizeTextLatex } from "./prompts/worksheet-gen";
+import {
+  buildWorksheetPrompt,
+  buildTopUpPrompt,
+  buildVariantRetryPrompt,
+  sanitizeTextLatex,
+} from "./prompts/worksheet-gen";
 import { buildExamPrompt } from "./prompts/exam-gen";
 import type { ArtifactRequest } from "./prompts/artifact-gen";
 import {
@@ -65,7 +70,10 @@ import {
   hasDanglingPatternRef,
   isPlaceholderAnswer,
   looksLikeForeignMath,
+  type QualityFilterReport,
+  type RawTask,
 } from "./validation/quality-filter";
+import { variantsDiffer, missingTaskCount } from "./validation/variant-check";
 import { reconcileSelfVerifyVerdict } from "./validation/answer-check";
 import { callPolzaEmbedding } from "./providers/polza";
 import {
@@ -78,7 +86,15 @@ import {
 import { recordUsage, getUsageStatus, type UsageStatus, type UsagePlan } from "../services/usage";
 import { shortId, worksheetId } from "../lib/shortid";
 import type { GenerationKind, LLMContentPart } from "./types";
-import type { GenerationRequest, Worksheet, ExamVariant, SubjectSlug, GenerateWorksheetMeta } from "../types";
+import type {
+  GenerationRequest,
+  Worksheet,
+  ExamVariant,
+  SubjectSlug,
+  GenerateWorksheetMeta,
+  QualityLossInfo,
+  VariantStatusInfo,
+} from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // generateWorksheet
@@ -103,14 +119,190 @@ export interface GenerateWorksheetResult {
    *
    * `null` у всех остальных типов и у контрольной, если модель вернула один
    * вариант вместо двух: тогда показываем один и не рисуем переключатель.
+   *
+   * ТЗ-25 разрыв 3: само по себе отсутствие второго варианта больше НЕ
+   * объясняет всё — рядом всегда идёт `variants`, где сказано прямо, что
+   * просили два, пришло один и почему.
    */
   secondVariant?: Worksheet | null;
+  /**
+   * Признаки потерь материала (ТЗ-25, разрыв 5).
+   *
+   * Учитель просил 15 заданий и получал 11 без единого признака. Теперь
+   * разница видна в ответе API, в логе и в интерфейсе.
+   */
+  quality: QualityLossInfo;
+  /** Состояние вариантов: сколько просили, сколько пришло, деградировали ли. */
+  variants: VariantStatusInfo;
   meta: GenerateWorksheetMeta;
   /**
    * Состояние нормы после генерации. `over: true` = норма превышена, но
    * генерация всё равно выполнена (мягкий порог). UI по нему рисует баннер.
    */
   usage: UsageStatus | null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ТЗ-25: УЧЁТ ПОТЕРЬ МАТЕРИАЛА
+//
+// Разрыв 5: `filterTasks` возвращает `QualityFilterReport`, и конвейер шёл по
+// `.tasks`, отчёт отбрасывая. Фильтр выкидывает задания по всем предметам и по
+// всем типам работ — лист, контрольная, ОГЭ/ЕГЭ, — и все эти потери были
+// молчаливыми.
+//
+// Здесь собираются две вещи: полный отчёт фильтра в лог (что выкинуло и
+// почему) и агрегированные числа в ответе API (сколько просили / пришло /
+// потеряли). Учитель про логи не знает, поэтому агрегаты обязаны быть в
+// ответе.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Задание, прошедшее фильтр, в виде, который видит конвейер. */
+type CleanTask = Record<string, unknown>;
+
+/**
+ * Прогнать задания через санитайзер и фильтр качества, вернув ОБЕ части.
+ *
+ * Возвращается именно `{ tasks, report }`: разрывать этот контракт — значит
+ * вернуть молчание, ради устранения которого ТЗ и затевалось.
+ */
+function filterAndReport(
+  rawTasks: readonly unknown[],
+  subject: string,
+): { tasks: CleanTask[]; report: QualityFilterReport } {
+  const cleaned = rawTasks
+    .filter((t: unknown): t is NonNullable<typeof t> => Boolean(t) && typeof t === "object")
+    .map((task) => {
+      if (!task || typeof task !== "object") return task;
+      const sanitized = sanitizeTextLatex((task as { text_latex?: unknown }).text_latex);
+      // `as Record<string, unknown>` не проходит: у `WorksheetTask` нет
+      // индексируемой подписи, и TypeScript считает приведение натянутым.
+      // Промежуточный `unknown` — честное «смотрю как на словарь».
+      const next = { ...(task as unknown as Record<string, unknown>) };
+      if (sanitized) next.text_latex = sanitized;
+      else delete next.text_latex;
+      return next;
+    }) as RawTask[];
+
+  const { tasks, report } = filterTasks(cleaned, subject);
+
+  // `filterTasks` умеет откатываться и вернуть исходный набор целиком, если
+  // отфильтровано слишком много (см. конец quality-filter.ts). В этом случае
+  // `report.after` НЕ равно `tasks.length` — иначе мы бы сообщили учителю о
+  // потерях, которых не было. Считаем фактическое количество.
+  if (report.after !== tasks.length) {
+    report.after = tasks.length;
+  }
+
+  return { tasks: tasks as CleanTask[], report };
+}
+
+/**
+ * Написать в лог, что сделал фильтр качества (ТЗ-25, пункт 7).
+ *
+ * Пишется по КАЖДОМУ вызову — листу, каждому варианту контрольной, ОГЭ/ЕГЭ —
+ * потому что потеря бьёт по каждому материалу, а не по контрольной.
+ *
+ * В лог идут ТОЛЬКО числа и номера заданий: ни текстов, ни промптов.
+ */
+function logFilterReport(params: {
+  stage: string;
+  subject: string;
+  requested: number;
+  report: QualityFilterReport;
+}): void {
+  const { stage, subject, requested, report } = params;
+  const dropped = report.before - report.after;
+  const payload = {
+    subject,
+    stage,
+    requested,
+    before: report.before,
+    after: report.after,
+    dropped,
+    // Причина по каждому заданию: «по образцу» без образца, чужая математика,
+    // ответ-заглушка. Это и есть то, чего раньше не было видно нигде.
+    droppedPatternRef: report.droppedPatternRef,
+    droppedForeignMath: report.droppedForeignMath,
+    cleanedAnswer: report.cleanedAnswer,
+  };
+
+  if (dropped > 0) {
+    logLlmEvent("warn", "worksheet-gen: quality filter dropped tasks", payload);
+  } else {
+    logLlmEvent("info", "worksheet-gen: quality filter clean", payload);
+  }
+}
+
+/**
+ * Состояние вариантов для ответа API и для кэша.
+ *
+ * Для НЕ-контрольной работы `expected = 1`, и `degraded` обязано быть false:
+ * иначе учитель листа увидит предупреждение про два варианта, которых он не
+ * просил.
+ */
+function buildVariantStatus(
+  expected: number,
+  delivered: number,
+  opts: { degraded: boolean; degradedReason?: string; retried: boolean },
+): VariantStatusInfo {
+  return {
+    expected,
+    delivered,
+    degraded: opts.degraded,
+    ...(opts.degradedReason ? { degradedReason: opts.degradedReason } : {}),
+    retried: opts.retried,
+  };
+}
+
+/**
+ * Собрать агрегированные потери по отчётам фильтра (разрыв 5).
+ *
+ * `requestedTotal` — сколько заданий просил учитель С УЧЁТОМ вариантов: у
+ * контрольной просят `count` в каждом из двух вариантов, то есть всего 2×count.
+ * `deliveredTotal` — фактическое количество в выданном материале, тоже суммой
+ * по вариантам.
+ *
+ * Почему сверка идёт по СУММЕ, а не по каждому варианту отдельно: учитель
+ * видит два листа и считает «сколько заданий он получил» по обоим. Показывать
+ * ему «в первом варианте 10 из 10, во втором 7 из 10» — это ровно то догадки,
+ * которых ТЗ требует убрать; простое «получено 17 из 20» читается сразу.
+ */
+function summarizeLoss(
+  requestedTotal: number,
+  reports: readonly QualityFilterReport[],
+  topUpAdded: number,
+  deliveredTotal: number,
+): QualityLossInfo {
+  const droppedPatternRef: number[] = [];
+  const droppedForeignMath: number[] = [];
+  const cleanedAnswer: number[] = [];
+  let dropped = 0;
+  // Откат фильтра (вернуть исходный набор целиком при слишком агрессивной
+  // фильтрации) виден по `before - after == 0` при ненулевом `before`.
+  let filterBackedOff = false;
+
+  for (const report of reports) {
+    droppedPatternRef.push(...report.droppedPatternRef);
+    droppedForeignMath.push(...report.droppedForeignMath);
+    cleanedAnswer.push(...report.cleanedAnswer);
+    const reportDropped = report.before - report.after;
+    dropped += reportDropped;
+    if (report.before > 0 && reportDropped === 0) {
+      filterBackedOff = true;
+    }
+  }
+
+  return {
+    requested: requestedTotal,
+    delivered: deliveredTotal,
+    dropped,
+    droppedPatternRef,
+    droppedForeignMath,
+    cleanedAnswer,
+    topUpAdded,
+    stillMissing: missingTaskCount(requestedTotal, deliveredTotal),
+    filterBackedOff,
+  };
 }
 
 /**
@@ -149,85 +341,228 @@ export async function generateWorksheet(
       // Второй вариант контрольной (12.10.2026). Раньше в кэш уходил только
       // первый лист, и повторный запрос отдавал `semantic-cache` БЕЗ второго
       // варианта — учитель получал ровно ту жалобу, которую чинили.
-      const cachedSecond =
-        (cached.response as { secondVariant?: Worksheet | null }).secondVariant ?? null;
-      // Записи, сделанные ДО правки, живут 30 дней (TTL) и не перезаписываются
-      // (`INSERT OR IGNORE`) — то есть новая, правильная запись их не заменит.
-      // Для контрольной такая запись непригодна: второго варианта в ней нет
-      // по определению. Сносим её и считаем промахом — иначе жалоба 7
-      // вернётся ровно через полмесяца после выкатки.
-      if (request.type === "control" && !cachedSecond) {
+      const cachedResponse = cached.response as {
+        worksheet?: Worksheet;
+        secondVariant?: Worksheet | null;
+        quality?: QualityLossInfo;
+        variants?: VariantStatusInfo;
+      };
+      const cachedSecond = cachedResponse.secondVariant ?? null;
+      // ТЗ-25 AD-4: сносим ТОЛЬКО записи без флага результата.
+      //
+      // Раньше правило было «контрольная без secondVariant → снести». С новой
+      // логикой этого мало: деградированный результат (второй вариант не
+      // получился) кладётся в кэш СПЕЦИАЛЬНО — чтобы учитель не платил за
+      // каждое повторное открытие одной и той же неудачи. Такая запись
+      // обязана выживать, иначе каждый клик «попробовать снова» стоил бы
+      // новой генерации.
+      //
+      // Сносим только то, что осталось от записей ДО правки: у них нет ни
+      // `variants`, ни `quality` — то есть они ничего не знают о деградации и
+      // для контрольной заведомо безвторовариантные.
+      const hasResultFlag =
+        typeof cachedResponse.variants === "object" && cachedResponse.variants !== null;
+      if (request.type === "control" && !cachedSecond && !hasResultFlag) {
         await deleteCache(db, cacheKey);
       } else {
-        const ws = (cached.response as { worksheet: Worksheet }).worksheet;
-        const meta: GenerateWorksheetMeta = {
-          model: "semantic-cache",
-          provider: "internal",
-          costUsd: 0,
-          latencyMs: Date.now() - start,
-          cached: true,
-          generation: "cached",
-        };
-        await logLlmCall(db, {
-          userId,
-          task,
-          provider: "cache",
-          model: cacheKey.slice(0, 12),
-          plan,
-          tokensIn: 0,
-          tokensOut: 0,
-          costUsd: 0,
-          latencyMs: meta.latencyMs,
-          cached: true,
-          fallback: false,
-        });
-        // Попадание в кэш не тратит токены, поэтому норма не меняется: честно
-        // возвращаем текущее состояние, чтобы UI не показывал «израсходовано».
-        const usage = await getUsageStatus(db, userId, plan);
-        return { worksheet: ws, meta, usage, secondVariant: cachedSecond };
+        const ws = cachedResponse.worksheet;
+        if (!ws) {
+          await deleteCache(db, cacheKey);
+        } else {
+          const meta: GenerateWorksheetMeta = {
+            model: "semantic-cache",
+            provider: "internal",
+            costUsd: 0,
+            latencyMs: Date.now() - start,
+            cached: true,
+            generation: "cached",
+          };
+          await logLlmCall(db, {
+            userId,
+            task,
+            provider: "cache",
+            model: cacheKey.slice(0, 12),
+            plan,
+            tokensIn: 0,
+            tokensOut: 0,
+            costUsd: 0,
+            latencyMs: meta.latencyMs,
+            cached: true,
+            fallback: false,
+          });
+          // Попадание в кэш не тратит токены, поэтому норма не меняется: честно
+          // возвращаем текущее состояние, чтобы UI не показывал «израсходовано».
+          const usage = await getUsageStatus(db, userId, plan);
+          // Признаки потерь возвращаются ИЗ КЭША (AD-4 + критерий «повторный
+          // запрос возвращает тот же флаг деградации»): иначе учитель при
+          // повторном открытии увидел бы материал без предупреждения и решил,
+          // что всё в порядке.
+          const quality =
+            cachedResponse.quality ??
+            summarizeLoss(request.count, [], 0, ws.tasks.length);
+          const variants =
+            cachedResponse.variants ??
+            buildVariantStatus(request.type === "control" ? 2 : 1, cachedSecond ? 2 : 1, {
+              degraded: request.type === "control" && !cachedSecond,
+              degradedReason:
+                request.type === "control" && !cachedSecond
+                  ? "второй вариант не был получен"
+                  : undefined,
+              retried: false,
+            });
+          return { worksheet: ws, meta, usage, secondVariant: cachedSecond, quality, variants };
+        }
       }
     }
   }
 
-  // 4. LLM call с fallback.
+// 4. LLM call с fallback.
   // Модель выбирается по ТИПУ АРТЕФАКТА (сложности), а не по тарифу:
   // листы/тесты/карточки/планы урока — Luna, контрольные и ОГЭ — Sonnet.
   const decision = pickModel(task, env);
   const { system, user } = buildWorksheetPrompt(request);
-  const result = await callWithFallback(
-    {
-      model: decision.primary?.model ?? "gpt-6-luna",
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-      responseFormat: "json",
-      temperature: 0.7,
-      // КОНТРОЛЬНАЯ возвращает ДВА полных листа одним ответом (`variants`).
-      // На один лист 4096 хватает, на два — нет: ответ обрывался по
-      // `finish_reason=length`, и учитель получал либо 500 («пустой content»),
-      // либо «LLM returned invalid JSON» — то есть ровно ту жалобу, которую
-      // чинили. Потолок двойной, как и объём ответа. Раньше других типов
-      // здесь стояло 4096 независимо от объёма (см. maxTokens у presentation
-      // 8000 и ktp 16000 в ARTIFACT_SPECS).
-      maxTokens: request.type === "control" ? 8192 : 4096,
-      // Кэш — по свойству модели, а не по тарифу (см. supportsPromptCache).
-      cacheSystemPrompt: supportsPromptCache(decision.primary?.model ?? "gpt-6-luna"),
-    },
-    decision,
-    env,
-    // BL-08: без этого отказ писался бы как «отказ неизвестного у неизвестной
-    // задачи», и по базе было нельзя понять, какой тип материала ломается.
-    { task, userId, plan },
-  );
+
+  // Потолок ответа. КОНТРОЛЬНАЯ возвращает ДВА полных листа одним ответом
+  // (`variants`): на один лист 4096 хватает, на два — нет, и ответ обрывался
+  // по `finish_reason=length`.
+  const baseMaxTokens = request.type === "control" ? 8192 : 4096;
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ТЗ-25 AD-5: УЧЁТ КАЖДОГО ВЫЗОВА
+  //
+  // В конвейере теперь может быть больше одного вызова провайдера: основной,
+  // ретрай на обрыв, ретрай вариантов, дозапрос недостающих заданий. Каждый —
+  // реальные деньги учителя, и каждый обязан попасть в llm_logs ОТДЕЛЬНОЙ
+  // строкой, а норма (recordUsage) считаться по СУММЕ weightedTokens.
+  //
+  // Раньше был ровно один вызов и одна запись, поэтому цикл это свойство не
+  // ломал. Сделать ретрай «невидимым для тарифа» — значит показать учителю
+  // норму, меньшую настоящей.
+  //
+  // Логирование и учёт делаются ОДИН РАЗ в конце, по всему накопленному
+  // списку: иначе легко забыть дописать новый вид повторного вызова.
+  // ─────────────────────────────────────────────────────────────────────────────
+  const calls: Array<{
+    provider: string;
+    model: string;
+    tokensIn: number;
+    tokensOut: number;
+    costUsd: number;
+    /** Рубли по этому вызову (currency-работа на main). null, если провайдер не считал. */
+    costRub: number | null;
+    latencyMs: number;
+    generation: string;
+  }> = [];
+
+  /** Вызов провайдера с записью в список для честного учёта. */
+  const callProvider = async (promptSystem: string, promptUser: string, maxTokens: number) => {
+    const r = await callWithFallback(
+      {
+        model: decision.primary?.model ?? "gpt-6-luna",
+        messages: [
+          { role: "system", content: promptSystem },
+          { role: "user", content: promptUser },
+        ],
+        responseFormat: "json",
+        temperature: 0.7,
+        maxTokens,
+        // Кэш — по свойству модели, а не по тарифу (см. supportsPromptCache).
+        cacheSystemPrompt: supportsPromptCache(decision.primary?.model ?? "gpt-6-luna"),
+      },
+      decision,
+      env,
+      // BL-08: без этого отказ писался бы как «отказ неизвестного у неизвестной
+      // задачи», и по базе было нельзя понять, какой тип материала ломается.
+      { task, userId, plan },
+    );
+    calls.push({
+      provider: r.provider,
+      model: r.model,
+      tokensIn: r.response.tokensIn,
+      tokensOut: r.response.tokensOut,
+      costUsd: r.response.costUsd,
+      costRub: r.response.costRub ?? null,
+      latencyMs: r.response.latencyMs,
+      generation: r.generation,
+    });
+    return r;
+  };
+
+  let resultFinal = await callProvider(system, user, baseMaxTokens);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ТЗ-25 РАЗРЫВ 4: ОБРЫВ ОТВЕТА ПО `finish_reason` — ВСЕ ПРЕДМЕТЫ
+  //
+  // Раньше `finishReason` знал провайдер, но в успешный ответ не попадал.
+  // Для русскоязычного предмета обрыв приводил к InternalError (обрезанный
+  // JSON не парсится) — то есть был заметен, хоть и нечеловечно. Для иностранных
+  // предметов `language-guard` пропускает текст ВСЕГДА, поэтому обрыв проходил
+  // как нормальный результат: учитель получал половину материала и думал, что
+  // она целая.
+  //
+  // Теперь обрыв ловится ОДИНАКОВО для всех предметов: один поднятый потолок
+  // и один шанс, иначе — честная ошибка, а не тихий успех.
+  //
+  // Это НЕ откат к проверке языка в language-guard: там нет детектора
+  // «английский вперемешку с кириллицей», и его отсутствие осознанно (см.
+  // language-guard.ts:73-76).
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Разрыв 4: ОДИН шанс с удвоенным потолком.
+  //
+  // Обрезанный ответ укорочен ровно из-за потолка, поэтому поднять потолок и
+  // попросить заново — единственное, что тут помогает. Ровно одна попытка:
+  // тот же предел, что у ретрая вариантов (AD-3), и по той же причине —
+  // контрольная идёт по Sonnet, а бесконечные попытки съедают норму учителя.
+  if (resultFinal.response.finishReason === "length") {
+    logLlmEvent("warn", "worksheet-gen: response truncated, retrying with higher ceiling", {
+      task,
+      subject: request.subject,
+      type: request.type,
+      tokensOut: resultFinal.response.tokensOut,
+      requestedMaxTokens: baseMaxTokens,
+    });
+    try {
+      resultFinal = await callProvider(system, user, baseMaxTokens * 2);
+    } catch (e) {
+      // Ретрай упал — дальше разбирать нечего, ответ заведомо неполный.
+      logLlmEvent("error", "worksheet-gen: truncation retry failed", {
+        task,
+        subject: request.subject,
+        error: String(e),
+      });
+      throw new InternalError("LLM response truncated (finish_reason=length)", {
+        subject: request.subject,
+        type: request.type,
+        maxTokens: baseMaxTokens * 2,
+      });
+    }
+  }
+
+  // Разрыв 4: и после поднятого потолка обрыва нет — материал заведомо неполный.
+  //
+  // Дальше — ОТКАЗ, а не отдача материала с флагом. Обрезанный JSON обычно и не
+  // парсится, поэтому «мягко» означало бы учителю ровно то же самое, от чего мы
+  // уходили: половину работы с молчаливым обрывом. Тихий успех здесь и был
+  // дефектом — и для русскоязычного предмета, и для иностранных.
+  if (resultFinal.response.finishReason === "length") {
+    throw new InternalError("LLM response truncated (finish_reason=length)", {
+      subject: request.subject,
+      type: request.type,
+      tokensOut: resultFinal.response.tokensOut,
+      maxTokens: baseMaxTokens * 2,
+    });
+  }
 
   // 5. Parse JSON
   let worksheet: Worksheet;
   // Объявлено до try: нужно после блока, чтобы вернуть второй вариант наружу.
   let controlVariants: Worksheet[] | null = null;
+  // Отчёты фильтра живут до конца конвейера (разрыв 5). Раньше `.report`
+  // отбрасывался на месте.
+  const filterReports: QualityFilterReport[] = [];
 
   try {
-    const parsed = JSON.parse(result.response.content) as Worksheet;
+    const parsed = JSON.parse(resultFinal.response.content) as Worksheet;
     // id и createdAt — ТОЛЬКО серверные, значение от модели игнорируется
     // полностью (не «подставляем, если пусто»).
     //
@@ -262,6 +597,30 @@ export async function generateWorksheet(
         : null;
     const primaryParsed = controlVariants?.[0] ?? parsed;
 
+    // ─────────────────────────────────────────────────────────────────────────────
+    // ТЗ-25: ФИЛЬТР КАЧЕСТВА С ОТЧЁТОМ (разрыв 5, ВСЕ ПРЕДМЕТЫ)
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Раньше здесь шло `filterTasks(...).tasks`, а `.report` отбрасывался:
+    // сколько заданий выкинуто и почему — не знал никто, включая учителя.
+    const primaryFiltered = Array.isArray(primaryParsed.tasks)
+      ? filterAndReport(
+          primaryParsed.tasks.filter(
+            (t: unknown): t is NonNullable<typeof t> => Boolean(t) && typeof t === "object",
+          ),
+          request.subject,
+        )
+      : { tasks: [] as CleanTask[], report: null };
+
+    if (primaryFiltered.report) {
+      filterReports.push(primaryFiltered.report);
+      logFilterReport({
+        stage: "worksheet.variant1",
+        subject: request.subject,
+        requested: request.count,
+        report: primaryFiltered.report,
+      });
+    }
+
     worksheet = {
       id: worksheetId(),
       title: primaryParsed.title ?? request.topic,
@@ -269,113 +628,322 @@ export async function generateWorksheet(
       grade: primaryParsed.grade ?? request.grade,
       topic: primaryParsed.topic ?? request.topic,
       difficulty: primaryParsed.difficulty ?? request.difficulty,
-      // Прогоняем ответы заданий через санитайзер `text_latex`:
-      // модель иногда отдаёт блок `$...$` на пол-экрана или незакрытую
-      // конструкцию — такое рендерить нельзя, блок выкидывается целиком,
-      // и задание показывается обычным текстом. `text` НЕ трогаем: он
-      // остаётся эталоном для self-verification и сверки ответов.
-      tasks: Array.isArray(primaryParsed.tasks)
-        ? filterTasks(
-            primaryParsed.tasks
-              .filter((t: unknown): t is NonNullable<typeof t> => Boolean(t) && typeof t === "object")
-              .map((task) => {
-                if (!task || typeof task !== "object") return task;
-                const sanitized = sanitizeTextLatex(
-                  (task as { text_latex?: unknown }).text_latex,
-                );
-                // `as Record<string, unknown>` не проходит: у `WorksheetTask` нет
-                // индексируемой подписи, и TypeScript считает приведение натянутым.
-                // Промежуточный `unknown` — честное «смотрю как на словарь».
-                const next = { ...(task as unknown as Record<string, unknown>) };
-                if (sanitized) next.text_latex = sanitized;
-                else delete next.text_latex;
-                return next;
-              }),
-            // Фильтр качества (08.10.2026): выкидывает «по образцу» без
-            // образца и задания из чужого предмета, обнуляет ответ-заглушку.
-            request.subject,
-          ).tasks as unknown as Worksheet["tasks"]
-        : [],
+      // Ответ обрезан по потолку токенов — материал неполон. Не отдаём его
+      // как нормальный: помечаем, чтобы учитель увидел предупреждение (AD-7).
+      tasks: primaryFiltered.tasks as unknown as Worksheet["tasks"],
       createdAt: new Date().toISOString(),
     };
   } catch {
     throw new InternalError("LLM returned invalid JSON for worksheet");
   }
 
-  const meta: GenerateWorksheetMeta = {
-    model: result.model,
-    provider: result.provider,
-    costUsd: result.response.costUsd,
-    costRub: result.response.costRub ?? null,
-    latencyMs: Date.now() - start,
-    cached: false,
-    generation: result.generation,
+/** Прогнать вариант через фильтр с отчётом. */
+  const readVariant = (raw: Worksheet | undefined) => {
+    if (!raw) return null;
+    const filtered = Array.isArray(raw.tasks)
+      ? filterAndReport(raw.tasks as unknown[], request.subject)
+      : { tasks: [] as CleanTask[], report: null };
+    if (filtered.report) {
+      logFilterReport({
+        stage: "worksheet.variant2",
+        subject: request.subject,
+        requested: request.count,
+        report: filtered.report,
+      });
+    }
+    return { tasks: filtered.tasks, report: filtered.report, raw };
   };
 
-  // 6. Save to cache — ПОСЛЕ сборки второго варианта контрольной (ниже),
-  //    иначе в кэш уходил бы только первый лист.
+  let secondParsed = readVariant(controlVariants?.[1]);
 
-  // 7. Log
-  await logLlmCall(db, {
-    userId,
-    task,
-    provider: result.provider,
-    model: result.model,
-    plan,
-    tokensIn: result.response.tokensIn,
-    tokensOut: result.response.tokensOut,
-    costUsd: result.response.costUsd,
-    costRub: result.response.costRub ?? null,
-    latencyMs: meta.latencyMs,
-    cached: false,
-    fallback: result.generation === "boost",
-  });
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ТЗ-25: РЕТРАЙ КОНТРОЛЬНОЙ ПРИ ОДИНАКОВЫХ ВАРИАНТАХ (AD-3)
+  //
+  // Разрыв 2: `variants[1]` брался как есть, без сверки текстов. Модель с
+  // temperature 0.7 часто отдаёт вторую половину ответа копией первой — это
+  // самая частая форма жалобы «задания повторяются».
+  //
+  // Ретрай ОДИН (AD-3): контрольная идёт по Sonnet, бесконечные попытки съедают
+  // норму учителя. Не помогло — отдаём первый вариант с `degraded: true`.
+  //
+  // В кэш кладётся только ПРИНЯТЫЙ результат (AD-4): отброшенный ретраем ответ
+  // в кэш не попадает никогда, иначе провал закрепился бы на 30 дней TTL.
+  // ─────────────────────────────────────────────────────────────────────────────
+  let retried = false;
+  let degraded = false;
+  let degradedReason: string | undefined;
 
-  // 7b. Потребление по нормам тарифа (взвешенные токены). Мягкий порог:
-  // recordUsage не бросает ошибок, только возвращает флаг `over`.
-  const usage = await recordUsage(db, env, {
-    userId,
-    plan,
-    weightedTokens: weightedTokens(result.model, result.response.tokensOut),
-  });
+  if (request.type === "control") {
+    const diff = variantsDiffer(worksheet.tasks, secondParsed?.tasks);
+    if (secondParsed && diff.differ) {
+      retried = true;
+      logLlmEvent("warn", "worksheet-gen: control variants identical, retrying", {
+        subject: request.subject,
+        grade: request.grade,
+        reason: diff.reason,
+        duplicates: diff.duplicates,
+        compared: diff.compared,
+      });
+      const v1Texts = worksheet.tasks
+        .map((t) => (t as { text?: unknown }).text)
+        .filter((t): t is string => typeof t === "string");
+      const retryPrompt = buildVariantRetryPrompt(
+        request,
+        diff.duplicates,
+        v1Texts,
+        diff.reason ?? "варианты совпали",
+      );
+      try {
+        const retryResult = await callProvider(retryPrompt.system, retryPrompt.user, baseMaxTokens);
+        const retryParsed = JSON.parse(retryResult.response.content) as {
+          variants?: Worksheet[];
+        };
+        const retryVariants = Array.isArray(retryParsed.variants) ? retryParsed.variants : null;
+        if (retryVariants && retryVariants.length >= 2) {
+          // Принимаем ретрай только если он действительно разные: иначе мы бы
+          // заменили нормальный первый вариант на другую копию.
+          const retryFirstRaw = retryVariants[0];
+          const retryFirstFiltered = Array.isArray(retryFirstRaw?.tasks)
+            ? filterAndReport(retryFirstRaw.tasks as unknown[], request.subject)
+            : null;
+          const retrySecond = readVariant(retryVariants[1]);
+          const retryDiff = variantsDiffer(retryFirstFiltered?.tasks, retrySecond?.tasks);
+          if (retryFirstRaw && retryFirstFiltered && retrySecond && !retryDiff.differ) {
+            // Ретрай хороший — пересобираем первый лист из него целиком, чтобы
+            // формулировки вариантов соответствовали друг другу.
+            if (retryFirstFiltered.report) {
+              filterReports[0] = retryFirstFiltered.report;
+              logFilterReport({
+                stage: "worksheet.variant1.retry",
+                subject: request.subject,
+                requested: request.count,
+                report: retryFirstFiltered.report,
+              });
+            }
+            worksheet = {
+              ...worksheet,
+              title: retryFirstRaw.title ?? worksheet.title,
+              tasks: retryFirstFiltered.tasks as unknown as Worksheet["tasks"],
+            };
+            secondParsed = retrySecond;
+          } else {
+            degraded = true;
+            degradedReason = `второй вариант повторил первый даже после повторной попытки (${retryDiff.reason ?? "варианты совпали"})`;
+            secondParsed = null;
+          }
+        } else {
+          degraded = true;
+          degradedReason = "повторная попытка не вернула два варианта";
+          secondParsed = null;
+        }
+      } catch (e) {
+        degraded = true;
+        degradedReason = "повторная попытка не удалась";
+        secondParsed = null;
+        logLlmEvent("error", "worksheet-gen: variant retry failed", {
+          subject: request.subject,
+          error: String(e),
+        });
+      }
+    } else if (!secondParsed) {
+      // Разрыв 3: модель не вернула `variants[1]` вообще. Раньше это молча
+      // превращалось в `secondVariant: null` без следа — фронт не отличал
+      // «второй не нужен» от «второй не получился».
+      degraded = true;
+      degradedReason = "модель вернула один вариант вместо двух";
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ТЗ-25 AD-7/AD-8: ДОЗАПРОС НЕДОСТАЮЩИХ ЗАДАНИЙ — ВСЕ ТИПЫ РАБОТ
+  //
+  // Разрыв 5/6: после фильтра материала меньше, чем просил учитель. Молча
+  // отдать укороченный лист нельзя — учитель печатает его и раздаёт классу.
+  // ОДИН дозапрос на недостающее и мерж. Если и после него мало — отдаём что
+  // есть, но С ПРИЗНАКОМ (`stillMissing > 0`), который показывает интерфейс.
+  //
+  // AD-8: у контрольной количества в вариантах должны совпадать. Разошлись —
+  // добрать тем же дозапросом.
+  //
+  // Работает для ВСЕХ типов работ, включая ОГЭ/ЕГЭ: там учитель вообще не
+  // пересчитывает задания, их считают по баллам, и укороченный вариант
+  // обнаруживается уже на проверке.
+  // ─────────────────────────────────────────────────────────────────────────────
+  let topUpAdded = 0;
+  const ensureCount = async (
+    target: number,
+    current: CleanTask[],
+    stage: string,
+  ): Promise<CleanTask[]> => {
+    const missing = missingTaskCount(target, current.length);
+    if (missing <= 0) return current;
+    logLlmEvent("warn", "worksheet-gen: topping up missing tasks", {
+      subject: request.subject,
+      stage,
+      requested: target,
+      have: current.length,
+      missing,
+    });
+    const topUpPrompt = buildTopUpPrompt(
+      request,
+      missing,
+      current
+        .map((t) => (t as { text?: unknown }).text)
+        .filter((t): t is string => typeof t === "string"),
+    );
+    try {
+      const topUpResult = await callProvider(topUpPrompt.system, topUpPrompt.user, 4096);
+      const topUpParsed = JSON.parse(topUpResult.response.content) as Worksheet;
+      const topUpTasks = Array.isArray(topUpParsed.tasks) ? topUpParsed.tasks : [];
+      // Дозапрос проходит ТОТ ЖЕ фильтр: иначе мы вернули бы в материал ровно
+      // те дефекты, ради удаления которых дозапрос и делается.
+      const topUpFiltered = filterAndReport(topUpTasks, request.subject);
+      if (topUpFiltered.report) {
+        logFilterReport({
+          stage: `worksheet.topup.${stage}`,
+          subject: request.subject,
+          requested: missing,
+          report: topUpFiltered.report,
+        });
+      }
+      const usable = topUpFiltered.tasks.slice(0, missing);
+      topUpAdded += usable.length;
+      return [...current, ...usable];
+    } catch (e) {
+      logLlmEvent("error", "worksheet-gen: top-up failed", {
+        subject: request.subject,
+        stage,
+        error: String(e),
+      });
+      return current;
+    }
+  };
+
+  const isControl = request.type === "control";
+  // У контрольной целевое количество общее для обоих вариантов (AD-8) и
+  // добирается после того, как оба варианта собраны. У остальных типов —
+  // сразу после основного.
+  if (!isControl) {
+    const topped = await ensureCount(
+      request.count,
+      worksheet.tasks as unknown as CleanTask[],
+      "primary",
+    );
+    if (topped.length !== worksheet.tasks.length) {
+      worksheet = { ...worksheet, tasks: topped as unknown as Worksheet["tasks"] };
+    }
+  }
 
   // Второй вариант контрольной собираем тем же кодом, что и первый: те же
   // id и createdAt — серверные, те же фильтры заданий.
   let secondVariant: Worksheet | null = null;
-  const rawSecond = controlVariants?.[1];
-  if (rawSecond) {
-    const raw = rawSecond;
+  if (secondParsed) {
+    if (secondParsed.report) filterReports.push(secondParsed.report);
     secondVariant = {
       id: worksheetId(),
-      title: raw.title ?? `Вариант 2`,
-      subject: raw.subject ?? request.subject,
-      grade: raw.grade ?? request.grade,
-      topic: raw.topic ?? request.topic,
-      difficulty: raw.difficulty ?? request.difficulty,
-      tasks: Array.isArray(raw.tasks)
-        ? (filterTasks(
-            (raw.tasks as unknown[])
-              .filter(
-                (t: unknown): t is Record<string, unknown> =>
-                  Boolean(t) && typeof t === "object" && !Array.isArray(t),
-              )
-              .map((task) => {
-                const sanitized = sanitizeTextLatex(task.text_latex);
-                const next = { ...(task as unknown as Record<string, unknown>) };
-                if (sanitized) next.text_latex = sanitized;
-                else delete next.text_latex;
-                return next;
-              }),
-            request.subject,
-          ).tasks as unknown as Worksheet["tasks"])
-        : [],
+      title: secondParsed.raw.title ?? `Вариант 2`,
+      subject: secondParsed.raw.subject ?? request.subject,
+      grade: secondParsed.raw.grade ?? request.grade,
+      topic: secondParsed.raw.topic ?? request.topic,
+      difficulty: secondParsed.raw.difficulty ?? request.difficulty,
+      tasks: secondParsed.tasks as unknown as Worksheet["tasks"],
+      createdAt: worksheet.createdAt ?? new Date().toISOString(),
     } as Worksheet;
-    (secondVariant as Worksheet & { createdAt: string }).createdAt =
-      (worksheet as Worksheet & { createdAt?: string }).createdAt ?? new Date().toISOString();
   }
 
-  // 6. Save to cache. Второй вариант контрольной кладём рядом с первым:
-  //    без этого повторный запрос отдавал один лист вместо двух (12.10.2026).
+  // AD-8: равное количество заданий в двух вариантах — часть равносильности.
+  // Раздавать классу варианты разного объёма нельзя: учитель обнаружит это
+  // на печати.
+  if (isControl && secondVariant) {
+    const v1Count = worksheet.tasks.length;
+    const v2Count = (secondVariant.tasks ?? []).length;
+    if (v1Count !== v2Count) {
+      const target = Math.max(v1Count, v2Count);
+      logLlmEvent("warn", "worksheet-gen: variant counts differ, topping up", {
+        subject: request.subject,
+        v1Count,
+        v2Count,
+        target,
+      });
+      const topped1 = await ensureCount(target, worksheet.tasks as unknown as CleanTask[], "variant1");
+      const topped2 = await ensureCount(
+        target,
+        (secondVariant.tasks ?? []) as unknown as CleanTask[],
+        "variant2",
+      );
+      worksheet = { ...worksheet, tasks: topped1 as unknown as Worksheet["tasks"] };
+      secondVariant = { ...secondVariant, tasks: topped2 as unknown as Worksheet["tasks"] };
+    }
+  }
+
+  // Разрыв 4: обрезанный ответ выше уже отбит (ретрай с удвоенным потолком, а
+  // при неудаче — честная ошибка). Сюда конвейер доходит только с целым ответом.
+
+  const meta: GenerateWorksheetMeta = {
+    model: resultFinal.model,
+    provider: resultFinal.provider,
+    // Сумма по ВСЕМ вызовам: ретрай и дозапрос тоже стоили денег (AD-5).
+    costUsd: calls.reduce((sum, c) => sum + c.costUsd, 0),
+    // Суммируем только те вызовы, у которых провайдер вернул рубли: null — это
+    // «не считал», а не «ноль», и складывать его с нулём значило бы выдумать
+    // цену, которой нет.
+    costRub: calls.some((c) => c.costRub != null)
+      ? calls.reduce((sum, c) => sum + (c.costRub ?? 0), 0)
+      : null,
+    latencyMs: Date.now() - start,
+    cached: false,
+    generation: resultFinal.generation as GenerateWorksheetMeta["generation"],
+  };
+
+  // Log — ПО КАЖДОМУ вызову провайдера (AD-5).
+  for (const call of calls) {
+    await logLlmCall(db, {
+      userId,
+      task,
+      provider: call.provider,
+      model: call.model,
+      plan,
+      tokensIn: call.tokensIn,
+      tokensOut: call.tokensOut,
+      costUsd: call.costUsd,
+      costRub: call.costRub,
+      latencyMs: call.latencyMs,
+      cached: false,
+      fallback: call.generation === "boost",
+    });
+  }
+
+  // Потребление по нормам тарифа (взвешенные токены), тоже по всем вызовам.
+  const usage = await recordUsage(db, env, {
+    userId,
+    plan,
+    weightedTokens: calls.reduce((sum, c) => sum + weightedTokens(c.model, c.tokensOut), 0),
+  });
+
+  // Итог по потерям — учитель должен видеть это без догадок (AD-7).
+  const deliveredTotal =
+    worksheet.tasks.length + (secondVariant?.tasks?.length ?? 0);
+  const variantCount = secondVariant ? 2 : 1;
+  const quality = summarizeLoss(
+    request.count * variantCount,
+    filterReports,
+    topUpAdded,
+    deliveredTotal,
+  );
+
+  const variantsInfo = buildVariantStatus(isControl ? 2 : 1, secondVariant ? 2 : 1, {
+    degraded: isControl && (degraded || !secondVariant),
+    degradedReason:
+      isControl && (degraded || !secondVariant)
+        ? degradedReason ?? "второй вариант не был получен"
+        : undefined,
+    retried,
+  });
+
+  // Save to cache. Второй вариант контрольной кладём рядом с первым:
+  // без этого повторный запрос отдавал один лист вместо двух (12.10.2026).
+  // Признаки quality/variants кладём ТОЖЕ (AD-4): повторный запрос обязан
+  // вернуть ту же пару и тот же флаг деградации, не тратя денег.
   await saveCache(db, {
     key: cacheKey,
     subject: request.subject,
@@ -384,10 +952,10 @@ export async function generateWorksheet(
     difficulty: request.difficulty,
     count: request.count,
     type: request.type,
-    response: { worksheet, secondVariant },
+    response: { worksheet, secondVariant, quality, variants: variantsInfo },
   });
 
-  return { worksheet, meta, usage, secondVariant };
+  return { worksheet, meta, usage, secondVariant, quality, variants: variantsInfo };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -428,7 +996,13 @@ export async function generateExam(
   args: GenerateExamArgs,
   env: Env,
   db: D1Database,
-): Promise<{ variant: ExamVariant; meta: GenerateWorksheetMeta; usage: UsageStatus | null }> {
+): Promise<{
+  variant: ExamVariant;
+  meta: GenerateWorksheetMeta;
+  usage: UsageStatus | null;
+  /** ТЗ-25: потери, которые фильтр нанёс варианту ОГЭ/ЕГЭ. */
+  quality: QualityLossInfo;
+}> {
   const start = Date.now();
   const { exam, subject, variantNumber, plan, userId, ip } = args;
 
@@ -445,6 +1019,8 @@ export async function generateExam(
   let result: Awaited<ReturnType<typeof callWithFallback>> | null = null;
   let variant: ExamVariant | null = null;
   let lastViolation: string | null = null;
+  // ТЗ-25: отчёты фильтра по всем попыткам — по ним и лог, и признаки потерь.
+  const examReports: QualityFilterReport[] = [];
 
   for (let attempt = 0; attempt <= MAX_LANG_RETRIES; attempt++) {
     result = await callWithFallback(
@@ -477,10 +1053,16 @@ export async function generateExam(
       // Тот же фильтр, что у рабочего листа (08.10.2026): ОГЭ/ЕГЭ — это тоже
       // задания с текстом и ответом, жалобы на «математику в биологии» и
       // «задания по образцу» прилетают оттуда точно так же.
-      variant.problems = filterTasks(
-        variant.problems as unknown as Parameters<typeof filterTasks>[0],
+      //
+      // ТЗ-25 разрыв 5: `.report` больше не отбрасывается. Для ОГЭ/ЕГЭ потери
+      // бьют по учителю ОСОБЕННО неприятно — там задания считают по баллам, и
+      // укороченный вариант обнаруживается уже на проверке работ, а не дома.
+      const examFiltered = filterAndReport(
+        variant.problems as unknown[],
         subject,
-      ).tasks as unknown as ExamVariant["problems"];
+      );
+      variant.problems = examFiltered.tasks as unknown as ExamVariant["problems"];
+      examReports.push(examFiltered.report);
     } catch {
       throw new InternalError("LLM returned invalid JSON for exam");
     }
@@ -547,10 +1129,15 @@ export async function generateExam(
           duration: parsed.duration ?? variant.duration,
           problems: Array.isArray(parsed.problems) ? parsed.problems : variant.problems,
         };
-        retryVariant.problems = filterTasks(
-          retryVariant.problems as unknown as Parameters<typeof filterTasks>[0],
+        // ТЗ-25: и здесь отчёт фильтра не отбрасывается — та же потеря,
+        // та же причина. Если эта попытка будет принята, её отчёт и есть
+        // актуальный.
+        const retryFiltered = filterAndReport(
+          retryVariant.problems as unknown[],
           subject,
-        ).tasks as unknown as ExamVariant["problems"];
+        );
+        retryVariant.problems = retryFiltered.tasks as unknown as ExamVariant["problems"];
+        examReports.push(retryFiltered.report);
         const retryViolation = findLanguageViolation(retryVariant, subject);
         if (!retryViolation) {
           variant = retryVariant;
@@ -567,6 +1154,22 @@ export async function generateExam(
     } else {
       variant = emptyVariant(exam, subject, variantNumber);
     }
+  }
+
+  // ТЗ-25 разрыв 5: потери ОГЭ/ЕГЭ видны в логе наравне с листом и
+  // контрольной. Раньше отчёт фильтра здесь просто отбрасывался — по бюро
+  // варианта нельзя было понять, выкинулось что-то или нет.
+  for (const report of examReports) {
+    logFilterReport({
+      stage: "exam.problems",
+      subject,
+      // У ОГЭ/ЕГЭ учитель не заказывает число заданий: оно задано форматом
+      // экзамена. Поэтому здесь пишем фактическое «до фильтра» и честно
+      // помечаем, что потерь не было — при нулевом `dropped` в лог падает
+      // уровень info, и такие строки отделяются от потерь одним фильтром.
+      requested: report.before,
+      report,
+    });
   }
 
   const meta: GenerateWorksheetMeta = {
@@ -600,7 +1203,18 @@ export async function generateExam(
     weightedTokens: weightedTokens(result.model, result.response.tokensOut),
   });
 
-  return { variant, meta, usage };
+  // Потери по варианту ОГЭ/ЕГЭ — в ответе, чтобы учитель видел их и на экране.
+  // `requested` здесь = «до фильтра», потому что число заданий задаёт формат
+  // экзамена, а не учитель; `delivered` — фактическое.
+  const examQuality = summarizeLoss(
+    variant.problems.length +
+      examReports.reduce((sum, r) => sum + (r.before - r.after), 0),
+    examReports,
+    0,
+    variant.problems.length,
+  );
+
+  return { variant, meta, usage, quality: examQuality };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

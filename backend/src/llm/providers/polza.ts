@@ -262,6 +262,11 @@ export function getPolzaProvider(env: Env): Provider {
         costRub,
         latencyMs,
         cached: cachedTokens > 0,
+        // ТЗ-25, разрыв 4: причина остановки идёт в успешный ответ.
+        // Раньше `finishReason` читался только для диагностики пустого content
+        // и вверх не уходил, поэтому обрыв по `length` для иностранных
+        // предметов проходил как нормальный результат.
+        finishReason,
         raw: data,
       };
     },
