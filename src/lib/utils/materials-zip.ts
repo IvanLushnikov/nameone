@@ -24,6 +24,8 @@ import JSZip from "jszip";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from "docx";
 import type { MaterialBundle, MaterialFile, MaterialFileKind } from "@/lib/types";
 import { slugify } from "@/lib/utils/cn";
+// ТЗ-26 Ф-3: название предмета по-русски вместо внутреннего ключа.
+import { subjectDisplayName } from "@/lib/content/subject-display-name";
 
 /** Русские суффиксы имён — короткие, чтобы учитель узнал файл в архиве. */
 const KIND_SUFFIX: Record<MaterialFileKind, string> = {
@@ -54,7 +56,8 @@ export function materialFilename(file: MaterialFile, index: number): string {
 
 /** Имя самого архива для скачивания. */
 export function materialsZipFilename(bundle: MaterialBundle): string {
-  const base = `materials-${bundle.subject}-${bundle.grade}kl-${slugify(bundle.topic) || "topic"}`;
+  // ТЗ-26, Ф-3: предмет по-русски, не `algebra`.
+  const base = `materials-${slugify(subjectDisplayName(bundle.subject))}-${bundle.grade}kl-${slugify(bundle.topic) || "topic"}`;
   return `${base}.zip`;
 }
 

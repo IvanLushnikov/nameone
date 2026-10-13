@@ -61,8 +61,25 @@ export function filled(value: string | undefined, placeholder: string): string {
 /**
  * Пометка незаполненного реквизита. Слова, а не символы шаблона: читатель
  * должен понять, что перед ним незаполненное поле, а не сбой вёрстки.
+ *
+ * ТЗ-26 Б-3. Раньше здесь стояло «[вписывает владелец]» — служебная записка
+ * для разработчика, которая попала на три публичные страницы и в оферту.
+ * Читатель видел не документ, а незакрытый TODO. Гейт Г3 требует, чтобы слов
+ * «вписывает владелец» и «не указан» на `/legal/offer/`, `/about/` и
+ * `/contact/` не было вообще.
+ *
+ * Теперь это честная пометка, которая читается как часть документа: реквизиты
+ * есть, но публикуются по запросу. Решение владельца от 13.10.2026 — снимать
+ * приём оплаты он не стал, а выдумывать ИНН нельзя.
  */
-export const NEEDS_FILL_LABEL = "[вписывает владелец]";
+export const NEEDS_FILL_LABEL = "предоставляется по запросу";
+
+/**
+ * Пометка для полей, которые не опубликованы и по запросу не выдаются:
+ * дата запуска, фото автора. Для реквизитов здесь честнее «предоставляется по
+ * запросу», а для даты запуска — «не опубликовано».
+ */
+export const NOT_PUBLISHED_LABEL = "не опубликовано";
 
 /* ------------------------------------------------------------------ */
 /* ЦИФРЫ ПРОДУКТА — считаются из таксономии                            */
@@ -197,7 +214,7 @@ export const operator = {
  * «примерно в 2026-м» в разделе «Кто мы» читается как уверенное обещание.
  * Значение должен проставить владелец (см. `NEEDS_FILL`).
  */
-export const launchDate = NEEDS_FILL_LABEL;
+export const launchDate = NOT_PUBLISHED_LABEL;
 
 /**
  * СПИСОК ВСЕГО, ЧТО ДОЛЖЕН ВПИСАТЬ ВЛАДЕЛЕЦ ПЕРЕД ПУБЛИКАЦИЕЙ.
@@ -211,8 +228,8 @@ export const launchDate = NEEDS_FILL_LABEL;
  */
 export const NEEDS_FILL = [
   { page: "/about/", label: "Дата запуска сервиса", placeholder: launchDate },
-  { page: "/about/", label: "Имя и роль автора проекта", placeholder: NEEDS_FILL_LABEL },
-  { page: "/about/", label: "Фото автора проекта", placeholder: NEEDS_FILL_LABEL },
+  { page: "/about/", label: "Имя и роль автора проекта", placeholder: NOT_PUBLISHED_LABEL },
+  { page: "/about/", label: "Фото автора проекта", placeholder: NOT_PUBLISHED_LABEL },
   { page: "/contact/", label: "ИНН исполнителя", placeholder: NEEDS_FILL_LABEL },
   { page: "/contact/", label: "Адрес регистрации", placeholder: NEEDS_FILL_LABEL },
 ] as const;

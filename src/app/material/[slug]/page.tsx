@@ -188,7 +188,7 @@ export default function MaterialPage({ params }: Props) {
                   <li>• {material.count} заданий по теме {quotedTopic(material.topicTitle)}</li>
                   <li>• Ответы с разбором — для самопроверки и проверки дома</li>
                   <li>• По программе {material.grade} класса{topic?.fgosRef ? `, раздел «${topic.fgosRef}»` : ""}</li>
-                  <li>• Готовый PDF за 30 секунд — без Word и шаблонов</li>
+                  <li>• Готовый PDF за минуту — без Word и шаблонов</li>
                 </ul>
               </div>
             </div>
@@ -203,7 +203,7 @@ export default function MaterialPage({ params }: Props) {
               </h2>
               <p className="mt-3 text-sm text-warm-700 leading-relaxed">
                 Откроется конструктор с уже выбранными предметом, классом, темой и форматом.
-                Соберёте свой вариант под свой класс за 30 секунд.
+                Соберёте свой вариант под свой класс за минуту.
               </p>
 
               <ul className="mt-4 space-y-2 text-sm text-warm-700">

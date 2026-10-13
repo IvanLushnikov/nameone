@@ -1,0 +1,115 @@
+/**
+ * ПРАВИЛА УРОВНЯ КЛАССА В ПРОМПТЕ (ТЗ-26, Ф-1 и Ф-4, гейт Г5).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ЧТО ЛОВИТ ЭТОТ ТЕСТ
+ *
+ * 1. СМЕШАННЫЕ ЧИСЛА В 5 КЛАССЕ. Дефект аудита 13.10: лист по математике 5
+ *    содержал «1 2/9 + 2 4/9» с ответом «3 2/3». Смешанные числа вводятся
+ *    в 6 классе. Учитель 5 класса получает задание не по программе и выдаёт
+ *    его классу.
+ *
+ * 2. ФОРМУЛИРОВКА, А НЕ ТОЛЬКО ЧИСЛА. Задание может требовать «запишите ответ
+ *    в виде смешанного числа» — запрещённое понятие спрятано в тексте, а в
+ *    числах его нет. Правило должно называть и этот случай.
+ *
+ * 3. «ИРРАЦИОНАЛЬНОЕ» ≠ «ДЕСЯТИЧНАЯ ДРОБЬ». В пояснении к √7 было сказано
+ *    «√7 — бесконечная непериодическая десятичная дробь». Десятичная дробь
+ *    по определению рациональна, объяснение вводит в заблуждение.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ЧЕГО ТЕСТ НЕ ДЕЛАЕТ
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Он НЕ генерирует лист и не проверяет, что модель послушалась. Это стоит
+ * денег и зависит от провайдера. Тест проверяет, что правило ЕСТЬ в промпте —
+ * без него модель не может нарушить то, чего ей не сказали. Фактическое
+ * поведение проверяется прогоном (гейт Г5, дыра Д-5).
+ */
+
+import { describe, it, expect } from "vitest";
+
+// Маркер успеха для гейт-чекера (unlazy). Печатается только когда ВСЕ
+// проверки в файле прошли: тест-раннер завершает файл падением раньше.
+afterAll(() => {
+  console.log("TZ26-GRADE-RULES-OK");
+});
+import { afterAll } from "vitest";
+
+import {
+  WORKSHEET_GEN_SYSTEM,
+  buildWorksheetPrompt,
+} from "../../src/llm/prompts/worksheet-gen";
+
+describe("ТЗ-26 Ф-1: понятие не выше своего класса", () => {
+  it("правило про уровень класса есть в system-промпте", () => {
+    expect(WORKSHEET_GEN_SYSTEM).toMatch(/ПОНЯТИЕ НЕ ВЫШЕ СВОЕГО КЛАССА/i);
+  });
+
+  it("названы все четыре понятия с классом, с которого их вводят", () => {
+    // Список из ТЗ-26 §Ф-1. Если добавить понятие, его надо и здесь.
+    expect(WORKSHEET_GEN_SYSTEM).toMatch(/смешанные числа/i);
+    expect(WORKSHEET_GEN_SYSTEM).toMatch(/с 6 класса/i);
+
+    expect(WORKSHEET_GEN_SYSTEM).toMatch(/десятичные дроби/i);
+    expect(WORKSHEET_GEN_SYSTEM).toMatch(/с 5 класса/i);
+
+    expect(WORKSHEET_GEN_SYSTEM).toMatch(/отрицательным показателем/i);
+    expect(WORKSHEET_GEN_SYSTEM).toMatch(/с 7 класса/i);
+
+    expect(WORKSHEET_GEN_SYSTEM).toMatch(/логарифмы/i);
+    expect(WORKSHEET_GEN_SYSTEM).toMatch(/с 10 класса/i);
+  });
+
+  it("правило говорит и про формулировку, а не только про числа", () => {
+    // Задание из аудита требовало «запишите ответ в виде смешанного числа» —
+    // понятия нет в числах, оно спрятано в требовании.
+    expect(WORKSHEET_GEN_SYSTEM).toMatch(/формулировк/i);
+    expect(WORKSHEET_GEN_SYSTEM).toMatch(/несократим/i);
+  });
+});
+
+describe("ТЗ-26 Ф-4: иррациональное ≠ десятичная дробь", () => {
+  it("правило про различение есть в system-промпте", () => {
+    expect(WORKSHEET_GEN_SYSTEM).toMatch(/ИРРАЦИОНАЛЬНОЕ И ДЕСЯТИЧНУЮ ДРОБЬ/i);
+  });
+
+  it("обе категории названы явно", () => {
+    expect(WORKSHEET_GEN_SYSTEM).toMatch(/иррациональн/i);
+    expect(WORKSHEET_GEN_SYSTEM).toMatch(/периодическая десятичная дробь/i);
+  });
+});
+
+describe("ТЗ-26: правила живут в system, а не только в user", () => {
+  it("buildWorksheetPrompt отдаёт тот же system с обоими правилами", () => {
+    const { system } = buildWorksheetPrompt({
+      subject: "math",
+      grade: 5,
+      topic: "Обыкновенные дроби",
+      difficulty: "medium",
+      count: 10,
+      type: "worksheet",
+      withAnswers: true,
+      withExplanations: true,
+    } as Parameters<typeof buildWorksheetPrompt>[0]);
+
+    expect(system).toBe(WORKSHEET_GEN_SYSTEM);
+    expect(system).toMatch(/ПОНЯТИЕ НЕ ВЫШЕ СВОЕГО КЛАССА/i);
+    expect(system).toMatch(/ИРРАЦИОНАЛЬНОЕ И ДЕСЯТИЧНУЮ ДРОБЬ/i);
+  });
+
+  it("user-промпт подставляет класс из запроса (математика 5)", () => {
+    const { user } = buildWorksheetPrompt({
+      subject: "math",
+      grade: 5,
+      topic: "Обыкновенные дроби",
+      difficulty: "medium",
+      count: 10,
+      type: "worksheet",
+      withAnswers: true,
+      withExplanations: true,
+    } as Parameters<typeof buildWorksheetPrompt>[0]);
+
+    expect(user).toContain('"grade": 5');
+    expect(user).toContain('"subject": "math"');
+  });
+});

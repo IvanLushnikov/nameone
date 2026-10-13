@@ -2,6 +2,8 @@
 
 import * as React from "react";
 import type { Ktp, KtpLessonKind } from "@/lib/types";
+// ТЗ-26 Ф-3: название предмета по-русски вместо внутреннего ключа.
+import { subjectDisplayName } from "@/lib/content/subject-display-name";
 import { formatDate } from "@/lib/utils/cn";
 import { SITE_HOST } from "@/lib/site";
 import { WorksheetScale } from "./WorksheetScale";
@@ -39,7 +41,7 @@ export function KtpPreview({ ktp }: Props) {
                 </div>
                 <h1 className="text-xl font-bold text-warm-950 mt-1">{ktp.title}</h1>
                 <div className="text-xs text-warm-600 mt-1">
-                  {ktp.subject} · {ktp.grade} класс · учебный год {ktp.schoolYear}
+                  {subjectDisplayName(ktp.subject)} · {ktp.grade} класс · учебный год {ktp.schoolYear}
                 </div>
               </div>
               <div className="text-right text-xs text-warm-500 shrink-0">

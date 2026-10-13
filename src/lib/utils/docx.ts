@@ -22,6 +22,9 @@ import type { Worksheet, WorksheetTask } from "@/lib/types";
 import { parseMathText } from "@/lib/math/latex";
 import { latexToOmml, latexToUnicode } from "@/lib/math/latex-to-omml";
 import { SITE_HOST } from "@/lib/site";
+// ТЗ-26 Ф-3: в шапку и в свойства файла — название предмета по-русски,
+// а не внутренний ключ (`algebra`).
+import { subjectDisplayName } from "@/lib/content/subject-display-name";
 
 /**
  * Генератор DOCX для рабочего листа.
@@ -155,7 +158,10 @@ export async function generateWorksheetDocx(
     new Paragraph({
       children: [
         new TextRun({
-          text: `${worksheet.subject} · ${worksheet.grade} класс · `,
+          // ТЗ-26 Ф-3: раньше здесь печатался ключ предмета —
+          // «algebra · 8 класс». Ключ остаётся ключом (роутеры, запросы к бэку),
+          // но в раздаточном материале его быть не должно.
+          text: `${subjectDisplayName(worksheet.subject)} · ${worksheet.grade} класс · `,
         }),
         new TextRun({
           text:
@@ -341,7 +347,7 @@ export async function generateWorksheetDocx(
   const doc = new Document({
     creator: "УчЛист",
     title: worksheet.title,
-    description: `${worksheet.subject} · ${worksheet.grade} класс`,
+    description: `${subjectDisplayName(worksheet.subject)} · ${worksheet.grade} класс`,
     sections: [
       {
         properties: {

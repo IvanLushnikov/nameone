@@ -212,11 +212,20 @@ describe("generateBundleZip — экспорт комплекта", () => {
     expect(names.sort()).toEqual(["01-plan.docx", "03-worksheet.docx", "04-test.docx"]);
   });
 
-  it("имя архива — ASCII-slug", async () => {
+  it("имя архива — ASCII-slug из РУССКОГО названия предмета", async () => {
+    // ТЗ-26, Ф-3: раньше в имя архива шёл внутренний ключ (`math`, `algebra`).
+    // Теперь — название предмета по-русски, прогнанное через `slugify`.
+    //
+    // Почему архив остаётся ASCII, а DOCX/PPTX — на русском: имя .zip должно
+    // переживать распаковку на любой системе, транслитерация тут и была
+    // исходной причиной требования. При этом «matematika» — это
+    // транслитерация «Математика», а не обратно ключ `math`.
     const bundle = await mockLessonBundle(baseReq());
     const filename = bundleZipFilename(bundle);
 
     expect(filename).toMatch(/^lesson-[a-z0-9-]+\.zip$/);
-    expect(filename).toBe("lesson-math-5kl-drobi-obyknovennye.zip");
+    expect(filename).toBe("lesson-matematika-5kl-drobi-obyknovennye.zip");
+    // Ключ предмета в имени архива быть не должно.
+    expect(filename).not.toContain("-math-");
   });
 });

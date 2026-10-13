@@ -79,7 +79,7 @@ export function generateMetadata({ params }: Props): Metadata {
   // ошибки, `examplesPhrase` вместо жёсткого «заданий-образцов»), обрезанный
   // по theirs (ТЗ-21 п.14): хвост за 160 знаков в сниппете не виден, режется
   // хвост, а не начало — начало описания и есть ключевые слова запроса.
-  const rawDescription = `Скачайте готовые рабочие листы и тесты по теме ${quotedTopic(topicTitleWithUmk(topic.title, countTitles(params.subject, Number(params.grade)).get(topic.title.trim()) ?? 1, topic.fgosRef))} для ${grade.num} класса по ${subjectName}. ${examplesPhrase(topic.examples.length)} с ответами. Сгенерируйте свой вариант за 30 секунд.`;
+  const rawDescription = `Скачайте готовые рабочие листы и тесты по теме ${quotedTopic(topicTitleWithUmk(topic.title, countTitles(params.subject, Number(params.grade)).get(topic.title.trim()) ?? 1, topic.fgosRef))} для ${grade.num} класса по ${subjectName}. ${examplesPhrase(topic.examples.length)} с ответами. Сгенерируйте свой вариант за минуту.`;
   const description = clipDescription(rawDescription);
 
   // TZ-10 §5.1 / §9.7: canonical + og:type=article.
@@ -278,7 +278,7 @@ const neighbors = getTopicNeighbors(
                 Рабочий лист по теме {quotedTopic(topic.title)}
               </h1>
               <p className="mt-4 text-lg text-warm-600 text-pretty">
-                Готовые задания по ФГОС с ответами и пояснениями. Сгенерируйте свой вариант за 30 секунд — ИИ подстроится по уровню ученика.
+                Готовые задания по ФГОС с ответами и пояснениями. Сгенерируйте свой вариант за минуту — ИИ подстроится по уровню ученика.
               </p>
 
               <div className="mt-7 flex flex-wrap items-center gap-3">
@@ -383,7 +383,7 @@ const neighbors = getTopicNeighbors(
             {/* CTA: переход в конструктор с предзаполненными subject/grade/topic */}
             <div className="mt-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-2xl border border-brand-100 bg-brand-50/60 p-5 sm:p-6">
               <p className="text-sm sm:text-base text-warm-700 leading-snug sm:max-w-md">
-                Хотите 10 таких заданий в PDF? <span className="text-warm-500">Сгенерируем за 30 секунд, с шифром ответов на отдельной странице.</span>
+                Хотите 10 таких заданий в PDF? <span className="text-warm-500">Сгенерируем за минуту, с шифром ответов на отдельной странице.</span>
               </p>
               <Link
                 href={`/constructor?subject=${subject.slug}&grade=${grade.num}&topic=${topic.slug}`}
@@ -501,7 +501,7 @@ const neighbors = getTopicNeighbors(
               Готовы сгенерировать лист по теме {quotedTopic(topic.title)}?
             </h2>
             <p className="mt-3 text-brand-100 max-w-xl mx-auto">
-              30 секунд — и PDF у вас. Можно скачать, распечатать или отправить ученику.
+              Минута — и PDF у вас. Можно скачать, распечатать или отправить ученику.
             </p>
             <div className="mt-7 flex flex-col sm:flex-row items-center justify-center gap-3">
               <Button

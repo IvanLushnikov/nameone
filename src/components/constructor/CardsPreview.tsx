@@ -2,6 +2,8 @@
 
 import * as React from "react";
 import type { CardSet, FlashCard } from "@/lib/types";
+// ТЗ-26 Ф-3: название предмета по-русски вместо внутреннего ключа.
+import { subjectDisplayName } from "@/lib/content/subject-display-name";
 import { formatDate } from "@/lib/utils/cn";
 import { WorksheetScale } from "./WorksheetScale";
 import { CARDS_PER_SHEET, ensureCardsPrintStyles, paginateCards } from "@/lib/utils/cards-print";
@@ -47,7 +49,7 @@ export function CardsPreview({ set }: Props) {
                   Карточки не получились
                 </h1>
                 <p className="text-sm text-warm-600 leading-snug">
-                  Тема «{set.topic}» не нашлась в списке тем по предмету {set.subject} для{" "}
+                  Тема «{set.topic}» не нашлась в списке тем по предмету {subjectDisplayName(set.subject)} для{" "}
                   {set.grade} класса. Выберите тему заново — и карточки соберутся сразу.
                 </p>
               </div>
@@ -76,7 +78,7 @@ export function CardsPreview({ set }: Props) {
                     {set.title.replace(/^Карточки · /, "")}
                   </h1>
                   <div className="text-xs text-warm-600 mt-1">
-                    {set.subject} · {set.grade} класс · {set.cards.length} карт. ·{" "}
+                    {subjectDisplayName(set.subject)} · {set.grade} класс · {set.cards.length} карт. ·{" "}
                     {sheets.length} лист.
                   </div>
                 </div>

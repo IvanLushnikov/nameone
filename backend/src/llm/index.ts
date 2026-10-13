@@ -74,6 +74,11 @@ import {
   type RawTask,
 } from "./validation/quality-filter";
 import { variantsDiffer, missingTaskCount } from "./validation/variant-check";
+import {
+  findSkillDupes,
+  tasksToReplace,
+  type SkillTaskLike,
+} from "./validation/skill-dupes";
 import { reconcileSelfVerifyVerdict } from "./validation/answer-check";
 import { callPolzaEmbedding } from "./providers/polza";
 import {
@@ -168,6 +173,14 @@ type CleanTask = Record<string, unknown>;
 function filterAndReport(
   rawTasks: readonly unknown[],
   subject: string,
+  /**
+   * Ответы обязательны? ТЗ-26, Ф-5.
+   *
+   * При `withAnswers = true` задание без ответа — дефект, оно выкидывается.
+   * При `false` null законен, и трогать его нельзя: иначе лист без ответов
+   * остался бы вообще пустым.
+   */
+  requireAnswer = false,
 ): { tasks: CleanTask[]; report: QualityFilterReport } {
   const cleaned = rawTasks
     .filter((t: unknown): t is NonNullable<typeof t> => Boolean(t) && typeof t === "object")
@@ -183,7 +196,7 @@ function filterAndReport(
       return next;
     }) as RawTask[];
 
-  const { tasks, report } = filterTasks(cleaned, subject);
+  const { tasks, report } = filterTasks(cleaned, subject, { requireAnswer });
 
   // `filterTasks` умеет откатываться и вернуть исходный набор целиком, если
   // отфильтровано слишком много (см. конец quality-filter.ts). В этом случае
@@ -608,6 +621,7 @@ export async function generateWorksheet(
             (t: unknown): t is NonNullable<typeof t> => Boolean(t) && typeof t === "object",
           ),
           request.subject,
+          request.withAnswers,
         )
       : { tasks: [] as CleanTask[], report: null };
 
@@ -641,7 +655,7 @@ export async function generateWorksheet(
   const readVariant = (raw: Worksheet | undefined) => {
     if (!raw) return null;
     const filtered = Array.isArray(raw.tasks)
-      ? filterAndReport(raw.tasks as unknown[], request.subject)
+      ? filterAndReport(raw.tasks as unknown[], request.subject, request.withAnswers)
       : { tasks: [] as CleanTask[], report: null };
     if (filtered.report) {
       logFilterReport({
@@ -704,7 +718,7 @@ export async function generateWorksheet(
           // заменили нормальный первый вариант на другую копию.
           const retryFirstRaw = retryVariants[0];
           const retryFirstFiltered = Array.isArray(retryFirstRaw?.tasks)
-            ? filterAndReport(retryFirstRaw.tasks as unknown[], request.subject)
+            ? filterAndReport(retryFirstRaw.tasks as unknown[], request.subject, request.withAnswers)
             : null;
           const retrySecond = readVariant(retryVariants[1]);
           const retryDiff = variantsDiffer(retryFirstFiltered?.tasks, retrySecond?.tasks);
@@ -797,7 +811,7 @@ export async function generateWorksheet(
       const topUpTasks = Array.isArray(topUpParsed.tasks) ? topUpParsed.tasks : [];
       // Дозапрос проходит ТОТ ЖЕ фильтр: иначе мы вернули бы в материал ровно
       // те дефекты, ради удаления которых дозапрос и делается.
-      const topUpFiltered = filterAndReport(topUpTasks, request.subject);
+      const topUpFiltered = filterAndReport(topUpTasks, request.subject, request.withAnswers);
       if (topUpFiltered.report) {
         logFilterReport({
           stage: `worksheet.topup.${stage}`,
@@ -819,6 +833,106 @@ export async function generateWorksheet(
     }
   };
 
+  /**
+   * Замена ЗАДУБЛИРОВАННЫХ заданий (ТЗ-26, Ф-2).
+   *
+   * Отличие от `ensureCount` принципиальное: там лист короче, чем просил
+   * учитель, и мы ДОБИРАЕМ. Здесь лист нужной длины, но два задания проверяют
+   * один и тот же навык — для учителя это 12 заданий, которые дают 11.
+   *
+   * Повторное задание выкидывается, на его место ставится ДОЗАПРОС — то есть
+   * ровно один дополнительный вызов провайдера на лист, как и требует ТЗ.
+   * Выкинутое задание отдаётся модели в промпте, чтобы новый навык не совпал
+   * с уже выбранным.
+   *
+   * Если дозапрос не удался или вернул негодь — отдаём лист как есть. Лист с
+   * дублем хуже листа на задание короче, но и с молчаливой потерей материала
+   * мы не имеем права: учитель печатает лист и раздаёт классу.
+   */
+  const dedupeSheet = async (
+    current: CleanTask[],
+    stage: string,
+  ): Promise<CleanTask[]> => {
+    const dupes = findSkillDupes(current as unknown as SkillTaskLike[]);
+    if (!dupes.hasDupes) return current;
+
+    const replaceNumbers = tasksToReplace(dupes);
+    const kept = current.filter(
+      (_, index) => !replaceNumbers.includes(index + 1),
+    );
+
+    logLlmEvent("warn", "worksheet-gen: repeated skill inside sheet, replacing", {
+      subject: request.subject,
+      stage,
+      pairs: dupes.pairs.map((p) => `${p.first}-${p.second}`),
+      replacing: replaceNumbers,
+    });
+
+    // Промпту отдаём и выкидываемое задание, и уже оставшиеся: модель должна
+    // предложить НОВЫЙ навык, а не переставить тот же.
+    const replacedTexts = replaceNumbers.map((n) => {
+      const t = (current[n - 1] as { text?: unknown } | undefined)?.text;
+      return typeof t === "string" ? t : "";
+    });
+
+    try {
+      const prompt = buildTopUpPrompt(
+        request,
+        replaceNumbers.length,
+        [
+          ...current
+            .map((t) => (t as { text?: unknown }).text)
+            .filter((t): t is string => typeof t === "string"),
+          ...replacedTexts,
+        ],
+      );
+      const res = await callProvider(prompt.system, prompt.user, 4096);
+      const parsed = JSON.parse(res.response.content) as Worksheet;
+      const fresh = filterAndReport(
+        Array.isArray(parsed.tasks) ? parsed.tasks : [],
+        request.subject,
+        request.withAnswers,
+      ).tasks;
+
+      // Дозапрос может вернуть задание, которое само дублирует оставшееся.
+      // Отдаём только те, что не создают новый дубль.
+      const usable = fresh
+        .filter((candidate) => {
+          const probe = findSkillDupes([
+            ...kept,
+            candidate,
+          ] as unknown as SkillTaskLike[]);
+          return !probe.hasDupes;
+        })
+        .slice(0, replaceNumbers.length);
+
+      if (usable.length === 0) {
+        logLlmEvent("warn", "worksheet-gen: replacement produced no usable tasks", {
+          subject: request.subject,
+          stage,
+          wanted: replaceNumbers.length,
+        });
+        return current;
+      }
+
+      // Заменяем по номерам, сохраняя порядок листа.
+      let cursor = 0;
+      return current.map((task, index) => {
+        const number = index + 1;
+        if (!replaceNumbers.includes(number)) return task;
+        return usable[cursor] ?? task;
+        cursor += 1;
+      });
+    } catch (e) {
+      logLlmEvent("error", "worksheet-gen: dupe replacement failed", {
+        subject: request.subject,
+        stage,
+        error: String(e),
+      });
+      return current;
+    }
+  };
+
   const isControl = request.type === "control";
   // У контрольной целевое количество общее для обоих вариантов (AD-8) и
   // добирается после того, как оба варианта собраны. У остальных типов —
@@ -831,6 +945,16 @@ export async function generateWorksheet(
     );
     if (topped.length !== worksheet.tasks.length) {
       worksheet = { ...worksheet, tasks: topped as unknown as Worksheet["tasks"] };
+    }
+    // ТЗ-26 Ф-2: после добива количества — проверка на повтор навыка. Именно
+    // здесь, а не раньше: дозапрос мог добавить задание, которое дублирует
+    // уже имеющееся, и наоборот — выкинутое дубль-задание освобождает место.
+    const deduped = await dedupeSheet(
+      worksheet.tasks as unknown as CleanTask[],
+      "primary",
+    );
+    if (deduped !== (worksheet.tasks as unknown as CleanTask[])) {
+      worksheet = { ...worksheet, tasks: deduped as unknown as Worksheet["tasks"] };
     }
   }
 
@@ -874,6 +998,16 @@ export async function generateWorksheet(
       worksheet = { ...worksheet, tasks: topped1 as unknown as Worksheet["tasks"] };
       secondVariant = { ...secondVariant, tasks: topped2 as unknown as Worksheet["tasks"] };
     }
+
+    // ТЗ-26 Ф-2: дубль проверяется ВНУТРИ каждого варианта. Сравнение между
+    // вариантами уже делает `variant-check.ts` — это другая задача.
+    const d1 = await dedupeSheet(worksheet.tasks as unknown as CleanTask[], "variant1");
+    worksheet = { ...worksheet, tasks: d1 as unknown as Worksheet["tasks"] };
+    const d2 = await dedupeSheet(
+      (secondVariant.tasks ?? []) as unknown as CleanTask[],
+      "variant2",
+    );
+    secondVariant = { ...secondVariant, tasks: d2 as unknown as Worksheet["tasks"] };
   }
 
   // Разрыв 4: обрезанный ответ выше уже отбит (ретрай с удвоенным потолком, а
@@ -1057,9 +1191,15 @@ export async function generateExam(
       // ТЗ-25 разрыв 5: `.report` больше не отбрасывается. Для ОГЭ/ЕГЭ потери
       // бьют по учителю ОСОБЕННО неприятно — там задания считают по баллам, и
       // укороченный вариант обнаруживается уже на проверке работ, а не дома.
+      // Ф-5 НЕ применили к ОГЭ/ЕГЭ: у задания КИМ ключ может лежать не в
+      // `answer`, а в другом поле, и `GenerateExamArgs` не знает про
+      // `withAnswers`. Считать все такие задания пустыми — значит выкинуть
+      // нормальный вариант на ровном месте. Дефект из отчёта был на ЛИСТЕ
+      // (русский 8), там путь и закрыт.
       const examFiltered = filterAndReport(
         variant.problems as unknown[],
         subject,
+        false,
       );
       variant.problems = examFiltered.tasks as unknown as ExamVariant["problems"];
       examReports.push(examFiltered.report);
@@ -1135,6 +1275,7 @@ export async function generateExam(
         const retryFiltered = filterAndReport(
           retryVariant.problems as unknown[],
           subject,
+          false,
         );
         retryVariant.problems = retryFiltered.tasks as unknown as ExamVariant["problems"];
         examReports.push(retryFiltered.report);

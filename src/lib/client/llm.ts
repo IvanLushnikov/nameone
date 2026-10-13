@@ -27,6 +27,34 @@ import { mockMaterials } from "@/lib/mock/materials";
 import { mockLessonBundle } from "@/lib/mock/lesson-bundle";
 import { passChallenge } from "@/lib/turnstile";
 
+/**
+ * Таймаут одного запроса к бэку.
+ *
+ * ТЗ-26 Б-1. Было 90 с, и это был блокер: контрольная с двумя вариантами
+ * отдаёт за 95,8 с (замер 13.10.2026, `meta.latencyMs = 95755`), вторая
+ * попытка — за 101,8 с. Фронт обрывал запрос на 90-й секунде, учитель видел
+ * `TimeoutError` и `net::ERR_ABORTED`. Через сайт контрольная не работала
+ * НИКОГДА — разница системная, а не случайная.
+ *
+ * 240 с — не «впритык»: худший замер сегодня 101,8 с, то есть таймаут
+ * переживает его с двойным запасом. Обратно 90 с возвращать нельзя.
+ *
+ * Число вынесено сюда намеренно: иначе следующий человек ищет 90_000 по
+ * коду и не понимает, откуда оно взялось.
+ */
+export const GENERATION_TIMEOUT_MS = 240_000;
+
+/**
+ * Таймаут лично нашей — `AbortSignal.timeout` кидает `TimeoutError`.
+ * Именно эту ошибку надо отличать от прочих отказов: для контрольной
+ * повтор закончится тем же самым, и текст «попробуйте ещё раз» будет
+ * ложью. См. ТЗ-26 Б-1 и ветку таймаута в конструкторе.
+ */
+export function isTimeoutError(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === "TimeoutError") return true;
+  return err instanceof Error && err.name === "TimeoutError";
+}
+
 interface ArtifactResult<T, TExtra = never> {
   data: T;
   /** Прочие поля ответа бэка (сейчас — `secondVariant` у контрольной). */
@@ -108,7 +136,8 @@ async function callBackendOnce<T, TExtra = never>(
     // одну квоту. Раньше здесь credentials не было — тариф на сервере не работал.
     credentials: "include",
     // Без таймаута зависшая сеть держит учителя на спиннере бесконечно.
-    signal: AbortSignal.timeout(90_000),
+    // 240 с, а не 90: контрольная не укладывалась в 90 с ни разу (ТЗ-26 Б-1).
+    signal: AbortSignal.timeout(GENERATION_TIMEOUT_MS),
   });
   if (res.ok) {
     const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;

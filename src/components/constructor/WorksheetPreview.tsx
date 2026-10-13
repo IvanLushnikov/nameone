@@ -1,4 +1,5 @@
 import type { Worksheet, WorksheetTask, TaskType } from "@/lib/types";
+import { subjectDisplayName } from "@/lib/content/subject-display-name";
 import { formatDate } from "@/lib/utils/cn";
 import { SITE_HOST } from "@/lib/site";
 import { SvgChart } from "./SvgChart";
@@ -85,8 +86,12 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
                 </div>
                 <h1 className="text-xl font-bold text-warm-950 mt-1">{worksheet.title}</h1>
                 <div className="text-xs text-warm-600 mt-1">
-                  {worksheet.subject} · {worksheet.grade} класс ·{" "}
-                  <span className="capitalize">
+                  {/* ТЗ-26 Ф-3: название предмета по-русски, а не ключ
+                      `algebra`. И `capitalize` убран: он поднимал в верхний
+                      регистр КАЖДОЕ слово («Средний Уровень»), а в DOCX там
+                      «средний уровень». Один регистр на экране и в файле. */}
+                  {subjectDisplayName(worksheet.subject)} · {worksheet.grade} класс ·{" "}
+                  <span>
                     {worksheet.difficulty === "easy" ? "лёгкий уровень" : worksheet.difficulty === "medium" ? "средний уровень" : "сложный уровень"}
                   </span>
                   {type === "test" && (

@@ -43,7 +43,7 @@ export function generateMetadata({ params }: Props): Metadata {
   const subjectTopicCount = subject.grades.reduce((s: number, g: Grade) => s + g.topics.length, 0);
   const gradeWord = plural(gradeCount, "класс", "класса", "классов");
   const topicWord = plural(subjectTopicCount, "тема", "темы", "тем");
-  const description = `ИИ-генератор рабочих листов и тестов по ${subj}. ${gradeCount} ${gradeWord}, ${subjectTopicCount} ${topicWord}. PDF с ответами за 30 секунд.`;
+  const description = `ИИ-генератор рабочих листов и тестов по ${subj}. ${gradeCount} ${gradeWord}, ${subjectTopicCount} ${topicWord}. PDF с ответами за минуту.`;
   const base = SITE_URL;
   const canonicalUrl = `${base}/subject/${subject.slug}`;
   return {
@@ -119,7 +119,7 @@ export default function SubjectHubPage({ params }: Props) {
               </span>
             </h1>
             <p className="mt-5 text-lg text-warm-600 text-pretty max-w-2xl">
-              {subject.description} Задания по ФГОС, готовый PDF с ответами и пояснениями — за 30 секунд.
+              {subject.description} Задания по ФГОС, готовый PDF с ответами и пояснениями — за минуту.
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-3">
               <Button
