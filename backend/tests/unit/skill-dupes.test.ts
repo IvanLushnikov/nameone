@@ -219,3 +219,135 @@ describe("ТЗ-26 Ф-2: устойчивость и замена", () => {
     expect(findSkillDupes(sheet)).toEqual(findSkillDupes(sheet));
   });
 });
+
+describe("ТЗ-26 Ф-2: английская инструкция — не навык (регресс с живого прогона)", () => {
+  // Найдено живым прогоном 13.10.2026 на НОРМАЛЬНОМ листе по английскому 11:
+  // детектор объявил пять «дублей», все — инструкция задания:
+  //   1↔4  «with the correct»      1↔6  «complete the sentence»
+  //   2↔7  «choose the correct»   2↔10 «choose the correct»   7↔10 то же
+  //
+  // Лист забраковывался бы как дубльный. Ложный детект хуже пропущенного:
+  // учитель потерял бы нормальные задания.
+  const englishSheet = [
+    t("Choose the correct form of the verb: he ___ (go) to school.", 1),
+    t("Choose the correct answer: A) is B) are C) am.", 2),
+    t("Put the verbs into the Present Perfect: she (not / call) yet.", 3),
+    t("Complete the sentence with the correct preposition: He arrived ___ time.", 4),
+    t("Underline the subject in the sentence: The cat sleeps.", 5),
+    t("Complete the sentence: There ___ some milk in the fridge.", 6),
+    t("Choose the correct word: I ___ finished my homework yet.", 7),
+    t("Match the word with its meaning: silent — quiet.", 8),
+    t("Fill in the gap with the correct article: ___ apple is red.", 9),
+    t("Choose the correct tense: He ___ (watch) TV yesterday.", 10),
+  ];
+
+  it("нормальный английский лист не объявляется дубльным", () => {
+    const result = findSkillDupes(englishSheet);
+    expect(
+      result.pairs.map((p) => `${p.first}↔${p.second}: ${p.signature}`),
+      "английская инструкция принята за повтор навыка",
+    ).toEqual([]);
+  });
+
+  it("служебное слово «the» не участвует в сигнатуре", () => {
+    // «choose the correct answer» и «choose the correct tense» различаются
+    // последним словом; «the» общее и не должно склеивать их.
+    const sig = taskSignature("Choose the correct answer").join(" ");
+    expect(sig).not.toContain("the");
+    expect(sig).not.toContain("choos");
+  });
+
+  it("английская инструкция не мешает ловить НАСТОЯЩИЙ дубль", () => {
+    // Тот же навык, что и в русском кейсе аудита («подчеркните глагол в
+    // Present Perfect»), чтобы доказать: фильтр не стал беззубым.
+    const sheet = [
+      t("Underline the verb in the Present Perfect: She has finished her homework.", 1),
+      t("Underline the verb in the Present Perfect: He has finished his homework.", 2),
+      t("Match the word with its meaning: silent — quiet.", 3),
+    ];
+    const result = findSkillDupes(sheet);
+    expect(result.hasDupes, "настоящий дубль перестали ловить").toBe(true);
+    expect(result.pairs[0]).toMatchObject({ first: 1, second: 2 });
+  });
+
+  it("и короткое задание не съедается целиком", () => {
+    // Честная граница: у задания, у которого после снятия инструкции осталось
+    // меньше трёх содержательных слов, дублем быть НЕ может. Иначе
+    // «choose the correct answer» снова стал бы «навыком».
+    const result = findSkillDupes([
+      t("Choose the correct form: he (go).", 1),
+      t("Choose the correct form: she (go).", 2),
+    ]);
+    expect(result.pairs).toEqual([]);
+  });
+});
+
+describe("ТЗ-26 Ф-2: формат с выбором ответа (регресс с живого прогона)", () => {
+  // Живой прогон 13.10.2026, лист по английскому 11: шесть «дублей» с общей
+  // цепочкой «option правильн вариант». Задания разные, обвязка одинаковая.
+  const mcqSheet = [
+    t("Choose the correct option: the capital of France is ___ .", 1),
+    t("Mark the correct answer: water boils at ___ degrees.", 2),
+    t("Выберите правильный вариант ответа: 2 + 2 = ___ .", 3),
+    t("Listen and choose the correct option out of three.", 4),
+    t("Отметьте верный вариант в задании.", 5),
+    t("Read the text and answer the questions below.", 6),
+    t("Put the words into the correct order to make a sentence.", 7),
+    t("Choose the correct option: the largest planet is ___ .", 8),
+    t("Mark the correct answer: a triangle has ___ sides.", 9),
+    t("Выберите правильный вариант: 10 : 2 = ___ .", 10),
+  ];
+
+  it("лист с тестовыми заданиями не объявляется дубльным", () => {
+    const result = findSkillDupes(mcqSheet);
+    expect(
+      result.pairs.map((p) => `${p.first}↔${p.second}: ${p.signature}`),
+      "обвязка теста принята за повтор навыка",
+    ).toEqual([]);
+  });
+});
+
+describe("ТЗ-26 Ф-2: стоп-слова понимают огрублённую форму (регресс)", () => {
+  // Ключевой баг, найденный живыми прогонами 13.10.2026: словари записаны
+  // НЕОГРУБЛЁННЫМИ словами («правильный», «форма», «завершите»), а фильтр
+  // смотрит на ОГРУБЛЁННЫЕ токены. «форма» → «форм», «завершите» → «завершит»,
+  // и слова не совпадали: инструкция попадала в сигнатуру и давала ложные
+  // срабатывания на нормальных листах по английскому.
+  it("русская инструкция не попадает в сигнатуру ни в какой форме", () => {
+    // Проверяем, что не уцелели СЛОВА-ОБВЯЗКИ. Само слово «глагол» в «правильная
+    // форма глагола» — содержательное, и оно обязано уцелеть: из него одного
+    // цепочка в три слова не соберётся, а выкидывать его незачем.
+    for (const phrase of [
+      "выберите правильный вариант ответа",
+      "правильная форма глагола",
+      "завершите предложение",
+      "отметьте верный ответ",
+      "подчеркните правильную форму",
+    ]) {
+      const sig = taskSignature(phrase).join(" ");
+      expect(sig, `«${phrase}» → ${sig}`).not.toMatch(
+        /правильн|вариант|форм|заверш|отметь|верн|ответ|подчеркн|выберите/,
+      );
+    }
+  });
+
+  it("английская инструкция не попадает в сигнатуру", () => {
+    for (const phrase of [
+      "choose the correct option",
+      "mark the correct answer",
+      "complete the sentence",
+      "put the verbs into the correct form",
+    ]) {
+      const sig = taskSignature(phrase).join(" ");
+      expect(sig, `«${phrase}» → ${sig}`).not.toMatch(/правильн|вариант|форм|заверш|option|correct|choos|mark|complet/);
+    }
+  });
+
+  it("порог остался 3 — настоящие дубли из аудита должны ловиться", () => {
+    // Поднимать порог было бы проще, но тогда теряется весь смысл детектора:
+    // «живая неживая природа» — ровно три слова.
+    const sig = taskSignature("Разделите объекты на живую и неживую природу").join(" ");
+    expect(sig.split(" ")).toContain("жив");
+    expect(sig.split(" ")).toContain("нежив");
+  });
+});
