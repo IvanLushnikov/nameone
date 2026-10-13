@@ -5,11 +5,6 @@ import { WEEKLY_TOPICS } from "@/lib/content/weekly-topics";
 import { MATERIALS_CATALOG, materialToSitemapEntry } from "@/lib/content/materials-catalog";
 import { SITE_URL } from "@/lib/site";
 
-// Next 16 при `output: "export"` требует явного указания статики на
-// маршрутах метаданных, иначе сборка падает на сборе данных страницы.
-// Подробности — в комментарии к такой же строке в `robots.ts`.
-export const dynamic = "force-static";
-
 export default function sitemap(): MetadataRoute.Sitemap {
   const base = SITE_URL;
 
