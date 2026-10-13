@@ -17,7 +17,7 @@
     "@types/qrcode.react": "^1.0.5",
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
-    "docx": "^9.7.2",
+    "docx": "^9.8.1",
     "file-saver": "^2.0.5",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.2",
