@@ -10,6 +10,7 @@ const cols = [
       { href: "/constructor", label: "Генератор листов" },
       { href: "/oge", label: "ОГЭ / ЕГЭ режим" },
       { href: "/pricing", label: "Тарифы" },
+      { href: "/blog", label: "Блог" },
       { href: "/dashboard", label: "Личный кабинет" },
     ],
   },

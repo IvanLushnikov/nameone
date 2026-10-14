@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/shared/Logo";
 import { Button } from "@/components/ui/Button";
-import { Menu, X, Sparkles, GraduationCap, Library } from "lucide-react";
+import { Menu, X, Sparkles, GraduationCap, Library, Newspaper } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { getProfile } from "@/lib/utils/storage";
 import type { UserProfile } from "@/lib/types";
@@ -27,6 +27,11 @@ const nav = [
   // Пункт в меню обещал учителю то, чего на сайте не лежало.
   { href: "/oge", label: "ОГЭ / ЕГЭ", icon: GraduationCap },
   { href: "/pricing", label: "Тарифы", icon: null },
+  // Блог появился 14.10.2026. По обратной стороне правила выше («пункт в меню
+  // обещает то, чего на сайте нет») в меню его класть можно: посты есть, они
+  // в карте сайта, и без ссылки из меню блог достижим только через sitemap —
+  // учитель на сайт попадает из поиска, а не из шапки.
+  { href: "/blog", label: "Блог", icon: Newspaper },
 ];
 
 export function Header() {

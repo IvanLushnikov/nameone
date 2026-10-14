@@ -199,7 +199,7 @@ export default function PresentationTopicPage({ params }: Props) {
                 Презентация по теме {quotedTopic(topic.title)}
               </h1>
               <p className="mt-4 text-lg text-warm-600 text-pretty">
-                Готовая презентация по ФГОС для {grade.num} класса по предмету {subject.title.toLowerCase()}.
+                Готовая презентация по ФГОС для {grade.num} класса по {prepositionalTitle(subject.slug, subject.title)}.
                 10 слайдов с заметками для учителя — открывайте в PowerPoint и проводите урок.
               </p>
 
@@ -283,7 +283,7 @@ export default function PresentationTopicPage({ params }: Props) {
               Что показывают слайды по теме «{topic.title}»
             </h2>
             <p className="text-warm-600 mb-6">
-              {content.grade.focus} Презентация собирается под {grade.num} класс по предмету{" "}
+              {content.grade.focus} Презентация собирается под {grade.num} класс по{" "}
               {prepositionalTitle(subject.slug, subject.title)}.
             </p>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">

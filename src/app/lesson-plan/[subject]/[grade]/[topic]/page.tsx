@@ -224,7 +224,7 @@ export default function LessonPlanTopicPage({ params }: Props) {
                 План урока по теме {quotedTopic(topic.title)}
               </h1>
               <p className="mt-4 text-lg text-warm-600 text-pretty">
-                Готовый план урока по ФГОС для {grade.num} класса по предмету{" "}
+                Готовый план урока по ФГОС для {grade.num} класса по{" "}
                 {prepositionalTitle(subject.slug, subject.title)}.
                 Конспект на 45 минут с этапами, целями, оборудованием и домашним заданием.
               </p>
