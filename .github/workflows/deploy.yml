@@ -155,6 +155,14 @@ jobs:
         working-directory: backend
         run: npx vitest run
 
+      # Линт бэкенда добавлен 15.10.2026. До этого шага не было: бэкенд копил
+      # ошибки линта днями, и ничего их не видело — typecheck ошибку ESLint не
+      # ловит, тесты тем более. На фронте линт в проверках есть, на бэке был
+      # дырой.
+      - name: Lint
+        working-directory: backend
+        run: npm run lint
+
       - name: Deploy API Worker
         working-directory: backend
         env:
