@@ -43,6 +43,59 @@ function examplesPhrase(count: number): string {
   return `${count} ${plural(count, "задание-образец", "задания-образца", "заданий-образцов")}`;
 }
 
+/**
+ * Знаков в сниппете — всё, что дальше, в выдаче не показывается.
+ */
+const DESCRIPTION_LIMIT = 160;
+
+/** Что React делает со спецсимволами, попадая в атрибут `<meta content>`. */
+const HTML_ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#x27;",
+};
+
+/**
+ * Длина текста в готовом HTML, а не в JS-строке.
+ *
+ * `clipDescription` считает знаки в строке, а в атрибут meta попадает уже
+ * экранированный текст: `&` в названии темы («Conditionals Type 1 & 2»)
+ * уходит как `&amp;` и занимает на четыре знака больше. Из-за этого описание
+ * именно этой темы собиралось 159 знаками, а поисковик видел 163. Лимит
+ * считаем по тому, что реально окажется в HTML.
+ */
+function htmlLength(text: string): number {
+  return text.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch]).length;
+}
+
+/**
+ * Собирает описание по предложениям: целиком в сниппет оно не влезает.
+ *
+ * ТЗ-21 п.14 резало шаблон `clipDescription` по последнему пробелу, и на 676
+ * страницах из 1075 описание заканчивалось на полуслове — «…с ответами.
+ * Сгенерируйте». Такой огрызок читается как мысль, которая оборвалась, и
+ * учитель кликает на страницу, думая, что дописание там. Теперь хвост
+ * отбрасывается ЦЕЛИКОМ, по границе предложения, а по границе слова режется
+ * только первая фраза — когда не влезает и она (длинные названия тем вроде
+ * «Числовые неравенства и их свойства. Линейные неравенства с одной
+ * переменной»).
+ */
+function descriptionFromSentences(sentences: string[]): string {
+  const fit: string[] = [];
+  for (const sentence of sentences) {
+    // Та же нормализация, что в `clipDescription`: `&nbsp;` в названии темы
+    // иначе уедет в сниппет литералом и съест шесть знаков на каждый.
+    const flat = sentence.replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    if (htmlLength([...fit, flat].join(" ")) > DESCRIPTION_LIMIT) break;
+    fit.push(flat);
+  }
+  if (fit.length > 0) return fit.join(" ");
+  const first = sentences[0];
+  return clipDescription(first, DESCRIPTION_LIMIT - (htmlLength(first) - first.length));
+}
+
 /** Сколько одноимённых тем в этом классе — считается один раз на класс. */
 function countTitles(subject: string, grade: number): Map<string, number> {
   const counts = new Map<string, number>();
@@ -77,11 +130,19 @@ export function generateMetadata({ params }: Props): Metadata {
   // предмета берём в кавычки — иначе в сниппете выходит «по математика».
   const subjectName = `предмету «${subject.title}»`;
   // Описание — текст из main (тема в «ёлочках», «по предмету «…»» без падежной
-  // ошибки, `examplesPhrase` вместо жёсткого «заданий-образцов»), обрезанный
-  // по theirs (ТЗ-21 п.14): хвост за 160 знаков в сниппете не виден, режется
-  // хвост, а не начало — начало описания и есть ключевые слова запроса.
-  const rawDescription = `Скачайте готовые рабочие листы и тесты по теме ${quotedTopic(topicTitleWithUmk(topic.title, countTitles(params.subject, Number(params.grade)).get(topic.title.trim()) ?? 1, topic.fgosRef))} для ${grade.num} класса по ${subjectName}. ${examplesPhrase(topic.examples.length)} с ответами. Сгенерируйте свой вариант за минуту.`;
-  const description = clipDescription(rawDescription);
+  // ошибки, `examplesPhrase` вместо жёсткого «заданий-образцов»), собранное по
+  // предложениям: хвост за 160 знаков в сниппете не виден, а отрезанный
+  // на полуслове он читается как огрызок (см. `descriptionFromSentences`).
+  //
+  // «Скачайте готовые» из прежней формулировки убрано намеренно: на странице
+  // нет кнопки выгрузки — обе кнопки ведут в конструктор, а файл появляется
+  // после генерации. Осталось то, что страница правда делает: показывает
+  // задания-образцы с ответами и собирает свой вариант.
+  const description = descriptionFromSentences([
+    `Рабочие листы и тесты по теме ${quotedTopic(topicTitleWithUmk(topic.title, countTitles(params.subject, Number(params.grade)).get(topic.title.trim()) ?? 1, topic.fgosRef))} для ${grade.num} класса по ${subjectName}.`,
+    `${examplesPhrase(topic.examples.length)} с ответами.`,
+    "Свой вариант — за минуту.",
+  ]);
 
   // TZ-10 §5.1 / §9.7: canonical + og:type=article.
   // publishedTime/modifiedTime убрали: в таксономии (Topic) нет полей
