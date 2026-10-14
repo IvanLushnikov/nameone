@@ -10,8 +10,15 @@ import { WorksheetPreview } from "@/components/constructor/WorksheetPreview";
 import { LessonPlanPreview } from "@/components/constructor/LessonPlanPreview";
 import { PresentationPreview } from "@/components/constructor/PresentationPreview";
 import { KtpPreview } from "@/components/constructor/KtpPreview";
-import { InteractiveCreatePanel } from "@/components/interactives/InteractiveCreatePanel";
+import InteractivePreview from "@/components/constructor/InteractivePreview";
 import { isInteractiveFormat } from "@/lib/interactives/formats";
+import { createInteractive, type CreateInteractiveOk } from "@/lib/interactives/api";
+import {
+  DEFAULT_CONSTRUCTOR_FORMAT,
+  constructorInteractiveOptions,
+  interactiveCreateErrorMessage,
+  interactivePlayPath,
+} from "@/lib/construct/interactive";
 import type { InteractiveFormat } from "@/lib/interactives/types";
 import { CardsPreview } from "@/components/constructor/CardsPreview";
 import { MaterialsPreview } from "@/components/constructor/MaterialsPreview";
@@ -282,14 +289,18 @@ const DEEP_LINK_TYPES = [
  */
 /**
  * Типы без генератора (TZ-16 Этапы 6–7). Попасть в них можно только по
- * deep-link вида `?type=interactive`: в пикере их пока нет.
+ * deep-link вида `?type=image`: в пикере их пока нет.
  * Нужен, чтобы `generate()` отвечал честным «скоро будет», а не сообщением
  * «не получилось, попробуйте ещё раз», в котором повтор бессмысленен.
+ *
+ * Лист 4.1.1 (14.10.2026): «interactive» УБРАН из множества — движок готов
+ * (`POST /api/interactives`, ранклер на бэке, шесть форматов, страница
+ * `/play/?t=`), сборка идёт в `buildInteractive()` и рисуется панелью
+ * `InteractivePreview`. Раньше учитель, выбравший тип, доходил до кнопки и
+ * получал «этот формат ещё в работе» — при готовом движке это была ложь.
+ * «Картинка» остаётся: у неё другой лист работ и свой провайдер.
  */
-const NOT_YET_IMPLEMENTED_TYPES: ReadonlySet<TaskType> = new Set<TaskType>([
-  "interactive",
-  "image",
-]);
+const NOT_YET_IMPLEMENTED_TYPES: ReadonlySet<TaskType> = new Set<TaskType>(["image"]);
 
 function resultKindForType(type: TaskType): ResultKind | null {
   switch (type) {
@@ -311,8 +322,13 @@ function resultKindForType(type: TaskType): ResultKind | null {
       return "presentation";
     case "ktp":
       return "ktp";
-    // TZ-16 Этапы 6–7: мок/превью/экспорт появятся позже.
+    // Лист 4.1.1: интерактив стал обычным типом. Отдельный `kind` нужен,
+    // чтобы НИЖЕ по общему блоку результата (заголовок + PDF/DOCX + печать)
+    // для него ничего не рисовалось: у игры нет файла, который можно
+    // скачать, зато есть ссылка и QR. Этими словами занят `InteractivePreview`.
     case "interactive":
+      return "interactive";
+    // TZ-16 Этапы 6–7: мок/превью/экспорт появятся позже.
     case "image":
       return null;
   }
@@ -326,7 +342,8 @@ type ResultKind =
   | "ktp"
   | "cards"
   | "materials"
-  | "lesson-bundle";
+  | "lesson-bundle"
+  | "interactive";
 
 /**
  * F-04-B: success-конфетти после удачной генерации.
@@ -570,6 +587,65 @@ export default function ConstructorPage() {
   // TZ-13: формат игры, выбранный в блоке «Оживить урок» (?interactiveFormat=).
   // null = учитель в конструкторе не про интерактив, обычный флоу листа.
   const [interactiveFormat, setInteractiveFormat] = React.useState<InteractiveFormat | null>(null);
+
+  /**
+   * Лист 4.1.1: собранная игра и текст последней ошибки сборки.
+   *
+   * Ошибка живёт именно текстом, а не кодом: учителю показываем слова, в
+   * которых сказано, что делать (войти / подождать / попробовать позже), а не
+   * «что-то сломалось». Сборка идёт на бэке отдельным запросом, поэтому здесь
+   * не нужен ни `generating`, ни общий progress-UI — у панели своя надпись
+   * «Собираем… 20–40 секунд».
+   */
+  const [interactive, setInteractive] = React.useState<CreateInteractiveOk | null>(null);
+  const [interactiveError, setInteractiveError] = React.useState<string | null>(null);
+  const [buildingInteractive, setBuildingInteractive] = React.useState(false);
+  /**
+   * Что именно происходит во время сборки: «Делаем лист…», «Сохраняем лист…»,
+   * «Собираем игру…». Без этого панель минуту показывает одно «Собираем…», а
+   * без листа это ДВА вызова модели — учитель должен видеть, что процесс идёт,
+   * а не что кнопка зависла.
+   */
+  const [interactiveStage, setInteractiveStage] = React.useState<string | null>(null);
+  /** Лист сохраняется на сервере прямо сейчас (обычно пара секунд). */
+  const [savingWorksheet, setSavingWorksheet] = React.useState(false);
+  /**
+   * Обработчик сборки, который регистрирует `InteractivePreview`.
+   *
+   * Нужен для одной ситуации: кнопка «Создать» в параметрах на этом типе не
+   * рисуется (её место — в панели игры), но `generate()` может быть вызван из
+   * других мест. Чтобы такой вызов не кончался заглушкой, он уходит в тот же
+   * сборщик. `null` = панель не смонтирована, тогда показываем честный тост.
+   */
+  const interactiveBuildRef = React.useRef<(() => void) | null>(null);
+  /**
+   * Сохранение листа, которое уже идёт.
+   *
+   * Нужно, чтобы «Собрать игру» во время фонового сохранения не слал второе
+   * сохранение: учитель переключился на интерактив через секунду после листа и
+   * нажал кнопку — без этого в базе появилось бы два одинаковых листа, а
+   * второй считался бы мусором в кабинете. Сборщик дожидается этого промиса и
+   * берёт его id.
+   */
+  const pendingSaveRef = React.useRef<
+    Promise<{ ok: boolean; worksheetId?: string; error?: string }> | null
+  >(null);
+  /**
+   * Формат игры по умолчанию. `interactiveFormat` приходит из deep-link
+   * (`?interactiveFormat=`), поэтому в конструкторе без ссылки берём первый
+   * формат реестра — тот же, что советует сервер для первого показа.
+   */
+  const activeInteractiveFormat: InteractiveFormat = interactiveFormat ?? DEFAULT_CONSTRUCTOR_FORMAT;
+  /**
+   * Стабильный обработчик регистрации сборщика для панели игры.
+   *
+   * Без `useCallback` стрелка менялась бы на каждом рендере, и эффект
+   * регистрации в панели перезапускался бы на каждом рендере — работать
+   * корректно, но дёргаться лишний раз при каждом вводе.
+   */
+  const registerInteractiveBuild = React.useCallback((fn: (() => void) | null) => {
+    interactiveBuildRef.current = fn;
+  }, []);
   /**
    * TZ-12: залогинен ли учитель — для кнопки «Выдать классу».
    * Сначала `false`, потом синхронизируем в effect: `getProfile()` читает
@@ -726,13 +802,16 @@ export default function ConstructorPage() {
     // TZ-13 §4.9: приход из блока «Оживить урок» на экране листа.
     // Раньше параметр отправлялся, но здесь не читался — учитель выбирал
     // формат и попадал в обычную форму листа, то есть выбор молча терялся.
-    // Панель создания игры рендерится в блоке ниже и использует серверный
-    // `savedWorksheetId`: ранклеру нужен id листа В БАЗЕ, а не клиентский.
+    // Лист 4.1.1: формат доезжает до панели игры в правой колонке, там же
+    // выбор преселектом. Шаг НЕ переключаем здесь: ниже тот же эффект разбирает
+    // `?subject=&grade=&topic=` и сам решает, куда идти — с готовой темой сразу
+    // в «Параметры», без темы на экран выбора темы. Раньше здесь стоял безусловный
+    // `setStep("configure")`, и ссылка без предмета приводила на пустую форму,
+    // где сборка упиралась в «нет предмета».
     const formatParam = params.get("interactiveFormat");
     if (formatParam && isInteractiveFormat(formatParam)) {
       setInteractiveFormat(formatParam);
       setType("interactive");
-      setStep("configure");
     }
 
     // F-04-C: deep-link для режима «По номеру ОГЭ/ЕГЭ».
@@ -818,6 +897,11 @@ export default function ConstructorPage() {
     setMaterialBundle(null);
     setLessonBundle(null);
     setPhotoCheckOpen(false);
+    // Лист 4.1.1: игра и её серверный id — часть работы, «Сначала» обнуляет
+    // её вместе с листом.
+    setInteractive(null);
+    setInteractiveError(null);
+    setSavedWorksheetId(null);
     // F-04-C: сброс экзамен-флоу.
     setExam(null);
     setExamSubject(null);
@@ -885,6 +969,17 @@ export default function ConstructorPage() {
     setMaterialBundle(null);
     setLessonBundle(null);
     setPhotoCheckOpen(false);
+    // Лист 4.1.1: собранная игра привязана к листу И формату, поэтому при
+    // смене типа она не должна оставаться на экране — учитель поменял тип и
+    // увидел бы чужую ссылку с QR. Ошибку тоже сбрасываем: её текст был
+    // прошлую попытку, а не текущий экран.
+    if (next !== "interactive") {
+      setInteractive(null);
+      setInteractiveError(null);
+    }
+    // Лист убран → серверный id от другого листа больше не годится: ранклер
+    // прочитал бы из базы чужие задания.
+    setSavedWorksheetId(null);
   }, []);
 
   /** F-04-C: переключение режима wizard. Доступно на любом шаге. */
@@ -947,12 +1042,206 @@ export default function ConstructorPage() {
     prevStep.current = step;
   }, [step, mode]);
 
+  /**
+   * Лист 4.1.1: собрать игру из листа.
+   *
+   * Путь в три шага, и каждый шаг может честно остановиться словами:
+   *   1. ЛИСТ. Если листа на экране нет — делаем его тут же, тем же запросом,
+   *      что и обычная генерация (`generateWorksheetSmart`), и кладём в историю
+   *      так же. Отдельная просьба «сначала сделайте лист» отправляла бы
+   *      учителя делать то, что конструктор умеет сделать сам.
+   *   2. СЕРВЕР. Ранклер читает `payload_json` листа из базы, поэтому нужен id
+   *      из `POST /api/worksheets/save`. Если сохранение уже идёт — дожидаемся
+   *      его, а не шлём второе (иначе в базе появляется дубль листа).
+   *   3. ИГРА. `POST /api/interactives` с форматом и дефолтными настройками.
+   *
+   * Квота: без листа это ДВА вызова модели, и списывается ровно одна
+   * бесплатная генерация — за лист, потому что счётчик один на оба. Сама
+   * игра счётчик не трогает (у неё свой лимит на сервере, 20 в час), и врать
+   * учителю про это нельзя, поэтому счётчик тут не трогаем.
+   */
+  const buildInteractive = React.useCallback(async () => {
+    if (buildingInteractive) return;
+    setInteractiveError(null);
+
+    // Вход. Без него сервер не хранит игру и не выдаёт ссылку — раньше кнопка
+    // ждала этого на бэке и возвращала 401, теперь говорим сразу и здесь.
+    if (!isLoggedIn) {
+      setInteractiveError(
+        "Войдите, чтобы выдать игру классу: ссылка и результаты хранятся на сервере под вашим аккаунтом",
+      );
+      return;
+    }
+    if (mode !== "topic" || !subject || !grade || !topic) {
+      setInteractiveError(
+        "Игра собирается по теме урока. Сначала выберите предмет, класс и тему",
+      );
+      return;
+    }
+
+    setBuildingInteractive(true);
+    setInteractiveStage(null);
+    try {
+      // ── Шаг 1: лист ──────────────────────────────────────────────────────
+      let ws = worksheet;
+      if (!ws) {
+        const isPaid = isPaidPlan(serverUsage?.plan);
+        if (!isPaid && !canGenerate()) {
+          setShowPaywall(true);
+          return;
+        }
+        setInteractiveStage("Делаем лист по этой теме — это первый вызов модели…");
+        const r = await generateWorksheetSmart({
+          subject,
+          grade,
+          topic,
+          type: "worksheet",
+          difficulty,
+          count,
+          withAnswers,
+          withExplanations,
+          ...(umk ? { meta: { umk } } : {}),
+        });
+        const made = r.worksheet;
+        setIsDemoResult(r.isDemo);
+        // Квота списывается за реальный вызов. Заготовка демо-режима тоже
+        // стоит попытки — так же, как в обычном generate().
+        const counter = settleGeneration({ isDemo: r.isDemo });
+        setRemaining(Math.max(0, FREE_GENERATIONS - counter.count));
+        setWorksheet(made);
+        addToHistory({
+          id: made.id,
+          type: "worksheet",
+          title: made.title,
+          // `Worksheet.subject` приходит со бэка строкой, в истории ждёт слаг.
+          // Тот же каст, что и в обычном generate().
+          subject: made.subject as SubjectSlug,
+          grade: made.grade,
+          createdAt: new Date().toISOString(),
+          isFavorite: false,
+          artifact: { ...made, isDemo: r.isDemo } as UserHistoryItem["artifact"],
+        });
+        // Заготовку в игру не ведём: из неё получилась бы такая же заготовка,
+        // и учитель отдал бы её классу. Словами — прямо в панели.
+        if (r.isDemo) {
+          setInteractiveError(
+            "Сервис сейчас недоступен: лист получился заготовкой из шаблона. Игра из неё была бы такой же заготовкой — соберите её, когда сервис вернётся",
+          );
+          return;
+        }
+        ws = made;
+      }
+
+      // ── Шаг 2: лист в базе ────────────────────────────────────────────────
+      let worksheetId = savedWorksheetId;
+      if (!worksheetId) {
+        setInteractiveStage("Сохраняем лист на сервере…");
+        const pending = pendingSaveRef.current;
+        const awaited = pending ? await pending : null;
+        if (awaited?.ok && awaited.worksheetId) {
+          worksheetId = awaited.worksheetId;
+        } else {
+          const saved = await saveWorksheet({
+            type: "worksheet",
+            subject: ws.subject as SubjectSlug,
+            grade: ws.grade,
+            topic: ws.topic,
+            title: ws.title,
+            difficulty: ws.difficulty,
+            tasks: ws.tasks,
+            source: "llm",
+          });
+          if (!saved.ok) {
+            setInteractiveError(
+              saved.error === "unauthorized"
+                ? "Войдите, чтобы выдать игру классу: без сохранённого листа ссылку выдать нельзя"
+                : saved.error === "network"
+                  ? "Сервер недоступен, лист не сохранился. Игра собирается из сохранённого листа — попробуйте, когда связь вернётся"
+                  : "Лист не сохранился на сервере, а игра собирается именно с него. Попробуйте ещё раз",
+            );
+            return;
+          }
+          worksheetId = saved.worksheetId;
+          void refreshUsage();
+        }
+        setSavedWorksheetId(worksheetId);
+      }
+
+      // ── Шаг 3: игра ───────────────────────────────────────────────────────
+      setInteractiveStage("Собираем игру из заданий листа…");
+      const res = await createInteractive({
+        worksheetId,
+        format: activeInteractiveFormat,
+        options: constructorInteractiveOptions(activeInteractiveFormat),
+      });
+      if (!res.ok) {
+        setInteractiveError(interactiveCreateErrorMessage(res.error));
+        return;
+      }
+      // Пустой `url` в ответе — не повод оставить учителя без ссылки:
+      // адрес фронта клиенту известен, а бэк про него не знает.
+      setInteractive(
+        res.interactive.url
+          ? res.interactive
+          : { ...res.interactive, url: interactivePlayPath(res.interactive.shareToken) },
+      );
+      trackEvent("constructor_interactive_built", { format: activeInteractiveFormat });
+    } catch (err) {
+      // Сеть/исключение — тоже словами. Молчаливый `catch` выглядел бы как
+      // «собралось», а игры на экране нет.
+      setInteractiveError(
+        err instanceof Error
+          ? `Не удалось собрать игру: ${err.message}`
+          : "Не удалось собрать игру. Попробуйте ещё раз",
+      );
+    } finally {
+      setBuildingInteractive(false);
+      setInteractiveStage(null);
+    }
+  }, [
+    activeInteractiveFormat,
+    buildingInteractive,
+    count,
+    difficulty,
+    grade,
+    isLoggedIn,
+    mode,
+    savedWorksheetId,
+    subject,
+    topic,
+    umk,
+    withAnswers,
+    withExplanations,
+    worksheet,
+  ]);
+
   const generate = async () => {
-    // TZ-16 Этапы 6–7: типы объявлены в TaskType и входят в DEEP_LINK_TYPES,
-    // но генераторов для них ещё нет. Без этой проверки учитель, пришедший по
-    // ссылке `?type=interactive`, доходил до кнопки «Создать» и получал
-    // «Не получилось, попробуйте ещё раз» — а повтор не помог бы никогда.
-    // Показываем честное «скоро», ничего не списав с квоты.
+    // Лист 4.1.1: интерактив — отдельный путь. Он не «генерируется» тем же
+    // запросом, что лист: сначала нужен лист, сохранённый на сервере, потом
+    // отдельный вызов ранклера. Поэтому вся сборка живёт в buildInteractive(),
+    // а кнопка «Создать» на этом типе ведёт туда же. Повторная сборка учителя
+    // (например, из шапки) приводит в тот же обработчик, а не в ошибку.
+    if (type === "interactive") {
+      const build = interactiveBuildRef.current;
+      if (build) {
+        build();
+        return;
+      }
+      // Панель ещё не смонтирована (первый рендер шага). Не выдумываем
+      // результат — говорим, где действие.
+      toast({
+        tone: "info",
+        title: "Интерактив собирается в блоке «Игра для класса»",
+        description: "Выберите формат и нажмите «Собрать игру»",
+      });
+      return;
+    }
+
+    // TZ-16 Этапы 6–7: картинка объявлена в TaskType и входит в
+    // DEEP_LINK_TYPES, но генератора для неё ещё нет. Без этой проверки
+    // учитель, пришедший по ссылке `?type=image`, доходил до кнопки
+    // «Создать» и получал «Не получилось, попробуйте ещё раз» — а повтор
+    // не помог бы никогда. Показываем честное «скоро», ничего не списав с квоты.
     if (NOT_YET_IMPLEMENTED_TYPES.has(type)) {
       toast({
         tone: "info",
@@ -1158,9 +1447,8 @@ export default function ConstructorPage() {
               variants: r.variants,
             };
           }
-          // TZ-16 Этапы 6–7: типы объявлены в TaskType и видны в пикере,
-          // но генераторов для них ещё нет. Явная ошибка вместо тихой подмены.
-          case "interactive":
+          // TZ-16 Этапы 6–7: генератора для картинки нет. Явная ошибка
+          // вместо тихой подмены.
           case "image":
             throw new Error(`[generate] тип "${type}" ещё не реализован (TZ-16, Этапы 6–7)`);
           default: {
@@ -1422,7 +1710,16 @@ export default function ConstructorPage() {
       // Карточки и материалы пока не умеют сохраняться на бэк (см. ветку
       // `return null` выше) — не шлём запрос, который гарантированно отбросят.
       if (saveInput) {
-        void saveWorksheet(saveInput).then((r) => {
+        // Лист 4.1.1: сохраняем его в ref, чтобы «Собрать игру» могла
+        // дождаться этого же сохранения вместо второго запроса (иначе в базе
+        // появилось бы два одинаковых листа). Плюс флаг для панели игры:
+        // «сохраняем лист» — это подсказка, а не заблокированная кнопка.
+        const isWorksheetSave = saveInput.type === "worksheet";
+        if (isWorksheetSave) setSavingWorksheet(true);
+        const pending = saveWorksheet(saveInput);
+        pendingSaveRef.current = pending;
+        void pending.then((r) => {
+          if (isWorksheetSave) setSavingWorksheet(false);
           if (r.ok) {
             // TZ-12: сохранили id листа — «Выдать классу» сможет ссылаться на него
             // серверным ID вместо клиентского снимка заданий.
@@ -1440,6 +1737,9 @@ export default function ConstructorPage() {
             });
           }
           // "unauthorized" — silent skip, юзер просто не залогинен.
+        }).finally(() => {
+          // Ссылка устарела: следующая сборка должна ждать СВОЕ сохранение.
+          if (pendingSaveRef.current === pending) pendingSaveRef.current = null;
         });
       }
 
@@ -1955,14 +2255,44 @@ export default function ConstructorPage() {
               />
             )}
 
+            {/* Лист 4.1.1: панель интерактива — на месте пустого состояния. Этот тип
+                не показывает «Как будет выглядеть результат» с миниатюрой
+                (FormatChooser в панели и есть выбор формата), поэтому два
+                блока выбора на экране были бы шумом. */}
+            {type === "interactive" &&
+              !generating &&
+              !photoCheckOpen && (
+              <InteractivePreview
+                format={activeInteractiveFormat}
+                onFormatChange={setInteractiveFormat}
+                worksheetTitle={worksheet?.title ?? null}
+                taskCount={worksheet?.tasks.length ?? null}
+                subject={subject}
+                grade={grade}
+                loggedIn={isLoggedIn}
+                serverWorksheetId={savedWorksheetId}
+                savingWorksheet={savingWorksheet}
+                worksheetIsDemo={isDemoResult}
+                building={buildingInteractive}
+                stage={interactiveStage}
+                outOfQuota={remaining === 0 && !isPaidPlan(serverUsage?.plan)}
+                interactive={interactive}
+                error={interactiveError}
+                onBuild={buildInteractive}
+                registerBuild={registerInteractiveBuild}
+              />
+            )}
+
             {/* Пустое состояние — только когда материала нет ЛЮБОГО типа.
                 Проверка была только на `worksheet`, поэтому у остальных шести
                 типов (карточки, КТП, презентация, план урока, материалы, урок
                 целиком) панель «Как будет выглядеть результат» оставалась на
                 экране поверх готового материала — и уходила на печать вместе
                 с ним: на листе оказывался блок с кнопкой «Попробовать» и
-                миниатюрой чужого формата. */}
-            {!worksheet &&
+                миниатюрой чужого формата. Для интерактива (лист 4.1.1) его
+                место занимает панель игры выше. */}
+            {type !== "interactive" &&
+              !worksheet &&
               !lessonPlan &&
               !presentation &&
               !ktp &&
@@ -2019,6 +2349,10 @@ export default function ConstructorPage() {
              * соответствующего вида реально есть — иначе placeholder. */}
             {!generating && (() => {
               const kind = resultKindForType(type);
+              // Лист 4.1.1: у интерактива своя панель выше, а не этот блок.
+              // Здесь живут заголовок, кнопки PDF/DOCX и печать — для игры они
+              // неверны (скачать нечего, печатать нечего: у игры ссылка и QR).
+              if (kind === "interactive") return null;
               const hasArtifact = Boolean(
                 kind === "worksheet" ? worksheet
                 : kind === "lesson-plan" ? lessonPlan
@@ -2451,25 +2785,18 @@ export default function ConstructorPage() {
 
       <PaywallModal open={showPaywall} onClose={() => setShowPaywall(false)} remaining={remaining} />
 
-      {/* TZ-13 §4.9, шаги 3–8: панель создания игры. Показываем только когда
-          учитель пришёл именно за интерактивом (блок «Оживить урок» на листе
-          или `?interactiveFormat=` в URL) — в обычном флоу листа её быть не
-          должно, это лишний блок перед teacher-only зоной.
+      {/* TZ-13 §4.9, шаги 3–8: панель создания игры переехала в правую
+          колонку конструктора и стала `InteractivePreview` (лист 4.1.1).
 
-          `worksheetId` — серверный id листа: ранклер берёт задания из
-          `payload_json`, а клиентский id из localStorage бэку неизвестен. */}
-      {interactiveFormat && mode === "topic" && (
-        <div className="container-tight pb-8 no-print">
-          <InteractiveCreatePanel
-            worksheetId={savedWorksheetId}
-            format={interactiveFormat}
-            title={worksheet?.title ?? "Лист"}
-            subject={subject ?? (worksheet ? String(worksheet.subject) : "")}
-            grade={worksheet?.grade ?? grade ?? 0}
-            itemCount={count}
-          />
-        </div>
-      )}
+          Почему именно туда: старая панель жила отдельным блоком ПОД всей
+          страницей и появлялась только при `?interactiveFormat=`, то есть кроме
+          ссылки с листа («Оживить урок» до неё доходил) обычный учитель выбрать
+          интерактив не мог вовсе. Теперь это обычный тип в шаге «Параметры»,
+          а панель игры стоит там же, где результат у остальных типов: рядом с
+          параметрами, а не под ними.
+
+          Серверный id листа (`savedWorksheetId`) по-прежнему обязателен:
+          ранклер берёт задания из `payload_json` в базе. */}
 
       {/* TZ-12: «Выдать классу» доступна только для рабочего листа — у плана
           урока, презентации и КТП нет заданий, которые ученик решал бы в браузере.
@@ -3084,10 +3411,52 @@ function ConfigureStep({
               </button>
             </div>
           ) : (
-            <ArtifactTypePicker value={type} onChange={onArtifactTypeChange} hasPlus={hasPlus} />
+            <>
+              <ArtifactTypePicker value={type} onChange={onArtifactTypeChange} hasPlus={hasPlus} />
+              {/* Лист 4.1.1: «Интерактив» живёт не в `ArtifactTypePicker`, а
+                  здесь. Пикер лежит в другом файле (его правка — не эта
+                  работа), но прятать из него рабочий тип было бы ровно тем же,
+                  что делал прежний `NOT_YET_IMPLEMENTED_TYPES`: учитель видел бы
+                  «Лист, Тест, Карточки…» и не знал, что игру можно сделать
+                  наравне с ними. Кнопка нарисована теми же классами, что и
+                  остальные типы, и жмёт тот же `onArtifactTypeChange`. */}
+              <button
+                type="button"
+                onClick={() => onArtifactTypeChange("interactive")}
+                aria-pressed={type === "interactive"}
+                data-testid="pick-type-interactive"
+                className={`mt-1.5 w-full h-10 px-3 rounded-lg text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 flex items-center gap-2 ${
+                  type === "interactive"
+                    ? "bg-brand-700 text-white"
+                    : "border border-warm-200 bg-white text-warm-900 hover:border-warm-300 hover:bg-warm-50"
+                }`}
+              >
+                <span aria-hidden>🎮</span>
+                <span>Интерактив</span>
+              </button>
+            </>
           )}
         </div>
 
+        {/* Лист 4.1.1. Для интерактива блок параметров листа не показываем:
+            сложность и «с ответами» на игру не влияют, а количество заданий
+            задаёт ранклер по листу. Оставлять их было бы двумя ручками, которые
+            ничего не меняют, — худший вид молчания. Всё, что у интерактива
+            спрашивают (формат, стоимость, кнопка сборки), живёт в панели
+            «Игра для класса» справа. */}
+        {type === "interactive" ? (
+          <div
+            className="rounded-xl border border-warm-200 bg-warm-50 p-4 text-sm text-warm-700"
+            data-testid="interactive-params-note"
+          >
+            <p className="font-medium text-warm-900">Игра собирается из заданий листа</p>
+            <p className="mt-1">
+              Тема и класс — те же, что и у листа. Формат игры, её стоимость и
+              кнопка сборки — в блоке «Игра для класса».
+            </p>
+          </div>
+        ) : (
+          <>
         {/* Сложность: 3 пилюли без описаний. */}
         <div>
           <label className="text-xs font-medium text-warm-500 uppercase tracking-wider mb-1.5 block">Сложность</label>
@@ -3176,6 +3545,8 @@ function ConfigureStep({
             Готовый PDF примерно за минуту. Без регистрации.
           </p>
         </div>
+          </>
+        )}
       </div>
     </Card>
   );
