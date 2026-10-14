@@ -6,6 +6,7 @@ import type { CardSet, FlashCard } from "@/lib/types";
 import { subjectDisplayName } from "@/lib/content/subject-display-name";
 import { formatDate } from "@/lib/utils/cn";
 import { WorksheetScale } from "./WorksheetScale";
+import { PrintWatermark } from "./PrintWatermark";
 import { CARDS_PER_SHEET, ensureCardsPrintStyles, paginateCards } from "@/lib/utils/cards-print";
 import { SITE_HOST } from "@/lib/site";
 
@@ -38,6 +39,7 @@ export function CardsPreview({ set }: Props) {
   if (!set.cards || set.cards.length === 0) {
     return (
       <div className="bg-warm-100 rounded-2xl p-3 sm:p-6 print:p-0 print:bg-white">
+        {set.isDemo && <PrintWatermark />}
         <div className="mx-auto max-w-[800px]">
           <WorksheetScale>
             <article className="worksheet-page flex items-center justify-center min-h-[60vh] animate-fade-in print:shadow-none">
@@ -64,6 +66,7 @@ export function CardsPreview({ set }: Props) {
 
   return (
     <div className="cards-print-root bg-warm-100 rounded-2xl p-3 sm:p-6 print:p-0 print:bg-white">
+      {set.isDemo && <PrintWatermark />}
       <div className="mx-auto max-w-[800px] space-y-6">
         {sheets.map((sheet, sheetIdx) => (
           <WorksheetScale key={sheetIdx}>

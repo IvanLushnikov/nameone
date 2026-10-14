@@ -5,6 +5,7 @@ import { subjectDisplayName } from "@/lib/content/subject-display-name";
 import { formatDate } from "@/lib/utils/cn";
 import { SITE_HOST } from "@/lib/site";
 import { WorksheetScale } from "./WorksheetScale";
+import { PrintWatermark } from "./PrintWatermark";
 
 interface Props {
   plan: LessonPlan;
@@ -33,6 +34,7 @@ export function LessonPlanPreview({ plan }: Props) {
   if (!plan.stages || plan.stages.length === 0) {
     return (
       <div className="bg-warm-100 rounded-2xl p-3 sm:p-6 print:p-0 print:bg-white">
+        {plan.isDemo && <PrintWatermark />}
         <div className="mx-auto max-w-[800px]">
           <WorksheetScale>
             <article className="worksheet-page flex items-center justify-center min-h-[60vh] animate-fade-in print:shadow-none">
@@ -56,6 +58,7 @@ export function LessonPlanPreview({ plan }: Props) {
 
   return (
     <div className="bg-warm-100 rounded-2xl p-3 sm:p-6 print:p-0 print:bg-white">
+      {plan.isDemo && <PrintWatermark />}
       <div className="mx-auto max-w-[800px]">
         <WorksheetScale>
           <article className="worksheet-page animate-fade-in print:shadow-none">

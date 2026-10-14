@@ -5,6 +5,7 @@ import { SITE_HOST } from "@/lib/site";
 import { SvgChart } from "./SvgChart";
 import { VerifiedBadge } from "./VerifiedBadge";
 import { WorksheetScale } from "./WorksheetScale";
+import { PrintWatermark } from "./PrintWatermark";
 import { MathText } from "@/components/math/MathText";
 import type { ChartSpec } from "@/lib/llm/svg-renderer";
 
@@ -74,6 +75,10 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
 
   return (
     <div className="bg-warm-100 rounded-2xl p-3 sm:p-6 print:p-0 print:bg-white">
+      {/* Пометка «ДЕМО» на печати. Флаг едет вместе с листом (`isDemo` в
+          `Worksheet`), поэтому знак ставит сам превью, а не экран: новый тип
+          материала получает его автоматически, а не «если вспомнили». */}
+      {worksheet.isDemo && <PrintWatermark />}
       <div className="mx-auto max-w-[800px]">
         {/* Лист с заданиями */}
         <WorksheetScale>

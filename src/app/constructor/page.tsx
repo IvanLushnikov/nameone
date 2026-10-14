@@ -18,7 +18,6 @@ import { MaterialsPreview } from "@/components/constructor/MaterialsPreview";
 import { LessonBundlePreview } from "@/components/constructor/LessonBundlePreview";
 import { PaywallModal } from "@/components/shared/PaywallModal";
 import { ArtifactTypePicker, ARTIFACT_TYPE_OPTIONS } from "@/components/constructor/ArtifactTypePicker";
-import { PrintWatermark } from "@/components/constructor/PrintWatermark";
 import { ArtifactTypePreview } from "@/components/constructor/ArtifactTypePreview";
 import {
   PresetGrid,
@@ -1312,7 +1311,15 @@ export default function ConstructorPage() {
         // иначе перезагрузка страницы стирает результат генерации.
         // `addToHistory` сам обрезает это поле у всех, кроме 5 последних,
         // чтобы localStorage не раздувался.
-        artifact: result.payload as UserHistoryItem["artifact"],
+        // Флаг заготовки едет вместе с артефактом. Раньше в историю уходил
+        // «сырой» `result.payload` без `isDemo`, поэтому заготовка, открытая
+        // заново из «Истории», печаталась как обычный материал: ни плашки, ни
+        // водяного знака. В state артефакт с флагом (см. switch выше), а в
+        // историю — нет, и именно оттуда учитель его и переоткрывает.
+        artifact: {
+          ...(result.payload as UserHistoryItem["artifact"]),
+          isDemo: result.isDemo,
+        } as UserHistoryItem["artifact"],
       });
 
       // W1+п.2+п.3: синхронно с localStorage addToHistory — сохраняем артефакт
@@ -1948,7 +1955,22 @@ export default function ConstructorPage() {
               />
             )}
 
-            {!worksheet && !generating && !photoCheckOpen && (
+            {/* Пустое состояние — только когда материала нет ЛЮБОГО типа.
+                Проверка была только на `worksheet`, поэтому у остальных шести
+                типов (карточки, КТП, презентация, план урока, материалы, урок
+                целиком) панель «Как будет выглядеть результат» оставалась на
+                экране поверх готового материала — и уходила на печать вместе
+                с ним: на листе оказывался блок с кнопкой «Попробовать» и
+                миниатюрой чужого формата. */}
+            {!worksheet &&
+              !lessonPlan &&
+              !presentation &&
+              !ktp &&
+              !cardSet &&
+              !materialBundle &&
+              !lessonBundle &&
+              !generating &&
+              !photoCheckOpen && (
               <EmptyPreview
                 mode={mode}
                 subject={mode === "topic" ? subjectData : (examSubject ? getSubject(examSubject) : null)}
@@ -2293,11 +2315,14 @@ export default function ConstructorPage() {
                     </div>
                   )}
 
-                  {/* Водяной знак на печатный лист. Экранная плашка выше помечена
-                      `no-print` и на бумаге исчезает, а `fixed` в режиме печати
-                      повторяется на каждой странице. На настоящем листе знака нет:
-                      условие связано с тем же флагом, что и плашка. */}
-                  {isDemoResult && <PrintWatermark />}
+                  {/* Водяной знак «ДЕМО» на печать ставит сам превью материала
+                      (`<XPreview`, флаг на артефакте): один источник правды на все
+                      девять типов. Важная поправка к истории этого места: знак стоял
+                      здесь и раньше, и печатался он для ВСЕХ типов, а не только для
+                      рабочего листа — блок превью лежит рядом, это сестринские
+                      условия, а не вложенный в «worksheet». Поэтому перенос знака
+                      внутрь превью меняет не покрытие, а единственность источника:
+                      раньше одна страница решала за все типы сразу. */}
 
                   {kind === "worksheet" && (
                     <WorksheetPreview

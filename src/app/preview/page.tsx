@@ -4,7 +4,6 @@ import * as React from "react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { WorksheetPreview } from "@/components/constructor/WorksheetPreview";
-import { PrintWatermark } from "@/components/constructor/PrintWatermark";
 import { InteractiveCta } from "@/components/worksheet/InteractiveCta";
 import { LessonPlanPreview } from "@/components/constructor/LessonPlanPreview";
 import { PresentationPreview } from "@/components/constructor/PresentationPreview";
@@ -311,25 +310,17 @@ export default function PreviewPage() {
 }
 
 /**
- * F-06 B-4: тело превью + водяной знак заготовки.
- */
-function ArtifactBody({ artifact }: { artifact: FavoriteArtifact }) {
-  // Заготовка помечается водяным знаком на печати и здесь: сюда учитель
-  // приходит из «Избранного», где экранной плашки конструктора уже нет,
-  // а флаг `isDemo` едет вместе с артефактом (см. `Worksheet.isDemo`).
-  return (
-    <>
-      {artifact.isDemo && <PrintWatermark />}
-      <ArtifactBodyInner artifact={artifact} />
-    </>
-  );
-}
-
-/**
  * Рендер тела превью по типу артефакта.
  * Discriminator: уникальное поле каждого типа (`tasks`, `stages`, `slides`, `weeks`).
+ *
+ * Пометку «ДЕМО» на печать ставит сам превью-компонент по флагу `isDemo`
+ * артефакта (см. `PrintWatermark`). Раньше знак висел обёрткой над всеми типами
+ * сразу — покрытие он давал то же самое, то есть на этой странице метка и до
+ * переноса печаталась у всех типов, а не только у рабочего листа. Перенос нужен
+ * ради одного источника правды: флаг живёт на артефакте, значит и решение
+ * «показывать ли метку» должно приниматься там же, где рисуется сам материал.
  */
-function ArtifactBodyInner({ artifact }: { artifact: FavoriteArtifact }) {
+function ArtifactBody({ artifact }: { artifact: FavoriteArtifact }) {
   if ("tasks" in artifact) {
     if (artifact.tasks.length === 0) {
       return <EmptyWorksheetState title={artifact.title} />;

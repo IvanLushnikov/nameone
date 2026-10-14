@@ -7,6 +7,7 @@ import { subjectDisplayName } from "@/lib/content/subject-display-name";
 import { formatDate } from "@/lib/utils/cn";
 import { SITE_HOST } from "@/lib/site";
 import { WorksheetScale } from "./WorksheetScale";
+import { PrintWatermark } from "./PrintWatermark";
 
 interface Props {
   ktp: Ktp;
@@ -30,6 +31,7 @@ export function KtpPreview({ ktp }: Props) {
 
   return (
     <div className="bg-warm-100 rounded-2xl p-3 sm:p-6 print:p-0 print:bg-white">
+      {ktp.isDemo && <PrintWatermark />}
       <div className="mx-auto max-w-[920px]">
         <WorksheetScale>
           <article className="worksheet-page animate-fade-in print:shadow-none">
@@ -128,7 +130,11 @@ export function KtpPreview({ ktp }: Props) {
 
             {/* Подвал */}
             <footer className="mt-8 pt-4 border-t border-warm-200 flex items-center justify-between text-[10px] text-[color:var(--text-muted)]">
-              <span>УчЛист · {SITE_HOST} · КТП-демо</span>
+              {/* Раньше подпись была «КТП-демо» безусловно: настоящий КТП,
+                  собранный сервером, тоже уходил на печать с пометкой «демо».
+                  Врать в другую сторону тоже нельзя — слово выводится только
+                  для заготовки, у настоящего плана его на листе нет. */}
+              <span>УчЛист · {SITE_HOST}{ktp.isDemo ? " · КТП-демо" : ""}</span>
               <span>
                 Всего: {ktp.totalHours} ч · {ktp.weeks.length} недель · {totalLessons} уроков
               </span>

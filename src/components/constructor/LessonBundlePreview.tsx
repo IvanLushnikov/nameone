@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import type { BundleSlot, LessonBundle } from "@/lib/types";
 import { generateBundleZip, bundleZipFilename, bundleReadyCount, downloadBlob } from "@/lib/utils/bundle-zip";
 import { pluralizeFiles } from "@/lib/utils/cn";
+import { PrintWatermark } from "./PrintWatermark";
 
 interface Props {
   bundle: LessonBundle;
@@ -88,6 +89,7 @@ export function LessonBundlePreview({ bundle, onDownload }: Props) {
   if (ready === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-accent-300 bg-accent-50 p-8 text-center">
+        {bundle.isDemo && <PrintWatermark />}
         <AlertCircle className="w-8 h-8 mx-auto text-accent-500" />
         <h2 className="text-base font-semibold text-warm-900 mt-3">Комплект не собрался</h2>
         <p className="text-sm text-warm-600 mt-1 max-w-md mx-auto">
@@ -108,6 +110,7 @@ export function LessonBundlePreview({ bundle, onDownload }: Props) {
 
   return (
     <div className="space-y-4">
+      {bundle.isDemo && <PrintWatermark />}
       {/* Шапка: название комплекта, честный счётчик готовых слотов, кнопка ZIP */}
       <div className="flex flex-wrap items-center justify-between gap-3 no-print">
         <div className="min-w-0">

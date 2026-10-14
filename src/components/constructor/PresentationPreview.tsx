@@ -7,6 +7,7 @@ import { subjectDisplayName } from "@/lib/content/subject-display-name";
 import { Button } from "@/components/ui/Button";
 import { Download, Presentation as PresentationIcon } from "lucide-react";
 import { generatePptx, pptxFilename, downloadBlob } from "@/lib/utils/pptx";
+import { PrintWatermark } from "./PrintWatermark";
 
 interface Props {
   presentation: Presentation;
@@ -41,6 +42,8 @@ export function PresentationPreview({ presentation, onDownload }: Props) {
 
   return (
     <div className="space-y-4">
+      {/* Пометка «ДЕМО» на печати — по флагу самого артефакта, см. PrintWatermark. */}
+      {presentation.isDemo && <PrintWatermark />}
       {/* Шапка: заголовок + кнопка скачивания */}
       <div className="flex flex-wrap items-center justify-between gap-3 no-print">
         <div className="min-w-0">
