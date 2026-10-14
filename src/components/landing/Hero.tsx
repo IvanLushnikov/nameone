@@ -87,7 +87,7 @@ export function Hero() {
           <div className="mt-12 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm animate-fade-in" style={{ animationDelay: "0.4s", animationFillMode: "both" }}>
             {/* Плитку «Среднее время ~30 сек» убрали: замера длительности
                 генерации в коде нет, а в блоке метрик это было единственное
-                придуманное число. Обещание «за 30 секунд» осталось в
+                придуманное число. Обещание «за минуту» осталось в
                 заголовке и кнопках — там оно приписывает скорость работы,
                 а не измеренный факт. */}
 
@@ -178,7 +178,7 @@ function HeroMockup() {
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           </div>
           <div>
-            <div className="text-xs font-semibold text-warm-950">Готово за 30 сек</div>
+            <div className="text-xs font-semibold text-warm-950">Готово примерно за минуту</div>
             <div className="text-[10px] text-warm-500">Ответы внутри</div>
           </div>
         </div>
@@ -242,7 +242,7 @@ function HeroMockup() {
               <span className="text-xs text-warm-500">Генерация</span>
               <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Готово за 30 сек
+                Готово примерно за минуту
               </span>
             </div>
             <div className="text-sm font-semibold text-warm-950">5 заданий · со&nbsp;сложностью средняя</div>

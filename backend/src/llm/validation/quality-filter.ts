@@ -50,6 +50,12 @@ export interface QualityFilterReport {
   cleanedAnswer: number[];
   /** Задания, где убрана формула/вычисление из чужого предмета. */
   droppedForeignMath: number[];
+  /**
+   * Задания, выкинутые из-за отсутствия ответа, когда ответы обязательны
+   * (ТЗ-26, Ф-5). Отдельно от `cleanedAnswer`: там задание оставалось с
+   * `answer: null` и доходило до DOCX без строки ответа.
+   */
+  droppedNoAnswer: number[];
   /** Всего заданий до и после. */
   before: number;
   after: number;
@@ -183,6 +189,18 @@ export function isPlaceholderAnswer(answer: unknown): boolean {
 }
 
 /**
+ * Есть ли у задания ответ, который годится в ключ (ТЗ-26, Ф-5).
+ *
+ * «Годится» = непустая строка и не заглушка. Числа, «да», «2 1/3», «б)» —
+ * годится. `null`, `""`, пробелы и «индивидуальный ответ» — нет.
+ */
+export function hasUsableAnswer(answer: unknown): boolean {
+  if (typeof answer !== "string") return false;
+  if (!answer.trim()) return false;
+  return !isPlaceholderAnswer(answer);
+}
+
+/**
  * Чужая математика в задании по предмету, который ею не занимается.
  *
  * Пороги: 2+ маркера в тексте задания. Один маркер — ложное срабатывание
@@ -251,14 +269,36 @@ export function looksLikeForeignMath(text: string, subject: string): boolean {
  * удаления номера не перенумеровываются (учитель сверяет по номерам со своим
  * планом урока, и «задание 7» из его распечатки должно остаться седьмым).
  */
-export function filterTasks(tasks: RawTask[], subject: string): {
+/** Опции фильтра. */
+export interface FilterTasksOptions {
+  /**
+   * Ответы обязательны (учитель нажал «С ответами»).
+   *
+   * ТЗ-26, Ф-5. Пока ответы НЕ обязательны, `answer: null` — законное
+   * значение: так просил учитель. Пока обязательны, задание без ответа —
+   * дефект схемы, и оно выкидывается, чтобы дозапрос поставил на его место
+   * нормальное. Раньше ответ просто обнулялся, и такое задание доходило до
+   * DOCX вообще без строки ответа — учитель сверял работу и не находил ключа.
+   *
+   * По умолчанию `false`: без явного требования поведение прежнее.
+   */
+  requireAnswer?: boolean;
+}
+
+export function filterTasks(
+  tasks: RawTask[],
+  subject: string,
+  options: FilterTasksOptions = {},
+): {
   tasks: RawTask[];
   report: QualityFilterReport;
 } {
+  const requireAnswer = options.requireAnswer === true;
   const report: QualityFilterReport = {
     droppedPatternRef: [],
     cleanedAnswer: [],
     droppedForeignMath: [],
+    droppedNoAnswer: [],
     before: tasks.length,
     after: tasks.length,
   };
@@ -289,6 +329,18 @@ export function filterTasks(tasks: RawTask[], subject: string): {
     if (isPlaceholderAnswer(task.answer)) {
       task.answer = null;
       report.cleanedAnswer.push(index + 1);
+    }
+
+    // 3a. ТЗ-26, Ф-5: ответов не оказалось — задание без ответа. Если учитель
+    //     просил ответы, такое задание в выгрузку не идёт: в DOCX у него нет
+    //     строки ответа, и учитель не может сверить работу. Выкидываем, чтобы
+    //     дозапрос занял его место нормальным заданием.
+    //
+    //     При `withAnswers = false` НЕ выкидываем: там null — то, что просил
+    //     учитель, и выкидывание съело бы весь лист.
+    if (requireAnswer && !hasUsableAnswer(task.answer)) {
+      report.droppedNoAnswer.push(index + 1);
+      return;
     }
 
     kept.push(task);

@@ -39,7 +39,7 @@ const totalTopics = subjects.reduce((sum, s) => sum + subjectTopics(s), 0);
 const subjectWord = plural(subjects.length, "предмет", "предмета", "предметов");
 const topicWord = plural(totalTopics, "тема", "темы", "тем");
 const title = `Рабочие листы по ФГОС — ${subjects.length} ${subjectWord}`;
-const description = `Все ${subjects.length} ${subjectWord} школьной программы: ${totalTopics} ${topicWord} по ФГОС, 1–11 классов. Готовый рабочий лист с ответами за 30 секунд.`;
+const description = `Все ${subjects.length} ${subjectWord} школьной программы: ${totalTopics} ${topicWord} по ФГОС, 1–11 классов. Готовый рабочий лист с ответами за минуту.`;
 
 export const metadata: Metadata = {
   title,
@@ -132,7 +132,7 @@ export default function SubjectsIndexPage() {
             </h1>
             <p className="mt-5 text-lg text-warm-600 text-pretty max-w-2xl">
               От окружающего мира в 1 классе до ЕГЭ по обществознанию. Выберите предмет —
-              задания по школьной программе, готовый PDF с ответами за 30 секунд.
+              задания по школьной программе, готовый PDF с ответами за минуту.
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-3">
               <Button

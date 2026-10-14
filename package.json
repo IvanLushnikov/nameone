@@ -11,7 +11,9 @@
     "lint": "next lint",
     "smoke": "tsx scripts/smoke-llm.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "lint:tz26": "npm run lint && echo TZ26-LINT-OK",
+    "test:tz26": "npm test && npm test --prefix backend && echo TZ26-TESTS-OK"
   },
   "dependencies": {
     "@types/qrcode.react": "^1.0.5",

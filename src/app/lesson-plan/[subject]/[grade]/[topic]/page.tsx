@@ -69,9 +69,9 @@ export function generateMetadata({ params }: Props): Metadata {
     topic.umk,
   )}`;
   // ТЗ-21 п.14: описание обрезано до 150–160 знаков по границе слова
-  // (было 194 — хвост с «Сгенерируйте DOCX за 30 секунд» в сниппет не попадал).
+  // (было 194 — хвост с «Сгенерируйте DOCX за минуту» в сниппет не попадал).
   const description = clipDescription(
-    `Готовый план урока по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topic.title}». Конспект на 45 минут с этапами, целями и домашним заданием. Сгенерируйте DOCX за 30 секунд.`,
+    `Готовый план урока по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему «${topic.title}». Конспект на 45 минут с этапами, целями и домашним заданием. Сгенерируйте DOCX за минуту.`,
   );
 
   return {
@@ -370,7 +370,7 @@ export default function LessonPlanTopicPage({ params }: Props) {
               Готовы получить план урока по теме {quotedTopic(topic.title)}?
             </h2>
             <p className="mt-3 text-brand-100 max-w-xl mx-auto">
-              30 секунд — и конспект на 45 минут у вас в DOCX. Можно редактировать, печатать, отправить коллеге.
+              Минута — и конспект на 45 минут у вас в DOCX. Можно редактировать, печатать, отправить коллеге.
             </p>
             <div className="mt-7 flex flex-col sm:flex-row items-center justify-center gap-3">
               <Button

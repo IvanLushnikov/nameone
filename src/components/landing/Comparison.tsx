@@ -54,7 +54,7 @@ export function Comparison() {
             Не в&nbsp;Word
           </p>
           <h2 className="text-3xl sm:text-4xl font-display font-bold tracking-tight">
-            30 секунд на&nbsp;лист против вечера в&nbsp;Word
+            Минута на&nbsp;лист против вечера в&nbsp;Word
           </h2>
           <p className="mt-3 text-warm-600">
             Шаблоны и ручная работа в Word не учитывают ваш класс, ошибаются в задачах и не дают готовый PDF. УчЛист сделан специально для&nbsp;учителей.
@@ -115,7 +115,7 @@ export function Comparison() {
               </span>
             </div>
             <h3 className="text-lg font-semibold text-warm-950 mb-1">Через УчЛист</h3>
-            <p className="text-sm text-brand-700 mb-5 font-medium">30 секунд — PDF готов</p>
+            <p className="text-sm text-brand-700 mb-5 font-medium">Минута — PDF готов</p>
 
             {/* Mock worksheet auto-generated */}
             <div className="bg-white border border-brand-200 rounded-2xl p-4 mb-4 space-y-2 relative overflow-hidden">
@@ -125,7 +125,7 @@ export function Comparison() {
               />
               <div className="relative flex items-center justify-between mb-2 pb-2 border-b border-warm-100">
                 <div className="text-[10px] font-semibold text-warm-950">Обыкновенные дроби · 5 кл.</div>
-                <div className="text-[9px] text-emerald-600 font-bold">✓ 30 сек</div>
+                <div className="text-[9px] text-emerald-600 font-bold">✓ минута</div>
               </div>
               {[
                 "Сократите: 8/12 = __",

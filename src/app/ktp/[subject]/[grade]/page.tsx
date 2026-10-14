@@ -339,7 +339,7 @@ export default function KtpGradePage({ params }: Props) {
               Готовы получить КТП на {SCHOOL_YEAR}?
             </h2>
             <p className="mt-3 text-brand-100 max-w-xl mx-auto">
-              30 секунд — и готовое тематическое планирование у вас в DOCX. С темами, типами уроков и контрольными точками.
+              Минута — и готовое тематическое планирование у вас в DOCX. С темами, типами уроков и контрольными точками.
             </p>
             <div className="mt-7 flex flex-col sm:flex-row items-center justify-center gap-3">
               <Button

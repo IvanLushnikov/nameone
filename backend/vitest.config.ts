@@ -15,8 +15,28 @@
 
 import { defineWorkersConfig } from "@cloudflare/vitest-pool-workers/config";
 
+// Флаг разрешает платные прогоны. Пусто — обычный `npm test`, без них.
+const LIVE_TESTS = process.env.LIVE === "1";
+
 export default defineWorkersConfig({
   test: {
+    // ЖИВЫЕ прогоны (реальные деньги) НЕ входят в обычный `npm test`.
+    //
+    // Без этого исключения `npm test` в CI платил бы за генерацию листов на
+    // каждом запуске и падал бы от того, что модель в конкретный момент
+    // выдала другой текст. Обычный пайплайн должен быть быстрым, бесплатным и
+    // детерминированным.
+    //
+    // Исключение сделано через флаг, а не безусловным `exclude`: `exclude`
+    // в vitest действует И на явный путь в командной строке, и прогон с
+    // `npx vitest run tests/integration/...` отвечал бы «No test files found».
+    // С флагом обычный запуск не видит файл, а целевой — видит.
+    //
+    //   cd backend && LIVE=1 npx vitest run tests/integration/tz26-live-quality.test.ts
+    exclude: LIVE_TESTS ? undefined : [
+      "**/node_modules/**",
+      "tests/integration/tz26-live-quality.test.ts",
+    ],
     pool: "@cloudflare/vitest-pool-workers",
     poolOptions: {
       workers: {

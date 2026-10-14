@@ -21,6 +21,8 @@ import { generateLessonPlanDocx } from "@/lib/utils/lesson-plan-docx";
 import { generatePptx } from "@/lib/utils/pptx";
 import { generateWorksheetDocx } from "@/lib/utils/docx";
 import { slugify } from "@/lib/utils/cn";
+// ТЗ-26 Ф-3: название предмета по-русски вместо внутреннего ключа.
+import { subjectDisplayName } from "@/lib/content/subject-display-name";
 
 /** Сколько файлов реально попадёт в архив (без учёта failed-слотов). */
 export function bundleReadyCount(bundle: LessonBundle): number {
@@ -31,7 +33,8 @@ export function bundleReadyCount(bundle: LessonBundle): number {
  * Имя самого архива для скачивания: `lesson-math-5kl-drobi.zip`.
  */
 export function bundleZipFilename(bundle: LessonBundle): string {
-  const base = `lesson-${bundle.subject}-${bundle.grade}kl-${slugify(bundle.topic) || "topic"}`;
+  // ТЗ-26, Ф-3: предмет по-русски, не `algebra`.
+  const base = `lesson-${slugify(subjectDisplayName(bundle.subject))}-${bundle.grade}kl-${slugify(bundle.topic) || "topic"}`;
   return `${base}.zip`;
 }
 

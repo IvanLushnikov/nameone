@@ -1,5 +1,7 @@
 import * as React from "react";
 import type { LessonPlan, LessonStage } from "@/lib/types";
+// ТЗ-26 Ф-3: название предмета по-русски вместо внутреннего ключа.
+import { subjectDisplayName } from "@/lib/content/subject-display-name";
 import { formatDate } from "@/lib/utils/cn";
 import { SITE_HOST } from "@/lib/site";
 import { WorksheetScale } from "./WorksheetScale";
@@ -67,7 +69,7 @@ export function LessonPlanPreview({ plan }: Props) {
                   {plan.title.replace(/^План урока · /, "")}
                 </h1>
                 <div className="text-xs text-warm-600 mt-1">
-                  {plan.subject} · {plan.grade} класс · {totalMin} мин
+                  {subjectDisplayName(plan.subject)} · {plan.grade} класс · {totalMin} мин
                   {plan.fgosRef ? ` · ${plan.fgosRef}` : ""}
                 </div>
               </div>

@@ -42,7 +42,7 @@ function useReveal(inView: boolean) {
 const features = [
   {
     Illustration: TimerIllustration,
-    title: "Рабочий лист за 30 секунд",
+    title: "Рабочий лист за минуту",
     description:
       "Выбираете класс, предмет и тему — получаете PDF с заданиями, ответами и пояснениями, готовый к печати. Задания распределены по уровням сложности: ФГОС 2021 для 1–9 классов, действующий ФГОС СОО для 10–11.",
     accent: "from-brand-400 to-brand-600",

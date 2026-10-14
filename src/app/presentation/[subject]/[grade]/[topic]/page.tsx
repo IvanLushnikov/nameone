@@ -70,7 +70,7 @@ export function generateMetadata({ params }: Props): Metadata {
   // Обрезка — по theirs (ТЗ-21 п.14), текст — из main: «заметками для учителя»
   // вместо «заметками спикера» (копирайт-аудит, аудитория — учитель).
   const description = clipDescription(
-    `Готовая презентация по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему ${quotedTopic(topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef))}. 10 слайдов с заметками для учителя в PPTX. Сгенерируйте за 30 секунд.`,
+    `Готовая презентация по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему ${quotedTopic(topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef))}. 10 слайдов с заметками для учителя в PPTX. Сгенерируйте за минуту.`,
   );
   const url = absoluteUrl(`/presentation/${subject.slug}/${grade.num}/${topic.slug}`);
 
@@ -381,7 +381,7 @@ export default function PresentationTopicPage({ params }: Props) {
               Готовы получить презентацию по теме {quotedTopic(topic.title)}?
             </h2>
             <p className="mt-3 text-brand-100 max-w-xl mx-auto">
-              30 секунд — и 10 слайдов в PPTX у вас. С заметками для учителя, примерами и итогами.
+              Минута — и 10 слайдов в PPTX у вас. С заметками для учителя, примерами и итогами.
             </p>
             <div className="mt-7 flex flex-col sm:flex-row items-center justify-center gap-3">
               <Button

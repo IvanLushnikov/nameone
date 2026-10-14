@@ -108,7 +108,7 @@ export function generateMetadata({ params }: Props): Metadata {
   // ТЗ-21 п.14: было 190+ знаков (описание задания отдавалось целиком).
   // Обрезаем по границе слова — в сниппете всё равно видно первые ~160.
   const description = clipDescription(
-    `${item.title} — задание ${item.number} ${examLabel.full}, предмет «${subjectLabel}». ${item.description} Сгенерируйте лист по этому номеру за 30 секунд.`,
+    `${item.title} — задание ${item.number} ${examLabel.full}, предмет «${subjectLabel}». ${item.description} Сгенерируйте лист по этому номеру за минуту.`,
   );
   const url = absoluteUrl(`/exam/${item.exam}/${item.subject}/${item.number}`);
 
@@ -247,7 +247,7 @@ export default function ExamNumberPage({ params }: Props) {
               </h1>
               <p className="mt-4 text-lg text-warm-600 text-pretty">
                 Тренировка по конкретному номеру {examLabel.full} — задание {item.number} из кодификатора ФИПИ.
-                Сгенерируйте лист за 30 секунд и отработайте именно этот тип.
+                Сгенерируйте лист за минуту и отработайте именно этот тип.
               </p>
 
               <div className="mt-7 flex flex-wrap items-center gap-3">
@@ -490,7 +490,7 @@ export default function ExamNumberPage({ params }: Props) {
               <Card className="bg-warm-50/60 border-warm-100">
                 <p className="text-xs text-warm-600 leading-relaxed">
                   <Clock className="w-3.5 h-3.5 inline-block -mt-0.5 mr-1 text-warm-500" />
-                  Всего 30 секунд — и PDF у вас. Можно скачать, распечатать или отправить ученику.
+                  Всего минута — и PDF у вас. Можно скачать, распечатать или отправить ученику.
                 </p>
               </Card>
             </aside>

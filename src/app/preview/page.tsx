@@ -16,6 +16,8 @@ import {
   type FavoriteArtifact,
 } from "@/lib/utils/storage";
 import { saveTemplate } from "@/lib/lk/templates";
+// ТЗ-26 Ф-3: название предмета по-русски вместо внутреннего ключа.
+import { subjectDisplayName } from "@/lib/content/subject-display-name";
 import { findArtifact } from "@/lib/lk/artifact";
 import { generateWorksheetDocx, downloadBlob } from "@/lib/utils/docx";
 import { generateLessonPlanDocx } from "@/lib/utils/lesson-plan-docx";
@@ -147,7 +149,8 @@ export default function PreviewPage() {
         withAnswers: true,
         withExplanations: true,
       });
-      const filename = `${artifact.subject}-${artifact.grade}kl-${artifact.topic}.docx`
+      // ТЗ-26 Ф-3: название предмета по-русски, не ключ `algebra`.
+      const filename = `${subjectDisplayName(artifact.subject)}-${artifact.grade}kl-${artifact.topic}.docx`
         .toLowerCase()
         .replace(/\s+/g, "-");
       downloadBlob(blob, filename);
@@ -158,7 +161,7 @@ export default function PreviewPage() {
       const blob = await generateLessonPlanDocx(artifact);
       downloadBlob(
         blob,
-        `plan-${artifact.subject}-${artifact.grade}kl-${artifact.topic}.docx`
+        `plan-${subjectDisplayName(artifact.subject)}-${artifact.grade}kl-${artifact.topic}.docx`
           .toLowerCase()
           .replace(/\s+/g, "-")
       );
@@ -167,7 +170,10 @@ export default function PreviewPage() {
     }
     if ("weeks" in artifact) {
       const blob = await generateKtpDocx(artifact);
-      downloadBlob(blob, `ktp-${artifact.subject}-${artifact.grade}kl.docx`);
+      downloadBlob(
+        blob,
+        `ktp-${subjectDisplayName(artifact.subject)}-${artifact.grade}kl.docx`,
+      );
       toast({ tone: "success", title: "DOCX КТП скачан" });
       return;
     }

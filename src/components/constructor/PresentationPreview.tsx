@@ -2,6 +2,8 @@
 
 import * as React from "react";
 import type { Presentation, Slide } from "@/lib/types";
+// ТЗ-26 Ф-3: название предмета по-русски вместо внутреннего ключа.
+import { subjectDisplayName } from "@/lib/content/subject-display-name";
 import { Button } from "@/components/ui/Button";
 import { Download, Presentation as PresentationIcon } from "lucide-react";
 import { generatePptx, pptxFilename, downloadBlob } from "@/lib/utils/pptx";
@@ -48,7 +50,7 @@ export function PresentationPreview({ presentation, onDownload }: Props) {
           </div>
           <h2 className="text-xl font-semibold text-warm-950 mt-1 truncate">{presentation.title}</h2>
           <p className="text-sm text-warm-500 mt-0.5">
-            {presentation.subject} · {presentation.grade} класс · {presentation.slides.length} слайдов
+            {subjectDisplayName(presentation.subject)} · {presentation.grade} класс · {presentation.slides.length} слайдов
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">

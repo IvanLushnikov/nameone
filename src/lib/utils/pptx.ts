@@ -153,11 +153,17 @@ export async function generatePptx(presentation: Presentation): Promise<Blob> {
   return zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
 }
 
+/**
+ * Имя PPTX. ТЗ-26, Ф-3: название предмета по-русски, а не ключ `algebra`.
+ */
 export function pptxFilename(presentation: Presentation): string {
-  return `${presentation.subject}-${presentation.grade}kl-${presentation.topic}.pptx`
+  return `${subjectDisplayName(presentation.subject)}-${presentation.grade}kl-${presentation.topic}.pptx`
     .toLowerCase()
     .replace(/\s+/g, "-");
 }
+
+// ТЗ-26 Ф-3: название предмета по-русски вместо внутреннего ключа.
+import { subjectDisplayName } from "@/lib/content/subject-display-name";
 
 // re-export для удобства UI
 export { downloadBlob } from "./docx";

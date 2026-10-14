@@ -42,6 +42,9 @@ import {
   LayoutTemplate,
 } from "lucide-react";
 import { subjects, getSubject, getGrade } from "@/lib/content/subjects";
+// ТЗ-26 Ф-3: ключ предмета (`algebra`) не должен попадать ни в имя файла,
+// ни в шапку — там название по-русски из таксономии.
+import { subjectDisplayName } from "@/lib/content/subject-display-name";
 import { getUMK } from "@/lib/content/umk";
 import {
   getExamSubjects,
@@ -75,6 +78,7 @@ import {
   generateMaterialsSmart,
   generateBundleSmart,
   BackendError,
+  isTimeoutError,
   type QualityLoss,
   type VariantStatus,
 } from "@/lib/client/llm";
@@ -191,6 +195,38 @@ const CONSTRUCTOR_PRINT_CSS = `
   }
 }
 `;
+
+/**
+ * Имя выгружаемого файла (ТЗ-26, Ф-3, 13.10.2026).
+ *
+ * БЫЛО: `${subject}-${grade}kl-${topic}.docx`, где `subject` — внутренний ключ.
+ * Учитель получал файл `algebra-8kl-сокращение-и-действия.docx` и шапку
+ * «algebra · 8 класс» — латиница в раздаточном материале.
+ *
+ * СТАЛО: название предмета по-русски из таксономии. Ключ остаётся ключом —
+ * он нужен роутерам и запросам к бэку, но в имя файла и в шапку не попадает.
+ *
+ * Порядок важен: название предмета подставляется ДО нормализации, иначе
+ * «Русский язык» превратится в «русский-язык» дефисами. Регистр приводится к
+ * нижнему — так имена клеятся между собой и не отличаются регистром.
+ *
+ * `suffix` — необязательный хвост («plan», «ktp», «cards», «variant-2»).
+ * Подставляется последним, чтобы не потеряться среди дефисов темы.
+ */
+function buildFilename(
+  subjectSlug: string | null | undefined,
+  grade: number,
+  topic: string,
+  suffix?: string,
+): string {
+  const parts = [
+    subjectDisplayName(subjectSlug),
+    `${grade}кл`,
+    topic,
+    ...(suffix ? [suffix] : []),
+  ];
+  return `${parts.join(" ")}.docx`.toLowerCase().replace(/\s+/g, "-");
+}
 
 /**
  * Шаги визарда. topic-mode: 3 шага («select» = предмет+класс, «topic», «configure»).
@@ -451,7 +487,7 @@ export default function ConstructorPage() {
    *
    * Раньше флаг `isDemo` возвращался из `client/llm.ts`, но в интерфейс не
    * попадал вообще: при сбое бэка учитель получал шаблон с конфетти и тостом
-   * «Готово за 30 сек» и не знал, что AI не отвечал. Для сервиса, который живёт
+   * «Готово примерно за минуту» и не знал, что AI не отвечал. Для сервиса, который живёт
    * на доверии, молчаливая подмена — самая дорогая ошибка: такой лист учитель
    * отдаёт ученикам.
    *
@@ -1412,7 +1448,7 @@ export default function ConstructorPage() {
         // Для разработчика: это заявленное время из UI, а не замер. Когда
         // подключим реальный LLM — считаем `performance.now()` и подставляем
         // фактическое, тогда здесь же уйдёт и «· demo-режим».
-        description: "Готово за 30 сек · сохраните в PDF",
+        description: "Готово примерно за минуту · сохраните в PDF",
       });
     } catch (err) {
       stageTimers.forEach((id) => window.clearTimeout(id));
@@ -1432,6 +1468,23 @@ export default function ConstructorPage() {
       // ОГЭ/ЕГЭ на тарифе «База» отдают 402, и показывать надо окно оплаты.
       if (err instanceof BackendError && err.isUpgradeRequired) {
         setShowPaywall(true);
+        return;
+      }
+
+      // ТЗ-26 Б-1. Таймаут — отдельный случай, и он НЕ «попробуйте ещё
+      // раз»: контрольная с двумя вариантами стабильно уходит за любой
+      // разумный срок (замеры 13.10 — 95,8 с и 101,8 с), поэтому повтор
+      // закончится ровно тем же отказом. Обещать учителю «попробуйте ещё
+      // раз» здесь значит врать. Вместо этого говорим, что делать: уменьшить
+      // лист или снять то, что делает генерацию длиннее всего.
+      if (isTimeoutError(err)) {
+        toast({
+          tone: "error",
+          title: "Генерация не успела закончиться",
+          description:
+            "Попробуйте лист поменьше или снять ответы и пояснения",
+        });
+        console.error("[generate] failed: timeout", err);
         return;
       }
 
@@ -1467,18 +1520,14 @@ export default function ConstructorPage() {
     // Q1-2027: switch по типу — lesson-plan и ktp дают DOCX, presentation даёт PPTX.
     if (type === "lesson-plan" && lessonPlan) {
       const blob = await generateLessonPlanDocx(lessonPlan);
-      const filename = `${lessonPlan.subject}-${lessonPlan.grade}kl-${lessonPlan.topic}-plan.docx`
-        .toLowerCase()
-        .replace(/\s+/g, "-");
+      const filename = buildFilename(lessonPlan.subject, lessonPlan.grade, lessonPlan.topic, "plan");
       downloadBlob(blob, filename);
       toast({ tone: "success", title: "DOCX скачан", description: "Откройте в Word или LibreOffice" });
       return;
     }
     if (type === "ktp" && ktp) {
       const blob = await generateKtpDocx(ktp);
-      const filename = `${ktp.subject}-${ktp.grade}kl-${ktp.schoolYear}-ktp.docx`
-        .toLowerCase()
-        .replace(/\s+/g, "-");
+      const filename = buildFilename(ktp.subject, ktp.grade, ktp.schoolYear, "ktp");
       downloadBlob(blob, filename);
       toast({ tone: "success", title: "DOCX скачан", description: "Откройте в Word или LibreOffice" });
       return;
@@ -1492,9 +1541,7 @@ export default function ConstructorPage() {
     // TZ-16 §3.1: карточки — DOCX с таблицей для разрезания.
     if (type === "cards" && cardSet) {
       const blob = await generateCardsDocx(cardSet);
-      const filename = `${cardSet.subject}-${cardSet.grade}kl-${cardSet.topic}-cards.docx`
-        .toLowerCase()
-        .replace(/\s+/g, "-");
+      const filename = buildFilename(cardSet.subject, cardSet.grade, cardSet.topic, "cards");
       downloadBlob(blob, filename);
       toast({ tone: "success", title: "DOCX скачан", description: "Карточки с рамками — режьте и раздавайте" });
       return;
@@ -1552,10 +1599,13 @@ export default function ConstructorPage() {
     // учитель скачивал вариант 1, переключался на вариант 2, скачивал снова —
     // и на диске оставался один файл. Ровно тот случай, когда «два варианта»
     // снова оказываются одним.
-    const variantSuffix = type === "control" && controlVariant2 ? `-variant-${controlVariant}` : "";
-    const filename = `${worksheet.subject}-${worksheet.grade}kl-${worksheet.topic}${variantSuffix}.docx`
-      .toLowerCase()
-      .replace(/\s+/g, "-");
+    const hasSecondVariant = type === "control" && Boolean(controlVariant2);
+    const filename = buildFilename(
+      worksheet.subject,
+      worksheet.grade,
+      worksheet.topic,
+      hasSecondVariant ? `variant-${controlVariant}` : undefined,
+    );
     downloadBlob(blob, filename);
     toast({ tone: "success", title: "DOCX скачан", description: "Откройте в Word или LibreOffice" });
   };
@@ -1690,7 +1740,15 @@ export default function ConstructorPage() {
               no-print: на печати нужен лист, а не мастер — без этого вся левая
               колонка уезжала на бумагу вместе с листом. */}
           {!photoLandingFullScreen && (
-          <div className="no-print lg:sticky lg:top-20 space-y-5">
+          // min-w-0 — обязателен, а не косметика (ТЗ-26 Б-2). Без него grid-item
+          // получает `min-width: auto`, то есть свою min-content-ширину. В панели
+          // параметров есть строка-однострочник с длинной темой («🧮 Алгебра · 8 кл
+          // · Рациональные дроби…») — её min-content равен полной ширине текста.
+          // Итог был такой: колонка `.ctor-grid` шириной 358 px при треке 753 px,
+          // переполнение 379 px на экране 390 px, и за экраном оставались шаги,
+          // два варианта сложности из трёх и вторая кнопка. `min-w-0` снимает
+          // автоматический минимум, и колонка живёт по ширине контейнера.
+          <div className="no-print min-w-0 lg:sticky lg:top-20 space-y-5">
             {/* F-04-C: переключатель режима. Доступен на любом шаге. */}
             <ModeToggle mode={mode} onChange={handleModeChange} />
 
@@ -1857,7 +1915,10 @@ export default function ConstructorPage() {
               Исключение — вход по фото: он и есть то, куда пришёл учитель,
               поэтому на первом экране он занимает всю ширину (жалоба 1). */}
           {showSidePanel && (
-          <div>
+          // min-w-0 — по той же причине, что и у левой колонки (ТЗ-26 Б-2):
+          // колонка с листом содержит таблицы и формулы, у которых min-content
+          // шире экрана телефона.
+          <div className="min-w-0">
             {/* Приход по `?photo=1` с карточки «Проверка работ по фото» — показываем
                 ВХОД в проверку, а не генератор (08.10.2026). Раньше флаг
                 раскрывал `PhotoCheckPanel`, который рендерится только после
@@ -3087,7 +3148,7 @@ function ConfigureStep({
                 : "Создать рабочий лист"}
           </Button>
           <p className="text-xs text-warm-500 text-center mt-2">
-            Готовый PDF за ~30 сек. Без регистрации.
+            Готовый PDF примерно за минуту. Без регистрации.
           </p>
         </div>
       </div>
@@ -3261,7 +3322,7 @@ function EmptyPreview({
           {isExam
             ? "Завершите выбор номеров и параметров. Сгенерируем рабочий лист по выбранным заданиям ФИПИ."
             : subject
-              ? "Завершите выбор темы и параметров, и через 30 секунд у вас будет готовый PDF."
+              ? "Завершите выбор темы и параметров, и через минуту у вас будет готовый PDF."
               : "ИИ создаст рабочий лист, проверит ответы сам и пришлёт готовый файл."}
         </p>
         {!isExam && (

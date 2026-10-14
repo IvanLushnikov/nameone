@@ -4,6 +4,8 @@ import * as React from "react";
 import { Download, FileArchive, FileText, FolderOpen, Table2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import type { MaterialBundle, MaterialFile, MaterialFileKind } from "@/lib/types";
+// ТЗ-26 Ф-3: название предмета по-русски вместо внутреннего ключа.
+import { subjectDisplayName } from "@/lib/content/subject-display-name";
 import {
   generateMaterialsZip,
   materialsZipFilename,
@@ -93,7 +95,7 @@ export function MaterialsPreview({ bundle, onDownload }: Props) {
           </div>
           <h2 className="text-xl font-semibold text-warm-950 mt-1 truncate">{bundle.title}</h2>
           <p className="text-sm text-warm-500 mt-0.5">
-            {bundle.subject} · {bundle.grade} класс · {bundle.files.length}{" "}
+            {subjectDisplayName(bundle.subject)} · {bundle.grade} класс · {bundle.files.length}{" "}
             {bundle.files.length === 1 ? "файл" : bundle.files.length < 5 ? "файла" : "файлов"} в архиве
           </p>
         </div>
