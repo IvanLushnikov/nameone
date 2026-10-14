@@ -121,7 +121,7 @@ export default function SettingsPage() {
           ссылка ученика — только на сервере и только со входом. Смешали бы —
           либо фильтр кабинета начал бы требовать аккаунт, либо токен ученика
           уехал бы в localStorage. */}
-      <ClassRosterSection hasAccount={view.source === "account"} />
+      <ClassRosterSection hasAccount={view.source === "account"} knownClassNames={view.classes} />
 
       <SubscriptionPanel />
 
