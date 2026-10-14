@@ -18,12 +18,22 @@
  *    одна формула не разобралась, компонент целиком откатывается на исходный
  *    `text` и рисует его обычным текстом (см. состояние `failed`).
  *
+ * ГЛАВНОЕ ПРАВИЛО ЛИСТА 2.1.4: дробь рисуется дробью. Линейная запись
+ * («(x² − 9)/(x² + 6x + 9)») допустима только как ЗАПАСНОЙ вид — пока не
+ * приехал KaTeX или формулу разобрать не удалось. Она не должна быть обычным
+ * поведением для нормальной дроби.
+ *
  * CSS KaTeX намеренно НЕ импортируется здесь, а подключён глобально в
  * `src/app/globals.css` — иначе печать (`window.print`) останется без стилей.
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { hasMathSegment, parseMathText } from "@/lib/math/latex";
+import { hasMathSegment } from "@/lib/math/latex";
+// Разбор живёт в docx.ts не по привычке: превью и выгрузка обязаны резать
+// текст задания ОДИНАКОВО, иначе учитель получит на экране дробь с чертой,
+// а в файле — строку со скобками. Зависимость односторонняя (компонент тянет
+// чистую функцию из util-модуля), React в обратную сторону не утекает.
+import { splitFormulaText } from "@/lib/utils/docx";
 
 interface Props {
   /** Обычный текст задания. Источник правды для проверки ответов — не меняем. */
@@ -46,7 +56,7 @@ export function MathText({ text, textLatex, className }: Props) {
   const [failed, setFailed] = useState(false);
 
   const segments = useMemo(
-    () => parseMathText(text, failed ? undefined : textLatex),
+    () => splitFormulaText(text, failed ? undefined : textLatex),
     [text, textLatex, failed]
   );
   const needsKatex = useMemo(() => !failed && hasMathSegment(segments), [segments, failed]);

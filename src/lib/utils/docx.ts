@@ -19,7 +19,7 @@ import {
   type ParagraphChild,
 } from "docx";
 import type { Worksheet, WorksheetTask } from "@/lib/types";
-import { parseMathText } from "@/lib/math/latex";
+import { parseMathText, type MathSegment } from "@/lib/math/latex";
 import { latexToOmml, latexToUnicode } from "@/lib/math/latex-to-omml";
 import { SITE_HOST } from "@/lib/site";
 // ТЗ-26 Ф-3: в шапку и в свойства файла — название предмета по-русски,
@@ -41,26 +41,290 @@ import { subjectDisplayName } from "@/lib/content/subject-display-name";
  */
 type TaskWithLatex = WorksheetTask & { text_latex?: string };
 
+/* -------------------------------------------------------------------------- */
+/*  Дробь, написанная через косую черту                                       */
+/* -------------------------------------------------------------------------- */
+
 /**
- * Собирает содержимое абзаца, где формулы становятся нативной математикой Word.
+ * ЗАЧЕМ ЭТОТ БЛОК (лист 2.1.4, решение владельца 14.10.2026).
  *
- * Текстовые сегменты идут обычными `TextRun`, формульные — OMML через
- * `latexToOmml`. Если формулу в OMML превести не удалось, подставляем
- * юникод-фолбэк (`⅛ ⅓ ² √ × ·`): файл должен остаться читаемым, лучше
- * «2/3», чем сломанная выгрузка.
+ * `parseMathText` (LEGACY-режим) умеет дробь вида `3/4` — там атом с обеих
+ * сторон. Но `(x² − 9)/(x² + 6x + 9)` он НЕ узнаёт: по обе стороны косой
+ * черты не атом, а выражение в скобках. Такая строка уходила в экран и в
+ * DOCX обычным текстом — учитель видел «(x² − 9)/(x² + 6x + 9)», то есть
+ * ровно то, из-за чего материал выдаёт генератор.
+ *
+ * Модуль живёт здесь, а не в `MathText`, потому что ЭКРАН и ВЫГРУЗКА обязаны
+ * резать текст одинаково: если превью покажет дробь с чертой, а DOCX — строку,
+ * учитель получит два разных материала. Зависимость при этом односторонняя:
+ * клиентский компонент `MathText` импортирует чистую функцию отсюда, а этот
+ * модуль ничего не знает про React (обратная зависимость сломала бы границу
+ * сервер/клиент в Next).
+ *
+ * ЧЕГО МЫ НЕ ТРОГАЕМ. Атом/атом (`3/4`, `x/2`, `12/16`) и степени в скобках
+ * (`8^(1/3)`) уже разбирает `parseLegacyMath` — если скобок рядом с чертой
+ * нет, мы молча отступаем и не лезем в его работу. Так мы физически не можем
+ * испортить то, что сегодня работает, и не превращаем «км/ч» или «июль/август»
+ * в дроби.
  */
-function mathChildren(text: string, textLatex?: string, size?: number): ParagraphChild[] {
+
+/** Часть «атома»: буква или цифра (в том числе с точкой/запятой). */
+const ATOM_CHAR = /[0-9A-Za-zА-Яа-яЁё.,]/;
+
+/**
+ * Верхние индексы в юникоде — часть атома (`x²`, `10⁻³`). В LaTeX их не
+ * переводим: см. комментарий про `innerFractions` и потерю степени в OMML.
+ */
+const SUPERSCRIPT_CHAR = /[\u00B9\u00B2\u00B3\u2070\u2074-\u2079\u207B\u207A]/;
+
+/**
+ * Что вообще допустимо отдать KaTeX/OMML как числитель или знаменатель.
+ * Всё остальное (`%`, `#`, `$`, `&`) НЕ пропускаем: такие строки оставляем
+ * как есть, потому что сломанная формула хуже, чем её отсутствие.
+ */
+const LATEX_SAFE =
+  /^[0-9A-Za-zА-Яа-яЁё\s+\-−=^_.,()·×÷°\u00B9\u00B2\u00B3\u2070\u2074-\u2079\u207B\u207A]*$/;
+
+type Operand = {
+  /** Содержимое без внешних скобок. */
+  text: string;
+  /** Границы в исходной строке — по ним собирается `fallback`. */
+  start: number;
+  end: number;
+  /** Сторона была в скобках — именно этот случай раньше не распознавался. */
+  paren: boolean;
+};
+
+function matchParenForward(input: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < input.length; i += 1) {
+    if (input[i] === "(") depth += 1;
+    else if (input[i] === ")") {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function matchParenBackward(input: string, close: number): number {
+  let depth = 0;
+  for (let i = close; i >= 0; i -= 1) {
+    if (input[i] === ")") depth += 1;
+    else if (input[i] === "(") {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function isAtomChar(ch: string | undefined): boolean {
+  if (ch === undefined) return false;
+  return ATOM_CHAR.test(ch) || SUPERSCRIPT_CHAR.test(ch);
+}
+
+/** Слева от `/`: скобочная группа либо максимальный «атом». */
+function readLeft(input: string, slash: number): Operand | null {
+  let i = slash - 1;
+  while (i >= 0 && /\s/.test(input[i])) i -= 1;
+  if (i < 0) return null;
+
+  if (input[i] === ")") {
+    const open = matchParenBackward(input, i);
+    if (open < 0) return null;
+    return { text: input.slice(open + 1, i), start: open, end: i + 1, paren: true };
+  }
+
+  let start = i;
+  while (start - 1 >= 0 && isAtomChar(input[start - 1])) start -= 1;
+  // Минус приклеиваем к атому, иначе в дроби `-3/(x + 1)` знак уедет наружу и
+  // в DOCX уедет текстовый «−» перед формулой вместо числителя «−3».
+  if (start > 0 && (input[start - 1] === "-" || input[start - 1] === "\u2212")) start -= 1;
+  return { text: input.slice(start, i + 1), start, end: i + 1, paren: false };
+}
+
+/** Справа от `/`: скобочная группа либо максимальный «атом». */
+function readRight(input: string, from: number): Operand | null {
+  let i = from;
+  while (i < input.length && /\s/.test(input[i])) i += 1;
+  if (i >= input.length) return null;
+
+  if (input[i] === "(") {
+    const close = matchParenForward(input, i);
+    if (close < 0) return null;
+    return { text: input.slice(i + 1, close), start: i, end: close + 1, paren: true };
+  }
+
+  let end = i + 1;
+  while (end < input.length && isAtomChar(input[end])) end += 1;
+  return { text: input.slice(i, end), start: i, end, paren: false };
+}
+
+/** Простая дробь внутри скобок: `(1/2)/(3/4)` → вложенный `\frac`. */
+const INNER_FRACTION_RE = new RegExp(
+  String.raw`(-?\d+(?:[.,]\d+)?|[A-Za-zА-Яа-яЁё])\/(-?\d+(?:[.,]\d+)?|[A-Za-zА-Яа-яЁё])`,
+  "g"
+);
+
+function innerFractions(latex: string): string {
+  return latex.replace(INNER_FRACTION_RE, (whole, num: string, den: string) => {
+    // Буквы с обеих сторон — это не дробь («км/ч»).
+    if (!/^-?\d/.test(num) && !/^\d/.test(den)) return whole;
+    return `\\frac{${num}}{${den}}`;
+  });
+}
+
+/**
+ * Верхние индексы мы в числа НЕ переводим: `x²` остаётся `x²` и в KaTeX, и в
+ * OMML-конвертере.
+ *
+ * Соблазн большой: в Word юникодный «²» в обычном текстовом run не поднимается
+ * над базовой линией, а `x^{2}` даёт настоящий надстрочный индекс. Но
+ * `latex-to-omml.ts` (файл НЕ в этом листе) при разборе аргумента в фигурных
+ * скобках возвращает `slots.map((slot) => slot.node)` — вместе со скриптами.
+ * То есть `\frac{x^{2}}{y}` теряет двойку ЦЕЛИКОМ и в Word выходит `x` вместо
+ * `x²`. Потерянная степень хуже неподнятой: материал с неверной формулой учитель
+ * отдаст в класс. Поэтому оставляем юникод — он читается и в Word, и в KaTeX.
+ * Про сам конвертер — см. G5 листа 2.1.4.
+ */
+
+/** Дописывает обычный текст к предыдущему сегменту, не разрывая его на два span. */
+function pushText(segments: MathSegment[], value: string): void {
+  if (!value) return;
+  const last = segments[segments.length - 1];
+  if (last && last.type === "text") last.value += value;
+  else segments.push({ type: "text", value });
+}
+
+/**
+ * Режет кусок обычного текста на «скобочные» дроби: `(x² − 9)/(x² + 6x + 9)`,
+ * `5/(x + 1)`, `(a+b)/c`, `(1/2)/(3/4)`.
+ *
+ * `fallback` у такой дроби — ИСХОДНЫЙ текст со косой чертой. То есть если
+ * KaTeX не загрузится или формула не разберётся, учитель получит ровно то,
+ * что видел раньше, — а не `frac{x^2 - 9}{...}`.
+ */
+function splitComplexFractions(input: string): MathSegment[] {
+  const segments: MathSegment[] = [];
+  let last = 0;
+
+  for (let i = 0; i < input.length; i += 1) {
+    if (input[i] !== "/") continue;
+    // Черт уже съеден предыдущей дробью — заходить внутрь нельзя.
+    if (i < last) continue;
+
+    const left = readLeft(input, i);
+    if (!left) continue;
+    const right = readRight(input, i + 1);
+    if (!right) continue;
+    // Без скобок это атом/атом — зона ответственности parseLegacyMath.
+    if (!left.paren && !right.paren) continue;
+    // Перед скобками стоит имя функции: `sin(x)/2`. Если завернуть в дробь одни
+    // скобки, «sin» отделится от своей дроби и запись станет НЕВЕРНОЙ. Такое
+    // оставляем линейным — так оно и выглядело раньше.
+    if (left.paren && left.start > 0 && /[A-Za-zА-Яа-яЁё]/.test(input[left.start - 1])) continue;
+
+    const num = left.text.trim();
+    const den = right.text.trim();
+    if (!num || !den) continue;
+    if (!LATEX_SAFE.test(num) || !LATEX_SAFE.test(den)) continue;
+
+    const numLatex = innerFractions(num);
+    const denLatex = innerFractions(den);
+
+    pushText(segments, input.slice(last, left.start));
+    segments.push({
+      type: "math",
+      latex: `\\frac{${numLatex}}{${denLatex}}`,
+      fallback: input.slice(left.start, right.end),
+    });
+
+    last = right.end;
+    i = right.end - 1;
+  }
+
+  pushText(segments, input.slice(last));
+
+  return segments;
+}
+
+/**
+ * Единая точка разделения текста задания на текст и формулы.
+ *
+ * Ею пользуются ОБА вывода материала: превью (`MathText` → KaTeX) и DOCX
+ * (`mathChildren` ниже → OMML). Расходиться им нельзя: учитель сверяет
+ * распечатку с тем, что видел на экране.
+ */
+export function splitFormulaText(text: string, textLatex?: string | null): MathSegment[] {
+  const base = parseMathText(text, textLatex);
+  const result: MathSegment[] = [];
+
+  for (const segment of base) {
+    if (segment.type === "text") result.push(...splitComplexFractions(segment.value));
+    else result.push(segment);
+  }
+
+  return result;
+}
+
+/**
+ * Сегменты → содержимое абзаца, где формулы становятся нативной математикой
+ * Word. Текстовые сегменты идут обычными `TextRun`, формульные — OMML через
+ * `latexToOmml`.
+ *
+ * @returns `null`, если хоть одну формулу в OMML превести не удалось.
+ */
+function ommlChildren(segments: readonly MathSegment[], size?: number): ParagraphChild[] | null {
   const children: ParagraphChild[] = [];
-  for (const segment of parseMathText(text, textLatex)) {
+  for (const segment of segments) {
     if (segment.type === "text") {
       if (segment.value) children.push(new TextRun({ text: segment.value, size }));
       continue;
     }
     const omml = latexToOmml(segment.latex);
-    if (omml) children.push(new DocxMath({ children: omml }));
-    else children.push(new TextRun({ text: latexToUnicode(segment.latex), size }));
+    if (!omml) return null;
+    children.push(new DocxMath({ children: omml }));
   }
   return children;
+}
+
+/**
+ * Тот же абзац, но с юникод-фолбэком вместо OMML (`⅛ ⅓ ² √ × ·`).
+ * Последний рубеж: файл обязан остаться читаемым, лучше «2/3», чем пустота.
+ */
+function unicodeChildren(segments: readonly MathSegment[], size?: number): ParagraphChild[] {
+  const children: ParagraphChild[] = [];
+  for (const segment of segments) {
+    if (segment.type === "text") {
+      if (segment.value) children.push(new TextRun({ text: segment.value, size }));
+      continue;
+    }
+    children.push(new TextRun({ text: latexToUnicode(segment.latex), size }));
+  }
+  return children;
+}
+
+/**
+ * Собирает содержимое абзаца рабочего листа.
+ *
+ * ОТКАТ НА ИСХОДНЫЙ `text`. Если формула из `text_latex` в OMML не
+ * превратилась, абзац собирается заново из `text` — ровно так же, как ведёт себя
+ * превью (состояние `failed` в `MathText`). Это не перестраховка, а защита от
+ * тихой порчи материала: у неразобранной формулы нет читаемого запасного вида,
+ * `latexToUnicode("\\frac{1}{")` выдаёт «1», и в раздаточном файле вместо
+ * задания «Упростите выражение (a + 3)/(a − 3)» оказывается «Упростите
+ * выражение 1». Источник правды для проверки ответов — `text`, и в файл должен
+ * попадать именно он.
+ */
+function mathChildren(text: string, textLatex?: string, size?: number): ParagraphChild[] {
+  const segments = splitFormulaText(text, textLatex);
+
+  const children = ommlChildren(segments, size);
+  if (children) return children;
+
+  const plain = splitFormulaText(text, undefined);
+  return ommlChildren(plain, size) ?? unicodeChildren(plain, size);
 }
 
 /**
