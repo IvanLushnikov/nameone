@@ -19,8 +19,7 @@ import {
   priceSummary,
   type PlanId,
 } from "@/lib/content/plans";
-import { SITE_URL } from "@/lib/site";
-import { clipDescription, ogImages, twitterCard } from "@/lib/seo/metadata";
+import { clipDescription, absoluteUrl, ogImages, twitterCard } from "@/lib/seo/metadata";
 import { JsonLd } from "@/components/seo";
 
 /**
@@ -38,21 +37,36 @@ import { JsonLd } from "@/components/seo";
  * и это же проверяет tests/unit/plans-consistency.test.ts.
  */
 export const metadata: Metadata = {
-  title: `Тарифы — ${FREE_QUOTA_LABEL} бесплатно, дальше от ${priceShort("base", "month")}`,
+  // «${FREE_QUOTA_LABEL} бесплатно» давало «3 бесплатные генерации бесплатно» —
+  // слово в слово дважды в одном заголовке. Квота и «бесплатно» теперь стоят
+  // раздельно: `FREE_GENERATIONS` даёт число, `FREE_QUOTA_LABEL` — формулировку.
+  // Название «УчЛист» дописывает шаблон корневого layout («%s · УчЛист»), поэтому
+  // брендовый запрос «УчЛист тарифы» находит страницу по заголовку.
+  title: `Тарифы — от ${priceShort("base", "month")}, ${FREE_GENERATIONS} генерации бесплатно`,
   // ТЗ-21 п.14: описание шло 197 знаков. Режем по границе слова до 150–160.
   // Текст — из main (копирайт-аудит): в нём сохранено «Оплата картой РФ и СБП»,
   // а не обезличенное «карты, СБП».
+  //
+  // Обрезка шла по границе слова и оставляла в сниппете «Оплата картой» —
+  // фраза без продолжения. Шаблон переписан короче (152 знака), чтобы
+  // последнее предложение помещалось целиком, а не висело обрывком.
   description: clipDescription(
-    `Базовый ${priceShort("base", "month")} или ${priceShort("base", "academicYear")}. Плюс — ${priceShort("plus", "month")}, включает ОГЭ/ЕГЭ, презентации и КТП. ${FREE_QUOTA_LABEL} — без карты и без регистрации. Оплата картой РФ и СБП.`,
+    `Базовый ${priceShort("base", "month")} или ${priceShort("base", "academicYear")}. Плюс — ${priceShort("plus", "month")}: ОГЭ/ЕГЭ, презентации, КТП. ${FREE_QUOTA_LABEL} — без карты и регистрации. Оплата картой РФ и СБП.`,
   ),
-  alternates: { canonical: `${SITE_URL}/pricing` },
+  // Через `absoluteUrl`, а не `${SITE_URL}/pricing`: в исходнике адрес был без
+  // слеша, хотя сайт отдаётся со слешем на конце (`trailingSlash: true`), а
+  // остальные страницы собирают адрес через `absoluteUrl`. Фактический вывод
+  // (собранный HTML) от этого не меняется — Next нормализует слеш сам; правка
+  // нужна, чтобы исходник не расходился с остальными страницами и чтобы смена
+  // адреса в конфиге не осталась незамеченной.
+  alternates: { canonical: absoluteUrl("/pricing") },
   // ТЗ-21 п.14: og:image на странице тарифов не было.
   openGraph: {
     title: `Тарифы УчЛист — от ${priceShort("base", "month")}`,
     description: clipDescription(
       `Базовый ${priceShort("base", "month")}, Плюс — ${priceShort("plus", "month")}. ${FREE_QUOTA_LABEL} — без карты и без регистрации.`,
     ),
-    url: `${SITE_URL}/pricing`,
+    url: absoluteUrl("/pricing"),
     siteName: "УчЛист",
     locale: "ru_RU",
     images: ogImages(undefined, "Тарифы УчЛист — рабочие листы по ФГОС"),
@@ -95,8 +109,16 @@ const pricingJsonLd = {
       // отсутствие оплаты. По той же причине молчим про «Школу» (3 000 рублей
       // за класс) — тариф ещё не запущен (`comingSoon: "Q1 2027"`), и цена
       // на то, что нельзя купить, приводит к вопросу «где тут кнопка оплаты».
+      //
+      // «Оптимальный» раньше тоже выпадал из разметки, хотя тариф запущен и
+      // стоит денег: в выдаче показывались Базовый и Плюс, а учителю с 3–4
+      // предметами — второй по цене вариант — предлагали два других. Это
+      // ровно то расхождение с прайсом на странице, ради которого разметка
+      // и заводилась. Все суммы по-прежнему берутся из `priceFor`.
       { planId: "base" as const, periodId: "academicYear" as const },
       { planId: "base" as const, periodId: "month" as const },
+      { planId: "standard" as const, periodId: "academicYear" as const },
+      { planId: "standard" as const, periodId: "month" as const },
       { planId: "plus" as const, periodId: "academicYear" as const },
       { planId: "plus" as const, periodId: "month" as const },
     ]
@@ -110,7 +132,7 @@ const pricingJsonLd = {
       // Цена в рублях: сайт русский, оплата картой РФ или СБП.
       priceCurrency: "RUB",
       availability: "https://schema.org/InStock",
-      url: `${SITE_URL}/pricing`,
+      url: absoluteUrl("/pricing"),
       // Период оплаты — обязательное поле для подписки: без него сумма за
       // учебный год читалась бы как разовая покупка, а это девять месяцев.
       priceSpecification: {
