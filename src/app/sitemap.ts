@@ -3,6 +3,7 @@ import { subjects } from "@/lib/content/subjects";
 import { EXAM_SUBJECTS } from "@/lib/content/exam-taxonomy";
 import { WEEKLY_TOPICS } from "@/lib/content/weekly-topics";
 import { MATERIALS_CATALOG, materialToSitemapEntry } from "@/lib/content/materials-catalog";
+import { getPostSlugs } from "@/app/blog/_lib/posts";
 import { SITE_URL } from "@/lib/site";
 
 export default function sitemap(): MetadataRoute.Sitemap {
@@ -54,6 +55,23 @@ export default function sitemap(): MetadataRoute.Sitemap {
     //
     // /dashboard и /login в карту не попадают намеренно: это закрытые
     // страницы (см. robots.ts → disallow), отдавать их в sitemap нельзя.
+    //
+    // /journal в карте тоже нет, и это правильно: это закрытая страница
+    // учительского кабинета (список проверок по фото), а не публичный контент.
+  ];
+
+  // TZ-10 §6.3 «Blog (Content Hub)». Хаб /blog — вход из поиска в рубрику,
+  // поэтому ровно на уровне остальных хабов (/materials, /subject).
+  //
+  // Приоритеты постов ниже 0.6 — и это честно, а не скромность. Пост в блоге
+  // не закрывает спрос по теме: за запросом «дроби 5 класс» учитель пойдёт на
+  // страницу темы, а не в статью про неё. Статья живёт за счёт длинного
+  // хвоста, а не за счёт конкуренции с посадочной. Пока статей четыре, они
+  // не должны обгонять в карте 1075 страниц тем, с которых идёт основной
+  // трафик. Поднимутся выше, когда блог наберёт историю и входящие ссылки.
+  const blogPages: MetadataRoute.Sitemap = [
+    { url: url("/blog"), priority: 0.8 },
+    ...getPostSlugs().map((slug) => ({ url: url(`/blog/${slug}`), priority: 0.5 })),
   ];
 
   // Subject hubs
@@ -157,6 +175,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   return [
     ...staticPages,
+    ...blogPages,
     ...subjectPages,
     ...topicPages,
     // ...artifactTopicPages и ...ktpPages — намеренно не входят: см. комментарий
