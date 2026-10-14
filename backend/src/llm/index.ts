@@ -1682,7 +1682,17 @@ export async function generateStructuredArtifact<T extends object>(
   await checkLlmRateLimit(db, { userId, ipHash, plan });
 
   // 3. Cache lookup. Кэш персональный по владельцу (NEW-COST-6, llm/cache.ts).
-  const cacheKey = makeCacheKey({ ...request, type: artifactType, userId });
+  //
+  // УЧЕБНИК — ТОЖЕ ЧАСТЬ КЛЮЧА, ровно как у рабочего листа выше. Без этого
+  // учитель меняет учебник, а получает из кэша материал по прошлому: тот же
+  // симптом «поставил галочку — никакой разницы», только на второй попытке.
+  const umkId = normalizeUmkId(request.meta?.umk);
+  const cacheKey = makeCacheKey({
+    ...request,
+    ...(umkId ? { topic: `${request.topic} [umk:${umkId}]` } : {}),
+    type: artifactType,
+    userId,
+  });
   if (!bypassCache) {
     const cached = await lookupCache(db, cacheKey);
     const cachedArtifact = extractCachedArtifact(cached);

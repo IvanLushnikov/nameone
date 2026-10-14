@@ -22,6 +22,7 @@ import {
   CLASS_APPROPRIATENESS_RULE,
   type ArtifactRequest,
 } from "./artifact-gen";
+import { buildUmkBlock, umkIdFromRequest } from "./umk-block";
 
 /** Типы слайдов — тот же список, что в `PresentationBody.slides[].kind`. */
 export const SLIDE_KINDS = ["title", "bullets", "definition", "example", "summary"] as const;
@@ -114,6 +115,7 @@ export function buildPresentationPrompt(req: ArtifactRequest): {
   user: string;
 } {
   const slideCount = normalizeSlideCount(req.slideCount);
+  const umk = umkIdFromRequest(req);
   const user = JSON.stringify(
     {
       задача: "Подготовь презентацию к уроку по параметрам ниже",
@@ -124,6 +126,7 @@ export function buildPresentationPrompt(req: ArtifactRequest): {
         сложность: req.difficulty,
         слайдов: slideCount,
       },
+      ...(umk ? { УМК: buildUmkBlock(umk, "presentation") } : {}),
       требования: {
         ровно_слайдов: slideCount,
         первый_слайд: "kind=title, последний: kind=summary",

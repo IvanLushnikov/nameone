@@ -27,6 +27,7 @@ import {
   CONCRETE_ANSWER_RULE,
   type ArtifactRequest,
 } from "./artifact-gen";
+import { buildUmkBlock, umkIdFromRequest } from "./umk-block";
 
 /** Виды материалов — тот же список, что в `MaterialFileKind` на фронте. */
 export const MATERIAL_FILE_KINDS = [
@@ -100,6 +101,7 @@ ${NO_TECHNICAL_FIELDS_RULE}
 ${JSON_ONLY_RULE}`;
 
 export function buildMaterialsPrompt(req: ArtifactRequest): { system: string; user: string } {
+  const umk = umkIdFromRequest(req);
   const user = JSON.stringify(
     {
       задача: "Подготовь комплект материалов по параметрам ниже",
@@ -110,6 +112,7 @@ export function buildMaterialsPrompt(req: ArtifactRequest): { system: string; us
         сложность: req.difficulty,
         файлов: req.count,
       },
+      ...(umk ? { УМК: buildUmkBlock(umk, "materials") } : {}),
       требования: {
         ровно_файлов: req.count,
         виды: "выбери из glossary / reference / handout / checklist так, чтобы файлы не повторяли друг друга",

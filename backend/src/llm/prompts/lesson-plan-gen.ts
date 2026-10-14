@@ -23,6 +23,7 @@ import {
   CLASS_APPROPRIATENESS_RULE,
   type ArtifactRequest,
 } from "./artifact-gen";
+import { buildUmkBlock, umkIdFromRequest } from "./umk-block";
 
 /** Стадии урока — тот же список, что в zod-схеме `LessonPlanBody.stages[].kind`. */
 export const LESSON_STAGE_KINDS = [
@@ -113,6 +114,7 @@ export function buildLessonPlanPrompt(req: ArtifactRequest): {
   system: string;
   user: string;
 } {
+  const umk = umkIdFromRequest(req);
   const user = JSON.stringify(
     {
       задача: "Подготовь план урока по параметрам ниже",
@@ -123,10 +125,20 @@ export function buildLessonPlanPrompt(req: ArtifactRequest): {
         сложность: req.difficulty,
         стадий: req.count,
       },
+      // УМК — перед требованиями: он объясняет, по каким словам писать цели и
+      // стадии, а требования уже отвечают «сколько и в каком формате».
+      ...(umk ? { УМК: buildUmkBlock(umk, "lessonPlan") } : {}),
       требования: {
         хронометраж_урока_минут: 45,
         примерно_стадий: req.count,
-        fgosRef: "обязателен, если знаешь параграф учебника для этого класса; иначе не выводи поле",
+        // Раньше здесь стояло «fgosRef обязателен, если знаешь параграф
+        // учебника». Это прямо просило выдумать номер параграфа у модели, у
+        // которой текста учебника нет, — ровно то, что запрещает блок УМК.
+        // Ссылка теперь на требование ФГОС или раздел программы: это то, что
+        // учитель проверяет по рабочей программе, а не по памяти модели.
+        fgosRef:
+          "пункт ФГОС или раздел программы, если знаешь; не знаешь — не выводи " +
+          "поле. Номер параграфа или страницы не выдумывай",
         сложность_влияет_на: "глубину отработки и количество примеров, а не на количество стадий",
       },
       верни: "JSON по схеме из системного промпта. Без markdown-блоков.",

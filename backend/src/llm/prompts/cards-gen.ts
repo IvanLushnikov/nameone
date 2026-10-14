@@ -25,6 +25,7 @@ import {
   CONCRETE_ANSWER_RULE,
   type ArtifactRequest,
 } from "./artifact-gen";
+import { buildUmkBlock, umkIdFromRequest } from "./umk-block";
 
 export interface FlashCard {
   front: string;
@@ -85,6 +86,7 @@ ${NO_TECHNICAL_FIELDS_RULE}
 ${JSON_ONLY_RULE}`;
 
 export function buildCardsPrompt(req: ArtifactRequest): { system: string; user: string } {
+  const umk = umkIdFromRequest(req);
   const user = JSON.stringify(
     {
       задача: "Подготовь набор карточек для запоминания по параметрам ниже",
@@ -95,6 +97,7 @@ export function buildCardsPrompt(req: ArtifactRequest): { system: string; user: 
         сложность: req.difficulty,
         карточек: req.count,
       },
+      ...(umk ? { УМК: buildUmkBlock(umk, "cards") } : {}),
       требования: {
         ровно_карточек: req.count,
         на_карточку: "front до 90 символов, back до 300 символов",

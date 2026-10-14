@@ -24,6 +24,7 @@ import {
   CLASS_APPROPRIATENESS_RULE,
   type ArtifactRequest,
 } from "./artifact-gen";
+import { buildUmkBlock, umkIdFromRequest } from "./umk-block";
 
 /** Виды уроков — тот же список, что в `KtpBody.weeks[].entries[].kind`. */
 export const KTP_LESSON_KINDS = [
@@ -125,6 +126,7 @@ export function resolveSchoolYear(value: string | undefined): string {
 
 export function buildKtpPrompt(req: ArtifactRequest): { system: string; user: string } {
   const schoolYear = resolveSchoolYear(req.schoolYear);
+  const umk = umkIdFromRequest(req);
   const user = JSON.stringify(
     {
       задача: "Составь календарно-тематическое планирование на учебный год",
@@ -135,6 +137,7 @@ export function buildKtpPrompt(req: ArtifactRequest): { system: string; user: st
         учебный_год: schoolYear,
         сложность: req.difficulty,
       },
+      ...(umk ? { УМК: buildUmkBlock(umk, "ktp") } : {}),
       требования: {
         недель: 34,
         часов_в_неделю: req.grade >= 10 ? 4 : req.grade >= 5 ? 4 : 3,
