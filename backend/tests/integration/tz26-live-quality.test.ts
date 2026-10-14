@@ -45,6 +45,25 @@ const API_KEY = String((workerEnv as unknown as Record<string, unknown>).POLZA_A
 /** Живой прогон стоит денег, поэтому без ключа — пропуск, а не падение. */
 const live = API_KEY ? describe : describe.skip;
 
+/**
+ * Подмножество листов через `LIVE_ONLY=math,biology`.
+ *
+ * Живой прогон платит реальными деньгами, а контрольная на Sonnet стоит 12.69 ₽
+ * — при почти пустом балансе один запуск съедал остаток и следующий падал с
+ * INSUFFICIENT_BALANCE. Фильтр даёт возможность проверить один-два листа,
+ * когда денег мало.
+ *
+ * Значение читается из `env` ВОРКЕРА, а не из `process.env`: в пуле
+ * `@cloudflare/vitest-pool-workers` процессных переменных нет вовсе, и
+ * фильтр молча не срабатывал, прогоняя все шесть листов вместо одного.
+ * Ровно та же ошибка была со флагом `PLAN`.
+ */
+const ONLY = String((workerEnv as unknown as Record<string, unknown>).LIVE_ONLY ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const wanted = (key: string) => ONLY.length === 0 || ONLY.includes(key);
+
 const FAKE_ENV = {
   POLZA_API_KEY: API_KEY,
   APP_ENV: "test",
@@ -139,6 +158,9 @@ live("ТЗ-26 Г8: пять живых листов без дефектов ка
   ];
 
   for (const sheet of SHEETS) {
+    // Ключ листа для фильтра — латиницей, чтобы не зависеть от кириллицы.
+    const key = { "русский 8": "russian8", "английский 11": "english11", "карточки (математика 6)": "cards", "математика 5": "math5", "биология 7": "bio7" }[sheet.name] ?? "";
+    if (!wanted(key)) continue;
     it(`«${sheet.name}» — нет смешанных чисел, дублей, answer:null и пустых объяснений`, async () => {
       const result = await generateWorksheet(
         { ...ARGS, request: request(sheet.req) },
@@ -183,7 +205,7 @@ live("ТЗ-26 Г8: пять живых листов без дефектов ка
 });
 
 live("ТЗ-26 Г9: живая контрольная не повторяет навык внутри варианта", () => {
-  it("алгебра 8 — внутри вариантов дублей нет, варианты не совпадают", async () => {
+  (wanted("control") ? it : it.skip)("алгебра 8 — внутри вариантов дублей нет, варианты не совпадают", async () => {
     const result = await generateWorksheet(
       {
         ...ARGS,
