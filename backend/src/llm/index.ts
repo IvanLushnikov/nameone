@@ -296,6 +296,8 @@ function summarizeLoss(
   reports: readonly QualityFilterReport[],
   topUpAdded: number,
   deliveredTotal: number,
+  /** Сколько пар дублей осталось в выдаче ПОСЛЕ чистки. */
+  repeatedSkills = 0,
 ): QualityLossInfo {
   const droppedPatternRef: number[] = [];
   const droppedForeignMath: number[] = [];
@@ -326,6 +328,9 @@ function summarizeLoss(
     topUpAdded,
     stillMissing: missingTaskCount(requestedTotal, deliveredTotal),
     filterBackedOff,
+    // Считается ПОСЛЕ чистки, на том, что реально уедет учителю. Ноль — значит
+    // повторов в выдаче нет, независимо от того, сколько их было до чистки.
+    repeatedSkills,
   };
 }
 
@@ -1092,6 +1097,15 @@ export async function generateWorksheet(
    */
   const dropBudgetOf = (count: number) => Math.ceil(count / 2);
 
+  /**
+   * Сколько пар дублей осталось в списке ПОСЛЕ чистки.
+   *
+   * Считается на том, что реально уедет учителю, и идёт в `quality`, чтобы
+   * интерфейс мог сказать правду вместо тихой отгрузки листа с повтором.
+   */
+  const countRemainingDupes = (tasks: readonly SkillTaskLike[]): number =>
+    findSkillDupes(tasks).pairs.length;
+
   const isControl = request.type === "control";
   // У контрольной целевое количество общее для обоих вариантов (AD-8) и
   // добирается после того, как оба варианта собраны. У остальных типов —
@@ -1266,6 +1280,10 @@ export async function generateWorksheet(
     filterReports,
     topUpAdded,
     deliveredTotal,
+    // Считаем по обоим вариантам: дубль может остаться в любом, и учителю
+    // виден весь лист, а не один вариант.
+    countRemainingDupes(worksheet.tasks as unknown as CleanTask[]) +
+      countRemainingDupes((secondVariant?.tasks ?? []) as unknown as CleanTask[]),
   );
 
   const variantsInfo = buildVariantStatus(isControl ? 2 : 1, secondVariant ? 2 : 1, {

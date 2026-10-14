@@ -268,6 +268,13 @@ export interface QualityLoss {
   stillMissing: number;
   /** Фильтр сработал агрессивнее трети и был откачен целиком. */
   filterBackedOff: boolean;
+  /**
+   * Сколько пар повторяющихся заданий осталось в выдаче ПОСЛЕ чистки.
+   * Ноль — повторов нет. Больше нуля — конвейер не смог убрать повтор и
+   * говорит об этом прямо, вместо того чтобы отдать учителю лист, который
+   * выглядит целым.
+   */
+  repeatedSkills: number;
 }
 
 /**
@@ -350,6 +357,8 @@ export async function generateWorksheetSmart(
     topUpAdded: 0,
     stillMissing: 0,
     filterBackedOff: false,
+    // Мок: повторов в нём быть не может by construction.
+    repeatedSkills: 0,
   };
   const variants: VariantStatus = r.extra?.variants ?? {
     expected: isControl ? 2 : 1,
