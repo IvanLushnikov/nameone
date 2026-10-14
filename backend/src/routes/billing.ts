@@ -30,6 +30,38 @@ import { getSession, getUserById, getUserRole } from "../db/queries";
 import { BadRequestError, UnauthorizedError } from "../lib/errors";
 import type { AppEnv, CreatePaymentResponse } from "../types";
 
+/**
+ * Первый корректный адрес фронта из строки со списком через запятую.
+ *
+ * ЗАЧЕМ. В проде FRONTEND_URL — это список origin'ов через запятую
+ * («https://uchlist.ru,https://www.uchlist.ru»): список нужен CORS, который его
+ * разбирает. Вставлять же список целиком в ссылку, которую видит человек, нельзя:
+ * получается несуществующий адрес вида
+ * «https://uchlist.ru,https://www.uchlist.ru/account?paid=1».
+ * Та же мысль уже высказана в services/auth.ts (buildMagicLinkUrl) и
+ * services/email.ts (appUrl) — здесь она применяется к возврату с оплаты.
+ *
+ * Берём ПЕРВЫЙ элемент, который похож на адрес, а не просто первый после
+ * разбиения: пустые места и обрывки вроде «uchlist.ru» без схемы не должны
+ * становиться адресом возврата.
+ *
+ * ВНИМАНИЕ: имя, сигнатуру и тело этой функции проверяет
+ * scripts/check-auto-renew-consent.mjs (гейт листа 1.1.2). Функция вынесена
+ * отдельно и без импортов именно ради этого: скрипт выполняет её на настоящем
+ * коде. Меняешь здесь — правь там же.
+ */
+export function firstValidFrontendOrigin(raw: string | undefined): string {
+  for (const part of (raw ?? "").split(",")) {
+    const candidate = part.trim().replace(/\/+$/, "");
+    // Пробел внутри элемента — это уже не адрес («https://a.ru https://b.ru»),
+    // такой пропускаем целиком, а не режем пополам.
+    if (/\s/.test(candidate)) continue;
+    // Только http(s) и только начало origin: без пустой схемы «https://».
+    if (/^https?:\/\/[^\s/?#]+/i.test(candidate)) return candidate;
+  }
+  return "";
+}
+
 const billingRouter = new Hono<AppEnv>();
 
 /**
@@ -75,24 +107,52 @@ billingRouter.post("/create", async (c) => {
   }
   const parsed = createPaymentRequestSchema.parse(rawBody);
 
-  // returnUrl опциональный (фронт может прислать свой, иначе — дефолт на /account).
-  const returnUrl =
+  // returnUrl. Фронт почти всегда присылает свой адрес — тогда берём его как есть.
+  //
+  // Если адрес не пришёл (или пришёл пустым), собираем его сами, и обязательно
+  // из ОДНОГО адреса. Раньше здесь было `${c.env.FRONTEND_URL}/account?paid=1`, а в
+  // проде FRONTEND_URL — список через запятую ради CORS, то есть на выходе был
+  // несуществующий URL вида «https://uchlist.ru,https://www.uchlist.ru/account?paid=1».
+  // Фронт это маскировал тем, что всегда присылал свой адрес, но дефолт-то был
+  // неправильный, и любой клиент без returnUrl получал битую ссылку.
+  const clientReturnUrl =
     typeof rawBody === "object" &&
     rawBody !== null &&
     "returnUrl" in rawBody &&
     typeof (rawBody as { returnUrl?: unknown }).returnUrl === "string"
-      ? (rawBody as { returnUrl: string }).returnUrl
-      : `${c.env.FRONTEND_URL}/account?paid=1`;
+      ? (rawBody as { returnUrl: string }).returnUrl.trim()
+      : "";
+
+  let returnUrl = clientReturnUrl;
+  if (!returnUrl) {
+    // APP_PUBLIC_URL — это как раз «один origin для ссылок, которые видит человек»
+    // (см. env.ts). Список FRONTEND_URL — запасной путь для старых конфигураций.
+    const origin =
+      firstValidFrontendOrigin(c.env.APP_PUBLIC_URL) ||
+      firstValidFrontendOrigin(c.env.FRONTEND_URL);
+    if (!origin) {
+      // Молча уходить на пустую ссылку нельзя: ЮKassa всё равно её не примет, а
+      // учитель увидит «оплата не прошла» без причины. Говорим прямо, что чинить.
+      throw new BadRequestError(
+        "Не задан адрес фронта для возврата с оплаты: задайте APP_PUBLIC_URL " +
+          "(или FRONTEND_URL) в конфигурации воркера",
+      );
+    }
+    returnUrl = `${origin}/account?paid=1`;
+  }
 
   const result = await createPayment(c.env.DB, c.env, {
     userId: user.id,
     plan: parsed.plan,
     period: parsed.period,
     returnUrl,
-    // Согласие на автосписания (ТЗ-20). Сейчас фронт это поле не присылает —
-    // переключателя в интерфейсе ещё нет, и это правильный дефолт: без явного
-    // согласия способ оплаты не сохраняется и автопродления не будет.
-    // Учебный год согласие проигнорирует в любом случае (ТЗ-20 §2.6).
+    // Согласие на автосписания (ТЗ-20). Значение приходит с экрана оплаты: там
+    // есть явная галочка «продлевать автоматически», снятая по умолчанию, и она
+    // показывается только для помесячной оплаты. Без неё `autoRenew` не
+    // присылается, `parsed.autoRenew` — undefined, и согласия нет.
+    // Дальше createPayment применяет согласие только при периоде «месяц» и
+    // включённом RECURRING_BILLING_ENABLED; учебный год согласие игнорирует
+    // в любом случае (ТЗ-20 §2.6).
     autoRenewConsent: parsed.autoRenew === true,
   });
 

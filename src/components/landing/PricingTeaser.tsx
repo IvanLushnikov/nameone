@@ -175,6 +175,41 @@ function PricingCard({
 
   const isFree = plan.id === "free";
 
+  /**
+   * Согласие на автопродление (ТЗ-20).
+   *
+   * СОСТОЯНИЕ ПО УМОЛЧАНИЮ ВСЕГДА false. Не «включим для удобства учителя» и
+   * не «включим у тех, кто платит помесячно»: отсутствие явной галочки должно
+   * означать отсутствие согласия, иначе платёж уходит с безакцептным списанием,
+   * на которое никто не подписывался.
+   *
+   * Показывается ТОЛЬКО там, где автопродление вообще возможно: платный тариф с
+   * помесячной оплатой. Учебного года это не касается — оплатив 9 месяцев,
+   * учитель не должен получить списание через 9 месяцев (ТЗ-20 §2.6), поэтому
+   * для периода «учебный год» галочки нет и согласие не отправляется вовсе.
+   *
+   * Что происходит с отмеченной галочкой дальше: значение уходит в запрос
+   * оплаты полем `autoRenew`, бэк передаёт его в createPayment как
+   * `autoRenewConsent`, и там оно применяется только при помесячном периоде И
+   * включённом флаге RECURRING_BILLING_ENABLED. Флаг в проде выключен (решение
+   * владельца после теста на реальной карте) — то есть согласие сейчас просто
+   * записывается, способ оплаты не сохраняется и списаний не происходит. Текст
+   * рядом с галочкой поэтому говорит, НА ЧТО учитель СОГЛАШАЕТСЯ, а не то, что
+   * списание уже включено.
+   */
+  const [autoRenew, setAutoRenew] = React.useState(false);
+  const canAutoRenew = !isFree && period === "month";
+  const consentId = `auto-renew-${plan.id}`;
+  const consentNoteId = `${consentId}-note`;
+
+  // Галочка скрыта (учебный год или бесплатный тариф) — значит отправлять нечего.
+  // Сбрасываем выбор, чтобы вернувшись к помесячной оплате учитель увидел
+  // ПУСТУЮ галочку и поставил её снова, а не получил согласие, оставшееся от
+  // прошлого периода. Договорённость простая: отправляется ровно то, что видит.
+  React.useEffect(() => {
+    if (!canAutoRenew) setAutoRenew(false);
+  }, [canAutoRenew]);
+
   async function subscribe() {
     if (isFree) {
       window.location.assign("/constructor");
@@ -192,6 +227,8 @@ function PricingCard({
         plan: plan.id,
         period,
         returnUrl: `${window.location.origin}/dashboard/settings?paid=1`,
+        // Ровно то, что учитель видит на экране: галочка снята или её нет.
+        autoRenew: canAutoRenew && autoRenew,
       });
       if (!res.ok) {
         setPayError(
@@ -278,26 +315,69 @@ function PricingCard({
           ))}
         </ul>
 
-        {/* mt-auto прижимает кнопку к низу карточки: без него у тарифа с коротким
-            списком кнопка висела выше, чем у соседей, и ряд читался как три
+        {/* mt-auto прижимает блок оплаты к низу карточки: без него у тарифа с коротким
+            списком он висел выше, чем у соседей, и ряд читался как три
             разных предложения, а не как один тарифный ряд.
 
             Кнопка вызывает `subscribe()` — реальное создание платежа.
             Раньше это была ссылка `href={plan.href}` на `/pricing`, то есть
             кнопка на странице тарифов вела на эту же страницу и ничего
-            не делала. */}
-        <Button
-          type="button"
-          onClick={subscribe}
-          disabled={busy}
-          variant={isHighlight ? "primary" : "secondary"}
-          size="md"
-          fullWidth
-          className="mt-auto"
-          data-testid={`subscribe-${plan.id}`}
-        >
-          {busy ? "Готовим платёж…" : isFree ? "Попробовать бесплатно" : plan.cta}
-        </Button>
+            не делала.
+
+            Галочка согласия лежит ВНУТРИ этого блока и прямо над кнопкой:
+            отдельный «плавающий» переключатель периода выше по карточке от
+            кнопки отвалился бы визуально и читался как настройка интерфейса,
+            а не как согласие на списание. */}
+        <div className="mt-auto">
+          {canAutoRenew && (
+            <div className="mb-3">
+              <div className="flex items-start gap-2">
+                {/* Настоящий <input type="checkbox">: пробелом и стрелками
+                    управляется сам, скринридер читает подпись как имя
+                    переключателя, состояние видно без цвета. Клик по подписи
+                    тоже переключает (htmlFor). Никаких <div onClick> — их не
+                    видно с клавиатуры. */}
+                <input
+                  id={consentId}
+                  type="checkbox"
+                  checked={autoRenew}
+                  onChange={(e) => setAutoRenew(e.target.checked)}
+                  aria-describedby={consentNoteId}
+                  data-testid={`auto-renew-${plan.id}`}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-brand-600"
+                />
+                <label
+                  htmlFor={consentId}
+                  className="text-xs font-medium leading-relaxed text-warm-800 cursor-pointer"
+                >
+                  Продлевать автоматически
+                </label>
+              </div>
+              {/* Пояснение — то, что учитель обязан знать ДО оплаты: сумма
+                  одного списания, период и как это отменить. Сумма берётся из
+                  plans.ts (тот же источник, что и цена на карточке), поэтому
+                  после смены цен текст не разойдётся с ценой.
+                  Текст короткий намеренно: карточка в сетке 2×2 узкая, и
+                  абзац в четыре строки читался бы как «мелкий шрифт про
+                  условия», который никто не прочитает. */}
+              <p id={consentNoteId} className="mt-1 pl-6 text-xs leading-relaxed text-warm-500">
+                Списание {formatRub(priceFor(plan.id, "month").amount)} раз в месяц. Отменить
+                можно в любой момент в личном кабинете.
+              </p>
+            </div>
+          )}
+          <Button
+            type="button"
+            onClick={subscribe}
+            disabled={busy}
+            variant={isHighlight ? "primary" : "secondary"}
+            size="md"
+            fullWidth
+            data-testid={`subscribe-${plan.id}`}
+          >
+            {busy ? "Готовим платёж…" : isFree ? "Попробовать бесплатно" : plan.cta}
+          </Button>
+        </div>
         {payError && (
           <p className="mt-2 text-xs text-red-600 text-center leading-relaxed" role="alert">
             {payError}

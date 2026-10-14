@@ -16,6 +16,33 @@
  * Отдельно проверено, что без флага стадия не вызывается вовсе: лишний вызов
  * провайдера на каждую генерацию — это реальные деньги, и «вроде работает»
  * здесь недостаточно.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ЧТО ИМЕННО ПОДМЕНЕНО И ПОЧЕМУ ТЕСТ НЕ ПУСТОЙ
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Настоящий провайдер не зовётся вообще. Подменено ровно одно — глобальный
+ * `fetch`: он перехвачен через `vi.stubGlobal("fetch", ...)` и отвечает телом
+ * той же формы, что отдаёт polza.ai на OpenAI-совместимый /chat/completions
+ * (`choices[0].message.content` строкой с JSON, плюс `usage`). Провайдер,
+ * тарификация, разбор ответа, нормализация плана и сборка листа — всё это
+ * остаётся боевым кодом и проходится целиком: тест проверяет не «был ли
+ * вызов», а дошёл ли план до промпта.
+ *
+ * Ключ в окружении — фиктивная константа `POLZA_API_KEY: "test-key"`, а не
+ * значение из `.dev.vars`: без неё `callWithFallback` падает ДО сетевого
+ * вызова («LLM: POLZA_API_KEY not configured»), и до подменённого `fetch`
+ * дело не доходит вообще — ровно так этот файл и ронял выкатку в CI.
+ * Настоящий ключ не нужен и не читается.
+ *
+ * Вторая линия защиты — `POLZA_BASE_URL` указывает на домен `.invalid`
+ * (RFC 2606, не резолвится). Даже если подмена `fetch` будет снята, запрос
+ * физически некуда уйти и деньги потратить нельзя; тест проверяет, что
+ * каждый вызов ушёл именно туда.
+ *
+ * Именно поэтому тест не пустой: он проходит тот же путь «ручка → флаг →
+ * отдельный вызов плана → разбор ответа → нормализация → промпт генерации →
+ * сборка листа», что и боевая выдача, и меняется только последнее звено —
+ * ответ вместо провайдера пишет подмена.
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
@@ -27,6 +54,12 @@ import { generateWorksheet } from "../../src/llm";
 import { _resetPolzaSingleton } from "../../src/llm/providers/polza";
 import type { Env } from "../../src/env";
 
+/**
+ * Адрес провайдера внутри теста. `.invalid` по RFC 2606 не резолвится
+ * никогда — это страховка на случай, если подмена `fetch` будет снята.
+ */
+const FAKE_BASE_URL = "http://plan-stage-wiring.invalid/v1";
+
 /** Окружение для вызова: разворачиваем целиком, забыть поле нельзя. */
 const FAKE_ENV = {
   ...(workerEnv as unknown as Record<string, unknown>),
@@ -37,6 +70,11 @@ const FAKE_ENV = {
   // Стадия включена явно. В обычных тестах её нет — см. описание флага в
   // `src/llm/index.ts`.
   PLAN: "1",
+  // Фиктивная константа, а НЕ значение из `.dev.vars`: ключа у разработчика
+  // и в CI нет, и без этой строки роутер падает до сетевого вызова. Настоящий
+  // ключ не читается и не требуется — оба ключа заданы константой.
+  POLZA_API_KEY: "test-key",
+  POLZA_BASE_URL: FAKE_BASE_URL,
 } as unknown as Env;
 
 function fakeDb() {
@@ -81,60 +119,107 @@ const PLAN_STAGE_MARKER = "[plan_stage]";
 
 /** Что видел мок: по порядку вызовов, по главному признаку запроса. */
 interface Trace {
-  calls: Array<{ plan: boolean; system: string; user: string }>;
+  calls: Array<{ url: string; plan: boolean; system: string; user: string }>;
 }
 
-function stubProvider(planItems: number): Trace {
+/** Тело ответа провайдера — форма polza.ai, без неё разбор чинить нечего. */
+function providerReply(payload: unknown): Record<string, unknown> {
+  return {
+    model: "openai/gpt-6-luna",
+    choices: [{ message: { content: JSON.stringify(payload) }, finish_reason: "stop" }],
+    usage: {
+      prompt_tokens: 1240,
+      completion_tokens: 860,
+      total_tokens: 2100,
+      prompt_tokens_details: { cached_tokens: 0 },
+    },
+  };
+}
+
+/**
+ * Подмена глобального `fetch`: отвечает телом провайдера и пишет след.
+ *
+ * Отдельная стадия определяется по метке `[plan_stage]` в system-промпте —
+ * ровно так же, как её различает лог в бою, а не по порядковому номеру вызова.
+ */
+function installProviderFetch(reply: (system: string, user: string) => unknown): Trace {
   const trace: Trace = { calls: [] };
 
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (_url: unknown, init?: { body?: string }) => {
+    vi.fn(async (url: unknown, init?: { body?: string }) => {
       const body = init?.body ? (JSON.parse(init.body) as Record<string, unknown>) : null;
       const messages = (body?.messages ?? []) as Array<{ role: string; content?: string }>;
       const system = String(messages.find((m) => m.role === "system")?.content ?? "");
       const user = String(messages.find((m) => m.role === "user")?.content ?? "");
-      const isPlan = system.includes(PLAN_STAGE_MARKER);
-      trace.calls.push({ plan: isPlan, system, user });
+      const plan = system.includes(PLAN_STAGE_MARKER);
+      trace.calls.push({ url: String(url), plan, system, user });
 
-      let payload: unknown;
-      if (isPlan) {
-        payload = {
-          items: Array.from({ length: planItems }, (_, i) => ({
-            n: i + 1,
-            подтема: `подтема ${i + 1}`,
-            навык: `навык ${i + 1}`,
-            тип: "решение задачи",
-            сложность: "средняя",
-          })),
-        };
-      } else {
-        payload = {
-          title: "Лист",
-          subject: "math",
-          grade: 5,
-          topic: "Обыкновенные дроби",
-          difficulty: "medium",
-          tasks: Array.from({ length: planItems }, (_, i) => ({
-            number: i + 1,
-            text: `Сократите дробь ${i + 1}/9.`,
-            answer: "1/3",
-          })),
-        };
-      }
-
-      return new Response(
-        JSON.stringify({
-          model: "test-model",
-          choices: [{ message: { content: JSON.stringify(payload) }, finish_reason: "stop" }],
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify(providerReply(reply(system, user))), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }),
   );
 
   return trace;
+}
+
+/** План нормального вида: столько позиций, сколько просил лист. */
+function planPayload(planItems: number): unknown {
+  return {
+    items: Array.from({ length: planItems }, (_, i) => ({
+      n: i + 1,
+      подтема: `подтема ${i + 1}`,
+      навык: `навык ${i + 1}`,
+      тип: "решение задачи",
+      сложность: "средняя",
+    })),
+  };
+}
+
+/** Лист: ровно столько заданий, сколько просил учитель. */
+function worksheetPayload(taskCount: number): unknown {
+  return {
+    title: "Лист",
+    subject: "math",
+    grade: 5,
+    topic: "Обыкновенные дроби",
+    difficulty: "medium",
+    tasks: Array.from({ length: taskCount }, (_, i) => ({
+      number: i + 1,
+      text: `Сократите дробь ${i + 1}/9.`,
+      answer: "1/3",
+    })),
+  };
+}
+
+function stubProvider(opts: { planItems: number; taskCount: number }): Trace {
+  return installProviderFetch((system) =>
+    system.includes(PLAN_STAGE_MARKER) ? planPayload(opts.planItems) : worksheetPayload(opts.taskCount),
+  );
+}
+
+/** Планировщик отвечает ерундой — конвейер обязан продолжить без плана. */
+function stubBrokenPlanProvider(opts: { taskCount: number }): Trace {
+  return installProviderFetch((system) =>
+    system.includes(PLAN_STAGE_MARKER) ? { items: [{ безПодтемы: true }] } : worksheetPayload(opts.taskCount),
+  );
+}
+
+/**
+ * Ни один вызов не должен уйти настоящему провайдеру.
+ *
+ * Проверка не декоративная: пока она здесь, «тест зелёный» означает «тест
+ * сломанной подменой fetch ушёл бы в polza.ai и стоил денег».
+ */
+function expectOnlyFakeEndpoint(trace: Trace): void {
+  for (const call of trace.calls) {
+    expect(
+      call.url.startsWith(FAKE_BASE_URL),
+      `вызов ушёл не в подменный адрес, а в ${call.url}`,
+    ).toBe(true);
+  }
 }
 
 const REQ = {
@@ -155,7 +240,7 @@ afterEach(() => {
 
 describe("ТЗ-26 В-1: стадия планирования сквозным путём", () => {
   it("запрос плана уходит ПЕРВЫМ и отличается от запроса генерации", async () => {
-    const trace = stubProvider(3);
+    const trace = stubProvider({ planItems: 3, taskCount: 3 });
 
     await generateWorksheet(
       { request: REQ, plan: "plus", userId: null, ip: "203.0.113.10", bypassCache: true },
@@ -163,16 +248,15 @@ describe("ТЗ-26 В-1: стадия планирования сквозным �
       fakeDb(),
     );
 
-    expect(trace.calls.length, "ни одного вызова провайдера").toBeGreaterThan(0);
+    // Ровно два, а не «больше нуля»: лишний вызов — это лишние деньги.
+    expect(trace.calls, "ожидались план и генерация").toHaveLength(2);
     expect(trace.calls[0]!.plan, "первым должен идти запрос плана").toBe(true);
-    expect(
-      trace.calls.some((c) => !c.plan),
-      "запроса генерации не было",
-    ).toBe(true);
+    expect(trace.calls[1]!.plan, "вторым должен идти запрос генерации").toBe(false);
+    expectOnlyFakeEndpoint(trace);
   });
 
   it("план доходит до промпта генерации целиком, со всеми позициями", async () => {
-    const trace = stubProvider(4);
+    const trace = stubProvider({ planItems: 4, taskCount: 4 });
 
     await generateWorksheet(
       { request: { ...REQ, count: 4 }, plan: "plus", userId: null, ip: "203.0.113.10", bypassCache: true },
@@ -183,15 +267,18 @@ describe("ТЗ-26 В-1: стадия планирования сквозным �
     const generation = trace.calls.find((c) => !c.plan);
     expect(generation, "запрос генерации не найден").toBeTruthy();
     expect(generation!.user, "в промпте генерации нет маркера плана").toContain(PLAN_MARKER);
-    // Все позиции плана, а не только первая.
-    expect(generation!.user).toContain("навык 1");
-    expect(generation!.user).toContain("навык 4");
+    // ВСЕ позиции плана, а не только первая: обрезанный список — ровно та
+    // поломка, которую на живых данных не отличить от «модель не старалась».
+    for (let i = 1; i <= 4; i++) {
+      expect(generation!.user, `в промпте генерации нет позиции плана ${i}`).toContain(`навык ${i}`);
+      expect(generation!.user, `в промпте генерации нет подтемы плана ${i}`).toContain(`подтема ${i}`);
+    }
     // Плана быть не должно в запросе самого планирования.
     expect(trace.calls[0]!.user).not.toContain(PLAN_MARKER);
   });
 
   it("стоимость стадии — ровно один вызов, и лист после неё обычный", async () => {
-    const trace = stubProvider(3);
+    const trace = stubProvider({ planItems: 3, taskCount: 3 });
 
     const result = await generateWorksheet(
       { request: REQ, plan: "plus", userId: null, ip: "203.0.113.10", bypassCache: true },
@@ -200,13 +287,14 @@ describe("ТЗ-26 В-1: стадия планирования сквозным �
     );
 
     // План + генерация. Больше ничем не платим: ни дозапроса, ни ретрая.
-    expect(trace.calls.length).toBe(2);
+    expect(trace.calls).toHaveLength(2);
     const tasks = result.worksheet.tasks as unknown as unknown[];
     expect(tasks).toHaveLength(3);
+    expectOnlyFakeEndpoint(trace);
   });
 
   it("без флага стадия не вызывается вообще — лишних денег нет", async () => {
-    const trace = stubProvider(3);
+    const trace = stubProvider({ planItems: 3, taskCount: 3 });
 
     await generateWorksheet(
       { request: REQ, plan: "plus", userId: null, ip: "203.0.113.10", bypassCache: true },
@@ -214,39 +302,16 @@ describe("ТЗ-26 В-1: стадия планирования сквозным �
       fakeDb(),
     );
 
-    expect(trace.calls.filter((c) => c.plan), "план запрашивался без флага").toHaveLength(0);
-    expect(trace.calls.every((c) => !c.user.includes(PLAN_MARKER))).toBe(true);
+    // Именно «один», а не «ноль плановых»: проверка «плана не было» на пустом
+    // следе вызовов зелёная и при сломанной генерации — то есть ничего не
+    // проверяла бы.
+    expect(trace.calls, "без флага должна остаться только генерация").toHaveLength(1);
+    expect(trace.calls[0]!.plan, "единственным вызовом был запрос плана").toBe(false);
+    expect(trace.calls[0]!.user).not.toContain(PLAN_MARKER);
   });
 
   it("негодный план не ломает выдачу: лист собирается как обычно", async () => {
-    // Планировщик отвечает ерундой — конвейер обязан продолжить без плана,
-    // а не выбросить ошибку на полку.
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (_url: unknown, init?: { body?: string }) => {
-        const body = init?.body ? (JSON.parse(init.body) as Record<string, unknown>) : null;
-        const messages = (body?.messages ?? []) as Array<{ role: string; content?: string }>;
-        const system = String(messages.find((m) => m.role === "system")?.content ?? "");
-        const payload = system.includes(PLAN_STAGE_MARKER)
-          ? { items: [{ безПодтемы: true }] }
-          : {
-              title: "Лист",
-              subject: "math",
-              grade: 5,
-              topic: "Обыкновенные дроби",
-              difficulty: "medium",
-              tasks: [{ number: 1, text: "Сократите дробь 1/9.", answer: "1/3" }],
-            };
-        return new Response(
-          JSON.stringify({
-            model: "test-model",
-            choices: [{ message: { content: JSON.stringify(payload) }, finish_reason: "stop" }],
-            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }),
-    );
+    const trace = stubBrokenPlanProvider({ taskCount: 3 });
 
     const result = await generateWorksheet(
       { request: REQ, plan: "plus", userId: null, ip: "203.0.113.10", bypassCache: true },
@@ -254,6 +319,14 @@ describe("ТЗ-26 В-1: стадия планирования сквозным �
       fakeDb(),
     );
 
-    expect(result.worksheet.tasks.length).toBeGreaterThan(0);
+    // Планировщик действительно звали — иначе тест прошёл бы, не проверив
+    // ничего: «плохой план» обязан быть плохим ОТВЕТОМ, а не отсутствием.
+    expect(trace.calls[0]!.plan, "планировщик не вызывался").toBe(true);
+    const generation = trace.calls.find((c) => !c.plan);
+    expect(generation, "запрос генерации не найден").toBeTruthy();
+    // Мусор обязан быть отброшен, а не подставлен в промпт: иначе «план
+    // нашёлся», но генерация поехала по ерунде.
+    expect(generation!.user, "в промпт генерации попал негодный план").not.toContain(PLAN_MARKER);
+    expect(result.worksheet.tasks.length).toBe(3);
   });
 });

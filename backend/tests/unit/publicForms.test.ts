@@ -15,6 +15,8 @@
  *   S6. show_answers = 1 → эталон уходит (учитель разрешил)
  *   S7. Неверный код класса → 403 FORM_CODE_REQUIRED
  *   S8. GET /status → open | closed | expired | not_found
+ *   S9.  60 отправок одной формы с одного IP проходят, 61-я → 429 RATE_LIMIT
+ *   S10. Лимит считается по паре «форма + IP»: другие пары не блокируются
  *
  * Схема D1 зашита в SCHEMA_SQL: workerd не имеет fs.readFileSync
  * (см. комментарий в начале worksheets.test.ts).
@@ -523,5 +525,83 @@ describe("публичные формы (TZ-12)", () => {
       .bind(id)
       .first<{ cnt: number }>();
     expect(rows?.cnt).toBe(0);
+  });
+
+  // ── S9. Лимит отправок не должен ломать урок ──────────────────────────────
+  /**
+   * Сценарий, ради которого лимит на пару «форма + IP» поднят с 10 до 60:
+   * класс из 30 человек сдаёт форму за урок с ОДНОГО школьного Wi-Fi. Все
+   * ученики делят один IP и, значит, один ключ этого лимита — при 10 отправках
+   * урок физически не мог дойти до конца.
+   *
+   * Проверка именно поведенческая: не «в коде стоит 60», а 60 реальных
+   * запросов через настоящий роут и настоящий D1, и только потом отказ.
+   * Константу проверяет scripts/check-form-rate-limit.mjs — здесь важно
+   * другое: чтобы при 60 отправках ученик получил ответ, а не отказ.
+   */
+  it("S9: 60 отправок с одной формы проходят, 61-я отклоняется кодом 429", { timeout: 60_000 }, async () => {
+    // Отдельный IP, чтобы не делить bucket с остальными тестами файла.
+    const ip = "10.90.0.1";
+    const { id, token } = await seedForm({
+      tasks: [{ number: 1, text: "2+2", type: "computation", answer: "4", points: 1 }],
+    });
+
+    const submit = (studentName: string): Promise<Response> =>
+      postSubmit(token, { studentName, answers: [{ taskNumber: 1, value: "4" }] }, ip);
+
+    // 1) Весь класс плюс запас на повторные нажатия — уходит без отказа.
+    for (let i = 1; i <= 60; i++) {
+      const res = await submit(`Ученик ${i}`);
+      expect(res.status, `отправка №${i} из 60 должна пройти`).toBe(201);
+    }
+
+    // 2) 61-я отклоняется лимитом, а не ошибкой формы.
+    const overflow = await submit("Ученик 61");
+    expect(overflow.status).toBe(429);
+    const body = (await overflow.json()) as { ok: boolean; code: string; error: string };
+    expect(body.code).toBe("RATE_LIMIT");
+
+    // 3) Отклонённая отправка не записана: лимит отсекает ДО сохранения,
+    //    иначе в сводке учителя появился бы 61-й «ответ» без сдавшегося.
+    const rows = await env.DB
+      .prepare("SELECT COUNT(*) AS cnt FROM form_responses WHERE form_id = ?1")
+      .bind(id)
+      .first<{ cnt: number }>();
+    expect(rows?.cnt).toBe(60);
+  });
+
+  // ── S10. Ключ составной: чужая пара не блокируется ────────────────────────
+  /**
+   * Смысл составного ключа — не дать одному IP заблокировать весь класс.
+   * Поэтому лимит обязан быть ПАРОЙ, а не адресом: высаженная пара не должна
+   * задевать ни другую форму с того же адреса, ни ту же форму с другого.
+   * Если это перестанет выполняться, вернётся ровно та поломка, которую
+   * чинили: один человек исчерпал лимит, и урок встал у всех.
+   */
+  it("S10: лимит считается по паре «форма + IP», а не только по IP", { timeout: 60_000 }, async () => {
+    const exhaustedIp = "10.91.0.1";
+    const otherIp = "10.91.0.2";
+    const formA = await seedForm({
+      tasks: [{ number: 1, text: "2+2", type: "computation", answer: "4", points: 1 }],
+    });
+    const formB = await seedForm({
+      tasks: [{ number: 1, text: "3+3", type: "computation", answer: "6", points: 1 }],
+    });
+
+    const send = (token: string, value: string, ip: string): Promise<Response> =>
+      postSubmit(token, { studentName: "Ученик", answers: [{ taskNumber: 1, value }] }, ip);
+
+    // Высаживаем пару (formA, exhaustedIp) до отказа.
+    for (let i = 1; i <= 60; i++) {
+      const res = await send(formA.token, "4", exhaustedIp);
+      expect(res.status, `отправка №${i} должна пройти`).toBe(201);
+    }
+    expect((await send(formA.token, "4", exhaustedIp)).status).toBe(429);
+
+    // Тот же IP, ДРУГАЯ форма — другой ключ: вторая параллель сдаёт спокойно.
+    expect((await send(formB.token, "6", exhaustedIp)).status).toBe(201);
+
+    // Та же форма, ДРУГОЙ IP (телефон ушёл с мобильного интернета) — тоже другой ключ.
+    expect((await send(formA.token, "4", otherIp)).status).toBe(201);
   });
 });
