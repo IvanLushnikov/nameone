@@ -64,6 +64,15 @@ const ONLY = String((workerEnv as unknown as Record<string, unknown>).LIVE_ONLY 
   .filter(Boolean);
 const wanted = (key: string) => ONLY.length === 0 || ONLY.includes(key);
 
+/** Ключи листов для фильтра — латиницей, чтобы не зависеть от кириллицы. */
+const SHEET_KEYS: Record<string, string> = {
+  "русский 8": "russian8",
+  "английский 11": "english11",
+  "карточки (математика 6)": "cards",
+  "математика 5": "math5",
+  "биология 7": "bio7",
+};
+
 const FAKE_ENV = {
   POLZA_API_KEY: API_KEY,
   APP_ENV: "test",
@@ -148,8 +157,7 @@ function rows(tasks: unknown[]): Array<{ text: string; answer: string; explanati
   }));
 }
 
-live("ТЗ-26 Г8: пять живых листов без дефектов качества", () => {
-  const SHEETS: Array<{ name: string; req: Partial<GenerationRequest> }> = [
+const SHEETS: Array<{ name: string; req: Partial<GenerationRequest> }> = [
     { name: "русский 8", req: { subject: "russian", grade: 8, topic: "Орфография", count: 10 } },
     { name: "английский 11", req: { subject: "english", grade: 11, topic: "Present Perfect", count: 10 } },
     { name: "карточки (математика 6)", req: { subject: "math", grade: 6, topic: "Рациональные числа", count: 8, type: "cards" } },
@@ -157,10 +165,17 @@ live("ТЗ-26 Г8: пять живых листов без дефектов ка
     { name: "биология 7", req: { subject: "biology", grade: 7, topic: "Класс растений", count: 10 } },
   ];
 
-  for (const sheet of SHEETS) {
-    // Ключ листа для фильтра — латиницей, чтобы не зависеть от кириллицы.
-    const key = { "русский 8": "russian8", "английский 11": "english11", "карточки (математика 6)": "cards", "математика 5": "math5", "биология 7": "bio7" }[sheet.name] ?? "";
-    if (!wanted(key)) continue;
+// Листы, попавшие под фильтр `LIVE_ONLY`.
+const SELECTED_SHEETS = SHEETS.filter((sheet) => wanted(SHEET_KEYS[sheet.name] ?? ""));
+
+// Пустую группу vitest считает ОШИБКОЙ («No test found in suite»), а фильтр
+// на контрольной оставляет именно такую пустую группу: гейт краснеет при
+// зелёной проверке. Поэтому группу либо создаём с тестами, либо помечаем
+// пропущенной — пропуск ошибкой не считается.
+const describeSheets = SELECTED_SHEETS.length > 0 ? describe : describe.skip;
+
+describeSheets("ТЗ-26 Г8: пять живых листов без дефектов качества", () => {
+  for (const sheet of SELECTED_SHEETS) {
     it(`«${sheet.name}» — нет смешанных чисел, дублей, answer:null и пустых объяснений`, async () => {
       const result = await generateWorksheet(
         { ...ARGS, request: request(sheet.req) },
