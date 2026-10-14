@@ -19,19 +19,42 @@
  * (`globals.css`, @media print), поэтому `fixed` работает как задумано.
  *
  * Знак не перехватывает клики (`pointer-events-none`) и скрыт от скринридера.
+ *
+ * ПОЧЕМУ ТАК ВЫГЛЯДИТ ЗНАК (лист 1.1.4). До правки было `text-[12vw]` сплошным
+ * `warm-300`: буквы шириной в полстраницы лежали поверх номеров уроков, дат и
+ * текста тем — на КТП лист в подарок становился нечитаемым. Три ручки:
+ *
+ *   1. РАЗМЕР 12vw → 7vw. Буква «Д» на A4 занимала ~27 мм высоты при кегле
+ *      таблицы в 3–4 мм, то есть перекрывала сразу 6–8 строк. 7vw — это всё
+ *      ещё крупная надпись (видна с метра, не спутать с текстом листа), но
+ *      перекрывает одну-две строки, а не колонку целиком.
+ *   2. ПРОЗРАЧНОСТЬ. Раньше буквы были непрозрачными и просто затирали текст
+ *      под собой. Теперь `text-warm-400/40` — надпись остаётся честно видимой
+ *      (это не «убрать метку»), но сквозь неё просвечивает строка задания.
+ *   3. РЕЖИМ Наложения `mix-blend-multiply`. Ключевая деталь: при обычном
+ *      наложении светлые буквы ВЫСВЕЧИВАЮТ тёмный текст под собой — даже при
+ *      малой прозрачности строка бледнеет. Multiply не выбеливает, а затемняет:
+ *      тёмный текст под меткой остаётся тёмным, светлый край буквы темнеет
+ *      бумагу. Поэтому читаемость задания не падает даже там, где буква
+ *      пересекает строку, а метка на белой бумаге видна как раньше.
+ *
+ * Чего сознательно не делаем: не уменьшаем число надписей и не убираем их с
+ * центра страницы. Повтор на каждой странице и видимость — это ровно то, ради
+ * чего знак существует (см. решение №4 в docs/tz/18-money-and-trust.md): демо
+ * должно быть помечено даже если учитель не долистал до подвала.
  */
 
 export function PrintWatermark({ label = "ДЕМО" }: { label?: string }) {
   return (
     <div
       aria-hidden
-      className="hidden print:flex fixed inset-0 z-10 pointer-events-none select-none items-center justify-center overflow-hidden"
+      className="hidden print:flex fixed inset-0 z-10 pointer-events-none select-none items-center justify-center overflow-hidden [print-color-adjust:exact] [-webkit-print-color-adjust:exact]"
     >
-      <div className="flex flex-col items-center gap-[16vh] -rotate-[18deg]">
+      <div className="flex flex-col items-center gap-[18vh] -rotate-[18deg] mix-blend-multiply">
         {[0, 1, 2].map((i) => (
           <span
             key={i}
-            className="text-[12vw] font-black uppercase leading-none tracking-[0.18em] text-warm-300"
+            className="text-[7vw] font-black uppercase leading-none tracking-[0.18em] text-warm-400/40"
           >
             {label}
           </span>
