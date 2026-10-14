@@ -131,7 +131,7 @@ export function normalizePlan(raw: unknown, count: number): SheetPlan | null {
   const seen = new Set<string>();
   const clean: PlanItem[] = [];
 
-  for (const [i, item] of items.entries()) {
+  for (const item of items) {
     if (clean.length >= count) break;
     if (!item || typeof item !== "object") continue;
 

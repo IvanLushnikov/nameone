@@ -435,3 +435,28 @@ export function tasksToReplace(result: SkillDupeResult): number[] {
   const numbers = new Set(result.pairs.map((pair) => pair.second));
   return [...numbers].sort((a, b) => a - b);
 }
+
+/**
+ * Какие навыки лист уже занял — для промпта дозапроса (ТЗ-26, В-1).
+ *
+ * Живые прогоны 14.10.2026: на «Квадратном трёхчлене» модель раз за разом
+ * возвращала «найдите корни квадратного трёхчлена», и дубль уезжал учителю —
+ * чистка постфактум не сходилась, а стадия планирования это не чинила
+ * (проверено: 2 прогона из 3 и с планом, и без).
+ *
+ * Поэтому навыки отдаются модели ЗАРАНЕЕ, в дозапросе: не «убери это и
+ * придумай другое», а «вот эти уже заняты, не занимай их снова».
+ *
+ * Список уникальный и обрезан: двадцать строк достаточно, а лишние только
+ * занимают токены.
+ */
+export function usedSkillKeys(tasks: readonly SkillTaskLike[], limit = 20): string[] {
+  const seen = new Set<string>();
+  for (const task of Array.isArray(tasks) ? tasks : []) {
+    const sig = taskSignature(task?.text).join(" ");
+    if (!sig) continue;
+    seen.add(sig);
+    if (seen.size >= limit) break;
+  }
+  return [...seen];
+}

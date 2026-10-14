@@ -88,7 +88,6 @@ import { buildPlanPrompt, normalizePlan } from "./prompts/plan-gen";
 const PLAN_ENABLED_VALUE = "1";
 import {
   findSkillDupes,
-  tasksToReplace,
   type SkillTaskLike,
 } from "./validation/skill-dupes";
 import { reconcileSelfVerifyVerdict } from "./validation/answer-check";
@@ -297,6 +296,8 @@ function summarizeLoss(
   reports: readonly QualityFilterReport[],
   topUpAdded: number,
   deliveredTotal: number,
+  /** Сколько пар дублей осталось в выдаче ПОСЛЕ чистки. */
+  repeatedSkills = 0,
 ): QualityLossInfo {
   const droppedPatternRef: number[] = [];
   const droppedForeignMath: number[] = [];
@@ -327,6 +328,9 @@ function summarizeLoss(
     topUpAdded,
     stillMissing: missingTaskCount(requestedTotal, deliveredTotal),
     filterBackedOff,
+    // Считается ПОСЛЕ чистки, на том, что реально уедет учителю. Ноль — значит
+    // повторов в выдаче нет, независимо от того, сколько их было до чистки.
+    repeatedSkills,
   };
 }
 
@@ -985,6 +989,12 @@ export async function generateWorksheet(
             .filter((t): t is string => typeof t === "string"),
           ...replacedTexts,
         ],
+        // Список занятых навыков НЕ передаём, хотя `buildTopUpPrompt` его
+        // умеет. Замерено 14.10.2026 на трёх контрольных: без списка проходят
+        // 2 из 3 (~12 руб.), со списком — 1 из 3 (~30 руб.). Список не помог,
+        // а утяжелил промпт и добавил вызовов. На узкой теме («Квадратный
+        // трёхчлен») модель всё равно возвращает один и тот же навык.
+        undefined,
       );
       const res = await callProvider(prompt.system, prompt.user, 4096);
       const parsed = JSON.parse(res.response.content) as Worksheet;
@@ -1068,7 +1078,26 @@ export async function generateWorksheet(
    * предела мы бы платили вызов за вызовом, ничего не меняя. Три прохода —
    * это «почини, если можешь», а не «добивайся любой ценой».
    */
-  const dedupeRounds = 3;
+  /**
+   * ЧИСТКА ЗА ОДИН ПРОХОД, а не за три.
+   *
+   * Что измерено на контрольной «Квадратный трёхчлен» (алгебра 8, 14.10.2026):
+   * дополнительные проходы НЕ дают надёжности — прогоны и с одним, и с тремя
+   * проходами дают и успех, и дубль «корень квадратного трёхчлена». Разница в
+   * трёх прогонах не помещается в шум выборки из трёх замеров, а лишние
+   * проходы — это заведомо больше вызовов провайдера.
+   *
+   * ЧЕСТНО О ЦЕНЕ. Стоимость контрольной колеблется от 12 до 38 руб. НЕ из-за
+   * проходов чистки: она определяется ретраями вариантов в `variant-check`
+   * (модель возвращает совпадающие варианты — движок повторяет попытку) и
+   * добиванием длины. Сначала я приписал разницу в цене чистке — это было
+   * неверно, замеры это не подтвердили.
+   *
+   * Что честно не работает: на УЗКОЙ теме модель упирается в один навык и
+   * возвращает его снова и снова, и дубль всё равно уходит учителю. Об этом
+   * надо сказать в текстах продукта, а не обещать «без повторов».
+   */
+  const dedupeRounds = 1;
   /**
    * Бюджет выброшенных заданий.
    *
@@ -1083,6 +1112,15 @@ export async function generateWorksheet(
    * нехватку он заметит на печати.
    */
   const dropBudgetOf = (count: number) => Math.ceil(count / 2);
+
+  /**
+   * Сколько пар дублей осталось в списке ПОСЛЕ чистки.
+   *
+   * Считается на том, что реально уедет учителю, и идёт в `quality`, чтобы
+   * интерфейс мог сказать правду вместо тихой отгрузки листа с повтором.
+   */
+  const countRemainingDupes = (tasks: readonly SkillTaskLike[]): number =>
+    findSkillDupes(tasks).pairs.length;
 
   const isControl = request.type === "control";
   // У контрольной целевое количество общее для обоих вариантов (AD-8) и
@@ -1258,6 +1296,10 @@ export async function generateWorksheet(
     filterReports,
     topUpAdded,
     deliveredTotal,
+    // Считаем по обоим вариантам: дубль может остаться в любом, и учителю
+    // виден весь лист, а не один вариант.
+    countRemainingDupes(worksheet.tasks as unknown as CleanTask[]) +
+      countRemainingDupes((secondVariant?.tasks ?? []) as unknown as CleanTask[]),
   );
 
   const variantsInfo = buildVariantStatus(isControl ? 2 : 1, secondVariant ? 2 : 1, {
