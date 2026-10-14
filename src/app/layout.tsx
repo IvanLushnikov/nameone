@@ -5,6 +5,7 @@ import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Toaster } from "@/components/ui/Toast";
 import { YandexMetrika } from "@/components/analytics/YandexMetrika";
+import { SITE_URL } from "@/lib/site";
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -64,6 +65,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru" className={inter.variable}>
+      {/* Ссылка на llms.txt — файл для ИИ-краулеров.
+          Почему именно здесь, а не в `metadata.alternates`: главная страница
+          объявляет СВОЙ объект metadata с `alternates.canonical`, а Next
+          заменяет поля по верхнему уровню целиком — вместе с `types` из
+          корневого layout. Проверено сборкой: с `alternates.types` в layout
+          ссылка не попадала ни в одну страницу. */}
+      <head>
+        <link rel="alternate" type="text/plain" href={`${SITE_URL}/llms.txt`} />
+        <link rel="alternate" type="text/plain" href={`${SITE_URL}/llms-full.txt`} />
+      </head>
       <body className="min-h-screen bg-warm-50 text-warm-950 antialiased font-sans">
         {/* Toaster держит ToastContext.Provider, поэтому всё, что вызывает
             useToast() (в т.ч. страницы в children), обязано быть ВНУТРИ него.
