@@ -24,9 +24,23 @@ import {
   subjects,
 } from "@/lib/content/subjects";
 import { JsonLd, Breadcrumb } from "@/components/seo";
+import { prepositionalTitle } from "@/lib/content/subject-cases";
+import { getTopicContent } from "@/lib/content/topic-content";
 import { absoluteUrl, clipDescription, ogImages, topicTitleSuffix, twitterCard } from "@/lib/seo/metadata";
 
 type Props = { params: { subject: string; grade: string; topic: string } };
+
+/**
+ * Структура слайдов для предметов без наполненных данных.
+ * См. пояснение к `FALLBACK_STAGES` в `/lesson-plan/.../page.tsx`.
+ */
+const FALLBACK_SLIDES = [
+  { name: "Титульный", content: "Тема урока и предмет" },
+  { name: "Цели урока", content: "Что мы должны понять к концу занятия" },
+  { name: "Определение", content: "Основное понятие темы" },
+  { name: "Примеры", content: "Разобранные примеры по теме" },
+  { name: "Итоги", content: "Вывод и домашнее задание" },
+];
 
 export function generateStaticParams() {
   const params: Array<{ subject: string; grade: string; topic: string }> = [];
@@ -103,6 +117,15 @@ export default function PresentationTopicPage({ params }: Props) {
   const topic = getTopic(params.subject, Number(params.grade), params.topic);
 
   if (!subject || !grade || !topic) return notFound();
+
+  // Предметное содержание. Раньше тело страницы собиралось из жёстко
+  // зашитых массивов: одинаковые слайды «Титульный — Цели — Определение —
+  // Примеры — Итоги» шли на все 1075 страниц, хотя презентация по
+  // математике и по истории устроены по-разному.
+  //
+  // `content.filled` — если по предмету нет данных, страница рисует
+  // прежние блоки, а не подставляет чужой предметный текст.
+  const content = getTopicContent(subject.slug, grade.num);
 
   // Разметка по образцу /subject/[subject]/[grade]/[topic] — LearningResource +
   // AlignmentObject по разделу ФГОС. Рендерим всегда: здесь это единственный
@@ -250,8 +273,77 @@ export default function PresentationTopicPage({ params }: Props) {
         </div>
       </section>
 
+      {/* Что показывают слайды по этой теме. Блок — только если по этой паре
+          «предмет + класс» есть данные: иначе на странице английского
+          получился бы блок про русский язык. */}
+      {content?.filled && (
+        <section className="py-12 sm:py-16">
+          <div className="container-tight">
+            <h2 className="text-2xl sm:text-3xl font-display font-bold mb-2">
+              Что показывают слайды по теме «{topic.title}»
+            </h2>
+            <p className="text-warm-600 mb-6">
+              {content.grade.focus} Презентация собирается под {grade.num} класс по предмету{" "}
+              {prepositionalTitle(subject.slug, subject.title)}.
+            </p>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <Card>
+                <h3 className="font-semibold text-warm-950 mb-3">
+                  Что отрабатываем в этой теме
+                </h3>
+                <ul className="space-y-2 text-sm text-warm-700">
+                  {content.grade.operations.map((op) => (
+                    <li key={op} className="flex items-start gap-2">
+                      <Check className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
+                      <span>{op}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+              <Card>
+                <h3 className="font-semibold text-warm-950 mb-3">
+                  Слайд, который делает половину работы
+                </h3>
+                <ul className="space-y-2 text-sm text-warm-700">
+                  {content.grade.pitfalls.slice(0, 4).map((p) => (
+                    <li key={p} className="flex items-start gap-2">
+                      <Lightbulb className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
+                      <span>{p}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-4 pt-4 border-t border-warm-100 text-sm text-warm-600 leading-relaxed">
+                  {content.grade.workingStyle}
+                </p>
+              </Card>
+              {/* Примеры — данные САМОЙ темы (`Topic.examples`). Этот блок
+                  различает страницы тем ВНУТРИ одного класса: без него
+                  страницы одной пары «предмет + класс» читались одинаково. */}
+              <Card>
+                <h3 className="font-semibold text-warm-950 mb-3">
+                  Что будет на слайдах с примерами
+                </h3>
+                <ul className="space-y-3 text-sm text-warm-700">
+                  {topic.examples.map((ex, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <span className="shrink-0 mt-0.5 w-5 h-5 rounded-full bg-brand-50 text-brand-700 text-xs grid place-items-center font-medium">
+                        {i + 1}
+                      </span>
+                      <span>{ex.text}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-4 pt-4 border-t border-warm-100 text-sm text-warm-600 leading-relaxed">
+                  {content.subject.exampleFraming}
+                </p>
+              </Card>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* «Что получите» */}
-      <section className="py-12 sm:py-16">
+      <section className="py-12 sm:py-16 bg-warm-50 border-y border-warm-100">
         <div className="container-tight">
           <h2 className="text-2xl sm:text-3xl font-display font-bold mb-2">
             Что вы получите
@@ -281,7 +373,12 @@ export default function PresentationTopicPage({ params }: Props) {
               {
                 icon: Lightbulb,
                 title: "Примеры с разбором",
-                text: "Пошаговые решения типовых заданий темы.",
+                // Было общее «пошаговые решения типовых заданий темы».
+                // Теперь — предметная операция: у математики это счёт с
+                // записью в тетради, у русского — работа с правилом.
+                text: content?.filled
+                  ? `Примеры по теме «${topic.title}»: ${content.grade.operations[0]}.`
+                  : "Пошаговые решения типовых заданий темы.",
               },
               {
                 icon: FileText,
@@ -306,35 +403,32 @@ export default function PresentationTopicPage({ params }: Props) {
         </div>
       </section>
 
-      {/* Структура слайдов */}
-      <section className="py-12 sm:py-16 bg-warm-50 border-y border-warm-100">
+      {/* Структура слайдов — предметная. Раньше здесь стоял один список из
+          пяти слайдов, одинаковый на всех 1075 страницах. */}
+      <section className="py-12 sm:py-16">
         <div className="container-tight">
-          <h2 className="text-2xl sm:text-3xl font-display font-bold mb-6">
+          <h2 className="text-2xl sm:text-3xl font-display font-bold mb-2">
             Структура презентации
           </h2>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            {/* Название слайда — только по-русски. Раньше над ним в бейдже
-                выводилось служебное поле kind (title / bullets / definition /
-                example / summary) — учитель видел английские слова.
-                Русское название рядом уже было, поэтому бейдж убран,
-                а kind из данных удалён: он нигде в файле больше не читался. */}
-            {[
-              { name: "Титульный" },
-              { name: "Цели урока" },
-              { name: "Определение" },
-              { name: "Примеры" },
-              { name: "Итоги" },
-            ].map((slide, i) => (
-              <Card key={slide.name} padded>
-                {/* Номер слайда заменил удалённый бейдж с английским kind.
-                    Без него карточка осталась почти пустой, а учителю номер
-                    полезен: по нему он ориентируется, на каком слайде остановиться. */}
-                <div className="text-xs font-semibold text-brand-700 mb-1.5">
-                  Слайд {i + 1}
-                </div>
-                <h3 className="font-medium text-warm-950 text-sm">{slide.name}</h3>
-              </Card>
-            ))}
+          <p className="text-warm-600 mb-6">
+            {content?.filled
+              ? `Порядок слайдов для предмета «${subject.title}» — такой список блоков, а не общий шаблон: ${content.subject.workKind}`
+              : "Порядок слайдов по теме."}
+          </p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {(content?.filled ? content.subject.slidePlan : FALLBACK_SLIDES).map(
+              (slide, i) => (
+                <Card key={slide.name} padded>
+                  <div className="text-xs font-semibold text-brand-700 mb-1.5">
+                    Слайд {i + 1}
+                  </div>
+                  <h3 className="font-medium text-warm-950 text-sm mb-1">
+                    {slide.name}
+                  </h3>
+                  <p className="text-xs text-warm-600 leading-relaxed">{slide.content}</p>
+                </Card>
+              ),
+            )}
           </div>
         </div>
       </section>
