@@ -227,15 +227,34 @@ export default function PreviewPage() {
     <>
       <div className="container-tight py-8 sm:py-12">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6 no-print">
-          <div>
+          {/* Лист 6.1.4: на 390 px четыре кнопки в один ряд занимали 504 px
+              при 358 px полезной ширины и растягивали страницу за окно
+              (замер: полотно 520 px при окне 390 px) — учителю приходилось
+              крутить лист вбок. Ряд шапки переноситься умел, но переносить
+              ему было нечего: контейнер кнопок не переносился сам и отдавал
+              родителю свою максимальную ширину.
+
+              - `flex-wrap` — кнопки переносятся, а не уезжают за край.
+              - `w-full` и `sm:w-auto` — на телефоне панель занимает всю
+                ширину колонки, и перенос считается по реальной ширине; от
+                640 px ширина снова по содержимому.
+              - `min-w-0` и `break-words` у названия — длинное название
+                сжимается, а не выталкивает панель за край.
+
+              На 1440×900 и 1920×1080 ряд выглядит как был: замерено 504 px
+              и одна строка кнопок и до правки, и после. Панель и до, и после
+              встаёт на вторую строку под названием — на длинных названиях
+              названию и кнопкам в один ряд не хватает ширины, и это было
+              так же задолго до этого листа. */}
+          <div className="min-w-0">
             <Badge tone="brand" className="mb-2">
               {isFav ? <Heart className="w-3 h-3" /> : <History className="w-3 h-3" />}
               {isFav ? "Из избранного" : "Из истории"}
             </Badge>
-            <h1 className="text-xl font-semibold text-warm-950">{artifact.title}</h1>
+            <h1 className="text-xl font-semibold text-warm-950 break-words">{artifact.title}</h1>
             <p className="text-sm text-warm-500 mt-0.5">{subtitle}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <Button
               variant="secondary"
               size="md"
