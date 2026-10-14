@@ -20,10 +20,19 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { D1Database } from "@cloudflare/workers-types";
 import type { AppEnv, WorksheetTask } from "../types";
+import type { Env } from "../env";
 import { rateLimitMiddleware, djb2 } from "../middleware/ratelimit";
 import { throwApiError } from "../lib/errors";
 import { answerId as makeAnswerId, responseId as makeResponseId } from "../lib/shortid";
-import { gradeSubmission, type StudentValue } from "../services/formGrading";
+import {
+  buildCheckMeta,
+  gradeSubmission,
+  gradeSubmissionWithShortAnswerLlm,
+  readShortAnswerLlmSettings,
+  type GradedSubmission,
+  type StudentValue,
+} from "../services/formGrading";
+import { gradeShortAnswerWithLlm } from "../llm/shortAnswerCheck";
 
 const publicFormsRouter = new Hono<AppEnv>();
 
@@ -272,6 +281,42 @@ publicFormsRouter.get("/:token/status", formGetLimit, async (c) => {
 // POST /api/public/forms/:token/submit — приём ответов + автосверка
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Сверить работу перед сохранением.
+ *
+ * Короткие ответы сверяет модель — ТОЛЬКО если учитель сам включил это на этой
+ * форме. Галочка по умолчанию снята, потому что каждый вызов стоит денег, а
+ * решение о расходе принимает учитель, а не код (лист 3.1.6).
+ *
+ * Функция не имеет права бросить: `try/catch` здесь — последний рубеж перед
+ * тем, как ученик нажмёт «Отправить». Даже если движок поведёт себя не так,
+ * как ожидает, ученик сдаёт работу, а работа уходит учителю без сверки.
+ */
+async function gradeSubmissionForSubmit(
+  c: { env: Env },
+  form: PublicFormRow,
+  tasks: WorksheetTask[],
+  answersByNumber: Map<number, StudentValue>,
+): Promise<GradedSubmission> {
+  try {
+    return await gradeSubmissionWithShortAnswerLlm({
+      tasks,
+      answersByNumber,
+      settings: readShortAnswerLlmSettings(form.payload_json),
+      check: (task, value) =>
+        gradeShortAnswerWithLlm({
+          task,
+          value,
+          env: c.env,
+          subject: form.subject,
+          grade: form.grade,
+        }),
+    });
+  } catch {
+    return gradeSubmission(tasks, answersByNumber);
+  }
+}
+
 publicFormsRouter.post(
   "/:token/submit",
   formSubmitLimit,
@@ -318,7 +363,12 @@ publicFormsRouter.post(
     }
 
     // Сверка на сервере. Эталон наружу не уходит.
-    const graded = gradeSubmission(tasks, answersByNumber);
+    //
+    // Порядок важен: статус формы проверяется ВЫШЕ, до сверки. Учитель вправе
+    // закрыть форму прямо во время сверки — тогда работа всё равно сохранится
+    // (ученик нажал «Отправить», пока её ещё принимали), но платить за закрытую
+    // форму нельзя, и отказ 410 случается раньше, чем первый вызов модели.
+    const graded = await gradeSubmissionForSubmit(c, form, tasks, answersByNumber);
 
     const responseId = makeResponseId();
     // Только хэш IP: сырой IP — персональные данные (ТЗ §5.2).
@@ -353,7 +403,14 @@ publicFormsRouter.post(
           p.pointsMax,
           p.needsReview ? 1 : 0,
           p.checkMethod,
-          p.reason ? JSON.stringify({ reason: p.reason }) : null,
+          // ЧЬЁ это решение. Без этого снимка «верно» от модели и «верно» от
+          // учителя выглядят в журнале одинаково, а это разные события.
+          buildCheckMeta(p, {
+            // shortAnswer есть только если движок реально запускался.
+            llmChecked: Boolean(p.shortAnswer),
+            decidedAt: now,
+            shortAnswer: p.shortAnswer,
+          }),
           now,
         ),
     );

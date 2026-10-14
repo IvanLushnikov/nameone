@@ -23,7 +23,6 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
-  gradeShortAnswerWithLlm,
   gradeFromModel,
   normalizeShortAnswerVerdict,
   applyTeacherOverride,
@@ -32,6 +31,10 @@ import {
   LLM_ANSWER_GRADING_ESTIMATE_TOKENS_IN,
   LLM_ANSWER_GRADING_ESTIMATE_TOKENS_OUT,
 } from "../../src/services/formGrading";
+// Обращение к модели живёт в LLM-слое (лист 3.1.6): сервис разбора остаётся
+// чистым и не импортирует провайдеров. Тест проверяет оба слоя вместе — так же,
+// как их вызывает роут отправки формы.
+import { gradeShortAnswerWithLlm } from "../../src/llm/shortAnswerCheck";
 import { pickModel } from "../../src/llm/router";
 import { buildShortAnswerPrompt, FORM_GRADING_SYSTEM } from "../../src/llm/prompts/form-grading";
 import { MODEL_COSTS } from "../../src/llm/config";
@@ -335,6 +338,30 @@ describe("откат к учителю", () => {
     expect(v.needsReview).toBe(true);
     // И причина больше не обещает несуществующий «этап 6».
     expect(v.reason).not.toContain("этап 6");
+  });
+
+  it("таймаут провайдера — обычная ручная проверка, а не «неверно»", async () => {
+    // Провайдер, который не отвечает никогда. Ученик при этом ждёт кнопку
+    // «Отправить», поэтому ждать двенадцать секунд он не должен — и уж тем более
+    // не должен получить «неверно» из-за чужой аварии.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>(() => {})),
+    );
+
+    const g = await gradeShortAnswerWithLlm({
+      task: task({ type: "short-answer", answer: "притягивает Земля" }),
+      value: "Земля притягивает",
+      env: ENV,
+      // 50 мс вместо боевых 12 секунд: тест проверяет ветку, а не ожидание.
+      timeoutMs: 50,
+    });
+
+    expect(g.checkMethod).toBe("manual");
+    expect(g.isCorrect).toBeNull();
+    expect(g.needsReview).toBe(true);
+    expect(g.modelVerdict).toBeNull();
+    expect(g.decidedBy).toBe("model");
   });
 });
 

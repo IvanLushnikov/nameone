@@ -21,20 +21,24 @@
  *   short-answer    — модель сверяет смысл, низкая уверенность → учителю
  *   essay           — только учитель, всегда manual
  *
- * ── Два слоя: синхронный и LLM ───────────────────────────────────────────────
+ * ── Два слоя: сервис и сеть ──────────────────────────────────────────────────
  * `gradeAnswer`/`gradeSubmission` остаются СИНХРОННЫМИ и чистыми: их зовёт роут
  * отправки формы (`routes/publicForms.ts`), и менять их сигнатуру нельзя —
- * это ломает чужой код. Сверка короткого ответа моделью живёт в отдельной
- * async-функции `gradeShortAnswerWithLlm` ниже, а `gradeAnswer` для
- * short-answer остаётся ручным НЕ как заглушка, а как штатный откат: нет
- * ключа, нет сети, модель ответила мусором — ответ уходит учителю тем же
+ * это ломает чужой код.
+ *
+ * Модуль НЕ ИМПОРТИРУЕТ провайдеров (лист 3.1.6). Обращение к модели живёт в
+ * `src/llm/shortAnswerCheck.ts`, а сюда модель не заходит даже ленивым
+ * `await import`: сборник поднимает динамический импорт обратно в статический
+ * граф, и тестовый пул начинал падать с «No such module» ровно на этом импорте.
+ * Здесь остаётся разбор ответа модели, решение учителя и правила режима; сеть
+ * приходит снаружи через переданную функцию `check`.
+ *
+ * `gradeAnswer` для short-answer остаётся ручным НЕ как заглушка, а как штатный
+ * откат: нет ключа, нет сети, модель ответила мусором — ответ уходит учителю тем же
  * самым путём, каким шёл до подключения модели.
  */
 
 import type { WorksheetTask } from "../types";
-import type { Env } from "../env";
-import { pickModel, callWithFallback } from "../llm/router";
-import { buildShortAnswerPrompt } from "../llm/prompts/form-grading";
 
 /** Способ сверки, который реально выполнили. */
 export type CheckMethod = "auto" | "llm" | "manual";
@@ -79,7 +83,8 @@ const INVISIBLE_SPACES_PATTERN = /[\s\u00a0\u202f]+/gu;
  * Привести «сырое» значение ученика/эталона к строке для сравнения.
  * null/undefined → "" (пустой ответ), массив склеивается через ";".
  */
-function rawToString(value: StudentValue): string {
+/** Что ввёл ученик, приведённое к строке. Экспортируется для LLM-слоя. */
+export function rawToString(value: StudentValue): string {
   if (value === null || value === undefined) return "";
   if (Array.isArray(value)) return value.map((v) => String(v ?? "")).join(";");
   return String(value);
@@ -346,8 +351,13 @@ export function gradeManual(reason: string): GradedAnswer {
   };
 }
 
-/** Эссе и short-answer без модели. */
-function gradeManualByType(type: string): GradedAnswer {
+/**
+ * Эссе и short-answer без модели.
+ *
+ * Экспортируется для `llm/shortAnswerCheck.ts`: отказ «это эссе, его проверяет
+ * учитель» должен звучать одинаково, где бы он ни был вынесен.
+ */
+export function gradeManualByType(type: string): GradedAnswer {
   return gradeManual(
     type === "essay"
       ? "Эссе проверяет учитель — автоматическая сверка ненадёжна"
@@ -389,7 +399,20 @@ export function gradeAnswer(task: WorksheetTask, value: StudentValue): GradedAns
 /** Вердикт по всем заданиям формы + общий балл. */
 export interface GradedSubmission {
   /** Вердикты в том же порядке, что и задания. */
-  perTask: Array<GradedAnswer & { taskNumber: number; taskType: string; pointsMax: number; studentValue: StudentValue }>;
+  perTask: Array<
+    GradedAnswer & {
+      taskNumber: number;
+      taskType: string;
+      pointsMax: number;
+      studentValue: StudentValue;
+      /**
+       * Есть только у коротких ответов, которые прошли через сверку моделью.
+       * Отсутствует = движок не запускался (галочка снята или бюджет исчерпан),
+       * и вердикт целиком ручной.
+       */
+      shortAnswer?: ShortAnswerGrade;
+    }
+  >;
   scoreTotal: number;
   scoreMax: number;
   /** Сколько ответов ждут учителя. */
@@ -703,111 +726,388 @@ export function applyTeacherOverride(
   };
 }
 
-/** Контекст для вызова модели. Всё необязательное — кроме env. */
-export interface GradeWithModelArgs {
-  task: WorksheetTask;
-  value: StudentValue;
-  env: Env;
-  subject?: string;
-  grade?: number;
-  /** Кто просит сверку — для логов LLM-слоя. */
-  userId?: string | null;
-  plan?: string;
+// ─────────────────────────────────────────────────────────────────────────────
+// Поток отправки формы (лист 3.1.6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Ключ, под которым решение учителя лежит в снимке заданий формы.
+ *
+ * ПОЧЕМУ НЕ `forms.check_mode`. Эта колонка заполняется `detectCheckMode` при
+ * СОЗДАНИИ формы по составу заданий: появилось хоть одно short-answer — и
+ * check_mode уже «llm». Если бы решение о деньгах читалось оттуда, сверка
+ * включалась бы сама, без единого клика учителя. Согласие учителя — это
+ * отдельное решение и отдельное место хранения.
+ *
+ * Почему снимок заданий, а не новая колонка: колонки в `forms` запрещено
+ * добавлять, а `payload_json` читают как `{tasks: [...]}` все трое потребителя
+ * (publicForms, f07, classes) — лишний ключ им не мешает, потому что никто не
+ * разворачивает объект целиком. Присутствие ключа = согласие учителя; отсутствие
+ * = согласия нет.
+ */
+export const SHORT_ANSWER_LLM_KEY = "shortAnswerLlm";
+
+/** Что учитель решил по сверке коротких ответов. */
+export interface ShortAnswerLlmSettings {
+  /** true — учитель включил сверку руками. Всё остальное выводится из этого. */
+  enabled: boolean;
+  /** Unix seconds. Когда включил — для честного текста «включено 12 октября». */
+  enabledAt: number | null;
+}
+
+/** Выключено. Значение по умолчанию продукта, а не заглушка. */
+export const SHORT_ANSWER_LLM_DISABLED: ShortAnswerLlmSettings = { enabled: false, enabledAt: null };
+
+/**
+ * Прочитать решение учителя из снимка заданий.
+ *
+ * ВСЕГДА возвращает объект и НИКОГДА не бросает: битый payload_json — это
+ * отсутствие согласия, то есть «не тратить деньги». Обратный порядок здесь
+ * был бы дорогим: любой сбой разбора превращался бы в молчаливый расход.
+ */
+export function readShortAnswerLlmSettings(payloadJson: string | null | undefined): ShortAnswerLlmSettings {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payloadJson ?? "");
+  } catch {
+    return SHORT_ANSWER_LLM_DISABLED;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return SHORT_ANSWER_LLM_DISABLED;
+  }
+  const raw = (parsed as Record<string, unknown>)[SHORT_ANSWER_LLM_KEY];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return SHORT_ANSWER_LLM_DISABLED;
+  }
+  const flag = raw as Record<string, unknown>;
+  if (flag.enabled !== true) return SHORT_ANSWER_LLM_DISABLED;
+
+  const at = flag.enabledAt;
+  return {
+    enabled: true,
+    enabledAt: typeof at === "number" && Number.isFinite(at) ? Math.trunc(at) : null,
+  };
 }
 
 /**
- * Сверить короткий ответ ученика моделью.
+ * Записать решение учителя обратно в снимок заданий.
  *
- * Никогда не бросает и НИКОГДА не возвращает «неправильно» из-за собственной
- * поломки. Любой сбой — нет ключа, нет сети, 5xx, таймаут, мусор вместо JSON —
- * превращается в обычную ручную проверку учителю. Причина в том, что ученик
- * не должен получать ноль в журнале из-за того, что у нас закончились деньги
- * на провайдера.
- *
- * Возвращает `ShortAnswerGrade`, где `checkMethod === "llm"` означает, что
- * решение приняла машина, и `=== "manual"` — что вердикта у машины нет.
+ * Возвращает новый JSON. Если разобрать не удалось — падаем на `{tasks: []}`:
+ * лучше потерять снимок заданий у битой формы (её всё равно нельзя выдать),
+ * чем уронить сохранение настройки и оставить учителя с неработающей галочкой.
  */
-export async function gradeShortAnswerWithLlm(args: GradeWithModelArgs): Promise<ShortAnswerGrade> {
-  const { task, value, env } = args;
-
-  // Эссе и не-short-answer сюда не попадают по контракту, но проверка дешёвая
-  // и защищает от вызова модели там, где она не нужна.
-  if (task.type !== "short-answer") {
-    return { ...gradeManualByType(task.type), modelVerdict: null, confidence: null, comment: null, decidedBy: "model" };
-  }
-
-  const studentAnswer = rawToString(value).trim();
-  const expected = (task.answer ?? "").trim();
-  const points = Number.isFinite(task.points) ? Math.max(0, Math.trunc(task.points)) : 0;
-
-  // Пустой ответ и пустой эталон — до модели. Платить за сверку пустоты
-  // незачем, и «нет ответа» ≠ «неправильно»: это решение учителя.
-  if (studentAnswer === "") {
-    return {
-      ...gradeManual("Ученик не ответил на короткий вопрос"),
-      modelVerdict: null,
-      confidence: null,
-      comment: null,
-      decidedBy: "model",
-    };
-  }
-  if (expected === "") {
-    return {
-      ...gradeManual("Пустой эталон — сверять не с чем"),
-      modelVerdict: null,
-      confidence: null,
-      comment: null,
-      decidedBy: "model",
-    };
-  }
-
-  const decision = pickModel("short-answer-check", env);
-  if (!decision.primary) {
-    // Нет ключа polza — это штатная конфигурация демо, а не авария.
-    return {
-      ...gradeManual("Модель недоступна — проверьте ответ сами"),
-      modelVerdict: null,
-      confidence: null,
-      comment: null,
-      decidedBy: "model",
-    };
-  }
-
-  const { system, user } = buildShortAnswerPrompt(
-    { number: task.number, taskText: task.text, expected, studentAnswer, points },
-    { subject: args.subject, grade: args.grade },
-  );
-
+export function writeShortAnswerLlmSettings(
+  payloadJson: string | null | undefined,
+  settings: ShortAnswerLlmSettings,
+): string {
+  let parsed: unknown = null;
   try {
-    const result = await callWithFallback(
-      {
-        model: decision.primary.model,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        responseFormat: "json",
-        temperature: 0.1, // сверка — почти детерминированная задача
-        maxTokens: 300,
-        // Системный промпт один и тот же для всех ответов класса: кэш
-        // провайдера делает 2-й..30-й ответ почти бесплатными.
-        cacheSystemPrompt: true,
-      },
-      decision,
-      env,
-      { task: "short-answer-check", userId: args.userId ?? null, plan: args.plan ?? "free" },
-    );
-
-    return gradeFromModel(result.response.content, points);
-  } catch (e) {
-    // Провайдер упал, ответ не пришёл, сеть отвалилась — без разницы.
-    // Учителю всё равно нужен ответ, а не код ошибки от polza.
-    return {
-      ...gradeManual("Модель не ответила — проверьте ответ сами"),
-      modelVerdict: null,
-      confidence: null,
-      comment: null,
-      decidedBy: "model",
-    };
+    parsed = JSON.parse(payloadJson ?? "");
+  } catch {
+    parsed = null;
   }
+  const base: Record<string, unknown> =
+    parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : { tasks: [] };
+
+  if (settings.enabled) {
+    base[SHORT_ANSWER_LLM_KEY] = { enabled: true, enabledAt: settings.enabledAt };
+  } else {
+    // Ключ удаляем, а не пишем `enabled: false`: выключенное состояние должно
+    // выглядеть ровно так же, как форма, которую учитель никогда не трогал.
+    delete base[SHORT_ANSWER_LLM_KEY];
+  }
+  return JSON.stringify(base);
+}
+
+/** Есть ли в форме задания, которым вообще может помочь модель. */
+export function hasShortAnswerTasks(tasks: WorksheetTask[]): boolean {
+  return tasks.some((t) => t.type === "short-answer");
+}
+
+/**
+ * Разобрать снимок заданий формы.
+ *
+ * Копия одноимённой функции из роутов, и это осознанно: `publicForms.ts` и
+ * `f07.ts` принадлежат другим листам, а журналу нужно то же самое — узнать,
+ * есть ли в форме короткие ответы. Битый payload → пустой список, а не 500:
+ * форму, которую не разобрали, всё равно нельзя выдать.
+ */
+export function parseTasks(payloadJson: string | null | undefined): WorksheetTask[] {
+  try {
+    const parsed = JSON.parse(payloadJson ?? "") as { tasks?: unknown };
+    if (!Array.isArray(parsed.tasks)) return [];
+    return parsed.tasks.filter((t): t is WorksheetTask => typeof t === "object" && t !== null);
+  } catch {
+    return [];
+  }
+}
+
+/** Что движок сделал с одним коротким ответом. */
+export interface ShortAnswerCheckResult {
+  grade: ShortAnswerGrade;
+  /** Движок реально запускался. false — сверка не запускалась вовсе. */
+  checked: boolean;
+}
+
+/**
+ * Сверка одного короткого ответа. Сеть приходит СЮДА, снаружи модуля.
+ *
+ * Тип, а не конкретная реализация: сервис не должен знать про провайдеров,
+ * иначе он снова начнёт тянуть весь LLM-стек в тестовый пул. Роут отдаёт сюда
+ * функцию из `src/llm/shortAnswerCheck.ts`.
+ */
+export type ShortAnswerChecker = (
+  task: WorksheetTask,
+  value: StudentValue,
+) => Promise<ShortAnswerGrade>;
+
+export interface GradeSubmissionWithLlmArgs {
+  tasks: WorksheetTask[];
+  answersByNumber: Map<number, StudentValue>;
+  /** Решение учителя. Выключено → возвращается обычная синхронная сверка. */
+  settings: ShortAnswerLlmSettings;
+  /** Обращение к модели. Не зовётся вообще, пока сверка выключена. */
+  check: ShortAnswerChecker;
+}
+
+/** Сколько коротких ответов сверяем одновременно. */
+const SHORT_ANSWER_CONCURRENCY = 4;
+
+/**
+ * Общий потолок на сверку всей работы.
+ *
+ * Ученик нажал «Отправить» и смотрит на телефон. Двадцать ответов по 12 секунд
+ * подряд — это четыре минуты ожидания, после которых он решит, что сайт
+ * завис, и нажмёт ещё раз. Лучше часть коротких ответов честно уйдёт учителю
+ * («не успели проверить»), чем ученик вообще не дождётся подтверждения.
+ */
+const SHORT_ANSWER_TOTAL_BUDGET_MS = 25_000;
+
+/**
+ * Сверить работу целиком: детерминированные задания — как раньше, короткие
+ * ответы — моделью, ЕСЛИ УЧИТЕЛЬ ЭТО ВКЛЮЧИЛ.
+ *
+ * ГЛАВНОЕ ПРАВИЛО ФУНКЦИИ: она не бросает никогда. Отправка формы не должна
+ * ломаться из-за провайдера, поэтому любой сбой здесь — это обычный ручной
+ * ответ учителю, а не 500 ученику.
+ */
+export async function gradeSubmissionWithShortAnswerLlm(
+  args: GradeSubmissionWithLlmArgs,
+): Promise<GradedSubmission> {
+  const graded = gradeSubmission(args.tasks, args.answersByNumber);
+
+  // Выключено — ни одного вызова модели. Это и есть поведение по умолчанию.
+  if (!args.settings.enabled) return graded;
+  if (!hasShortAnswerTasks(args.tasks)) return graded;
+
+  const targets = args.tasks.filter((t) => t.type === "short-answer");
+  const deadline = Date.now() + SHORT_ANSWER_TOTAL_BUDGET_MS;
+
+  const results = await runWithLimit(targets, SHORT_ANSWER_CONCURRENCY, async (task) => {
+    // Бюджет исчерпан — дальше ответы уходят учителю как есть.
+    if (Date.now() >= deadline) return null;
+    try {
+      const grade = await args.check(task, args.answersByNumber.get(task.number));
+      return { number: task.number, grade };
+    } catch {
+      // Страховка от будущих правок движка: любой сбой = ручная проверка.
+      return null;
+    }
+  });
+
+  const byNumber = new Map<number, ShortAnswerCheckResult>();
+  for (const r of results) {
+    if (r) byNumber.set(r.number, { grade: r.grade, checked: true });
+  }
+
+  let scoreTotal = 0;
+  let needsReviewCount = 0;
+  const perTask = graded.perTask.map((entry) => {
+    const checked = byNumber.get(entry.taskNumber);
+    if (!checked) {
+      scoreTotal += entry.pointsAwarded;
+      if (entry.needsReview) needsReviewCount += 1;
+      return entry;
+    }
+
+    const grade = checked.grade;
+    scoreTotal += grade.pointsAwarded;
+    if (grade.needsReview) needsReviewCount += 1;
+    return {
+      ...entry,
+      isCorrect: grade.isCorrect,
+      pointsAwarded: grade.pointsAwarded,
+      needsReview: grade.needsReview,
+      checkMethod: grade.checkMethod,
+      ...(grade.reason ? { reason: grade.reason } : {}),
+      shortAnswer: grade,
+    };
+  });
+
+  graded.perTask = perTask;
+  graded.scoreTotal = scoreTotal;
+  graded.needsReviewCount = needsReviewCount;
+  return graded;
+}
+
+/**
+ * Пул с ограничением по числу одновременных задач.
+ *
+ * `Promise.all` на двадцати коротких ответах — это двадцать одновременных
+ * запросов провайдеру: почти гарантированный 429, а каждый 429 — ручная
+ * проверка вместо вердикта. Очередь дешевле и предсказуемее.
+ */
+async function runWithLimit<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let cursor = 0;
+
+  const runner = async (): Promise<void> => {
+    for (;;) {
+      const index = cursor++;
+      if (index >= items.length) return;
+      out[index] = await worker(items[index] as T);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(Math.max(1, limit), items.length) }, () => runner()),
+  );
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// check_meta_json: чужое решение нельзя выдать за своё
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Снимок решения по одному ответу.
+ *
+ * Поле `decidedBy` — то, ради которого снимок и существует: «верно» от модели и
+ * «верно» от учителя выглядят в журнале одинаково, если не сказать, чьё это
+ * решение. `modelVerdict`/`confidence` — что именно сказала машина, даже если
+ * учитель потом поправил.
+ */
+export interface CheckMeta {
+  reason?: string;
+  /** Сверку короткого ответа запускали. false — не запускали (галочка снята). */
+  llmChecked?: boolean;
+  decidedBy?: "model" | "teacher";
+  modelVerdict?: ShortAnswerVerdict | null;
+  confidence?: number | null;
+  comment?: string | null;
+  /** Unix seconds: когда это решение приняли. Не то же, что created_at ответа. */
+  decidedAt?: number;
+}
+
+/**
+ * Собрать `check_meta_json` из вердикта. Одна функция на всех писателей.
+ *
+ * `shortAnswer` — вложенный вердикт машины из `gradeSubmissionWithShortAnswerLlm`.
+ * Именно он, а не обёртка задания: чей-то привычный `buildCheckMeta(entry)`
+ * без второго аргумента записал бы снимок БЕЗ `decidedBy`, и через месяц в
+ * журнале выглядело бы так, будто отметку поставил человек.
+ */
+export function buildCheckMeta(
+  grade: GradedAnswer,
+  opts: { llmChecked: boolean; decidedAt: number; shortAnswer?: ShortAnswerGrade },
+): string {
+  const short = opts.shortAnswer ?? (grade as Partial<ShortAnswerGrade>);
+  const meta: CheckMeta = {
+    ...(grade.reason ? { reason: grade.reason } : {}),
+    llmChecked: opts.llmChecked,
+  };
+  if (short.decidedBy) meta.decidedBy = short.decidedBy;
+  if ("modelVerdict" in short) meta.modelVerdict = short.modelVerdict ?? null;
+  if ("confidence" in short) meta.confidence = short.confidence ?? null;
+  if ("comment" in short) meta.comment = short.comment ?? null;
+
+  return JSON.stringify({ ...meta, decidedAt: opts.decidedAt });
+}
+
+/** Прочитать `check_meta_json`. Битая строка — пустой снимок, а не исключение. */
+export function parseCheckMeta(raw: string | null | undefined): CheckMeta {
+  if (!raw) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  const m = parsed as Record<string, unknown>;
+  const meta: CheckMeta = {};
+  if (typeof m.reason === "string") meta.reason = m.reason;
+  if (typeof m.llmChecked === "boolean") meta.llmChecked = m.llmChecked;
+  if (m.decidedBy === "model" || m.decidedBy === "teacher") meta.decidedBy = m.decidedBy;
+  if (
+    m.modelVerdict === "correct" ||
+    m.modelVerdict === "incorrect" ||
+    m.modelVerdict === "uncertain"
+  ) {
+    meta.modelVerdict = m.modelVerdict;
+  }
+  if (typeof m.confidence === "number" && Number.isFinite(m.confidence)) meta.confidence = m.confidence;
+  if (typeof m.comment === "string") meta.comment = m.comment;
+  if (typeof m.decidedAt === "number" && Number.isFinite(m.decidedAt)) meta.decidedAt = m.decidedAt;
+  return meta;
+}
+
+/**
+ * Состояние ответа для журнала.
+ *
+ * Состояния должны быть ВИДНЫ РАЗНЫМИ, иначе журнал врёт: «верно» от машины,
+ * «верно» от учителя и «мы не уверены» — это три разных события. Здесь они
+ * становятся машинно-читаемыми, слова учителю собирает фронт.
+ */
+export type AnswerState =
+  /** Уверенный вердикт модели — учитель работу не открывал. */
+  | "model_correct"
+  | "model_incorrect"
+  /** Модель не уверена / не ответила / сверка выключена — ждёт учителя. */
+  | "needs_review"
+  /** Решение принял человек. Побеждает всегда, даже если машина была права. */
+  | "teacher_correct"
+  | "teacher_incorrect"
+  /** Посчитали без модели: число, вариант, пропуск. Ничьё решение не нужно. */
+  | "auto_correct"
+  | "auto_incorrect";
+
+export interface AnswerStateInput {
+  isCorrect: boolean | null;
+  needsReview: boolean;
+  checkMethod: CheckMethod;
+  meta: CheckMeta;
+}
+
+/**
+ * Разложить вердикт по состояниям журнала.
+ *
+ * Порядок проверок значим, и это не стилистика:
+ *   1) решение учителя — оно перебивает всё остальное, иначе выправленная
+ *      учителем ошибка модели через месяц выглядела бы как ошибка машины;
+ *   2) needs_review — раньше вердикта модели, потому что модель могла назвать
+ *      «incorrect», а уверенности не хватило: учителю такой ответ всё равно
+ *      показывается как «не уверен», а не как «неверно»;
+ *   3) вердикт модели — только если сверка реально её запускала;
+ *   4) всё остальное без needsReview — детерминированная сверка.
+ */
+export function describeAnswerState(input: AnswerStateInput): AnswerState {
+  const { meta } = input;
+  if (meta.decidedBy === "teacher") {
+    return input.isCorrect === true ? "teacher_correct" : "teacher_incorrect";
+  }
+  // Решения нет — значит, ждёт учителя. Такой ответ нельзя называть «неверно»:
+  // «мы не знаем» и «ответ неверный» — разные вещи, и путать их нельзя даже
+  // при испорченных данных.
+  if (input.needsReview || input.isCorrect === null) return "needs_review";
+  if (meta.decidedBy === "model" && input.checkMethod === "llm") {
+    return input.isCorrect ? "model_correct" : "model_incorrect";
+  }
+  return input.isCorrect ? "auto_correct" : "auto_incorrect";
 }

@@ -12,12 +12,31 @@
  * ЧУЖИХ ЗАПИСЕЙ НЕ БЫВАЕТ: `user_id` берётся из сессии, из query его не
  * подставляет никто. Пустой список — валидный ответ, а не 404: «проверок ещё не
  * было» и «проверка не найдена» — разные вещи, и учителю нужна первая.
+ *
+ * ── Вторая половина журнала: работы, сданные через форму (лист 3.1.6) ─────────
+ * Роут живёт здесь, а не в `f07.ts`, по простой причине: эти четыре ручки —
+ * часть ЖУРНАЛА УЧИТЕЛЯ, а не создания формы. Учитель приходит сюда, чтобы
+ * посмотреть, кто поставил отметку, и поправить машину. Всё, что он здесь
+ * делает, требует входа, и каждая ручка проверяет, что форма или ответ — его.
  */
 
 import { Hono } from "hono";
+import { z } from "zod";
+import type { D1Database } from "@cloudflare/workers-types";
 import { requireAuth } from "../middleware/auth";
-import { BadRequestError } from "../lib/errors";
+import { BadRequestError, NotFoundError } from "../lib/errors";
 import { listJournalEntries } from "../db/journal";
+import {
+  applyTeacherOverride,
+  buildCheckMeta,
+  describeAnswerState,
+  hasShortAnswerTasks,
+  parseCheckMeta,
+  parseTasks,
+  readShortAnswerLlmSettings,
+  writeShortAnswerLlmSettings,
+  type ShortAnswerGrade,
+} from "../services/formGrading";
 import type { AppEnv } from "../types";
 
 const journalRouter = new Hono<AppEnv>();
@@ -74,5 +93,362 @@ function clampInt(raw: string | undefined, min: number, max: number, fallback: n
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, Math.trunc(n)));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Работы, сданные через форму (лист 3.1.6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface FormJournalRow {
+  id: string;
+  user_id: string;
+  token: string;
+  title: string;
+  subject: string;
+  grade: number;
+  payload_json: string;
+  status: string;
+  expires_at: number;
+  created_at: number;
+}
+
+interface AnswerRow {
+  id: string;
+  response_id: string;
+  task_number: number;
+  task_type: string;
+  student_answer: string | null;
+  is_correct: number | null;
+  points_awarded: number;
+  points_max: number;
+  needs_review: number;
+  check_method: string;
+  check_meta_json: string | null;
+}
+
+/** Сколько ответов в последних работах ещё ждут учителя. */
+const SHORT_ANSWER_RECENT_LIMIT = 20;
+
+const ToggleBody = z.object({ enabled: z.boolean() });
+const OverrideBody = z.object({
+  accepted: z.boolean(),
+  points: z.number().int().min(0).max(1000).nullable().optional(),
+});
+
+/**
+ * Загрузить форму учителя.
+ *
+ * Чужая форма — 404, а не 403: по коду нельзя отличить «нет такой» от «есть,
+ * но не твоя», а перебором лезть не должен никто.
+ */
+async function loadOwnForm(db: D1Database, id: string, userId: string): Promise<FormJournalRow> {
+  const row = await db
+    .prepare(
+      `SELECT id, user_id, token, title, subject, grade, payload_json, status,
+              expires_at, created_at
+       FROM forms WHERE id = ?1`,
+    )
+    .bind(id)
+    .first<FormJournalRow>();
+  if (!row || row.user_id !== userId) throw new NotFoundError("Форма не найдена");
+  return row;
+}
+
+/** GET /api/journal/forms — формы учителя и состояние сверки по каждой. */
+journalRouter.get("/forms", async (c) => {
+  const user = requireAuth(c);
+
+  const rows = await c.env.DB
+    .prepare(
+      `SELECT f.id, f.user_id, f.token, f.title, f.subject, f.grade, f.payload_json, f.status,
+              f.expires_at, f.created_at,
+              (SELECT COUNT(*) FROM form_responses r WHERE r.form_id = f.id) AS responses_count
+       FROM forms f
+       WHERE f.user_id = ?1
+       ORDER BY f.created_at DESC
+       LIMIT 50`,
+    )
+    .bind(user.id)
+    .all<FormJournalRow & { responses_count: number }>();
+
+  return c.json({
+    ok: true,
+    forms: rows.results.map((r) => toFormJournalEntry(r)),
+  });
+});
+
+/** Что журнал отдаёт фронту по одной форме. */
+function toFormJournalEntry(r: FormJournalRow & { responses_count?: number }) {
+  const settings = readShortAnswerLlmSettings(r.payload_json);
+  const shortAnswers = hasShortAnswerTasks(parseTasks(r.payload_json));
+  return {
+    id: r.id,
+    title: r.title,
+    subject: r.subject,
+    grade: r.grade,
+    status: r.status,
+    expiresAt: r.expires_at,
+    createdAt: r.created_at,
+    responsesCount: r.responses_count ?? 0,
+    // Галочка. По умолчанию false — сверку включают руками.
+    shortAnswerLlmEnabled: settings.enabled,
+    shortAnswerLlmEnabledAt: settings.enabledAt,
+    // Нет коротких ответов — галочка бесполезна и показываться не должна.
+    hasShortAnswers: shortAnswers,
+  };
+}
+
+/**
+ * POST /api/journal/forms/:id/short-answer-llm — включить/выключить сверку.
+ *
+ * Тело: `{enabled: true|false}`. Галочка снимается тем же запросом, и это важно:
+ * решение «не тратить» должно быть таким же простым, как решение «тратить».
+ */
+journalRouter.post("/forms/:id/short-answer-llm", async (c) => {
+  const user = requireAuth(c);
+
+  let raw: unknown;
+  try {
+    raw = await c.req.json();
+  } catch {
+    throw new BadRequestError("Не удалось прочитать настройку");
+  }
+  const body = ToggleBody.parse(raw);
+
+  const form = await loadOwnForm(c.env.DB, c.req.param("id"), user.id);
+  const now = Math.floor(Date.now() / 1000);
+
+  const payloadJson = writeShortAnswerLlmSettings(form.payload_json, {
+    enabled: body.enabled,
+    enabledAt: body.enabled ? now : null,
+  });
+  await c.env.DB
+    .prepare(`UPDATE forms SET payload_json = ?1, updated_at = ?2 WHERE id = ?3 AND user_id = ?4`)
+    .bind(payloadJson, now, form.id, user.id)
+    .run();
+
+  return c.json({
+    ok: true,
+    formId: form.id,
+    shortAnswerLlmEnabled: body.enabled,
+    shortAnswerLlmEnabledAt: body.enabled ? now : null,
+    // Снимок заданий не тронут — лишний ключ лежит рядом с tasks.
+    hasShortAnswers: hasShortAnswerTasks(parseTasks(payloadJson)),
+  });
+});
+
+/** GET /api/journal/forms/:id/responses — последние работы и их вердикты. */
+journalRouter.get("/forms/:id/responses", async (c) => {
+  const user = requireAuth(c);
+  const form = await loadOwnForm(c.env.DB, c.req.param("id"), user.id);
+
+  const responses = await c.env.DB
+    .prepare(
+      `SELECT id, student_name, student_label, score_total, score_max, submitted_at
+       FROM form_responses
+       WHERE form_id = ?1
+       ORDER BY submitted_at DESC, id DESC
+       LIMIT ?2`,
+    )
+    .bind(form.id, SHORT_ANSWER_RECENT_LIMIT)
+    .all<{
+      id: string;
+      student_name: string;
+      student_label: string | null;
+      score_total: number;
+      score_max: number;
+      submitted_at: number;
+    }>();
+
+  const ids = responses.results.map((r) => r.id);
+  const answersByResponse = new Map<string, AnswerRow[]>();
+  if (ids.length > 0) {
+    const placeholders = ids.map((_, i) => `?${i + 1}`).join(", ");
+    const answerRows = await c.env.DB
+      .prepare(
+        `SELECT id, response_id, task_number, task_type, student_answer, is_correct,
+                points_awarded, points_max, needs_review, check_method, check_meta_json
+         FROM form_answers
+         WHERE response_id IN (${placeholders})
+         ORDER BY task_number`,
+      )
+      .bind(...ids)
+      .all<AnswerRow>();
+
+    for (const a of answerRows.results) {
+      const list = answersByResponse.get(a.response_id);
+      if (list) list.push(a);
+      else answersByResponse.set(a.response_id, [a]);
+    }
+  }
+
+  return c.json({
+    ok: true,
+    form: {
+      id: form.id,
+      title: form.title,
+      subject: form.subject,
+      grade: form.grade,
+      status: form.status,
+      shortAnswerLlmEnabled: readShortAnswerLlmSettings(form.payload_json).enabled,
+    },
+    responses: responses.results.map((r) => ({
+      id: r.id,
+      studentName: r.student_name,
+      studentLabel: r.student_label,
+      scoreTotal: r.score_total,
+      scoreMax: r.score_max,
+      submittedAt: r.submitted_at,
+      answers: (answersByResponse.get(r.id) ?? []).map(toJournalAnswer),
+    })),
+  });
+});
+
+/**
+ * Один ответ в терминах журнала.
+ *
+ * `state` — главное поле: по нему фронт рисует разные бейджи, и именно он
+ * не даёт «верно от машины» и «верно от учителя» слипнуться в одно слово.
+ */
+function toJournalAnswer(a: AnswerRow) {
+  const meta = parseCheckMeta(a.check_meta_json);
+  const isCorrect = a.is_correct === null ? null : a.is_correct === 1;
+  const needsReview = a.needs_review === 1;
+
+  return {
+    id: a.id,
+    taskNumber: a.task_number,
+    taskType: a.task_type,
+    studentAnswer: a.student_answer,
+    isCorrect,
+    pointsAwarded: a.points_awarded,
+    pointsMax: a.points_max,
+    needsReview,
+    checkMethod: a.check_method,
+    state: describeAnswerState({
+      isCorrect,
+      needsReview,
+      checkMethod: a.check_method as "auto" | "llm" | "manual",
+      meta,
+    }),
+    decidedBy: meta.decidedBy ?? null,
+    modelVerdict: meta.modelVerdict ?? null,
+    confidence: meta.confidence ?? null,
+    comment: meta.comment ?? null,
+    reason: meta.reason ?? null,
+    llmChecked: meta.llmChecked === true,
+    decidedAt: meta.decidedAt ?? null,
+  };
+}
+
+/**
+ * POST /api/journal/answers/:id/override — учитель исправляет машину.
+ *
+ * Тело: `{accepted: boolean, points?: number|null}`. Ответ учителя побеждает
+ * навсегда: `decidedBy` становится «teacher», а `modelVerdict`/`confidence`
+ * остаются снимком того, что сказала машина. Через месяц по журналу видно,
+ * что именно поправил человек, — иначе выправленная ошибка модели выглядела
+ * бы как ошибка учителя.
+ */
+journalRouter.post("/answers/:id/override", async (c) => {
+  const user = requireAuth(c);
+
+  let raw: unknown;
+  try {
+    raw = await c.req.json();
+  } catch {
+    throw new BadRequestError("Не удалось прочитать оценку");
+  }
+  const body = OverrideBody.parse(raw);
+
+  const answer = await c.env.DB
+    .prepare(
+      `SELECT a.id, a.response_id, a.task_number, a.task_type, a.student_answer, a.is_correct,
+              a.points_awarded, a.points_max, a.needs_review, a.check_method, a.check_meta_json,
+              f.user_id AS form_user_id
+       FROM form_answers a
+       JOIN form_responses r ON r.id = a.response_id
+       JOIN forms f ON f.id = r.form_id
+       WHERE a.id = ?1`,
+    )
+    .bind(c.req.param("id"))
+    .first<AnswerRow & { form_user_id: string }>();
+  if (!answer) throw new NotFoundError("Ответ не найден");
+  if (answer.form_user_id !== user.id) throw new NotFoundError("Ответ не найден");
+
+  const now = Math.floor(Date.now() / 1000);
+  const meta = parseCheckMeta(answer.check_meta_json);
+
+  // База для переопределения: то, что уже записано, плюс снимок модели.
+  const base: ShortAnswerGrade = {
+    isCorrect: answer.is_correct === null ? null : answer.is_correct === 1,
+    pointsAwarded: answer.points_awarded,
+    needsReview: answer.needs_review === 1,
+    checkMethod: answer.check_method as "auto" | "llm" | "manual",
+    reason: meta.reason,
+    modelVerdict: meta.modelVerdict ?? null,
+    confidence: meta.confidence ?? null,
+    comment: meta.comment ?? null,
+    decidedBy: meta.decidedBy ?? "model",
+  };
+
+  const grade = applyTeacherOverride(base, { accepted: body.accepted, points: body.points ?? null }, answer.points_max);
+
+  await c.env.DB
+    .prepare(
+      `UPDATE form_answers
+       SET is_correct = ?1, points_awarded = ?2, needs_review = 0, check_method = 'manual',
+           check_meta_json = ?3
+       WHERE id = ?4`,
+    )
+    .bind(
+      grade.isCorrect === null ? null : grade.isCorrect ? 1 : 0,
+      grade.pointsAwarded,
+      buildCheckMeta(grade, { llmChecked: meta.llmChecked === true, decidedAt: now }),
+      answer.id,
+    )
+    .run();
+
+  // Итог работы пересчитываем, иначе в сводке останется балл от машины.
+  await c.env.DB
+    .prepare(
+      `UPDATE form_responses
+       SET score_total = COALESCE(
+         (SELECT SUM(points_awarded) FROM form_answers WHERE response_id = ?1), 0)
+       WHERE id = ?1`,
+    )
+    .bind(answer.response_id)
+    .run();
+
+  return c.json({
+    ok: true,
+    answer: {
+      id: answer.id,
+      isCorrect: grade.isCorrect,
+      pointsAwarded: grade.pointsAwarded,
+      needsReview: grade.needsReview,
+      checkMethod: grade.checkMethod,
+      state: describeAnswerState({
+        isCorrect: grade.isCorrect,
+        needsReview: grade.needsReview,
+        checkMethod: grade.checkMethod,
+        meta: {
+          ...meta,
+          decidedBy: grade.decidedBy,
+          modelVerdict: grade.modelVerdict,
+          confidence: grade.confidence,
+          comment: grade.comment,
+        },
+      }),
+      decidedBy: grade.decidedBy,
+      // Снимок машины сохраняется — но учитель уже поправил.
+      modelVerdict: grade.modelVerdict,
+      confidence: grade.confidence,
+      comment: grade.comment,
+      reason: grade.reason ?? null,
+      llmChecked: meta.llmChecked === true,
+      decidedAt: now,
+    },
+  });
+});
 
 export { journalRouter };
