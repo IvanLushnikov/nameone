@@ -38,6 +38,7 @@ import {
   buildWorksheetPrompt,
   buildTopUpPrompt,
   buildVariantRetryPrompt,
+  normalizeUmkId,
   sanitizeTextLatex,
 } from "./prompts/worksheet-gen";
 import { buildExamPrompt } from "./prompts/exam-gen";
@@ -358,7 +359,23 @@ export async function generateWorksheet(
   // Кэш персональный по владельцу: см. NEW-COST-6 в llm/cache.ts. Анонимные
   // запросы (userId = null) делят один адрес кэша — иначе пришлось бы либо
   // отдавать анонимам чужое, либо не кэшировать вовсе.
-  const cacheKey = makeCacheKey({ ...request, userId });
+  //
+  // УЧЕБНИК — ТОЖЕ ЧАСТЬ КЛЮЧА. `makeCacheKey` перечисляет поля явно, и `meta`
+  // в этот список не входит: один и тот же запрос по одной теме с разным
+  // учебником вернул бы учителю из кэша лист по ПРЕДЫДУЩЕМУ учебнику. То
+  // есть ровно тот симптом, который этот лист и чинит («поставил галочку —
+  // никакой разницы»), просто на второй попытке.
+  //
+  // Ключ собирается здесь, а не в `cache.ts`, потому что файл ключа не в
+  // этом листе. Дописываем id к теме: `topic` входит в ключ, `request.topic`
+  // при этом не меняется, и в `semantic_cache` пишется настоящая тема.
+  // Правильное место для этого — `CacheKeyInput` отдельной правкой.
+  const umkId = normalizeUmkId(request.meta?.umk);
+  const cacheKey = makeCacheKey({
+    ...request,
+    ...(umkId ? { topic: `${request.topic} [umk:${umkId}]` } : {}),
+    userId,
+  });
   if (!bypassCache) {
     const cached = await lookupCache(db, cacheKey);
     if (cached && typeof cached === "object" && cached.response) {
