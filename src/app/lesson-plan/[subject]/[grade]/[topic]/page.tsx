@@ -13,6 +13,7 @@ import {
   GraduationCap,
   Clock,
   BookOpen,
+  Lightbulb,
   ListChecks,
   FileText,
 } from "lucide-react";
@@ -25,9 +26,52 @@ import {
 } from "@/lib/content/subjects";
 import { JsonLd, Breadcrumb } from "@/components/seo";
 import { prepositionalTitle } from "@/lib/content/subject-cases";
+import { getTopicContent } from "@/lib/content/topic-content";
 import { absoluteUrl, clipDescription, ogImages, topicTitleSuffix, twitterCard } from "@/lib/seo/metadata";
 
 type Props = { params: { subject: string; grade: string; topic: string } };
+
+/**
+ * Стадии урока для предметов без наполненных данных (`topic-content`).
+ *
+ * Нужны, чтобы страница не осталась пустой, если предмет не добавлен в
+ * карту: блок стадий должен быть всегда. Оформление — то же, что у
+ * предметных стадий, чтобы вёрстка не прыгала.
+ *
+ * Хронометража здесь нет намеренно (см. комментарий у блока стадий ниже).
+ */
+const FALLBACK_STAGES = [
+  {
+    name: "Организационный момент",
+    teacher: "Проверяет готовность, фиксирует тему, снимает её с прошлого урока",
+    students: "Готовятся к уроку, записывают тему",
+  },
+  {
+    name: "Мотивация и актуализация",
+    teacher: "Возвращает к материалу прошлого урока и проверяет, можно ли идти дальше",
+    students: "Повторяют, отвечают устно",
+  },
+  {
+    name: "Объяснение нового материала",
+    teacher: "Разбирает тему по шагам на конкретном примере",
+    students: "Слушают, повторяют за учителем",
+  },
+  {
+    name: "Отработка и закрепление",
+    teacher: "Даёт блок однотипных заданий по возрастанию сложности",
+    students: "Выполняют задания, сверяются",
+  },
+  {
+    name: "Рефлексия и подведение итогов",
+    teacher: "Предлагает найти типичную ошибку и объяснить её",
+    students: "Находят и объясняют ошибку",
+  },
+  {
+    name: "Домашнее задание",
+    teacher: "Задаёт задание и объясняет, где искать материал",
+    students: "Записывают задание",
+  },
+];
 
 export function generateStaticParams() {
   const params: Array<{ subject: string; grade: string; topic: string }> = [];
@@ -103,6 +147,15 @@ export default function LessonPlanTopicPage({ params }: Props) {
   const topic = getTopic(params.subject, Number(params.grade), params.topic);
 
   if (!subject || !grade || !topic) return notFound();
+
+  // Предметное содержание страницы. Раньше тело страницы собиралось из
+  // жёстко зашитых массивов (этапы урока, карточки «что вы получите»), и
+  // одинаковый текст шёл на все 1075 страниц. Теперь этапы, операции и
+  // сложности берутся из `topic-content` по паре «предмет + класс».
+  //
+  // `content.filled` — важный флаг: если по предмету нет записей, страница
+  // рисует прежние блоки, а не подставляет чужой предметный текст.
+  const content = getTopicContent(subject.slug, grade.num);
 
   // Разметка по образцу /subject/[subject]/[grade]/[topic] — LearningResource +
   // AlignmentObject по разделу ФГОС. В отличие от subject-страницы рендерим
@@ -246,8 +299,78 @@ export default function LessonPlanTopicPage({ params }: Props) {
         </div>
       </section>
 
+      {/* Что входит в тему — предмет и класс. Блок появляется только если
+          по этой паре есть данные (см. `content.filled` выше): иначе на
+          странице литературы оказался бы «математический» текст. */}
+      {content?.filled && (
+        <section className="py-12 sm:py-16">
+          <div className="container-tight">
+            <h2 className="text-2xl sm:text-3xl font-display font-bold mb-2">
+              Что входит в тему «{topic.title}» в {grade.num} классе
+            </h2>
+            <p className="text-warm-600 mb-6">
+              {content.grade.focus} По предметной программе {content.subject.programArea}.
+            </p>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <Card>
+                <h3 className="font-semibold text-warm-950 mb-3">
+                  Что отрабатываем в этой теме
+                </h3>
+                <ul className="space-y-2 text-sm text-warm-700">
+                  {content.grade.operations.map((op) => (
+                    <li key={op} className="flex items-start gap-2">
+                      <Check className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
+                      <span>{op}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+              <Card>
+                <h3 className="font-semibold text-warm-950 mb-3">
+                  Что типично проседает у учеников
+                </h3>
+                <ul className="space-y-2 text-sm text-warm-700">
+                  {content.grade.pitfalls.map((p) => (
+                    <li key={p} className="flex items-start gap-2">
+                      <Lightbulb className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
+                      <span>{p}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-4 pt-4 border-t border-warm-100 text-sm text-warm-600 leading-relaxed">
+                  {content.grade.workingStyle}
+                </p>
+              </Card>
+              {/* Примеры — данные САМОЙ темы (`Topic.examples`), а не шаблон.
+                  Именно этот блок делает страницы тем внутри одного класса
+                  отличающимися друг от друга: без него все страницы
+                  предмета и класса читались одинаково, различаясь только
+                  названием темы в заголовке. */}
+              <Card>
+                <h3 className="font-semibold text-warm-950 mb-3">
+                  Как тема выглядит на примерах
+                </h3>
+                <ul className="space-y-3 text-sm text-warm-700">
+                  {topic.examples.map((ex, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <span className="shrink-0 mt-0.5 w-5 h-5 rounded-full bg-brand-50 text-brand-700 text-xs grid place-items-center font-medium">
+                        {i + 1}
+                      </span>
+                      <span>{ex.text}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-4 pt-4 border-t border-warm-100 text-sm text-warm-600 leading-relaxed">
+                  {content.subject.exampleFraming}
+                </p>
+              </Card>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* «Что получите» */}
-      <section className="py-12 sm:py-16">
+      <section className="py-12 sm:py-16 bg-warm-50 border-y border-warm-100">
         <div className="container-tight">
           <h2 className="text-2xl sm:text-3xl font-display font-bold mb-2">
             Что вы получите
@@ -266,18 +389,28 @@ export default function LessonPlanTopicPage({ params }: Props) {
               },
               {
                 icon: Clock,
+                // 45 минут — реальное ограничение генератора
+                // (`хронометраж_урока_минут: 45` в бэкенде). Перечисление
+                // этапов («оргмомент, мотивация, …») убрано: ниже показан
+                // предметный набор стадий, и список из шести общих пунктов
+                // с ним не совпадал.
                 title: "Хронометраж 45 минут",
-                text: "Каждый этап с минутами: оргмомент, мотивация, новый материал, отработка, рефлексия, ДЗ.",
+                text: "Урок рассчитан на 45 минут, минуты распределены по этапам в готовом конспекте.",
               },
               {
                 icon: ListChecks,
                 title: "Этапы по ФГОС",
-                text: "6 структурных блоков с действиями учителя и учеников.",
+                text: "Каждый этап — с отдельными действиями учителя и учеников.",
               },
               {
                 icon: BookOpen,
                 title: "Оборудование",
-                text: "Список материалов: учебник, раздаточные карточки, доска, проектор.",
+                // Перечисление через join давало «Тетрадь…, Карточки…»
+                // с заглавными буквами посреди фразы. Список предметных
+                // материалов вынесен отдельным блоком ниже.
+                text: content?.filled
+                  ? `Список предметных материалов для ${grade.num} класса — ниже на странице.`
+                  : "Список материалов: учебник, раздаточные карточки, доска, проектор.",
               },
               {
                 icon: FileText,
@@ -302,29 +435,65 @@ export default function LessonPlanTopicPage({ params }: Props) {
         </div>
       </section>
 
-      {/* Этапы урока (пояснение без реального контента) */}
-      <section className="py-12 sm:py-16 bg-warm-50 border-y border-warm-100">
+      {/* Этапы урока. Раньше здесь стоял один список из шести стадий с
+          минутами (2/5/15/13/5/5) — одинаковый на всех 1075 страницах, хотя
+          урок по математике и урок по физкультуре устроены по-разному.
+          Теперь стадии предметные и показывают действия учителя и учеников.
+
+          Хронометраж по стадиям НЕ проставлен намеренно: план собирает
+          модель (см. `backend/src/llm/prompts/lesson-plan-gen.ts`, стадии 3–7
+          на сумму 45 минут), и сколько минут достанется конкретной стадии —
+          заранее неизвестно. Напечатанные здесь минуты были бы выдумкой. */}
+      <section className="py-12 sm:py-16">
         <div className="container-tight">
-          <h2 className="text-2xl sm:text-3xl font-display font-bold mb-6">
-            Этапы урока по ФГОС
+          <h2 className="text-2xl sm:text-3xl font-display font-bold mb-2">
+            Как пойдёт урок по этой теме
           </h2>
+          <p className="text-warm-600 mb-6">
+            {content?.filled
+              ? `Этапы урока по предмету «${subject.title}» подобраны под ${grade.num} класс: ${content.grade.workingStyle}`
+              : "Этапы урока по ФГОС."}
+          </p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {[
-              { name: "Организационный момент", time: "2 мин" },
-              { name: "Мотивация и актуализация", time: "5 мин" },
-              { name: "Объяснение нового материала", time: "15 мин" },
-              { name: "Отработка и закрепление", time: "13 мин" },
-              { name: "Рефлексия и подведение итогов", time: "5 мин" },
-              { name: "Домашнее задание", time: "5 мин" },
-            ].map((stage) => (
-              <Card key={stage.name} padded>
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="font-medium text-warm-950 text-sm">{stage.name}</h3>
-                  <Badge tone="warm">{stage.time}</Badge>
-                </div>
-              </Card>
-            ))}
+            {(content?.filled ? content.subject.lessonStages : FALLBACK_STAGES).map(
+              (stage) => (
+                <Card key={stage.name} padded>
+                  <h3 className="font-medium text-warm-950 text-sm mb-2">
+                    {stage.name}
+                  </h3>
+                  <p className="text-xs text-warm-600 leading-relaxed mb-2">
+                    <span className="font-medium text-warm-700">Учитель:</span>{" "}
+                    {stage.teacher}
+                  </p>
+                  <p className="text-xs text-warm-600 leading-relaxed">
+                    <span className="font-medium text-warm-700">Ученики:</span>{" "}
+                    {stage.students}
+                  </p>
+                </Card>
+              ),
+            )}
           </div>
+
+          {/* Что стоит на столе у учителя на этом уроке — предметный список.
+              Был общим для всех предметов («учебник, карточки, доска,
+              проектор»), хотя у физкультуры это инвентарь и площадка, а у
+              информатики — компьютеры. */}
+          {content?.filled && (
+            <div className="mt-8 rounded-2xl border border-brand-100 bg-brand-50/60 p-5 sm:p-6">
+              <h3 className="font-semibold text-warm-950 mb-3 flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-brand-600" />
+                Что понадобится к уроку по предмету «{subject.shortTitle}»
+              </h3>
+              <ul className="grid sm:grid-cols-2 gap-2 text-sm text-warm-700">
+                {content.subject.equipment.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <Check className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </section>
 

@@ -28,6 +28,7 @@ import { plural, topicTitleWithUmk, quotedTopic } from "@/lib/utils/cn";
 import { clipDescription } from "@/lib/seo/metadata";
 import { Breadcrumb } from "@/components/seo";
 import { getTopicNeighbors } from "@/lib/content/topic-neighbors";
+import { getTopicContent } from "@/lib/content/topic-content";
 import { AnswerToggle } from "./AnswerToggle";
 
 type Props = { params: { subject: string; grade: string; topic: string } };
@@ -154,6 +155,34 @@ export default function TopicPage({ params }: Props) {
   const topic = getTopic(params.subject, Number(params.grade), params.topic);
 
   if (!subject || !grade || !topic) return notFound();
+
+// Предметное содержание страницы. Блок «Что входит в тему» раньше состоял
+// из трёх общих пунктов («3 уровня сложности», «пояснения к каждому
+// ответу», «шифр ответов») и был одинаков на всех 1075 страницах: он
+// описывал продукт, а не тему. Теперь здесь — что именно отрабатывается по
+// этому предмету на этом этапе, по какой программе идёт тема и с чем у
+// детей обычно не получается.
+//
+// `content.filled` — если по предмету нет данных в `topic-content`, блок не
+// рендерится вовсе: подставлять чужой предметный текст нельзя.
+const content = getTopicContent(subject.slug, grade.num);
+
+// Пункты «Что внутри» — только те, что относятся к предмету. Продуктовые
+// пункты (шифр ответов, PDF) оставлены как были: они верны для всех тем.
+const insideItems = content?.filled
+  ? [
+      `${examplesPhrase(topic.examples.length)} с ответами`,
+      `Что входит в тему: ${content.grade.operations[0]}`,
+      `На что смотрят в ${grade.num} классе: ${content.grade.pitfalls[0]}`,
+      "Пояснения к каждому ответу",
+      "Шифр ответов на отдельной странице",
+    ]
+  : [
+      `${examplesPhrase(topic.examples.length)} с ответами`,
+      "3 уровня сложности: лёгкий / средний / сложный",
+      "Пояснения к каждому ответу",
+      "Шифр ответов на отдельной странице",
+    ];
 
   // Блок Г (docs/30-audit-plan-2026-10-11.md): соседние темы для перелинковки.
 //
@@ -327,22 +356,12 @@ const neighbors = getTopicNeighbors(
                 Что внутри
               </h3>
               <ul className="space-y-2 text-sm text-warm-700">
-                <li className="flex items-start gap-2">
-                  <Check className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
-                  <span>{examplesPhrase(topic.examples.length)} с ответами</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <Check className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
-                  <span>3 уровня сложности: лёгкий / средний / сложный</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <Check className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
-                  <span>Пояснения к каждому ответу</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <Check className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
-                  <span>Шифр ответов на отдельной странице</span>
-                </li>
+                {insideItems.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <Check className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
+                    <span>{item}</span>
+                  </li>
+                ))}
               </ul>
             </Card>
           </div>
@@ -393,6 +412,73 @@ const neighbors = getTopicNeighbors(
                 <span>Создать лист</span>
                 <ArrowRight className="w-4 h-4 shrink-0" aria-hidden />
               </Link>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Что входит в тему — предмет и класс. Новый блок: до него страница
+          рассказывала только о продукте («3 уровня сложности», «шифр
+          ответов»), и тема в тексте не участвовала вообще. Блок
+          рендерится только при `content.filled` — на странице предмета,
+          которого нет в карте содержания, он бы соврал. */}
+      {content?.filled && (
+        <section className="py-12 sm:py-16 bg-warm-50 border-y border-warm-100">
+          <div className="container-tight">
+            <h2 className="text-2xl sm:text-3xl font-display font-bold mb-2">
+              Что входит в тему «{topic.title}» в {grade.num} классе
+            </h2>
+            <p className="text-warm-600 mb-6 max-w-3xl">
+              {content.grade.focus} Тема идёт по предметной области «
+              {content.subject.programArea}»
+              {topic.fgosRef ? `, раздел ФГОС: ${topic.fgosRef}` : ""}. В
+              готовом листе по ней {examplesPhrase(topic.examples.length)}, а
+              перед вами — примеры, которые можно решить прямо на странице.
+            </p>
+
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <Card>
+                <h3 className="font-semibold text-warm-950 mb-3">
+                  Что входит в тему
+                </h3>
+                <ul className="space-y-2 text-sm text-warm-700">
+                  {content.grade.operations.map((op) => (
+                    <li key={op} className="flex items-start gap-2">
+                      <Check className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
+                      <span>{op}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+
+              <Card>
+                <h3 className="font-semibold text-warm-950 mb-3">
+                  Что проседает у учеников
+                </h3>
+                <ul className="space-y-2 text-sm text-warm-700">
+                  {content.grade.pitfalls.map((p) => (
+                    <li key={p} className="flex items-start gap-2">
+                      <Lightbulb className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
+                      <span>{p}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+
+              <Card>
+                <h3 className="font-semibold text-warm-950 mb-3">
+                  Как выглядит готовый лист
+                </h3>
+                <p className="text-sm text-warm-700 leading-relaxed mb-3">
+                  {content.subject.workKind}.
+                </p>
+                <p className="text-sm text-warm-600 leading-relaxed mb-3">
+                  {content.subject.worksheetLook}
+                </p>
+                <p className="text-sm text-warm-600 leading-relaxed pt-3 border-t border-warm-100">
+                  {content.grade.workingStyle}
+                </p>
+              </Card>
             </div>
           </div>
         </section>
