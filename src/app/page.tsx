@@ -15,8 +15,14 @@ import { CTA } from "@/components/landing/CTA";
 import { PageTracker } from "@/components/shared/PageTracker";
 import { JsonLd } from "@/components/seo";
 import { faqItems, stripMarkdown } from "@/lib/content/landing-seo";
+import { FREE_GENERATIONS, priceShort } from "@/lib/content/plans";
 import { SITE_URL, SUPPORT_EMAIL } from "@/lib/site";
-import { absoluteUrl, ogImages, twitterCard } from "@/lib/seo/metadata";
+import {
+  absoluteUrl,
+  clipDescription,
+  ogImages,
+  twitterCard,
+} from "@/lib/seo/metadata";
 
 // TZ-10 §9.2: JSON-LD Organization + WebSite с SearchAction (для sitelinks-searchbox в Яндексе).
 // Базовый URL берётся из общего модуля, а не из литерала здесь: локальная копия
@@ -31,12 +37,46 @@ import { absoluteUrl, ogImages, twitterCard } from "@/lib/seo/metadata";
 // ТЗ-21 п.14: заодно главная получила canonical — без него адрес главной
 // считался поисковиком дублем /constructor, /login и /preview, которые
 // наследовали её заголовок (SEO-аудит P1-5).
+/**
+ * Описание главной — здесь, а не в корневом `layout.tsx`.
+ *
+ * Замер 13.10.2026 (docs/41-geo-vidimost-otchet-2026-10-13.md): цену не назвал
+ * ни один из десяти опрошенных семейств моделей. Причина не в текстах, а в том,
+ * что в выдаче по названию сервиса нет НИ ОДНОЙ цифры с ценой, а в сниппете
+ * конкурента цена видна — и четыре модели уверенно назвали её, 490 ₽ у «Обучай».
+ * Цена доходит до моделей только из сниппета, поэтому она должна быть в тексте.
+ *
+ * Переносить описание целиком в `layout.tsx` нельзя: оттуда оно наследуется
+ * каждой странице сайта, а «от 249 ₽» на странице предмета или темы — враньё
+ * про конкретный продукт. Здесь description перекрывает только главную.
+ *
+ * Числа не зашиты: цена — `priceShort("base", "month")`, квота — `FREE_GENERATIONS`.
+ * Обе величины живут в `src/lib/content/plans.ts`, поэтому следующая смена цены
+ * подставляется сюда сама. Проверка scripts/check-geo-invariants.mjs требует,
+ * чтобы в описании остались «ФГОС» и «бесплатно».
+ *
+ * Первые 15 слов не тронуты: отчёт от 13.10 прямо говорит, что начало описания
+ * менять не нужно. В лимит 160 символов цена поместилась, но «действующему»
+ * пришлось убрать — с ним описание выходило на 164. Утверждение не исчезло:
+ * точная формулировка про стандарт для 10–11 классов стоит в блоке «Возможности»,
+ * в FAQ и на /about/. В сниппете её место заняла цена — это и было целью.
+ */
+const homeDescription = clipDescription(
+  `Рабочие листы по любому предмету 1–11 классов за минуту. PDF с ответами по ФГОС 2021 (1-9) и ФГОС СОО (10-11). От ${priceShort("base", "month")}. Без регистрации — ${FREE_GENERATIONS} бесплатно.`,
+);
+
 export const metadata: Metadata = {
+  description: homeDescription,
   alternates: { canonical: absoluteUrl("/") },
+  // og:description и twitter:description повторяют то же описание: поисковик берёт
+  // сниппет из og:description, когда meta description нет или короче лимита, а
+  // ссылки в соцсетях показывают именно его. Без этой строки цена была бы видна
+  // в одном месте выдачи и отсутствовала в другом.
   openGraph: {
+    description: homeDescription,
     images: ogImages(undefined, "УчЛист — рабочие листы по ФГОС"),
   },
-  twitter: twitterCard(undefined),
+  twitter: { ...twitterCard(undefined), description: homeDescription },
 };
 
 const homeJsonLd = [
