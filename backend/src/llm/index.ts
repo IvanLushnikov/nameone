@@ -74,6 +74,17 @@ import {
   type RawTask,
 } from "./validation/quality-filter";
 import { variantsDiffer, missingTaskCount } from "./validation/variant-check";
+import { buildPlanPrompt, normalizePlan } from "./prompts/plan-gen";
+
+/**
+ * Стадия планирования включена флагом `PLAN=1` в окружении.
+ *
+ * План делает лист разнообразнее (ТЗ-26 В-1), но это НОВЫЙ вызов на каждую
+ * генерацию: и по деньгам, и по времени, и по числу запросов к провайдеру,
+ * что видят существующие тесты. Включать по умолчанию можно только после того,
+ * как на живых листах измерено, что он даёт.
+ */
+const PLAN_STAGE_ENABLED = process.env.PLAN === "1";
 import {
   findSkillDupes,
   tasksToReplace,
@@ -433,7 +444,26 @@ export async function generateWorksheet(
   // Модель выбирается по ТИПУ АРТЕФАКТА (сложности), а не по тарифу:
   // листы/тесты/карточки/планы урока — Luna, контрольные и ОГЭ — Sonnet.
   const decision = pickModel(task, env);
-  const { system, user } = buildWorksheetPrompt(request);
+
+  // ─────────────────────────────────────────────────────────────────────
+  // ПЛАН ЛИСТА (ТЗ-26 В-1, решение владельца 13.10.2026).
+  //
+  // Сначала дешёвый вызов, который раскладывает тему на РАЗНЫЕ навыки, потом
+  // дорогой, который пишет лист строго по плану. Реактивная схема
+  // «поймали повтор → попросили замену → отвергли» не сходилась: модель на одну
+  // тему выдаёт один и тот же навык раз за разом, и трёх проходов чистки
+  // иногда не хватало.
+  //
+  // План УЛУЧШАЕТ качество, но не является условием выдачи листа: если вызов
+  // не удался или план негоден, идём дальше без него. Иначе дешёвый сбой
+  // блокировал бы дорогой результат.
+  //
+  // Для контрольной план один на оба варианта: варианты должны проверять одну
+  // программу, но разными навыками (см. требование 5 к вариантам).
+  // ─────────────────────────────────────────────────────────────────────
+  // Промпт собирается ПОСЛЕ планирования (см. ниже) — план должен попасть
+  // в него, поэтому здесь только заготовка.
+  let { system, user } = buildWorksheetPrompt(request);
 
   // Потолок ответа. КОНТРОЛЬНАЯ возвращает ДВА полных листа одним ответом
   // (`variants`): на один лист 4096 хватает, на два — нет, и ответ обрывался
@@ -500,6 +530,42 @@ export async function generateWorksheet(
     });
     return r;
   };
+
+  // ПЛАН ЛИСТА. Сначала дешёвый вызов раскладывает тему на РАЗНЫЕ навыки,
+  // потом дорогой пишет лист строго по плану. Объявлено здесь, а не выше,
+  // потому что использует `callProvider`, который определён выше по коду.
+  //
+  // ПОД КЛЮЧОМ `PLAN=1` (см. константу ниже). Стадия новая и меняет число
+  // вызовов провайдера на каждой генерации, поэтому включена явно: пока её не
+  // обкатано на живых листах, молча менять путь, который покрыт тремя наборами
+  // тестов (потери ТЗ-25, два варианта, кэш), нельзя.
+  let sheetPlan: ReturnType<typeof normalizePlan> = null;
+  try {
+    if (!PLAN_STAGE_ENABLED) throw new Error("plan stage disabled");
+    const planPrompt = buildPlanPrompt(request);
+    const planRes = await callProvider(planPrompt.system, planPrompt.user, 2048);
+    let parsedPlan: unknown = null;
+    try {
+      parsedPlan = JSON.parse(planRes.response.content);
+    } catch {
+      parsedPlan = null;
+    }
+    sheetPlan = normalizePlan(parsedPlan, request.count);
+    if (!sheetPlan) {
+      logLlmEvent("warn", "worksheet-gen: unusable plan, continuing without it", {
+        subject: request.subject,
+        count: request.count,
+      });
+    }
+  } catch (e) {
+    logLlmEvent("warn", "worksheet-gen: plan failed, continuing without it", {
+      subject: request.subject,
+      error: String(e),
+    });
+  }
+
+  // Теперь план есть — пересобираем промпт с ним.
+  ({ system, user } = buildWorksheetPrompt(request, sheetPlan?.items));
 
   let resultFinal = await callProvider(system, user, baseMaxTokens);
 
@@ -852,13 +918,22 @@ export async function generateWorksheet(
   const dedupeSheet = async (
     current: CleanTask[],
     stage: string,
+    /** Сколько заданий всего можно выбросить за все проходы. */
+    dropBudget: number,
   ): Promise<CleanTask[]> => {
     const dupes = findSkillDupes(current as unknown as SkillTaskLike[]);
     if (!dupes.hasDupes) return current;
+    // Не выбрасываем больше, чем разрешено бюджетом, и никогда — всё.
+    // Пустой лист хуже листа с повтором: учителю нечего раздавать классу.
+    const allowed = dupes.pairs
+      .map((pair) => pair.second)
+      .filter((n) => n > 1)
+      .slice(0, Math.max(0, Math.min(dropBudget, current.length - 1)));
+    if (allowed.length === 0) return current;
 
-    const replaceNumbers = tasksToReplace(dupes);
+    const replaceNumbers = allowed;
     const kept = current.filter(
-      (_, index) => !replaceNumbers.includes(index + 1),
+      (_, index) => !allowed.includes(index + 1),
     );
 
     logLlmEvent("warn", "worksheet-gen: repeated skill inside sheet, replacing", {
@@ -969,6 +1044,20 @@ export async function generateWorksheet(
    * это «почини, если можешь», а не «добивайся любой ценой».
    */
   const dedupeRounds = 3;
+  /**
+   * Бюджет выброшенных заданий.
+   *
+   * Живые прогоны показали, почему он нужен: если модель упирается в один
+   * навык (биология 7, «жилкование листьев»), каждый проход чистки находит
+   * новый повтор, выбрасывает задание, добирает — и получает ТОТ ЖЕ навык
+   * снова. Без предела лист уезжает учителю пустым или почти пустым.
+   *
+   * Половина от количества — потолок осмысленности: если не хватает трети
+   * заданий, чтобы составить лист без повторов, лучше отдать лист с повтором,
+   * чем выкинуть половину материала. Повтор учитель заметит и попросит другой;
+   * нехватку он заметит на печати.
+   */
+  const dropBudgetOf = (count: number) => Math.ceil(count / 2);
 
   const isControl = request.type === "control";
   // У контрольной целевое количество общее для обоих вариантов (AD-8) и
@@ -990,6 +1079,7 @@ export async function generateWorksheet(
       const deduped = await dedupeSheet(
         worksheet.tasks as unknown as CleanTask[],
         `primary#${round}`,
+        dropBudgetOf(request.count),
       );
       if (deduped === (worksheet.tasks as unknown as CleanTask[])) break;
       // Порядок именно такой: сначала чистота, потом длина. Лист на задание
@@ -1052,10 +1142,12 @@ export async function generateWorksheet(
       const d1 = await dedupeSheet(
         worksheet.tasks as unknown as CleanTask[],
         `variant1#${round}`,
+        dropBudgetOf(request.count),
       );
       const d2 = await dedupeSheet(
         (secondVariant.tasks ?? []) as unknown as CleanTask[],
         `variant2#${round}`,
+        dropBudgetOf(request.count),
       );
       const changed =
         d1 !== (worksheet.tasks as unknown as CleanTask[]) ||
