@@ -96,9 +96,16 @@ check(
 );
 
 // Чужой материал — отказ 403, а не 404: иначе «не твоё» неотличимо от «нет такого».
+// Форма ветки менялась: 15.10 `fail()` переписан с switch на if/else (линт
+// ругался на каждую `case` в функции, где все ветки бросают). Поэтому ищем
+// сами коды и привязку к статусу, а не синтаксис ветки: смысл проверки —
+// «не твоё» и «нет такого» не смешиваются, а форма кода может быть любой.
 check(
   "у чужого материала свой код отказа (403, не 404)",
-  /case "forbidden"/.test(routes) && /MATERIAL_FORBIDDEN/.test(routes) && /MATERIAL_NOT_FOUND/.test(routes),
+  /(?:case\s+"forbidden"|code === "forbidden"|code === 'forbidden')/.test(routes) &&
+    /MATERIAL_FORBIDDEN/.test(routes) &&
+    /MATERIAL_NOT_FOUND/.test(routes) &&
+    /403\s*,\s*"MATERIAL_FORBIDDEN"/.test(routes) && /404\s*,\s*"MATERIAL_NOT_FOUND"/.test(routes),
   "нет раздельных кодов 403 и 404",
 );
 check(

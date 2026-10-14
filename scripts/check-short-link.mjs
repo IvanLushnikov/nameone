@@ -96,14 +96,25 @@ if (!lengthMatch) {
 }
 
 // ── 2. Алфавит не сузился ────────────────────────────────────────────────────
-const alphabetMatch = routeSrc.match(/SHORT_CODE_ALPHABET_SIZE\s*=\s*(\d+)/);
-if (!alphabetMatch) {
-  problems.push("в роутере нет константы SHORT_CODE_ALPHABET_SIZE — размер алфавита объявлен неявно");
-} else if (Number(alphabetMatch[1]) !== ALPHABET_SIZE) {
-  problems.push(
-    `алфавит ${alphabetMatch[1]} символов, а скрипт считает по base62 (${ALPHABET_SIZE}). ` +
-      `Сужение алфавита уменьшает стойкость в ${(ALPHABET_SIZE / Number(alphabetMatch[1])).toFixed(1)} раз`,
-  );
+//
+// Алфавит в коде выражен НЕ константой, а классом символов в регексе
+// SHORT_CODE_PATTERN: `[0-9A-Za-z]`. Константа SHORT_CODE_ALPHABET_SIZE
+// была объявлена, но нигде не читалась, и 15.10 удалена как мёртвая — после чего
+// проверка на неё перестала срабатывать. Проверяем то, что реально решает:
+// размер алфавита в том регексе, который принимает код на входе.
+const patternMatch = routeSrc.match(/SHORT_CODE_PATTERN\s*=\s*new RegExp\(`?\^?\[([^\]]+)\]/);
+if (!patternMatch) {
+  problems.push("в роутере нет SHORT_CODE_PATTERN — код принимается без проверки алфавита");
+} else {
+  const classes = patternMatch[1];
+  const hasAll = (c) => classes.includes(c);
+  const isFullBase62 = hasAll("0") && hasAll("9") && hasAll("A") && hasAll("Z") && hasAll("a") && hasAll("z");
+  if (!isFullBase62) {
+    problems.push(
+      `класс символов в SHORT_CODE_PATTERN — «${classes}», а нужен полный base62 ` +
+        `([0-9A-Za-z]). Сужение алфавита уменьшает стойкость перебора.`,
+    );
+  }
 }
 
 // ── 3. Принимаемый код не длиннее объявленного ──────────────────────────────
