@@ -10,7 +10,9 @@
  *
  * ПОДМНОЖЕСТВО. Умеем `\frac`, `^{}`, `_{}`, `\sqrt`, `\times`, `\cdot`
  * (плюс тривиальные `\div`, `\pm`). Этого хватает для школьных дробей, степеней
- * и произведений. Всё остальное — НЕ поддерживаем (см. `latexToUnicode`).
+ * и произведений. Индексы работают и ВНУТРИ аргументов: `\frac{x^{2}}{y}` —
+ * это дробь с надстрочным индексом в числителе. Всё остальное — НЕ
+ * поддерживаем (см. `latexToUnicode`).
  *
  * ГЛАВНОЕ ПРАВИЛО: при любой неудаче отдаём ЮНИКОД-ФОЛБЭК (⅛ ⅓ ⅔ ² ³ √ × ·).
  * Приоритет — читаемость документа, а не красота. Учительница должна получить
@@ -35,17 +37,27 @@ import {
 /**
  * Узел + его скрипты. Скрипты храним отдельно от узла, чтобы `x_1^2` собрался
  * в один `MathSubSuperScript`, а не в две вложенные конструкции.
+ *
+ * Скрипт — тоже СПИСОК СЛОТОВ, а не голых узлов: в `a^{b^{c}}` внутри степени
+ * живёт своя степень. Если типизировать скрипт как `OmmlNode[]`, содержимое
+ * `^{...}` молча потеряется: у слота нет `kind`, и рендер отдаст пустой `<m:sup/>`.
  */
 type Slot = {
   node: OmmlNode;
-  sub?: OmmlNode[];
-  sup?: OmmlNode[];
+  sub?: Slot[];
+  sup?: Slot[];
 };
 
+/**
+ * Аргументы команд — `\frac`, `\sqrt` — храним ТОЖЕ слотами, а не голыми
+ * узлами. Иначе скрипты внутри аргумента теряются: `\frac{x^{2}}{y}` собирался
+ * в дробь с «x» вместо «x²». Типы тут рекурсивные (слот → узел → слот), но
+ * рекурсия идёт через массив, поэтому TS такой цикл принимает.
+ */
 type OmmlNode =
   | { kind: "run"; text: string }
-  | { kind: "frac"; num: OmmlNode[]; den: OmmlNode[] }
-  | { kind: "sqrt"; body: OmmlNode[] };
+  | { kind: "frac"; num: Slot[]; den: Slot[] }
+  | { kind: "sqrt"; body: Slot[] };
 
 class LatexParseError extends Error {}
 
@@ -75,7 +87,7 @@ function readCommand(cur: Cursor): string {
 }
 
 /** Аргумент команды: `{...}` с вложенностью либо один символ. */
-function parseArgument(cur: Cursor): OmmlNode[] {
+function parseArgument(cur: Cursor): Slot[] {
   while (cur.pos < cur.src.length && /[ \t]/.test(cur.src[cur.pos])) cur.pos += 1;
   if (cur.pos >= cur.src.length) throw new LatexParseError("команда без аргумента");
 
@@ -84,19 +96,21 @@ function parseArgument(cur: Cursor): OmmlNode[] {
     const slots = parseSequence(cur, true);
     if (cur.src[cur.pos] !== "}") throw new LatexParseError("незакрытая {");
     cur.pos += 1;
-    return slots.map((slot) => slot.node);
+    // Слотами, а не `slots.map((slot) => slot.node)`. Второй вариант тихо
+    // выбрасывал скрипты: `\frac{x^{2}}{y}` уезжал в Word как `\frac{x}{y}`.
+    return slots;
   }
 
   if (cur.src[cur.pos] === "\\") {
     const cmd = readCommand(cur);
     const literal = commandToLiteral(cmd);
     if (literal === null) throw new LatexParseError(`неподдерживаемая команда \\${cmd}`);
-    return [{ kind: "run", text: literal }];
+    return [{ node: { kind: "run", text: literal } }];
   }
 
   const ch = cur.src[cur.pos];
   cur.pos += 1;
-  return [{ kind: "run", text: ch === "~" ? " " : ch }];
+  return [{ node: { kind: "run", text: ch === "~" ? " " : ch } }];
 }
 
 /** Однобуквенные escapes и команды-пробелы. `null` = команда не поддержана. */
@@ -208,9 +222,9 @@ function parseSequence(cur: Cursor, stopAtBrace: boolean): Slot[] {
 /**
  * Один узел → компоненты docx.
  *
- * Рекурсия идёт только ВНИЗ по дереву (аргумент дроби → свои узлы), поэтому
- * цикла renderNodes ↔ renderSlots здесь быть не может: renderSlots склеивает
- * узел со скриптами, а этот узел рендерит напрямую, минуя скрипты.
+ * Рендерит САМ узел, минуя его скрипты: скрипты склеивает `renderSlots`. Рекурсия
+ * идёт только вниз по дереву (аргумент дроби → свои слоты), поэтому цикла
+ * `renderNode` ↔ `renderSlots` здесь быть не может.
  */
 function renderNode(node: OmmlNode): MathComponent[] {
   switch (node.kind) {
@@ -219,37 +233,44 @@ function renderNode(node: OmmlNode): MathComponent[] {
     case "frac":
       return [
         new MathFraction({
-          numerator: renderNodes(node.num),
-          denominator: renderNodes(node.den),
+          // Через `renderSlots`: у слота могут быть скрипты. Именно этот вызов
+          // превращает `x^{2}` в числителе в `<m:sSup>` внутри `<m:num>`.
+          numerator: renderSlots(node.num),
+          denominator: renderSlots(node.den),
         }),
       ];
     case "sqrt":
-      return [new MathRadical({ children: renderNodes(node.body) })];
+      return [new MathRadical({ children: renderSlots(node.body) })];
   }
 }
 
-function renderNodes(nodes: readonly OmmlNode[]): MathComponent[] {
-  return nodes.flatMap(renderNode);
-}
-
+/**
+ * Слоты → компоненты docx. Единственная точка, которая знает про скрипты:
+ * её вызывают и для верхнего уровня, и для аргументов `\frac`/`\sqrt`.
+ */
 function renderSlots(slots: readonly Slot[]): MathComponent[] {
   return slots.flatMap((slot) => {
     const base = renderNode(slot.node);
+    // `x^{}` — скрипт пустой. `<m:sup/>` без содержимого Word рисует
+    // непредсказуемо, поэтому пустой скрипт считаем отсутствующим: в базе
+    // остаётся простое «x», формула при этом не ломается.
+    const sub = slot.sub && slot.sub.length > 0 ? slot.sub : undefined;
+    const sup = slot.sup && slot.sup.length > 0 ? slot.sup : undefined;
 
-    if (slot.sub && slot.sup) {
+    if (sub && sup) {
       return [
         new MathSubSuperScript({
           children: base,
-          subScript: renderNodes(slot.sub),
-          superScript: renderNodes(slot.sup),
+          subScript: renderSlots(sub),
+          superScript: renderSlots(sup),
         }),
       ];
     }
-    if (slot.sub) {
-      return [new MathSubScript({ children: base, subScript: renderNodes(slot.sub) })];
+    if (sub) {
+      return [new MathSubScript({ children: base, subScript: renderSlots(sub) })];
     }
-    if (slot.sup) {
-      return [new MathSuperScript({ children: base, superScript: renderNodes(slot.sup) })];
+    if (sup) {
+      return [new MathSuperScript({ children: base, superScript: renderSlots(sup) })];
     }
     return base;
   });

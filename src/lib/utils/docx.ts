@@ -176,21 +176,17 @@ function innerFractions(latex: string): string {
 }
 
 /**
- * Верхние индексы мы в числа НЕ переводим: `x²` остаётся `x²` и в KaTeX, и в
- * OMML-конвертере.
+ * Степень и нижний индекс НЕ переводим в числа: `x^{2}` разбирает
+ * `latex-to-omml.ts` и уходит в Word настоящим надстрочным индексом
+ * `<m:sSup>` — и в числителе дроби тоже (лист 2.1.6 починил `parseArgument`,
+ * который раньше выбрасывал скрипты из аргумента). Юникодный «²» в
+ * текстовом run над базовой линией не поднимается, поэтому назад переводить
+ * нельзя.
  *
- * Соблазн большой: в Word юникодный «²» в обычном текстовом run не поднимается
- * над базовой линией, а `x^{2}` даёт настоящий надстрочный индекс. Но
- * `latex-to-omml.ts` (файл НЕ в этом листе) при разборе аргумента в фигурных
- * скобках возвращает `slots.map((slot) => slot.node)` — вместе со скриптами.
- * То есть `\frac{x^{2}}{y}` теряет двойку ЦЕЛИКОМ и в Word выходит `x` вместо
- * `x²`. Потерянная степень хуже неподнятой: материал с неверной формулой учитель
- * отдаст в класс. Поэтому оставляем юникод — он читается и в Word, и в KaTeX.
- *
- * Лист 2.1.5 закрыл половину этой дыры: `keepScriptsInsideFrac` ниже страхует
- * `^{...}`/`_{...}` внутри числителя и знаменателя (степень не теряется). До
- * настоящего надстрочного индекса OMML внутри дроби дело дойдёт, когда
- * `parseArgument` в `latex-to-omml.ts` перестанет выбрасывать скрипты.
+ * Раньше здесь стоял обходной путь: он искал границы аргументов `\frac` и
+ * переписывал `^{}`/`_{}` внутри них юникодом ДО конвертера. Степень не
+ * терялась, но приходила символом «²». Конвертер справляется сам, костыль
+ * удалён — две правки одного случая дрались бы между собой.
  */
 
 /** Дописывает обычный текст к предыдущему сегменту, не разрывая его на два span. */
@@ -281,96 +277,6 @@ type FormulaTextRunOptions = {
 };
 
 /* -------------------------------------------------------------------------- */
-/*  Степень внутри дроби: почему нужен страховочный перевод                      */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Ищет парную `{...}` после `\frac` и возвращает границы обоих аргументов
- * (числителя и знаменателя). Это НЕ второй разбор формул — только балансировка
- * скобок, чтобы точечно починить конкретное место.
- */
-function fracArgumentRanges(src: string): Array<[number, number]> {
-  const ranges: Array<[number, number]> = [];
-  let i = 0;
-
-  while (i < src.length) {
-    if (!src.startsWith("\\frac", i)) {
-      i += 1;
-      continue;
-    }
-    let j = i + "\\frac".length;
-    for (let arg = 0; arg < 2; arg += 1) {
-      while (j < src.length && /\s/.test(src[j])) j += 1;
-      if (src[j] !== "{") break;
-      let depth = 0;
-      let close = -1;
-      for (let k = j; k < src.length; k += 1) {
-        if (src[k] === "{") depth += 1;
-        else if (src[k] === "}") {
-          depth -= 1;
-          if (depth === 0) {
-            close = k;
-            break;
-          }
-        }
-      }
-      if (close < 0) break;
-      ranges.push([j, close]);
-      j = close + 1;
-    }
-    i = j;
-  }
-
-  return ranges;
-}
-
-/**
- * ЗАЧЕМ ЭТА СТРАХОВКА (лист 2.1.5, п. 3).
- *
- * `latex-to-omml.ts` при разборе аргумента команды в фигурных скобках
- * возвращает `slots.map((slot) => slot.node)` — то есть ВМЕСТЕ СО СКРИПТАМИ.
- * На верхнем уровне `x^{2}` собирается в `MathSuperScript` корректно, а внутри
- * аргумента двойка пропадает ЦЕЛИКОМ: `\frac{x^{2}}{y}` уезжает в Word как
- * `\frac{x}{y}`. Это не «некрасиво», а неверная формула в материале, который
- * учитель отдаёт в класс.
- *
- * Что делаем. Внутри числителя и знаменателя `^{...}`/`_{...}` переводим
- * юникодом ЧЕРЕЗ `latexToUnicode` — это тот же самый юникод-слой, на который
- * уже опирается рабочий лист для `x²`, поэтому и читаемость, и внешний вид
- * совпадают с сегодняшним поведением. Вне дробей ничего не трогаем: там
- * конвертер степень обрабатывает и так, и настоящий надстрочный индекс в Word
- * лучше юникодного.
- *
- * ЧЕГО ЭТО НЕ ДЕЛАЕТ. Настоящий надстрочный индекс ВНУТРИ дроби (`<m:sSup>`
- * внутри `<m:num>`) требует правки самого `parseArgument` в
- * `latex-to-omml.ts` — файл не в этом листе. Поэтому здесь гарантируется
- * «степень НЕ потеряна», а не «степень набрана OMML-скриптом».
- */
-function keepScriptsInsideFrac(latex: string): string {
-  if (!latex.includes("\\frac")) return latex;
-
-  const ranges = fracArgumentRanges(latex);
-  if (ranges.length === 0) return latex;
-
-  let out = latex;
-  // С конца, чтобы границы предыдущих правок не «поехали».
-  for (let r = ranges.length - 1; r >= 0; r -= 1) {
-    const [start, end] = ranges[r];
-    const body = out
-      .slice(start + 1, end)
-      .replace(/\^\s*\{([^{}]*)\}/g, (_w, script: string) => latexToUnicode(`^{${script}}`))
-      .replace(/_\s*\{([^{}]*)\}/g, (_w, script: string) => latexToUnicode(`_{${script}}`));
-    out = out.slice(0, start + 1) + body + out.slice(end);
-  }
-  return out;
-}
-
-/** Единственная точка вызова конвертера: сначала страховка степени, потом OMML. */
-function toOmml(latex: string) {
-  return latexToOmml(keepScriptsInsideFrac(latex));
-}
-
-/* -------------------------------------------------------------------------- */
 /*  OMML → строка XML (для PPTX)                                                */
 /* -------------------------------------------------------------------------- */
 
@@ -442,7 +348,7 @@ function ommlChildrenToXml(tree: OmmlTree): string {
  *          на юникод.
  */
 export function ommlXml(latex: string): string | null {
-  const components = toOmml(latex);
+  const components = latexToOmml(latex);
   if (!components || components.length === 0) return null;
 
   const xml = components
@@ -480,7 +386,7 @@ function ommlChildren(
       if (segment.value) children.push(new TextRun({ text: segment.value, ...run }));
       continue;
     }
-    const omml = toOmml(segment.latex);
+    const omml = latexToOmml(segment.latex);
     if (!omml) return null;
     children.push(new DocxMath({ children: omml }));
   }

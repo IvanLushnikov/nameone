@@ -88,7 +88,7 @@ const OWN_PARSER_MARKERS = [
 ];
 
 /** Распознаватель скобочной дроби обязан быть ровно в ОДНОМ файле проекта. */
-const SINGLETON_PARSERS = ["function splitComplexFractions", "function fracArgumentRanges"];
+const SINGLETON_PARSERS = ["function splitComplexFractions"];
 
 const failures = [];
 const notes = [];
