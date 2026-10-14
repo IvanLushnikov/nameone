@@ -42,6 +42,8 @@ yarn-error.log*
 # local env files
 .env*.local
 .env
+# Ключ Polza для скилла ai-product-feedback (опрос ИИ-моделей о продукте)
+.env.ai-feedback
 
 # wrangler state
 .wrangler/
@@ -71,3 +73,6 @@ backend/.resend.key
 # в репозитории не хранится (см. SKILL.md скилла unlazy).
 .unlazy/
 GATES.md
+
+# Ответы ИИ-моделей о продукте (скилл ai-product-feedback)
+ai-feedback/
