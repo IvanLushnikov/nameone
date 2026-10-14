@@ -28,7 +28,7 @@ import { plural, topicTitleWithUmk, quotedTopic } from "@/lib/utils/cn";
 import { clipDescription } from "@/lib/seo/metadata";
 import { Breadcrumb } from "@/components/seo";
 import { getTopicNeighbors } from "@/lib/content/topic-neighbors";
-import { getTopicContent } from "@/lib/content/topic-content";
+import { getTopicContent, getTopicLayer } from "@/lib/content/topic-content";
 import { AnswerToggle } from "./AnswerToggle";
 
 type Props = { params: { subject: string; grade: string; topic: string } };
@@ -166,6 +166,11 @@ export default function TopicPage({ params }: Props) {
 // `content.filled` — если по предмету нет данных в `topic-content`, блок не
 // рендерится вовсе: подставлять чужой предметный текст нельзя.
 const content = getTopicContent(subject.slug, grade.num);
+
+// Раздел ФГОС этой темы и соседние темы класса из того же раздела. Это то,
+// что различает страницы ВНУТРИ одной пары «предмет + класс»: без него все
+// темы года показывали одинаковый блок содержания.
+const layer = getTopicLayer(subject.slug, grade.num, topic);
 
 // Пункты «Что внутри» — только те, что относятся к предмету. Продуктовые
 // пункты (шифр ответов, PDF) оставлены как были: они верны для всех тем.
@@ -380,7 +385,10 @@ const neighbors = getTopicNeighbors(
             </p>
 
             <div className="grid sm:grid-cols-2 gap-3">
-              {topic.examples.slice(0, 3).map((ex: TopicExample, i: number) => (
+              {/* Все примеры темы, а не первые три: тема — это и есть её примеры,
+                  и у тем разный объём. Обрезка делала часть тем одинаковой
+                  по наполнению. */}
+              {topic.examples.map((ex: TopicExample, i: number) => (
                 <Card key={i} className="h-full">
                   <div className="flex items-start gap-3">
                     <span className="worksheet-task-num">{i + 1}</span>
@@ -435,6 +443,31 @@ const neighbors = getTopicNeighbors(
               готовом листе по ней {examplesPhrase(topic.examples.length)}, а
               перед вами — примеры, которые можно решить прямо на странице.
             </p>
+
+            {/* Второй слой: раздел ФГОС именно этой темы и что ещё входит
+                в него в этом классе. Без него все темы года показывали
+                одинаковый блок — различались только заголовком. Данные из
+                `Topic.fgosRef`, ничего не придумано; у темы без раздела
+                ФГОС блок не рисуется вовсе. */}
+            {layer.filled && (
+              <div className="mb-6 rounded-2xl border border-brand-100 bg-brand-50/50 p-5 sm:p-6">
+                <p className="text-sm sm:text-base text-warm-800 leading-relaxed mb-3">
+                  {layer.note}
+                </p>
+                {layer.siblingTitles.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {layer.siblingTitles.map((title) => (
+                      <span
+                        key={title}
+                        className="inline-block rounded-full bg-white border border-warm-200 px-3 py-1 text-xs text-warm-700"
+                      >
+                        {title}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <Card>

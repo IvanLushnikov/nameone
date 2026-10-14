@@ -25,7 +25,7 @@ import {
 } from "@/lib/content/subjects";
 import { JsonLd, Breadcrumb } from "@/components/seo";
 import { prepositionalTitle } from "@/lib/content/subject-cases";
-import { getTopicContent } from "@/lib/content/topic-content";
+import { getTopicContent, getTopicLayer } from "@/lib/content/topic-content";
 import { absoluteUrl, clipDescription, ogImages, topicTitleSuffix, twitterCard } from "@/lib/seo/metadata";
 
 type Props = { params: { subject: string; grade: string; topic: string } };
@@ -126,6 +126,10 @@ export default function PresentationTopicPage({ params }: Props) {
   // `content.filled` — если по предмету нет данных, страница рисует
   // прежние блоки, а не подставляет чужой предметный текст.
   const content = getTopicContent(subject.slug, grade.num);
+
+// Раздел ФГОС этой темы и соседние темы класса из него — второй слой,
+// который различает страницы внутри одной пары «предмет + класс».
+const layer = getTopicLayer(subject.slug, grade.num, topic);
 
   // Разметка по образцу /subject/[subject]/[grade]/[topic] — LearningResource +
   // AlignmentObject по разделу ФГОС. Рендерим всегда: здесь это единственный
@@ -336,6 +340,28 @@ export default function PresentationTopicPage({ params }: Props) {
                 <p className="mt-4 pt-4 border-t border-warm-100 text-sm text-warm-600 leading-relaxed">
                   {content.subject.exampleFraming}
                 </p>
+                {/* Раздел ФГОС этой темы и соседние темы класса из него.
+                    То, что различает страницы внутри одной пары «предмет +
+                    класс»: данные из `Topic.fgosRef`, ничего не придумано. */}
+                {layer.filled && (
+                  <>
+                    <p className="mt-3 text-sm text-warm-600 leading-relaxed">
+                      {layer.note}
+                    </p>
+                    {layer.siblingTitles.length > 0 && (
+                      <ul className="mt-3 flex flex-wrap gap-2">
+                        {layer.siblingTitles.map((title) => (
+                          <li
+                            key={title}
+                            className="rounded-full bg-warm-50 border border-warm-200 px-2.5 py-1 text-xs text-warm-700"
+                          >
+                            {title}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                )}
               </Card>
             </div>
           </div>
