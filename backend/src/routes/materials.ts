@@ -186,29 +186,36 @@ function toOwnView(row: UserMaterialRow) {
  * материала нет» — разные вещи, и учитель должен понимать, какая именно.
  */
 function fail(result: { code: Exclude<UserMaterialResult<never>, { ok: true }>["code"] }): never {
-  switch (result.code) {
-    case "validation":
-      throwApiError(400, "MATERIAL_VALIDATION", "Проверьте материал: нужны название, описание и хотя бы одно задание");
-    case "reason_required":
-      throwApiError(400, "MATERIAL_REASON_REQUIRED", "Напишите причину отказа — учитель должен знать, что исправить");
-    case "forbidden":
-      // Ключевой случай листа: чужой материал — ОТКАЗ, а не «не найдено».
-      throwApiError(403, "MATERIAL_FORBIDDEN", "Это материал другого учителя");
-    case "not_found":
-      throwApiError(404, "MATERIAL_NOT_FOUND", "Материала нет — возможно, его удалили");
-    case "published_locked":
-      throwApiError(
-        409,
-        "MATERIAL_PUBLISHED",
-        "Материал уже опубликован: сначала снимите его с публикации, потом правьте или удаляйте",
-      );
-    case "not_pending":
-      throwApiError(409, "MATERIAL_NOT_PENDING", "По этому материалу решение уже принято");
-    case "limit":
-      throwApiError(409, "MATERIAL_LIMIT", `Достигнут предел в ${MAX_USER_MATERIALS_PER_TEACHER} материалов`);
-    default:
-      throwApiError(400, "MATERIAL_BAD_REQUEST", "Не удалось разобрать запрос");
+  // Цепочка if/else, а не switch: каждая ветка бросает, и это верно, но
+  // линтер не выводит невозможность fallthrough и ругался на каждую `case`.
+  const code = result.code;
+  if (code === "validation") {
+    throwApiError(400, "MATERIAL_VALIDATION", "Проверьте материал: нужны название, описание и хотя бы одно задание");
   }
+  if (code === "reason_required") {
+    throwApiError(400, "MATERIAL_REASON_REQUIRED", "Напишите причину отказа — учитель должен знать, что исправить");
+  }
+  if (code === "forbidden") {
+    // Ключевой случай листа: чужой материал — ОТКАЗ, а не «не найдено».
+    throwApiError(403, "MATERIAL_FORBIDDEN", "Это материал другого учителя");
+  }
+  if (code === "not_found") {
+    throwApiError(404, "MATERIAL_NOT_FOUND", "Материала нет — возможно, его удалили");
+  }
+  if (code === "published_locked") {
+    throwApiError(
+      409,
+      "MATERIAL_PUBLISHED",
+      "Материал уже опубликован: сначала снимите его с публикации, потом правьте или удаляйте",
+    );
+  }
+  if (code === "not_pending") {
+    throwApiError(409, "MATERIAL_NOT_PENDING", "По этому материалу решение уже принято");
+  }
+  if (code === "limit") {
+    throwApiError(409, "MATERIAL_LIMIT", `Достигнут предел в ${MAX_USER_MATERIALS_PER_TEACHER} материалов`);
+  }
+  throwApiError(400, "MATERIAL_BAD_REQUEST", "Не удалось разобрать запрос");
 }
 
 /** Тело запроса сдачи/правки. Потолки — те же, что в db/materials.ts. */

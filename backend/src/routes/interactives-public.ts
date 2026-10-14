@@ -597,9 +597,6 @@ publicInteractivesRouter.post("/:token/attempts/:attemptToken/submit", submitLim
 /** Длина кода в короткой ссылке. Проверяется скриптом `check-short-link.mjs`. */
 const SHORT_CODE_LENGTH = 12;
 
-/** Алфавит кода — тот же base62, что у `share_token` (см. lib/shortid.ts). */
-const SHORT_CODE_ALPHABET_SIZE = 62;
-
 /**
  * Срок жизни короткой ссылки, ЕСЛИ учитель срок не задавал: 365 дней.
  *

@@ -83,19 +83,23 @@ const publicClassLinksRouter = new Hono<AppEnv>();
  * `if (!result.ok) fail(result)` сужает тип до успешного и не проверяет зря.
  */
 function fail(result: { code: ClassResultCode }): never {
-  switch (result.code) {
-    case "validation":
-      throwApiError(400, "VALIDATION_ERROR", "Проверьте название — пустым или слишком длинным быть нельзя");
-    case "forbidden":
-      // Ключевой случай листа: чужой класс — ОТКАЗ, а не «не найдено».
-      throwApiError(403, "CLASS_FORBIDDEN", "Это класс другого учителя");
-    case "conflict":
-      throwApiError(409, "CLASS_EXISTS", "Класс с таким названием у вас уже есть");
-    case "limit":
-      throwApiError(409, "CLASS_LIMIT", "Слишком много классов или учеников — уменьшите список");
-    default:
-      throwApiError(404, "CLASS_NOT_FOUND", "Класса нет");
+  // Цепочка if/else, а не switch: каждая ветка бросает исключение, и это
+  // верно, но линтер не умеет вывести, что fallthrough невозможен, и ругается
+  // на каждую `case`. Подавлять правило было бы правкой симптома.
+  if (result.code === "validation") {
+    throwApiError(400, "VALIDATION_ERROR", "Проверьте название — пустым или слишком длинным быть нельзя");
   }
+  if (result.code === "forbidden") {
+    // Ключевой случай листа: чужой класс — ОТКАЗ, а не «не найдено».
+    throwApiError(403, "CLASS_FORBIDDEN", "Это класс другого учителя");
+  }
+  if (result.code === "conflict") {
+    throwApiError(409, "CLASS_EXISTS", "Класс с таким названием у вас уже есть");
+  }
+  if (result.code === "limit") {
+    throwApiError(409, "CLASS_LIMIT", "Слишком много классов или учеников — уменьшите список");
+  }
+  throwApiError(404, "CLASS_NOT_FOUND", "Класса нет");
 }
 
 /** Прочитать JSON-тело и отдать 400 вместо исключения zod наружу. */

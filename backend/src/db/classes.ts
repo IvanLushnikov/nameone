@@ -380,7 +380,6 @@ export async function deleteClass(
   // Ответы не удаляем — переносим в «сироты» одной транзакцией: строка в
   // form_responses и её name никуда не денутся, а привязка к удалённому
   // ученику исчезнет.
-  const now = nowSec();
   const batch: D1PreparedStatement[] = [];
   if (ids.length > 0) {
     const placeholders = ids.map((_, i) => `?${i + 1}`).join(", ");
