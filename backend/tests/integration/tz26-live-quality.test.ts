@@ -28,7 +28,7 @@
  * платный и медленный, поэтому запускается точечно.
  */
 
-import { describe, it, expect, afterAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 // Ключ лежит в биндинге воркера, а не в process.env: пул
 // `@cloudflare/vitest-pool-workers` грузит `.dev.vars` в окружение воркера.
 // Через `cloudflare:test` — единственное место, где он виден тесту.
@@ -114,11 +114,11 @@ afterEach(() => {
   _resetPolzaSingleton();
 });
 
-// Маркер успеха для гейт-чекера (unlazy). Печатается только когда ВСЕ живые
-// проверки прошли.
-afterAll(() => {
-  console.log("TZ26-LIVE-QUALITY-OK");
-});
+// БЕЗ маркера успеха здесь намеренно. `afterAll` печатал его ВСЕГДА, в том
+// числе при упавшем тесте, и гейт-чекер видел совпадение на падении —
+// ложнозелёный сигнал, самое опасное, что может быть в проверке. Теперь
+// ожидание гейта — строка сводки vitest «Tests  6 passed (6)», которая
+// печатается только когда прошли все шесть.
 
 /** Текст задания + ответ + пояснение одной строкой. */
 function rows(tasks: unknown[]): Array<{ text: string; answer: string; explanation: string }> {

@@ -84,7 +84,7 @@ import { buildPlanPrompt, normalizePlan } from "./prompts/plan-gen";
  * что видят существующие тесты. Включать по умолчанию можно только после того,
  * как на живых листах измерено, что он даёт.
  */
-const PLAN_STAGE_ENABLED = process.env.PLAN === "1";
+const PLAN_ENABLED_VALUE = "1";
 import {
   findSkillDupes,
   tasksToReplace,
@@ -541,7 +541,15 @@ export async function generateWorksheet(
   // тестов (потери ТЗ-25, два варианта, кэш), нельзя.
   let sheetPlan: ReturnType<typeof normalizePlan> = null;
   try {
-    if (!PLAN_STAGE_ENABLED) throw new Error("plan stage disabled");
+    // Флаг берём из `env` бэкенда, а НЕ из `process.env`: в пуле
+    // `@cloudflare/vitest-pool-workers` процессные переменные не видны вообще —
+    // там окружение живёт в биндингах. Проверено на живом прогоне
+    // 13.10.2026: с `PLAN=1` в командной строке стадия молча не включалась,
+    // и прогоны шли по старому пути, а лог врал.
+    const planFlag = (env as unknown as Record<string, unknown>).PLAN;
+    if (String(planFlag) !== PLAN_ENABLED_VALUE) {
+      throw new Error("plan stage disabled");
+    }
     const planPrompt = buildPlanPrompt(request);
     const planRes = await callProvider(planPrompt.system, planPrompt.user, 2048);
     let parsedPlan: unknown = null;
