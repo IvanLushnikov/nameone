@@ -87,7 +87,6 @@ import { buildPlanPrompt, normalizePlan } from "./prompts/plan-gen";
 const PLAN_ENABLED_VALUE = "1";
 import {
   findSkillDupes,
-  tasksToReplace,
   type SkillTaskLike,
 } from "./validation/skill-dupes";
 import { reconcileSelfVerifyVerdict } from "./validation/answer-check";
