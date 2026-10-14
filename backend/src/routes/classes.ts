@@ -11,6 +11,10 @@
  *     DELETE /api/classes/:id/students/:sid        — убрать ученика (мягко)
  *     POST   /api/classes/:id/students/:sid/restore — вернуть ученика
  *
+ *   Сводка и ведомость по классу (лист 3.1.3):
+ *     GET    /api/classes/:id/report     — сколько сдали, кто ждёт, какие отметки
+ *     GET    /api/classes/:id/report.csv — та же ведомость файлом для Excel
+ *
  *   Ученик (без входа, по своей ссылке):
  *     GET  /api/public/class-links/:st/forms/:t          — задания
  *     POST /api/public/class-links/:st/forms/:t/submit   — ответить
@@ -46,7 +50,7 @@ import { requireAuth } from "../middleware/auth";
 import { rateLimitMiddleware, djb2 } from "../middleware/ratelimit";
 import { throwApiError } from "../lib/errors";
 import { answerId as makeAnswerId, responseId as makeResponseId } from "../lib/shortid";
-import { gradeSubmission, type StudentValue } from "../services/formGrading";
+import { gradeSubmission, parseCheckMeta, type StudentValue } from "../services/formGrading";
 import {
   MAX_STUDENTS_PER_IMPORT,
   addStudents,
@@ -55,6 +59,7 @@ import {
   findStudentByToken,
   listRemovedStudents,
   listRoster,
+  loadOwnClass,
   studentAnswerInsert,
   removeStudent,
   renameClass,
@@ -211,6 +216,694 @@ classesRouter.post("/:id/students/:sid/restore", async (c) => {
   if (!result.ok) fail(result);
 
   return c.json({ ok: true });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * ВЕДОМОСТЬ ПО КЛАССУ (лист 3.1.3)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ─── Почему SQL здесь, а не в db/classes.ts ─────────────────────────────────
+ * Лист 3.1.3 не владеет `src/db/**` — этот слой занят другой работой. Поэтому
+ * три запроса сводки живут здесь, рядом с единственным местом, где уже доказано
+ * правило «чужой класс — 403». Когда `db/classes.ts` освободится, их правильно
+ * перенести туда; сейчас дублировать наружу правило владения нельзя.
+ */
+
+/** Сколько работ попадает в ведомость по одному классу. */
+const MAX_REPORT_WORKS = 12;
+
+/**
+ * Порция связанных параметров в один запрос.
+ *
+ * D1 ограничивает число `?` примерно сотней на запрос. Класс из 30 человек и
+ * 12 работ дают 30–42 ответа — впритык; режем на 50, чтобы заведомо не упасть
+ * на 500 у большого класса.
+ */
+const MAX_BOUND_PARAMS = 50;
+
+/** Работа (столбец ведомости) в том виде, в каком её читает этот файл. */
+interface ReportWorkRow {
+  id: string;
+  title: string;
+  subject: string;
+  grade: number;
+  status: string;
+  created_at: number;
+  expires_at: number;
+}
+
+/**
+ * Источник отметки по одной сданной работе.
+ *
+ * `model` и `teacher` — РАЗНЫЕ значения, и это смысл всего типа: «верно» от
+ * машины и «верно» от учителя не должны сливаться в одно число. `teacher_with_model`
+ * означает «учитель посмотрел и поправил часть ответов» — там слово «поправил»
+ * честнее, чем «поставил».
+ */
+type ReportSource = "teacher" | "teacher_with_model" | "model" | "auto" | "none";
+
+interface ReportWork {
+  id: string;
+  title: string;
+  subject: string;
+  grade: number;
+  /**
+   * Работу ещё можно сдать: статус открыт И срок не вышел.
+   *
+   * Одного `status = 'open'` мало: срок ссылки истекает сам, а статус остаётся
+   * «открыта» навсегда. Написать «ещё открыта» по истёкшей ссылке — значит
+   * показать учителю «не сдал» как окончательный приговор по работе, куда
+   * уже нельзя сдать.
+   */
+  isOpen: boolean;
+  createdAt: number;
+}
+
+/** Одна сданная работа в ведомости. */
+interface ReportCell {
+  formId: string;
+  responseId: string;
+  score: number;
+  max: number;
+  submittedAt: number;
+  source: ReportSource;
+  /** Сколько заданий по этой работе ждут учителя. */
+  pendingTasks: number;
+  /** Сколько заданий оценила машина. */
+  modelTasks: number;
+  /** Сколько заданий оценил учитель. */
+  teacherTasks: number;
+  /** Сколько заданий посчитано без модели (число, вариант). */
+  autoTasks: number;
+  /** Машина оценила, учитель не подтвердил: его оценкой это НЕ считается. */
+  unconfirmedByTeacher: boolean;
+}
+
+interface ReportStudent {
+  id: string;
+  name: string;
+  /** Сданные работы этого ученика. У кого их нет — тот «не сдал». */
+  works: ReportCell[];
+}
+
+/** Почему ведомость пустая. null — ведомость не пустая. */
+type ReportEmptyReason = "no_students" | "no_works" | "no_answers";
+
+interface ClassReportData {
+  class: { id: string; name: string };
+  works: ReportWork[];
+  students: ReportStudent[];
+  summary: {
+    studentsTotal: number;
+    studentsSubmitted: number;
+    studentsNotSubmitted: number;
+    /** Сколько работ сдано (непустых ячеек) — «сколько сдали», в работах. */
+    submittedWorks: number;
+    /** Работы, где что-то ждёт учителя. */
+    pendingWorks: number;
+    /** Работы, где вердикт машины учитель не подтвердил. */
+    unconfirmedWorks: number;
+    /** Средний процент по сданным работам. null — сдавать было нечего. */
+    averagePercent: number | null;
+    bySource: Record<ReportSource, number>;
+    /**
+     * Работы по ОБЩЕЙ ссылке этого класса: ученик представился сам, привязки к
+     * ученику нет. Считаем отдельно и говорим о них словами — иначе учитель
+     * увидел бы «не сдал» человеку, который работу на самом деле сдал.
+     */
+    unlinkedAnswers: number;
+  };
+  /** Сколько работ учителя вообще подошло под этот класс. */
+  worksTotal: number;
+  /** Показаны не все: колонки обрезаны до MAX_REPORT_WORKS. */
+  worksTruncated: boolean;
+  emptyReason: ReportEmptyReason | null;
+}
+
+/**
+ * `?start, ?start+1, …` под количество параметров.
+ *
+ * `start` обязателен по делу, а не для удобства: нумерованные параметры D1
+ * (`?1`, `?2`, …) не переиспользуются, и список из `?1…?N` рядом с уже занятым
+ * `?1` даёт не «пустую таблицу», а 500 — «Wrong number of parameter bindings».
+ */
+function placeholders(count: number, start: number): string {
+  return Array.from({ length: count }, (_, i) => `?${start + i}`).join(", ");
+}
+
+/**
+ * Последний ответ ученика по каждой работе.
+ *
+ * Ученик может пересдать работу (и сдаёт две разные работы), поэтому в ведомость
+ * попадает ПОСЛЕДНИЙ ответ на каждую пару «ученик + работа» — иначе одна и та же
+ * работа учитывалась бы дважды и «сдали» считалось бы неверно.
+ */
+interface ReportAnswerRow {
+  student_id: string;
+  form_id: string;
+  response_id: string;
+  score_total: number;
+  score_max: number;
+  submitted_at: number;
+  /**
+   * Порядок вставки строки. Нужен, потому что `submitted_at` — с точностью до
+   * секунды: две отправки в одну секунду (двойное нажатие «Отправить», два
+   * телефона в кармане) дали бы равные таймстемпы, и «какая попытка последняя»
+   * решалась бы случайно. Порядок вставки — единственный честный ответ.
+   */
+  answer_rowid: number;
+}
+
+/** Срез по заданиям: чей вердикт и что ещё ждёт учителя. */
+interface ReportTaskRow {
+  response_id: string;
+  needs_review: number;
+  check_method: string;
+  check_meta_json: string | null;
+}
+
+/** Что посчитали по заданиям одной работы. */
+interface TaskTally {
+  teacherTasks: number;
+  modelTasks: number;
+  autoTasks: number;
+  pendingTasks: number;
+}
+
+/**
+ * Собрать сводку по классу. Один раз — и для экрана, и для CSV.
+ *
+ * ПОРЯДОК, КОТОРЫЙ НЕЛЬЗЯ ЛОМАТЬ:
+ *   1. ПРОВЕРКА ВЛАДЕНИЯ — самым первым запросом. Чужой класс обязан отказать
+ *      ДО того, как хоть одна строка чужих учеников прочитана из базы.
+ *   2. Ученики — живой состав класса (удалённые сюда не попадают: их ответы
+ *      живут в «ушедших», а ведомость — про текущий класс).
+ *   3. Работы — только учителя, и только те, что ещё открыты или куда этот
+ *      класс что-то сдавал.
+ *   4. Ответы — по работам из п.3, ученикам из п.2.
+ */
+async function loadClassReport(
+  db: D1Database,
+  userId: string,
+  classId: string,
+): Promise<ClassReportData> {
+  // Чужой класс — 403 «это класс другого учителя», и никаких данных.
+  const owned = await loadOwnClass(db, userId, classId);
+  if (!owned.ok) fail(owned);
+
+  // Один «сейчас» на всю сборку: иначе работы, попавшие на границу минуты,
+  // могли бы получить разные пометки «ещё открыта» в сводке и в выгрузке.
+  const reportNow = Math.floor(Date.now() / 1000);
+
+  const emptyBase = (
+    emptyReason: ReportEmptyReason,
+    roster: Array<{ id: string; name: string }>,
+  ): ClassReportData => ({
+    class: { id: owned.value.id, name: owned.value.name },
+    works: [],
+    students: roster.map((s) => ({ ...s, works: [] })),
+    summary: {
+      studentsTotal: roster.length,
+      studentsSubmitted: 0,
+      studentsNotSubmitted: roster.length,
+      submittedWorks: 0,
+      pendingWorks: 0,
+      unconfirmedWorks: 0,
+      averagePercent: null,
+      bySource: { teacher: 0, teacher_with_model: 0, model: 0, auto: 0, none: 0 },
+      unlinkedAnswers: 0,
+    },
+    worksTotal: 0,
+    worksTruncated: false,
+    emptyReason,
+  });
+
+  const studentRows = await db
+    .prepare(
+      `SELECT id, name, position FROM class_students
+        WHERE class_id = ?1 AND removed_at IS NULL
+        ORDER BY position ASC, created_at ASC`,
+    )
+    .bind(classId)
+    .all<{ id: string; name: string; position: number }>();
+
+  // Порядок строк = порядок в списке учителя. Отдельного поля `position` в
+  // ответе нет: массив и есть порядок, а второе поле значило бы, что их можно
+  // разойтись (клиент взял позицию, забыв про порядок).
+  const students = (studentRows.results ?? []).map((s) => ({
+    id: String(s.id),
+    name: String(s.name),
+    works: [] as ReportCell[],
+  }));
+
+  // Класс без учеников — не ошибка и не «пустой ноль»: это состояние, в котором
+  // учитель ещё не рассылал QR. Отдельная причина пустоты, отдельные слова.
+  if (students.length === 0) return emptyBase("no_students", students);
+
+  // Работы: открытые (по ним ещё можно сдать) + те, куда класс уже сдавал.
+  // Чужие работы учителя сюда попасть не могут: фильтр по user_id.
+  const workRows = await db
+    .prepare(
+      `SELECT f.id, f.title, f.subject, f.grade, f.status, f.created_at, f.expires_at
+         FROM forms f
+        WHERE f.user_id = ?1
+          AND (f.status = 'open' OR EXISTS (
+                 SELECT 1 FROM class_student_answers a
+                 JOIN class_students s ON s.id = a.student_id
+                WHERE a.form_id = f.id AND s.class_id = ?2))
+        ORDER BY f.created_at DESC, f.id DESC
+        LIMIT ?3`,
+    )
+    .bind(userId, classId, MAX_REPORT_WORKS + 1)
+    .all<ReportWorkRow>();
+
+  const allWorks = workRows.results ?? [];
+  const worksTotalRow = await db
+    .prepare(
+      `SELECT COUNT(*) AS cnt FROM forms f
+        WHERE f.user_id = ?1
+          AND (f.status = 'open' OR EXISTS (
+                 SELECT 1 FROM class_student_answers a
+                 JOIN class_students s ON s.id = a.student_id
+                WHERE a.form_id = f.id AND s.class_id = ?2))`,
+    )
+    .bind(userId, classId)
+    .first<{ cnt: number }>();
+
+  const worksTotal = Number(worksTotalRow?.cnt ?? 0);
+  // Обрезание показываем, а не прячем: молчаливая «полная» ведомость на 12 из 40
+  // работ была бы выдумкой, которой учитель поверил бы.
+  const worksTruncated = allWorks.length > MAX_REPORT_WORKS;
+  // Колонки идут СВЕРАХУ ВНИЗ ПО ВРЕМЕНИ — ведомость читается слева направо как
+  // хронология, а не как случайный набор. Обрезается тоже по времени, но
+  // остаются СВЕЖИЕ работы: старые уже не ждут учителя.
+  const works: ReportWork[] = allWorks
+    .slice(0, MAX_REPORT_WORKS)
+    .map((w) => ({
+      id: String(w.id),
+      title: String(w.title),
+      subject: String(w.subject),
+      grade: Number(w.grade ?? 0),
+      isOpen: String(w.status) === "open" && Number(w.expires_at ?? 0) > reportNow,
+      createdAt: Number(w.created_at ?? 0),
+    }))
+    .reverse();
+
+  if (works.length === 0) {
+    const empty = emptyBase("no_works", students);
+    empty.worksTotal = worksTotal;
+    return empty;
+  }
+
+  const workIds = works.map((w) => w.id);
+  // Список работ идёт ПОСЛЕ ?1 (id класса) — нумерация параметров не начинается заново.
+  const workPlaceholders = placeholders(workIds.length, 2);
+
+  const answerRows = await db
+    .prepare(
+      `SELECT a.student_id, a.form_id, a.response_id, a.score_total, a.score_max,
+              a.submitted_at, a.rowid AS answer_rowid
+         FROM class_student_answers a
+         JOIN class_students s ON s.id = a.student_id
+        WHERE s.class_id = ?1
+          AND s.removed_at IS NULL
+          AND a.form_id IN (${workPlaceholders})
+          AND a.submitted_at = (SELECT MAX(b.submitted_at) FROM class_student_answers b
+                                 WHERE b.student_id = a.student_id AND b.form_id = a.form_id)`,
+    )
+    .bind(classId, ...workIds)
+    .all<ReportAnswerRow>();
+
+  // Одна и та же секунда у двух пересдач дала бы две строки на одну ячейку.
+  // Мержим в JS: побеждает более поздняя отправка, а при равных секундах —
+  // более поздняя ВСТАВКА (answer_rowid), а не «какая строка дольше назвалась».
+  const latest = new Map<string, ReportAnswerRow>();
+  for (const row of answerRows.results ?? []) {
+    const key = `${row.student_id}|${row.form_id}`;
+    const prev = latest.get(key);
+    if (
+      !prev ||
+      Number(row.submitted_at) > Number(prev.submitted_at) ||
+      (Number(row.submitted_at) === Number(prev.submitted_at) &&
+        Number(row.answer_rowid) > Number(prev.answer_rowid))
+    ) {
+      latest.set(key, row);
+    }
+  }
+
+  // Срез по заданиям: одним запросом на порцию ответов.
+  const tallies = new Map<string, TaskTally>();
+  const responseIds = Array.from(new Set(Array.from(latest.values()).map((r) => String(r.response_id))));
+  for (let i = 0; i < responseIds.length; i += MAX_BOUND_PARAMS) {
+    const chunk = responseIds.slice(i, i + MAX_BOUND_PARAMS);
+    const taskRows = await db
+      .prepare(
+        `SELECT response_id, needs_review, check_method, check_meta_json
+           FROM form_answers
+          WHERE response_id IN (${placeholders(chunk.length, 1)})`,
+      )
+      .bind(...chunk)
+      .all<ReportTaskRow>();
+
+    for (const t of taskRows.results ?? []) {
+      const key = String(t.response_id);
+      const tally = tallies.get(key) ?? {
+        teacherTasks: 0,
+        modelTasks: 0,
+        autoTasks: 0,
+        pendingTasks: 0,
+      };
+      if (Number(t.needs_review) === 1) tally.pendingTasks += 1;
+      // Чей вердикт: единственный источник правды — снимок в check_meta_json
+      // (его пишет и сверка моделью, и правка учителя через журнал).
+      //
+      // `check_method = 'manual'` НЕ означает «учитель поставил». Это значит
+      // «это задание должен посмотреть человек» — ровно то состояние, когда
+      // учитель ещё не смотрел. Считать его решением учителя было бы тем самым
+      // молчаливым слиянием, ради которого этот блок написан: эссе ждёт
+      // учителя, а не оценено им.
+      const meta = parseCheckMeta(t.check_meta_json);
+      const method = String(t.check_method);
+      const needsReview = Number(t.needs_review) === 1;
+      if (meta.decidedBy === "teacher") {
+        tally.teacherTasks += 1;
+      } else if (meta.decidedBy === "model") {
+        tally.modelTasks += 1;
+      } else if (method === "llm") {
+        // Машина ответила, а метка `decidedBy` потерялась (старые строки).
+        // Отметка машины без подтверждения — всё равно не отметка учителя.
+        tally.modelTasks += 1;
+      } else if (method === "auto") {
+        tally.autoTasks += 1;
+      } else if (!needsReview) {
+        // Ручное задание, записанное без решения: ждёт учителя, а не оценено.
+        tally.pendingTasks += 1;
+      }
+      tallies.set(key, tally);
+    }
+  }
+
+  const EMPTY_TALLY: TaskTally = {
+    teacherTasks: 0,
+    modelTasks: 0,
+    autoTasks: 0,
+    pendingTasks: 0,
+  };
+
+  const cellsByStudent = new Map<string, ReportCell[]>(students.map((s) => [s.id, s.works]));
+  const cells: ReportCell[] = [];
+  for (const row of latest.values()) {
+    const tally = tallies.get(String(row.response_id)) ?? EMPTY_TALLY;
+    const source: ReportSource =
+      tally.teacherTasks > 0
+        ? tally.modelTasks > 0
+          ? "teacher_with_model"
+          : "teacher"
+        : tally.modelTasks > 0
+          ? "model"
+          : tally.autoTasks > 0
+            ? "auto"
+            : "none";
+    const cell: ReportCell = {
+      formId: String(row.form_id),
+      responseId: String(row.response_id),
+      score: Number(row.score_total ?? 0),
+      max: Number(row.score_max ?? 0),
+      submittedAt: Number(row.submitted_at ?? 0),
+      source,
+      pendingTasks: tally.pendingTasks,
+      modelTasks: tally.modelTasks,
+      teacherTasks: tally.teacherTasks,
+      autoTasks: tally.autoTasks,
+      // Машинный вердикт без единого шага учителя — это НЕ его отметка.
+      unconfirmedByTeacher: tally.modelTasks > 0 && tally.teacherTasks === 0,
+    };
+    cells.push(cell);
+    cellsByStudent.get(String(row.student_id))?.push(cell);
+  }
+
+  // Работы по общей ссылке: их нельзя отнести к ученику — он сам представился
+  // строкой, а не персональным QR. Считаем отдельно и говорим словами.
+  const unlinkedRow = await db
+    .prepare(
+      `SELECT COUNT(*) AS cnt FROM form_responses r
+        WHERE r.form_id IN (${placeholders(workIds.length, 1)})
+          AND NOT EXISTS (SELECT 1 FROM class_student_answers a WHERE a.response_id = r.id)`,
+    )
+    .bind(...workIds)
+    .first<{ cnt: number }>();
+
+  const bySource: Record<ReportSource, number> = {
+    teacher: 0,
+    teacher_with_model: 0,
+    model: 0,
+    auto: 0,
+    none: 0,
+  };
+  let submittedWorks = 0;
+  let pendingWorks = 0;
+  let unconfirmedWorks = 0;
+  let percentSum = 0;
+  let percentCount = 0;
+  for (const cell of cells) {
+    bySource[cell.source] += 1;
+    submittedWorks += 1;
+    if (cell.pendingTasks > 0) pendingWorks += 1;
+    if (cell.unconfirmedByTeacher) unconfirmedWorks += 1;
+    if (cell.max > 0) {
+      percentSum += (cell.score / cell.max) * 100;
+      percentCount += 1;
+    }
+  }
+
+  const studentsSubmitted = students.filter((s) => s.works.length > 0).length;
+
+  return {
+    class: { id: owned.value.id, name: owned.value.name },
+    works,
+    students,
+    summary: {
+      studentsTotal: students.length,
+      studentsSubmitted,
+      studentsNotSubmitted: students.length - studentsSubmitted,
+      submittedWorks,
+      pendingWorks,
+      unconfirmedWorks,
+      // null, а не 0: «среднего нет» и «средний ноль» — разные вещи.
+      averagePercent: percentCount > 0 ? Math.round(percentSum / percentCount) : null,
+      bySource,
+      unlinkedAnswers: Number(unlinkedRow?.cnt ?? 0),
+    },
+    worksTotal,
+    worksTruncated,
+    emptyReason: submittedWorks === 0 ? "no_answers" : null,
+  };
+}
+
+/** GET /api/classes/:id/report — сводка по классу для экрана. */
+classesRouter.get("/:id/report", async (c) => {
+  const user = requireAuth(c);
+  const report = await loadClassReport(c.env.DB, user.id, c.req.param("id"));
+
+  return c.json({ ok: true, report });
+});
+
+/**
+ * Экранирование значения для CSV: разделитель `;`, кавычки, переводы строк.
+ *
+ * Запятая в фамилии («Иванов, Иван») портит файл только при разделителе-запятой;
+ * у нас разделитель `;`, поэтому запятая безопасна. Но `;` и кавычки в имени
+ * класса или в комментарии — уже портят, поэтому экранируем.
+ */
+function reportCsvCell(value: unknown): string {
+  const text = value === null || value === undefined ? "" : String(value);
+  if (/[";\r\n]/u.test(text)) return `"${text.replace(/"/gu, '""')}"`;
+  return text;
+}
+
+/**
+ * Пометка состояния работы в шапке ведомости.
+ *
+ * «не сдал» по открытой работе — ещё не приговор, а по истёкшей — приговор.
+ * Учитель обязан различать эти два случая, иначе он упрекает ребёнка за то,
+ * что сдать уже было нельзя.
+ */
+function workMark(work: ReportWork): string {
+  if (work.isOpen) return ", ещё открыта";
+  return "";
+}
+
+/** Слово про источник отметки — одинаковое на экране и в выгрузке. */
+function reportSourceWord(cell: ReportCell): string {
+  switch (cell.source) {
+    case "teacher":
+      return "отметка учителя";
+    case "teacher_with_model":
+      return "учитель поправил ИИ";
+    case "model":
+      return "вердикт ИИ, не подтверждён учителем";
+    case "auto":
+      return "посчитали сами";
+    default:
+      return "без отметки";
+  }
+}
+
+/**
+ * Ведомость одной строкой на ученика.
+ *
+ * Ученик без ответов ТОЖЕ строка — со словом «не сдал». Пустая ячейка выглядела
+ * бы как «забыли внести», а не как «работы нет».
+ */
+function reportCsvCellValue(cell: ReportCell | undefined): string {
+  if (!cell) return "не сдал";
+  const parts = [cell.max > 0 ? `${cell.score} из ${cell.max}` : `${cell.score}`];
+  parts.push(reportSourceWord(cell));
+  if (cell.pendingTasks > 0) parts.push(`ждёт вас: ${cell.pendingTasks}`);
+  return parts.join(" · ");
+}
+
+/**
+ * Заголовки ответа с CSV.
+ *
+ * Имя файла едет ДВАЖДЫ: латиницей для старых браузеров и почты плюс
+ * UTF-8-вариантом по RFC 5987 — иначе кириллическое название класса
+ * превратилось бы в «report.csv» или в битые символы.
+ */
+function csvHeaders(className: string, date: string): Record<string, string> {
+  const niceName = `Ведомость ${className} ${date}.csv`;
+  return {
+    "Content-Type": "text/csv; charset=utf-8",
+    "Content-Disposition": `attachment; filename="vedomost-${date}.csv"; filename*=UTF-8''${encodeURIComponent(niceName)}`,
+    "Cache-Control": "no-store",
+  };
+}
+
+/** Дата для имени файла и шапки: 2026-10-14. */
+function isoDate(nowSec: number): string {
+  return new Date(nowSec * 1000).toISOString().slice(0, 10);
+}
+
+/**
+ * GET /api/classes/:id/report.csv — ведомость файлом.
+ *
+ * Тот же отчёт, что на экране: собираем его ОДНИМ кодом, иначе через месяц
+ * ведомость и экран разойдутся, а ведомость уйдёт классному руководителю.
+ *
+ * Формат — тот же, что у выгрузки по одной форме (`f07.ts`): UTF-8 BOM,
+ * разделитель `;`, перевод строки CRLF. Русский Excel открывает такой файл
+ * таблицей без «появился мастер импорта» и без кракозябр в ФИО.
+ */
+classesRouter.get("/:id/report.csv", async (c) => {
+  const user = requireAuth(c);
+  const report = await loadClassReport(c.env.DB, user.id, c.req.param("id"));
+  // Дата одна и та же в шапке и в имени файла: два разных формата дали бы
+  // учителю «сформировано 14.10» в файле «2026-10-15».
+  const date = isoDate(Math.floor(Date.now() / 1000));
+
+  const head: string[] = [
+    // Две шапки сверху — по ним видно, что это ведомость какого класса и когда
+    // она выгружена, даже когда файл лежит в почте без письма.
+    [`Ведомость класса ${report.class.name}`, `Сформировано ${date}`].map(reportCsvCell).join(";"),
+    [
+      `Учеников: ${report.summary.studentsTotal}`,
+      `Сдали: ${report.summary.studentsSubmitted}`,
+      `Не сдали: ${report.summary.studentsNotSubmitted}`,
+      `Ждут проверки: ${report.summary.pendingWorks}`,
+      `ИИ не подтверждён: ${report.summary.unconfirmedWorks}`,
+    ].map(reportCsvCell).join(";"),
+  ];
+
+  // Пустой класс или класс без работ — таблицы ещё нет, и выгружать её было бы
+  // враньём. Отдаём тот же файл, но с объяснением, что сделать дальше.
+  const EMPTY_HINT: Record<"no_students" | "no_works", string> = {
+    no_students:
+      "В этом классе пока нет учеников. Добавьте список учеников и выдайте каждому свой QR — ведомость заполнится сама.",
+    no_works:
+      "По этому классу пока нет работ. Выдайте работу по персональной ссылке: как только её сдадут, здесь появятся отметки и список тех, кто ещё не сдал.",
+  };
+
+  // Расшифровка едет в том же файле: ведомость уходит классному руководителю,
+  // и он не обязан знать наши внутренние слова. Обрезанный список работ тоже
+  // расшифровывается прямо здесь — счётчики относятся к показанным работам.
+  const legend: string[] = [
+    "",
+    [
+      "Расшифровка:",
+      "«не сдал» — по этой работе ответа нет;",
+      "«вердикт ИИ, не подтверждён учителем» — машина оценила, учитель оценку не подтвердил;",
+      "«учитель поправил ИИ» — учитель посмотрел работу и изменил часть оценок;",
+      "«посчитали сами» — ответы проверены без модели;",
+      "«ждёт вас: N» — N заданий ждут проверки учителем;",
+      "«ИИ не подтвердил» — число работ, где вердикт машины учитель не подтвердил;",
+      "«(ещё открыта)» — работу ещё можно сдать, «не сдал» по ней ещё не окончательный.",
+      ...(report.worksTruncated
+        ? [
+            `Показаны последние ${report.works.length} работ из ${report.worksTotal}: счётчики в файле относятся только к показанным работам.`,
+          ]
+        : []),
+    ]
+      .map(reportCsvCell)
+      .join(";"),
+  ];
+
+  // Пустая ветка: таблицы нет — значит, и расшифровывать нечего. Файл состоит
+  // из шапки и одной строки «что сделать дальше».
+  if (report.emptyReason === "no_students" || report.emptyReason === "no_works") {
+    const body = [
+      ...head,
+      ["", EMPTY_HINT[report.emptyReason]].map(reportCsvCell).join(";"),
+    ];
+    return new Response(`\uFEFF${body.join("\r\n")}\r\n`, {
+      headers: csvHeaders(report.class.name, date),
+    });
+  }
+
+  // Открытая работа помечена в шапке: «не сдал» по ней ещё не приговор.
+  const header = [
+    "№",
+    "ФИО",
+    ...report.works.map((w) => `${w.title} (${w.subject}${workMark(w)})`),
+    "Сдал",
+    "Ждут проверки",
+    "ИИ не подтвердил",
+    "Средний %",
+  ];
+  const lines: string[] = [...head, header.map(reportCsvCell).join(";")];
+
+  for (const [index, student] of report.students.entries()) {
+    const byWork = new Map(student.works.map((w) => [w.formId, w]));
+    const submittedWorks = student.works.length;
+    const pending = student.works.filter((w) => w.pendingTasks > 0).length;
+    const unconfirmed = student.works.filter((w) => w.unconfirmedByTeacher).length;
+    const scored = student.works.filter((w) => w.max > 0);
+    const average = scored.length
+      ? Math.round(scored.reduce((sum, w) => sum + (w.score / w.max) * 100, 0) / scored.length)
+      : null;
+
+    lines.push(
+      [
+        index + 1,
+        student.name,
+        ...report.works.map((w) => reportCsvCellValue(byWork.get(w.id))),
+        submittedWorks > 0 ? `да (${submittedWorks} из ${report.works.length})` : "нет",
+        pending > 0 ? String(pending) : "0",
+        unconfirmed > 0 ? String(unconfirmed) : "0",
+        // Пустая ячейка, а не 0: «процента нет» и «ноль процентов» — разное.
+        average === null ? "" : `${average}%`,
+      ]
+        .map(reportCsvCell)
+        .join(";"),
+    );
+  }
+
+  lines.push(...legend);
+
+  // BOM обязателен: без него русский Excel открывает файл как кракозябры.
+  const csv = `\uFEFF${lines.join("\r\n")}\r\n`;
+
+  return new Response(csv, { headers: csvHeaders(report.class.name, date) });
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════

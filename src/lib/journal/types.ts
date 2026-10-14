@@ -15,9 +15,18 @@
  */
 
 import { ERROR_TEXT, type PhotoCheckApiError, type PhotoCheckApiErrorCode } from "@/lib/photo-check/api";
+import type { ClassesApiError } from "@/lib/lk/classes-api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 const BASE = "/api/journal";
+
+/**
+ * Ведомость по классу живёт под своим префиксом (`/api/classes`), а не под
+ * журналом: сводка — это чтение класса, а не чтение журнала проверок. Константа
+ * продублирована намеренно — `classes-api.ts` в этом листе не наш, и тянуть
+ * ведомость в чужой файл значило бы расширить работу соседнего листа.
+ */
+const CLASSES_BASE = "/api/classes";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Типы
@@ -278,4 +287,188 @@ export async function overrideAnswer(
   if (!res.ok) return readError(res);
   const json = (await res.json()) as { answer: FormJournalAnswer };
   return { ok: true, answer: json.answer };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ведомость по классу (лист 3.1.3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Кто поставил отметку по работе.
+ *
+ * `model` и `teacher` — разные значения намеренно. Слить их в одно «верно»
+ * значило бы через месяц не суметь ответить учителю на вопрос «это я поставил
+ * или машина». `teacher_with_model` — учитель посмотрел работу и поправил часть
+ * ответов; называть это «отметка учителя» было бы полуправдой.
+ */
+export type ClassReportSource = "teacher" | "teacher_with_model" | "model" | "auto" | "none";
+
+/** Почему ведомость пустая. null — ведомость не пустая. */
+export type ClassReportEmptyReason = "no_students" | "no_works" | "no_answers";
+
+/** Работа — колонка ведомости. */
+export interface ClassReportWork {
+  id: string;
+  title: string;
+  subject: string;
+  grade: number;
+  /**
+   * Работу ещё можно сдать (статус открыт И срок не вышел).
+   *
+   * Отдельного `status` здесь нет намеренно: «открыт» и «можно сдать» — разные
+   * вещи, срок ссылки истекает сам, а учителю важно второе. По истёкшей работе
+   * «не сдал» — окончательный приговор, по открытой ещё нет.
+   */
+  isOpen: boolean;
+  createdAt: number;
+}
+
+/** Одна сданная работа в ячейке. */
+export interface ClassReportCell {
+  formId: string;
+  responseId: string;
+  score: number;
+  max: number;
+  submittedAt: number;
+  source: ClassReportSource;
+  /** Сколько заданий по этой работе ждут учителя. */
+  pendingTasks: number;
+  modelTasks: number;
+  teacherTasks: number;
+  autoTasks: number;
+  /** Машина оценила, учитель не подтвердил. Отметкой учителя это не считаем. */
+  unconfirmedByTeacher: boolean;
+}
+
+export interface ClassReportStudent {
+  id: string;
+  name: string;
+  /**
+   * Только сданные работы. У кого пусто — тот «не сдал».
+   *
+   * Отдельного поля «номер в списке» нет намеренно: порядок массива и есть
+   * порядок в списке учителя, а второе поле рано или поздно разошлось бы с ним.
+   */
+  works: ClassReportCell[];
+}
+
+export interface ClassReportSummary {
+  studentsTotal: number;
+  studentsSubmitted: number;
+  studentsNotSubmitted: number;
+  submittedWorks: number;
+  pendingWorks: number;
+  unconfirmedWorks: number;
+  /** null — сдавать было нечего. 0 был бы другим утверждением. */
+  averagePercent: number | null;
+  bySource: Record<ClassReportSource, number>;
+  /** Работы по общей ссылке: отнести их к ученику нельзя, сервер считает отдельно. */
+  unlinkedAnswers: number;
+}
+
+export interface ClassReport {
+  class: { id: string; name: string };
+  works: ClassReportWork[];
+  students: ClassReportStudent[];
+  summary: ClassReportSummary;
+  /** Сколько работ учителя подошло под класс всего — показываем, если обрезали. */
+  worksTotal: number;
+  worksTruncated: boolean;
+  emptyReason: ClassReportEmptyReason | null;
+}
+
+/**
+ * Ответ клиента ведомости: та же лента ошибок, что у списка классов.
+ *
+ * `forbidden` тут означает ровно одно — «это класс другого учителя», и текст
+ * берётся из `explainError`, чтобы слова про чужой класс совпадали с теми же
+ * словами на странице настроек.
+ */
+export type ClassReportResult =
+  | { ok: true; report: ClassReport }
+  | { ok: false; error: ClassesApiError };
+
+function reportFail(error: ClassesApiError): ClassReportResult {
+  return { ok: false, error };
+}
+
+/** GET /api/classes/:id/report — сводка считается на сервере, не в браузере. */
+export async function loadClassReport(classId: string): Promise<ClassReportResult> {
+  if (!API_URL) return reportFail("network");
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${CLASSES_BASE}/${encodeURIComponent(classId)}/report`, {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+  } catch {
+    return reportFail("network");
+  }
+
+  if (res.status === 401) return reportFail("unauthorized");
+  if (res.status === 403) return reportFail("forbidden");
+  if (res.status === 404) return reportFail("not_found");
+  if (!res.ok) return reportFail("internal");
+
+  const json = (await res.json()) as { report?: ClassReport };
+  if (!json.report || !Array.isArray(json.report.students)) return reportFail("internal");
+  return { ok: true, report: json.report };
+}
+
+export type ClassReportCsvResult =
+  | { ok: true; text: string; filename: string }
+  | { ok: false; error: ClassesApiError };
+
+/** Имя файла из Content-Disposition. Без него скачается «report». */
+function csvFilename(disposition: string | null, fallback: string): string {
+  if (!disposition) return fallback;
+  // RFC 5987: filename*=UTF-8''Ведомость%205А.csv — читаем именно эту часть,
+  // ASCII-дубль рядом учителя не читает.
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+  if (star?.[1]) {
+    try {
+      return decodeURIComponent(star[1].trim());
+    } catch {
+      // битое percent-encoding — берём ASCII-дубль, файл всё равно откроется
+    }
+  }
+  const plain = /filename="([^"]+)"/i.exec(disposition);
+  return plain?.[1] ?? fallback;
+}
+
+/**
+ * GET /api/classes/:id/report.csv — готовый файл ведомости.
+ *
+ * Отдаём ТЕКСТ, а не строим CSV в браузере: русский Excel открывает файл
+ * таблицей только с BOM и разделителем `;`, и это должен обеспечивать сервер
+ * один раз, а не каждый клиент по-своему.
+ */
+export async function fetchClassReportCsv(classId: string): Promise<ClassReportCsvResult> {
+  if (!API_URL) return { ok: false, error: "network" };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${CLASSES_BASE}/${encodeURIComponent(classId)}/report.csv`, {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+      headers: { Accept: "text/csv" },
+    });
+  } catch {
+    return { ok: false, error: "network" };
+  }
+
+  if (res.status === 401) return { ok: false, error: "unauthorized" };
+  if (res.status === 403) return { ok: false, error: "forbidden" };
+  if (res.status === 404) return { ok: false, error: "not_found" };
+  if (!res.ok) return { ok: false, error: "internal" };
+
+  return {
+    ok: true,
+    text: await res.text(),
+    filename: csvFilename(res.headers.get("Content-Disposition"), "vedomost.csv"),
+  };
 }

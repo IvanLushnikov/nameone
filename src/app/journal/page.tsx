@@ -23,6 +23,12 @@
  * Здесь же галочка «сверять короткие ответы ИИ»: по умолчанию она снята,
  * потому что каждый вызов модели стоит денег, и решение об этом принимает
  * учитель, а не код.
+ *
+ * Третья часть экрана (лист 3.1.3) — ведомость по классу: сколько сдали, кто
+ * ждёт, чьи это отметки и что выгрузить классному руководителю. Оба блока
+ * (работы по формам и ведомость) сами себя прячут, если учитель их ещё не
+ * завёл: страница не должна показывать пустые разделы тому, кто ими ещё не
+ * пользуется.
  */
 
 import * as React from "react";
@@ -32,6 +38,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { CheckJournal } from "@/components/f06/CheckJournal";
 import { JournalCheckView } from "@/components/f06/JournalCheckView";
+import { ClassReportSection } from "@/components/lk/ClassReport";
 import { loadJournal, type JournalEntry } from "@/lib/photo-check/journal";
 import { ERROR_TEXT } from "@/lib/photo-check/api";
 import {
@@ -344,6 +351,10 @@ function JournalView() {
       {/* Работы по формам — вторая половина журнала (лист 3.1.6). Сама себя
           прячет, если форм нет или учитель не входил: пустого экрана не делаем. */}
       <FormWorksSection />
+
+      {/* Ведомость по классу (лист 3.1.3): сводка и выгрузка для
+          классного руководителя. Тоже прячется, если классов нет. */}
+      <ClassReportSection />
 
       {state.kind === "loading" && (
         <p className="text-sm text-warm-600" role="status">
