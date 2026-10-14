@@ -173,9 +173,24 @@ export default function sitemap(): MetadataRoute.Sitemap {
     return { url, priority };
   });
 
+  // Сравнения с конкурентами (14.10.2026). Отдельным списком, а не вперемешку
+  // со статьями: у них другая задача в выдаче — ловить спрос «что выбрать»,
+  // который иначе уходит к Обучаю и Нейруму.
+  const comparePages: MetadataRoute.Sitemap = [
+    { url: url("/compare/uchlist-ili-obuchay"), priority: 0.8 },
+    { url: url("/compare/uchlist-ili-neyrum"), priority: 0.8 },
+    { url: url("/compare/uchlist-ili-chatgpt"), priority: 0.7 },
+  ];
+
+  // Хаб «ИИ для учителя» — узел, вокруг которого поисковик собирает блог,
+  // сравнения и предметы в один смысловой центр.
+  const aiHubPages: MetadataRoute.Sitemap = [{ url: url("/ai-dlya-uchitelya"), priority: 0.8 }];
+
   return [
     ...staticPages,
     ...blogPages,
+    ...aiHubPages,
+    ...comparePages,
     ...subjectPages,
     ...topicPages,
     // ...artifactTopicPages и ...ktpPages — намеренно не входят: см. комментарий
