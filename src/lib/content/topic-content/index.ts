@@ -40,7 +40,17 @@ import { art } from "./data/art";
 import { pe } from "./data/pe";
 import { okruzhaet } from "./data/okruzhaet";
 
-export type { GradeContent, LessonStage, SlideUnit, SubjectContent, TopicContent } from "./types";
+export type {
+  GradeContent,
+  GradeSection,
+  LessonStage,
+  SlideUnit,
+  SubjectContent,
+  TopicContent,
+  TopicLayer,
+} from "./types";
+
+export { getTopicLayer } from "./topic-layer";
 
 /** Все предметы с наполненным содержанием, по слагу предмета. */
 export const TOPIC_CONTENT: Record<string, SubjectContent> = {
