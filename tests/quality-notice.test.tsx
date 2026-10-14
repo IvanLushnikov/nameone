@@ -42,6 +42,7 @@ const clean: QualityLoss = {
   topUpAdded: 0,
   stillMissing: 0,
   filterBackedOff: false,
+    repeatedSkills: 0,
 };
 
 const noVariants: VariantStatus = { expected: 1, delivered: 1, degraded: false, retried: false };
