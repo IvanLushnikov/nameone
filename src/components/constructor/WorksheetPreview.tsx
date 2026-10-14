@@ -233,7 +233,13 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
             {/* Подвал */}
             <footer className="mt-10 pt-4 border-t border-warm-200 flex items-center justify-between text-[10px] text-[color:var(--text-muted)]">
               <span>УчЛист · {SITE_HOST}</span>
-              <span>Стр. 1 из {withAnswers ? 2 : 1}</span>
+              {/* «ЛИСТ», а не «СТР.». Это число частей материала (задания и
+                  ответы), а не страниц: подвал печатается на каждой странице
+                  листа, и на листе из 30 заданий учитель получал «Стр. 1 из 2»
+                  на всех шести страницах. Слово «стр.» обещало нумерацию
+                  страниц, которой подвал не ведёт: настоящей нумерации
+                  страниц в печати здесь нет. */}
+              <span>Лист 1 из {withAnswers ? 2 : 1}</span>
             </footer>
           </article>
         </WorksheetScale>
@@ -286,7 +292,7 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
 
                 <footer className="mt-10 pt-4 border-t border-warm-200 flex items-center justify-between text-[10px] text-[color:var(--text-muted)]">
                   <span>УчЛист · {SITE_HOST}</span>
-                  <span>Стр. 2 из 2 · только для учителя</span>
+                  <span>Лист 2 из 2 · ответы только для учителя</span>
                 </footer>
               </article>
             </WorksheetScale>
