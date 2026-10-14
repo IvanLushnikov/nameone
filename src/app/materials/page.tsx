@@ -4,6 +4,7 @@ import { ArrowRight, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { MaterialsFilter, type MaterialFilterItem } from "@/components/materials/MaterialsFilter";
+import { SubmitMaterialDialog, UserMaterialsList } from "@/components/materials/SubmitMaterialDialog";
 import {
   MATERIALS_CATALOG,
   MATERIAL_PURPOSE_HINTS,
@@ -101,6 +102,18 @@ const subjectMeta = Object.fromEntries(
 );
 
 /**
+ * Предметы для формы сдачи материала.
+ *
+ * Список тот же, что у фильтра и конструктора, — источник один. Форма уходит в
+ * браузер, поэтому предметы передаются пропсом, а не импортом в клиентский
+ * компонент: иначе в бандл уехал бы весь файл таксономии.
+ */
+const submitSubjectOptions = subjects.map((s) => ({
+  value: s.slug,
+  label: `${s.emoji} ${s.shortTitle}`,
+}));
+
+/**
  * Оформление списка УМК задано один раз на контейнере через
  * arbitrary-варианты Tailwind (`[&>div]:…`, `[&>div>a]:…`).
  *
@@ -192,6 +205,9 @@ export default function MaterialsHubPage() {
               <Button as="link" href="#categories" variant="secondary" size="lg">
                 Смотреть по цели
               </Button>
+              {/* Кнопка авторской части листа 5.1.1: учитель отдаёт свой материал
+                  на модерацию прямо с этой страницы. */}
+              <SubmitMaterialDialog subjectOptions={submitSubjectOptions} />
             </div>
           </div>
         </div>
@@ -225,6 +241,39 @@ export default function MaterialsHubPage() {
             purposeLabels={MATERIAL_PURPOSE_LABELS}
             subjectMeta={subjectMeta}
           />
+        </div>
+      </section>
+
+      {/*
+        Материалы учителей (лист 5.1.1).
+
+        Отдельный блок от редакционного каталога не из оформления, а из смысла:
+        это ЧУЖАЯ работа, которую принёс человек. Такую публикацию нельзя смешивать
+        с нашими образцами — иначе учитель, взяв материал, не поймёт, чей он, и
+        решит, что это наша проверка.
+
+        Что здесь НЕ написано: сколько учителей смотрит каталог, сколько раз
+        скачали и «как набрать популярность». Счётчик скачиваний настоящий и
+        считает нажатия, а аудитории у нас нет — обещать её нечем.
+
+        Список приезжает в браузер: сайт собран статически, а материалы появляются
+        после модерации, то есть уже после сборки. Поэтому здесь нет ни числа
+        материалов, ни счётчика в заголовке — их пришлось бы выдумать.
+      */}
+      <section id="teacher-materials" className="py-12 sm:py-16 bg-warm-50 border-y border-warm-100">
+        <div className="container-tight">
+          <div className="mb-6 max-w-2xl">
+            <h2 className="text-2xl sm:text-3xl font-display font-bold tracking-tight">
+              Материалы учителей
+            </h2>
+            <p className="mt-2 text-sm text-warm-600">
+              Сюда попадают работы, которые учитель принёс сам, а владелец сайта
+              посмотрел и разрешил. У каждого материала подписан автор — так вы
+              видите, чья это работа. Чужую работу можно скачать и взять в свой
+              кабинет, но нельзя поправить или снять: это делает только автор.
+            </p>
+          </div>
+          <UserMaterialsList />
         </div>
       </section>
 

@@ -6,9 +6,14 @@
  * авторизации» должна быть видна в коде. Учительские роуты — в
  * `routes/interactives.ts` под `requireAuth`.
  *
+ *   GET  /api/public/interactives/p/:code                          — короткая ссылка `/p/<код>`
  *   GET  /api/public/interactives/:token                            — конфиг для ученика
  *   POST /api/public/interactives/:token/attempts                   — начать/восстановить попытку
  *   POST /api/public/interactives/:token/attempts/:attemptToken/submit — отправить результат
+ *
+ * Первый путь в списке отличается от остальных: это НЕ API для ученика, а
+ * разворот ссылки для доски (`https://uchlist.ru/p/<код>` → 302 на
+ * `/play/?t=<токен>`). Подробности — в секции «КОРОТКАЯ ССЫЛКА ДЛЯ ДОСКИ» внизу.
  *
  * ═══ ЖЁСТКОЕ ПРАВИЛО БЕЗОПАСНОСТИ ════════════════════════════════════════
  * 1. `GET /:token` отдаёт РОВНО `config_json` и ничего больше. Ни `user_id`,
@@ -540,6 +545,239 @@ publicInteractivesRouter.post("/:token/attempts/:attemptToken/submit", submitLim
     detail: graded.detail,
     // Сколько человек уже закончили игру — фронт показывает это в финале.
     attemptsCount: await countFinishedAttempts(c.env.DB, row.id),
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// КОРОТКАЯ ССЫЛКА ДЛЯ ДОСКИ — `/p/<код>` (лист 6.1.8)
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * ─── Где живёт `/p/<код>` и почему его отдаёт сервер ─────────────────────────
+ *
+ * Сайт собирается статикой (`next.config.mjs` → `output: "export"`). Страницы
+ * «про код» в сборке нет и быть не может: коды рождаются в рантайме. `/p/<код>`
+ * — не страница, а разворот ссылки, поэтому раздаёт его бэкенд.
+ *
+ * Цепочка целиком:
+ *   https://uchlist.ru/p/<код>            ← учитель пишет на доске
+ *     → Pages, правило `/p/*` в `public/_redirects` (прокси, не 301)
+ *       → https://api.uchlist.ru/api/public/interactives/p/<код>
+ *         → воркер: 302 на https://uchlist.ru/play/?t=<полный токен>
+ *
+ * ПОЧЕМУ ПУТЬ НА ВОРКЕРЕ ИМЕЕТ ПРЕФИКС `/api/public/interactives`. Роутер
+ * подключён в `src/index.ts` как `app.route("/api/public/interactives", …)`,
+ * а Hono при `route()` НАВЕШИВАЕТ префикс на каждый путь подроутка (проверено
+ * в `hono/dist/hono-base.js`, `route()` → `basePath()` → `#addRoute`). Снять
+ * этот префикс изнутри файла нельзя. Путь на воркере длиннее ровно на
+ * `/api/public/interactives`, но учитель его не видит: он написан один раз в
+ * `_redirects` и работает на любом домене Pages-проекта.
+ *
+ * ─── Почему код — ПРЕФИКС share_token, а не новая колонка ───────────────────
+ *
+ * Новой колонки/таблицы сознательно нет: миграция 0002 уже применена, а
+ * `src/db/**` — чужая зона. Код = первые 12 символов 32-символьного base62
+ * токена, поэтому:
+ *   • он НИЧЕГО не добавляет к секрету — перебор 12 символов не открывает
+ *     оставшиеся 20 (~119 бит), а чтобы сыграть по длинной ссылке, токен
+ *     по-прежнему нужен целиком;
+ *   • учитель (и ЛК) получает короткую ссылку из токена, который у него и так
+ *     есть: `https://uchlist.ru/p/` + token.slice(0, 12) — ноль запросов в бэк;
+ *   • миграции нет, откат = удалить одну функцию.
+ *
+ * ─── Честная цена решения: индекса по префиксу нет ─────────────────────────
+ *
+ * `substr(share_token, 1, 12) = ?` идёт сканом индекса `UNIQUE(share_token)`
+ * (covering — тело строки не читается). Для таблицы интерактивов это дёшево,
+ * но не бесплатно, поэтому на `/p/` свой лимит: 120/мин на IP — это защита от
+ * бота, а не от класса из 30 человек на школьном Wi-Fi (каждый делает ровно
+ * один запрос на открытие ссылки).
+ */
+
+/** Длина кода в короткой ссылке. Проверяется скриптом `check-short-link.mjs`. */
+const SHORT_CODE_LENGTH = 12;
+
+/** Алфавит кода — тот же base62, что у `share_token` (см. lib/shortid.ts). */
+const SHORT_CODE_ALPHABET_SIZE = 62;
+
+/**
+ * Срок жизни короткой ссылки, ЕСЛИ учитель срок не задавал: 365 дней.
+ *
+ * Требование листа — срок задан явно, а не «навсегда»: интерактив могут
+ * удалить, а ссылка с удалённым материалом не должна открываться вечно. При
+ * этом срок учителя (`expires_at`) всегда выигрывает, если он короче.
+ * Старая длинная ссылка этого правила НЕ касается: у неё `expires_at` NULL
+ * по-прежнему означает «пока учитель не закроет» — раздавать её нельзя.
+ */
+const SHORT_LINK_DEFAULT_TTL_DAYS = 365;
+const SECONDS_PER_DAY = 86_400;
+
+/** Код в ссылке — ровно 12 символов base62. Регистр ЗНАЧИМ. */
+const SHORT_CODE_PATTERN = new RegExp(`^[0-9A-Za-z]{${SHORT_CODE_LENGTH}}$`);
+
+/** Открытие короткой ссылки — 120/мин на IP (одна ссылка = один клик). */
+const shortLinkLimit = rateLimitMiddleware({
+  limit: 120,
+  windowSec: 60,
+  bucket: "interactive-short-link",
+  keyFn: (c) => `ip:${djb2(c.get("ip") ?? "0.0.0.0")}`,
+});
+
+/**
+ * Понятная страница вместо ошибки.
+ *
+ * Ученик или учитель открывает ссылку с телефона. JSON `{"error": …}` здесь
+ * читается как «500, сайт сломан», поэтому отдаём внятную страницу с кодом
+ * 404/410 и подсказкой «попросите учителя». Все подставляемые значения —
+ * статические строки, ничего из базы в HTML не попадает.
+ */
+function shortLinkPage(
+  status: 404 | 410,
+  headline: string,
+  lead: string,
+): Response {
+  const html = `<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>${headline} — УчЛист</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center;
+    justify-content: center; padding: 24px;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #f5f6f8; color: #1f2328; line-height: 1.5;
+  }
+  main { max-width: 460px; width: 100%; text-align: center; }
+  .logo { font-weight: 700; letter-spacing: .02em; color: #2b6cb0; margin: 0 0 20px; }
+  h1 { font-size: 24px; margin: 0 0 12px; }
+  p { margin: 0 0 12px; color: #57606a; }
+  a.home {
+    display: inline-block; margin-top: 12px; padding: 10px 18px;
+    border-radius: 8px; background: #2b6cb0; color: #fff; text-decoration: none;
+  }
+</style>
+</head>
+<body>
+<main>
+  <p class="logo">УчЛист</p>
+  <h1>${headline}</h1>
+  <p>${lead}</p>
+  <p>Спросите учителя ссылку ещё раз — скорее всего, он пришлёт новую.</p>
+  <a class="home" href="/">На главную</a>
+</main>
+</body>
+</html>`;
+
+  return new Response(html, {
+    status,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+      "Referrer-Policy": "no-referrer",
+      "X-Robots-Tag": "noindex, nofollow",
+    },
+  });
+}
+
+const SHORT_LINK_404 = () =>
+  shortLinkPage(
+    404,
+    "Ссылка не работает",
+    "Такой ссылки нет. Возможно, в адресе опечатка или лишний символ.",
+  );
+
+/**
+ * Базовый адрес сайта для ссылки на прохождение.
+ *
+ * В проде `FRONTEND_URL` — список origin'ов через запятую (ради CORS), поэтому
+ * берётся ПЕРВЫЙ. Логика та же, что в `buildPlayUrl` из routes/interactives.ts
+ * (функция там не экспортируется, дублируем её здесь сознательно: три строки).
+ */
+function frontendBase(env: AppEnv["Bindings"]): string {
+  const raw = env.APP_PUBLIC_URL ?? (env.FRONTEND_URL ?? "").split(",")[0] ?? "";
+  return raw.trim().replace(/\/+$/u, "");
+}
+
+/** Момент, когда короткая ссылка этого интерактива перестаёт работать. */
+function shortLinkDeadline(row: ShortLinkRow): number {
+  const teacherDeadline =
+    typeof row.expires_at === "number" && row.expires_at > 0 ? row.expires_at : Number.POSITIVE_INFINITY;
+  // created_at NOT NULL по схеме; если вдруг 0 — считаем срок от «сейчас»,
+  // чтобы битая строка не убила живую игру.
+  const createdAt =
+    typeof row.created_at === "number" && row.created_at > 0
+      ? row.created_at
+      : Math.floor(Date.now() / 1000);
+  return Math.min(teacherDeadline, createdAt + SHORT_LINK_DEFAULT_TTL_DAYS * SECONDS_PER_DAY);
+}
+
+interface ShortLinkRow {
+  id: string;
+  share_token: string;
+  status: string;
+  expires_at: number | null;
+  created_at: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /p/:code — короткая ссылка → страница прохождения
+// ─────────────────────────────────────────────────────────────────────────────
+
+publicInteractivesRouter.get("/p/:code", shortLinkLimit, async (c) => {
+  const code = c.req.param("code");
+
+  // Регистр значим, длина фиксирована: код не той формы — это не «найди
+  // похожий», это «ссылки нет». Ответ тот же 404, что и на несуществующий код,
+  // чтобы по странице нельзя было отличить «нет такого» от «есть, но не то».
+  if (!SHORT_CODE_PATTERN.test(code)) return SHORT_LINK_404();
+
+  const base = frontendBase(c.env);
+  if (!base) {
+    // Конфигурация воркера, а не вина ссылки: честный 500, но не HTML.
+    throwApiError(500, "FRONTEND_URL_MISSING", "Сайт временно недоступен. Попробуйте позже");
+  }
+
+  // Поиск по префиксу, а не по полному токену: так и работает короткий код.
+  // LIMIT 2 — страховка от «нашлось случайно два»: при 62^12 это вероятность
+  // порядка 10^-15, но выбирать наугад из двух чужих игр нельзя.
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, share_token, status, expires_at, created_at
+       FROM interactives
+      WHERE substr(share_token, 1, ?2) = ?1
+      LIMIT 2`,
+  )
+    .bind(code, SHORT_CODE_LENGTH)
+    .all<ShortLinkRow>();
+
+  const [row] = results;
+  if (!row || results.length !== 1) return SHORT_LINK_404();
+
+  if (row.status === "archived") {
+    return shortLinkPage(410, "Игра закрыта", "Учитель закрыл эту игру и больше её не выдаёт.");
+  }
+
+  if (Date.now() >= shortLinkDeadline(row) * 1000) {
+    return shortLinkPage(
+      410,
+      "Срок игры истёк",
+      "Эта ссылка была выдана на один учебный год и больше не открывается.",
+    );
+  }
+
+  // 302, а не 200-HTML: браузер сразу показывает страницу прохождения, адрес
+  // в строке становится рабочим, JS не нужен — с телефона это надёжнее.
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: `${base}/play/?t=${encodeURIComponent(row.share_token)}`,
+      "Cache-Control": "no-store",
+      "Referrer-Policy": "no-referrer",
+    },
   });
 });
 

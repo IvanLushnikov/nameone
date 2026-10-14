@@ -988,3 +988,46 @@ CREATE TABLE IF NOT EXISTS class_student_answers (
 
 CREATE INDEX IF NOT EXISTS idx_csa_student_form ON class_student_answers(student_id, form_id, submitted_at DESC);
 CREATE INDEX IF NOT EXISTS idx_csa_form ON class_student_answers(form_id, submitted_at DESC);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- МАТЕРИАЛЫ УЧИТЕЛЯ (лист 5.1.1, миграция 0003_user_materials.ts)
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Продублировано из миграции ДОСЛОВНО. Расхождение «schema.sql ↔ миграция»
+-- было ценой границ владения: лист не владел этим файлом, и свежая база,
+-- собранная только из schema.sql, не получила бы таблиц учителя. Теперь
+-- пути совпадают — при правке править ОБА.
+
+CREATE TABLE IF NOT EXISTS user_materials (
+  id             TEXT PRIMARY KEY,               -- umt_<12>
+  user_id        TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  -- Подпись автора СНИМКОМ на момент сдачи: переименование в профиле не должно
+  -- молча переписывать подпись под уже опубликованной работой. Почта сюда НЕ
+  -- попадает никогда — иначе авторство превратилось бы в раздачу чужих адресов.
+  author_name    TEXT NOT NULL,
+  title          TEXT NOT NULL,
+  description    TEXT NOT NULL,
+  subject        TEXT NOT NULL,
+  grade          INTEGER NOT NULL,
+  kind           TEXT NOT NULL CHECK (kind IN ('worksheet','cards','bundle')),
+  content_json   TEXT NOT NULL,
+  -- Дефолт — 'pending'. Материал НЕ появляется в общем банке сам.
+  status         TEXT NOT NULL DEFAULT 'pending'
+                   CHECK (status IN ('pending','published','rejected','withdrawn')),
+  reject_reason  TEXT,                          -- обязателен при 'rejected'
+  moderated_by   TEXT,
+  moderated_at   INTEGER,
+  downloads      INTEGER NOT NULL DEFAULT 0,
+  created_at     INTEGER NOT NULL,
+  updated_at     INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_materials_owner ON user_materials(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_materials_public ON user_materials(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS user_material_downloads (
+  id          TEXT PRIMARY KEY,                -- umd_<12>
+  material_id TEXT NOT NULL REFERENCES user_materials(id) ON DELETE CASCADE,
+  created_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_umd_material ON user_material_downloads(material_id, created_at DESC);
