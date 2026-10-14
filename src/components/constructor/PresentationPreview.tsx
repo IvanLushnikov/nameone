@@ -4,6 +4,7 @@ import * as React from "react";
 import type { Presentation, Slide } from "@/lib/types";
 // ТЗ-26 Ф-3: название предмета по-русски вместо внутреннего ключа.
 import { subjectDisplayName } from "@/lib/content/subject-display-name";
+import { MathText } from "@/components/math/MathText";
 import { Button } from "@/components/ui/Button";
 import { Download, Presentation as PresentationIcon } from "lucide-react";
 import { generatePptx, pptxFilename, downloadBlob } from "@/lib/utils/pptx";
@@ -126,7 +127,7 @@ function SlideThumbnail({ slide, index, total }: ThumbProps) {
             isTitle ? "text-base sm:text-lg text-center mt-3" : "text-sm sm:text-base"
           } line-clamp-2`}
         >
-          {slide.title}
+          <MathText text={slide.title} />
         </h3>
 
         {/* Тип-kind ниже заголовка (мелко) */}
@@ -151,7 +152,9 @@ function SlideThumbnail({ slide, index, total }: ThumbProps) {
               {isSummary && (
                 <span className="text-accent-500 shrink-0 leading-snug">{i + 1}.</span>
               )}
-              <span className="line-clamp-1">{b}</span>
+              <span className="line-clamp-1">
+                <MathText text={b} />
+              </span>
             </li>
           ))}
           {(slide.bullets?.length ?? 0) > (isTitle ? 2 : 4) && (
