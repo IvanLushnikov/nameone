@@ -26,12 +26,28 @@
  * Чего панель НЕ делает намеренно: не сохраняет ручные отметки. Эндпоинта
  * для них на бэке нет, поэтому отметки живут только на этом экране — и в
  * интерфейсе написано именно так, а не «сохранится в кабинете».
+ *
+ * ── Досылка страниц (лист 7.1.4) ───────────────────────────────────────────────
+ * Ученик отправил первую страницу, вспомнил вторую — и до этого мог только
+ * начать проверку заново. Теперь на СТРАНИЦЕ ПРОВЕРКИ (а не в кабинете: досылает
+ * он со своего телефона, сразу после работы) есть кнопка, которая зовёт
+ * `POST /photo-checks/:id/pages`: страница уходит последней, разбор
+ * пересчитывается по всей работе целиком, а ручные отметки учителя сливаются
+ * с новым вердиктом машины и остаются на месте.
+ *
+ * Почему HTTP здесь, а не в `lib/photo-check/api.ts`: этот клиент —
+ * `appendPhotoPages` — закрывает дыру в эндпоинте, который писал другой лист, и
+ * живёт рядом с кнопкой, которая его зовёт. В `api.ts` его положить нельзя
+ * без правки чужого файла, а дублировать весь клиент проверки ради одной
+ * функции — значит завести второе место, где BASE и разбор ошибок могут
+ * разойтись. Когда владелец `api.ts` откроет файл, функцию стоит перенести
+ * туда: контракт ответа у неё такой же, как у `runPhotoCheck`.
  */
 
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { PhotoUpload } from "./PhotoUpload";
+import { PhotoUpload, MAX_PAGES } from "./PhotoUpload";
 import { PhotoCheckResultView } from "./PhotoCheckResult";
 import { CheckSteps, photoCheckSteps } from "./CheckSteps";
 import {
@@ -50,7 +66,126 @@ import {
 } from "@/lib/photo-check/confidence";
 import type { PhotoCheckResult, PhotoCheckTask } from "@/lib/photo-check/types";
 import { ManualMarksEditor, type ManualMarkDraft } from "./ManualMarksEditor";
+import { compressImage, formatBytes } from "@/lib/utils/image";
 import { trackEvent } from "@/lib/track";
+
+/** Префикс проверки — тот же, что у клиента в `lib/photo-check/api.ts`. */
+const PHOTO_BASE = "/api/assignments/photo-checks";
+
+/** Сколько весит одна страница до сжатия. Ровно тот же потолок, что на бэке. */
+const MAX_PAGE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Человеческий текст ошибки из тела ответа.
+ *
+ * Копия `serverText` из `api.ts` (там она приватная). Логика одна и та же
+ * специально: машиный код вроде `TOO_MANY_FILES` учителю ничего не говорит,
+ * а серверные тексты («в этой работе уже 3 страницы из 10») говорит всё.
+ */
+function appendServerText(json: unknown): string | undefined {
+  const body = (json ?? {}) as { error?: unknown; message?: unknown; detail?: unknown };
+  for (const value of [body.error, body.message, body.detail]) {
+    if (typeof value !== "string") continue;
+    const text = value.trim();
+    if (!text) continue;
+    if (/^[A-Z][A-Z0-9_]*$/.test(text)) continue;
+    return text;
+  }
+  return undefined;
+}
+
+/** Ответ досылки в наш union. Никогда не бросает наружу. */
+function appendFailure(res: Response, json: unknown): PhotoCheckApiError {
+  const code = ((json as { code?: string } | null)?.code ?? "").toUpperCase();
+  const text = appendServerText(json);
+  const status = res.status;
+  const pick = (error: PhotoCheckApiErrorCode): PhotoCheckApiError => ({
+    ok: false,
+    error,
+    message: text || ERROR_TEXT[error],
+    status,
+  });
+  if (status === 401) return pick("unauthorized");
+  if (status === 402) return pick("quota");
+  if (status === 413) return pick("too_large");
+  if (status === 404) return pick("not_found");
+  if (status === 503 || code === "LLM_UNAVAILABLE") return pick("llm_unavailable");
+  if (status === 400) return pick("bad_request");
+  return pick("http");
+}
+
+/**
+ * POST /photo-checks/:id/pages — дослать страницы к готовой работе.
+ *
+ * Файлы кладутся в FormData под именем `image` по очереди, и порядок этот —
+ * порядок страниц: сервер кладет их следующими номерами и перепроверяет работу
+ * целиком строго 1, 2, 3… Поэтому файл, выбранный первым, станет страницей N+1,
+ * а не «первой страницей заново».
+ *
+ * Согласие на обработку персональных данных НЕ отправляется: оно уже было
+ * дано при первой загрузке этой работы, а сервер это прямо оговаривает
+ * (`readPhotoPagesForm`). Спрашивать учителя второй раз про то же самое —
+ * нечестно.
+ *
+ * Эталоны тоже не отправляются: сервер возьмёт их из уже сохранённых заданий
+ * проверки, иначе пришлось бы диктовать учителю то, что он уже отдавал.
+ */
+export async function appendPhotoPages(args: {
+  checkId: string;
+  blobs: Blob[];
+  subject?: string | null;
+  grade?: number | null;
+  detail?: "low" | "high";
+}): Promise<PhotoCheckResult | PhotoCheckApiError> {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "";
+  if (!apiUrl) return { ok: false, error: "no_api_url", message: ERROR_TEXT.no_api_url };
+  if (args.blobs.length === 0) {
+    return { ok: false, error: "bad_request", message: "Не выбрано ни одной страницы." };
+  }
+
+  const fd = new FormData();
+  args.blobs.forEach((blob, i) => fd.append("image", blob, `page-append-${i + 1}.jpg`));
+  fd.append("detail", args.detail ?? "low");
+  // `worksheetId` здесь НЕ отправляется: досылка работает с уже сохранённой
+  // проверкой, и `readPhotoPagesForm` его всё равно не читает.
+  if (args.subject) fd.append("subject", args.subject);
+  if (args.grade != null) fd.append("grade", String(args.grade));
+
+  let res: Response;
+  try {
+    res = await fetch(`${apiUrl}${PHOTO_BASE}/${encodeURIComponent(args.checkId)}/pages`, {
+      method: "POST",
+      body: fd,
+      credentials: "include",
+      cache: "no-store",
+      // Content-Type намеренно НЕ задаём — браузер проставит boundary.
+    });
+  } catch {
+    return { ok: false, error: "network", message: ERROR_TEXT.network };
+  }
+
+  const json = (await res.json().catch(() => null)) as PhotoCheckResult | null;
+  if (!res.ok) return appendFailure(res, json);
+  if (!json || json.ok !== true) {
+    return { ok: false, error: "http", message: ERROR_TEXT.http };
+  }
+  return json;
+}
+
+/**
+ * Сколько страниц в работе — из ответа сервера.
+ *
+ * Поле `pages` сервер отдаёт всегда (`buildCheckDto`), но в типе
+ * `PhotoCheckResult` его нет: `lib/photo-check/types.ts` принадлежит другому
+ * листу, поэтому здесь узкое приведение вместо правки чужого контракта.
+ *
+ * `fallback` — то, что мы знаем наверняка: сколько файлов ушло с проверкой или
+ * с досылкой. Лучше известное число, чем пустое место.
+ */
+function pagesFromDto(dto: PhotoCheckResult, fallback: number | null): number | null {
+  const raw = (dto as { pages?: unknown }).pages;
+  return typeof raw === "number" && raw > 0 ? raw : fallback;
+}
 
 /** Эталонное задание в том виде, в каком его прокидывает конструктор. */
 export interface PhotoCheckTaskInput {
@@ -137,6 +272,26 @@ export function PhotoCheckPanel({
   const [marksError, setMarksError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
+
+  /**
+   * Сколько страниц в ЭТОЙ работе сейчас. null = фото удалены и число
+   * восстановить нельзя; тогда досылки не будет (кнопки без работающего
+   * запроса — это враньё, а «дослать к удалённым фото» всё равно отказ).
+   */
+  const [pages, setPages] = useState<number | null>(null);
+  /** Открыт ли блок выбора страницы для досылки. */
+  const [appendOpen, setAppendOpen] = useState(false);
+  const [appendFiles, setAppendFiles] = useState<File[]>([]);
+  const [appending, setAppending] = useState(false);
+  /** Отказ СЕРВЕРА при досылке. Показан словами, разбор при этом не трогаем. */
+  const [appendError, setAppendError] = useState<string | null>(null);
+  /** Отказ на этапе выбора файла — подсказка про конкретный файл. */
+  const [appendPickError, setAppendPickError] = useState<string | null>(null);
+  /** Что изменилось после успешной досылки — одним предложением. */
+  const [appendDone, setAppendDone] = useState<string | null>(null);
+
+  /** Сколько страниц сервер ещё примет в эту работу. */
+  const pagesRoom = pages === null ? 0 : Math.max(0, MAX_PAGES - pages);
 
   // `local-ws_xxx` — лист не в D1, эталон уходит телом запроса.
   const worksheetId = useMemo(
@@ -238,6 +393,10 @@ export function PhotoCheckPanel({
       if (res.status === "failed") {
         setResult(res);
         setMarksError(null);
+        // Страницы в работе есть даже у неуспешной проверки — их прислали и
+        // они лежат, просто разобрать не вышло. Число нужно, чтобы блок
+        // досылки не врал «страниц нет».
+        setPages(pagesFromDto(res, files.length));
         setState("result");
         trackEvent("photo_check_failed", { error: "recognition_failed" });
         return;
@@ -248,6 +407,7 @@ export function PhotoCheckPanel({
 
       setResult(res);
       setMarksError(null);
+      setPages(pagesFromDto(res, files.length));
       setState("result");
 
       // Процент наружу уходит только когда ВСЕ задания прочитаны уверенно.
@@ -299,6 +459,12 @@ export function PhotoCheckPanel({
     setError(null);
     setErrorCode(null);
     setMarksError(null);
+    setPages(null);
+    setAppendOpen(false);
+    setAppendFiles([]);
+    setAppendError(null);
+    setAppendPickError(null);
+    setAppendDone(null);
     setState("idle");
   }
 
@@ -333,6 +499,135 @@ export function PhotoCheckPanel({
     setError(null);
     setErrorCode(null);
     setState("idle");
+  }
+
+  /**
+   * Взять страницы для досылки: тот же отбор, что при первой загрузке —
+   * тип, 8 МБ и сжатие (сжатое фото и дешевле для распознавания, и меньше по
+   * весу на мобильном интернете).
+   *
+   * Ошибка здесь — про конкретный файл, поэтому она своя и не смешивается с
+   * отказом сервера: «ваш снимок 9 МБ» и «сервис недоступен» — разные советы.
+   */
+  async function pickAppendPages(candidates: FileList | null) {
+    if (!candidates) return;
+    setAppendPickError(null);
+
+    const picked = Array.from(candidates);
+    // Лишние страницы не выкидываем МОЛЧА: ученик отправил бы в работу работу,
+    // которой там нет, и потом удивлялся бы оценке. Сказано словами — сколько
+    // ещё помещается в эту работу.
+    if (picked.length > pagesRoom) {
+      setAppendPickError(
+        `В эту работу помещается ещё ${pagesRoom} ${plural(pagesRoom, "страница", "страницы", "страниц")}. ` +
+          `Лишние не поедут — выберите их по одной.`,
+      );
+      return;
+    }
+
+    const normalized: File[] = [];
+    for (const file of picked) {
+      if (!/^image\/(jpeg|jpg|png|webp)$/i.test(file.type)) {
+        setAppendPickError(`«${file.name}» — нужен JPEG, PNG или WebP.`);
+        return;
+      }
+      if (file.size > MAX_PAGE_BYTES) {
+        setAppendPickError(
+          `«${file.name}» больше 8 МБ (${formatBytes(file.size)}). Снимите в меньшем разрешении.`,
+        );
+        return;
+      }
+      try {
+        const compressed = await compressImage(file);
+        normalized.push(new File([compressed], file.name, { type: compressed.type }));
+      } catch {
+        setAppendPickError(`Не удалось прочитать «${file.name}». Попробуйте переснять.`);
+        return;
+      }
+    }
+    if (normalized.length > 0) setAppendFiles(normalized);
+  }
+
+  /**
+   * Дослать страницу к готовой работе (лист 7.1.4).
+   *
+   * ЧТО ПРОИСХОДИТ НА СЕРВЕРЕ: новая страница ложится следующим номером, вся
+   * работа перепроверяется целиком строго 1…N, а ручные отметки учителя
+   * сливаются с новым вердиктом машины. Поэтому «разбор потерялся» здесь
+   * невозможно, а «отметки исчезли» — тем более.
+   *
+   * ПОЧЕМУ ПРИ ОТКАЗЕ НЕ ТРОГАЕМ `result`: сервер мог не успеть ничего сделать,
+   * и показать учителю новый разбор после отказа — значит показать ему то,
+   * чего не случилось. Прежний разбор остаётся на экране, под ним — текст
+   * ошибки, а выбранный файл остаётся в поле, чтобы повтор был в одно касание.
+   */
+  async function appendPages() {
+    if (!result || appending) return; // `appending` — защита от двойного нажатия
+
+    if (pages === null || result.photoDeleted) {
+      setAppendError("Фото этой работы удалены — дослать к ним страницы уже не к чему.");
+      return;
+    }
+    if (pagesRoom <= 0) {
+      setAppendError(
+        `В работе уже ${MAX_PAGES} страниц — это потолок, дослать больше нельзя.`,
+      );
+      return;
+    }
+    if (appendFiles.length === 0) {
+      setAppendError("Выберите страницу — без снимка досылать нечего.");
+      return;
+    }
+    if (appendFiles.length > pagesRoom) {
+      setAppendError(
+        `В этой работе уже ${pages} ${plural(pages, "страница", "страницы", "страниц")} ` +
+          `из ${MAX_PAGES}, дослать можно ${pagesRoom}. Уберите лишние.`,
+      );
+      return;
+    }
+
+    const added = appendFiles.length;
+    setAppending(true);
+    setAppendError(null);
+    setAppendDone(null);
+
+    const res = await appendPhotoPages({
+      checkId: result.checkId,
+      blobs: appendFiles,
+      detail: "low",
+    });
+
+    setAppending(false);
+
+    if (!res.ok) {
+      setAppendError(res.message ?? "Не удалось дослать страницу — попробуйте ещё раз.");
+      trackEvent("photo_check_append_failed", { check_id: result.checkId, error: res.error });
+      return;
+    }
+
+    // Ответ сервера подставляем ЦЕЛИКОМ: в нём уже слитые ручные отметки и
+    // пересчитанный по всем страницам итог. Считать что-то на клиенте
+    // значит держать вторую версию арифметики того же ответа.
+    const totalPages = pagesFromDto(res, pages + added);
+    const part = partitionByConfidence(res.items);
+    setResult(res);
+    setPages(totalPages);
+    setAppendFiles([]);
+    setAppendDone(
+      `Страница ${pages + 1} добавлена — теперь в работе ${totalPages} ` +
+        `${plural(totalPages ?? added, "страница", "страницы", "страниц")}. ` +
+        `Разбор пересчитан по всем страницам, ваши отметки на месте.`,
+    );
+    trackEvent("photo_check_pages_appended", {
+      check_id: res.checkId,
+      added,
+      pages_total: totalPages,
+      pending_review: res.pendingReview ?? 0,
+    });
+    onResult?.({
+      source: "photo",
+      percentage: part.review.length === 0 ? (res.percentage ?? undefined) : undefined,
+    });
   }
 
   /**
@@ -385,7 +680,7 @@ export function PhotoCheckPanel({
               ? "Модель не разобрала часть заданий — отметки по ним ставите вы."
               : state === "pending"
                 ? "Фото отправлено, идёт разбор."
-                : "Сфотографируйте до трёх страниц тетради с ответами — по порядку, одна страница на фото. Будем сверять с эталоном по " +
+                : "Сфотографируйте страницы тетради с ответами — по порядку, одна страница на фото. Запомнили страницу на фото лишним? Её можно будет дослать, не начиная проверку заново. Будем сверять с эталоном по " +
                   tasks.length +
                   " " +
                   plural(tasks.length, "заданию", "заданиям", "заданиям") +
@@ -428,6 +723,7 @@ export function PhotoCheckPanel({
               {viewResult && (
                 <PhotoCheckResultView
                   result={viewResult}
+                  pages={pages}
                   onDeletePhoto={removePhoto}
                   checkId={viewResult.checkId}
                   onPrint={() => {
@@ -437,6 +733,32 @@ export function PhotoCheckPanel({
                   onStartOver={startOver}
                 />
               )}
+
+              {/* Досылка — ПОСЛЕ разбора и под ним, а не вместо него. Это
+                  дополнение к готовой работе, а не другой способ её начать, и
+                  ученик с телефона видит её сразу после «Работа проверена». */}
+              <AppendPages
+                pages={pages}
+                room={pagesRoom}
+                photoDeleted={result.photoDeleted === true}
+                open={appendOpen}
+                files={appendFiles}
+                sending={appending}
+                error={appendError}
+                pickError={appendPickError}
+                done={appendDone}
+                onToggle={(next) => {
+                  setAppendOpen(next);
+                  if (!next) {
+                    setAppendFiles([]);
+                    setAppendPickError(null);
+                    setAppendError(null);
+                  }
+                }}
+                onPick={pickAppendPages}
+                onRemove={() => setAppendFiles([])}
+                onSend={appendPages}
+              />
             </>
           )}
         </div>
@@ -761,6 +1083,189 @@ function QuotaLine({ quota }: { quota: { left: number; limit: number | null } | 
       <Button as="link" href="/pricing" variant="ghost" size="sm" className="h-auto px-0 py-0">
         Посмотреть тарифы
       </Button>
+    </div>
+  );
+}
+
+/**
+ * Досылка страницы к готовой работе (лист 7.1.4).
+ *
+ * ПОЧЕМУ ОТДЕЛЬНЫМ БЛОКОМ, А НЕ ЕЩЕ ОДНОЙ КНОПКОЙ В РЯДОК: здесь ученик
+ * выбирает снимок на телефоне, и кнопка должна быть рядом с ним — иначе
+ * «дослать» означало бы «открыть, выбрать файл, вернуться, нажать».
+ *
+ * ЧТО БЛОК ОБЯЗАН СКАЗАТЬ СРАЗУ (и не больше):
+ *   - сколько страниц в работе сейчас — иначе «дослать» не значит ничего;
+ *   - что разбор пересчитается по ВСЕЙ работе, а не по новой странице: иначе
+ *     кажется, что досланное прошло отдельной проверкой;
+ *   - что ручные отметки останутся (учитель уже мог половину поправить);
+ *   - когда потолок исчерпан — тогда кнопки нет, и это сказано словами.
+ *
+ * Чего блок НЕ делает: не спрашивает согласие на обработку фото второй раз.
+ * Оно дано при первой загрузке этой же работы, и сервер это оговаривает.
+ */
+function AppendPages({
+  pages,
+  room,
+  photoDeleted,
+  open,
+  files,
+  sending,
+  error,
+  pickError,
+  done,
+  onToggle,
+  onPick,
+  onRemove,
+  onSend,
+}: {
+  pages: number | null;
+  room: number;
+  photoDeleted: boolean;
+  open: boolean;
+  files: File[];
+  sending: boolean;
+  error: string | null;
+  pickError: string | null;
+  done: string | null;
+  onToggle: (next: boolean) => void;
+  onPick: (files: FileList | null) => void;
+  onRemove: () => void;
+  onSend: () => void;
+}) {
+  // Фото удалены: досылать не к чему, и показывать кнопку было бы враньём —
+  // сервер откажет на любой снимок.
+  if (pages === null || photoDeleted) {
+    return (
+      <div className="rounded-2xl border border-warm-100 bg-warm-50 px-4 py-3">
+        <p className="text-sm text-warm-700 m-0">
+          Дослать страницу уже нельзя: фото этой работы удалены. Разбор на месте.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-warm-100 bg-warm-50 px-4 py-4 sm:px-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-warm-950 m-0">Забыли страницу?</p>
+          <p className="text-xs text-warm-600 mt-1 mb-0 max-w-2xl">
+            {room > 0 ? (
+              <>
+                В работе {pages} {plural(pages, "страница", "страницы", "страниц")},{" "}
+                дослать можно ещё {room}. Новая страница станет последней, а разбор
+                пересчитается по всей работе целиком — те отметки, что вы уже
+                поставили, останутся на месте.
+              </>
+            ) : (
+              <>
+                В работе уже {MAX_PAGES} страниц — это потолок, дослать больше нельзя.
+              </>
+            )}
+          </p>
+        </div>
+
+        {room > 0 && !open && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => onToggle(true)}
+            className="no-print"
+          >
+            Дослать страницу
+          </Button>
+        )}
+      </div>
+
+      {open && room > 0 && (
+        <div className="mt-3 space-y-3">
+          <label
+            className={`flex items-center justify-center rounded-xl border-2 border-dashed border-warm-200 bg-white px-4 py-3 text-center text-sm font-medium text-warm-900 ${
+              sending ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-brand-400"
+            }`}
+          >
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              disabled={sending}
+              onChange={(e) => {
+                void onPick(e.target.files);
+                // Сбрасываем значение: повторный выбор того же файла иначе не
+                // вызовет change — а ученик именно это и делает, когда
+                // переснял страницу.
+                e.target.value = "";
+              }}
+              className="sr-only"
+            />
+            {files.length > 0 ? "Заменить страницу" : "Сфотографировать страницу"}
+          </label>
+
+          {files.length > 0 && (
+            <ul className="space-y-1.5">
+              {files.map((f, i) => (
+                <li
+                  key={`${f.name}-${i}`}
+                  className="flex flex-wrap items-center justify-between gap-2 text-xs text-warm-700"
+                >
+                  <span>
+                    <span className="font-medium text-warm-900">Страница {(pages ?? 0) + i + 1}</span>
+                    {" · "}
+                    {f.name} · {formatBytes(f.size)}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={onRemove}
+                    disabled={sending}
+                    className="no-print"
+                  >
+                    Убрать
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2 no-print">
+            <Button type="button" onClick={onSend} loading={sending}>
+              {sending ? "Перепроверяем работу" : "Дослать выбранные страницы"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onToggle(false)}
+              disabled={sending}
+            >
+              Отмена
+            </Button>
+            <span className="text-xs text-warm-500">
+              Обычно около минуты — заново читаем всю работу.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {(pickError || error) && (
+        <p
+          role="status"
+          className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-900"
+        >
+          {pickError ?? error}
+        </p>
+      )}
+
+      {done && (
+        <p
+          role="status"
+          className="mt-3 rounded-xl border border-brand-200 bg-brand-50 px-3.5 py-2.5 text-sm text-brand-900"
+        >
+          {done}
+        </p>
+      )}
     </div>
   );
 }

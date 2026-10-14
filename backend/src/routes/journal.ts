@@ -18,6 +18,12 @@
  * часть ЖУРНАЛА УЧИТЕЛЯ, а не создания формы. Учитель приходит сюда, чтобы
  * посмотреть, кто поставил отметку, и поправить машину. Всё, что он здесь
  * делает, требует входа, и каждая ручка проверяет, что форма или ответ — его.
+ *
+ * ── Число страниц в строке (лист 7.1.4) ───────────────────────────────────────
+ * Строка ленты отдаёт ещё `pages` — сколько страниц в работе. Учитель видит
+ * это, не открывая саму работу: две страницы вместо четырёх — это не «две
+ * страницы», а половина работы, и узнать об этом после разбора поздно.
+ * Число не хранится, а считается по бакету — см. `countPagesForJournal`.
  */
 
 import { Hono } from "hono";
@@ -26,6 +32,7 @@ import type { D1Database } from "@cloudflare/workers-types";
 import { requireAuth } from "../middleware/auth";
 import { BadRequestError, NotFoundError } from "../lib/errors";
 import { listJournalEntries } from "../db/journal";
+import { countPhotoPages } from "./f06";
 import {
   applyTeacherOverride,
   buildCheckMeta,
@@ -44,6 +51,89 @@ const journalRouter = new Hono<AppEnv>();
 /** Потолок страницы. Учитель за вечер делает десятки, не тысячи работ. */
 const MAX_LIMIT = 50;
 const DEFAULT_LIMIT = 20;
+
+/**
+ * Сколько страниц в работе — по каждой строке ленты.
+ *
+ * ЗАЧЕМ ЭТО В ЖУРНАЛЕ: «сколько страниц в работе» — вопрос, который учитель
+ * задаёт ДО открытия работы (а две страницы вместо одной — это половина
+ * работы вместо всей). Внутри DTO проверки поле `pages` есть, а в строке
+ * ленты его не было: число просто не доезжало до типа строки.
+ *
+ * ПОЧЕМУ СЧИТАЕМ В R2, А НЕ БЕРЁМ ИЗ БАЗЫ. Отдельной колонки с числом
+ * страниц нет, и миграция D1 в этот заход не входит (решение владельца —
+ * см. блок про суффиксы в `f06.ts`). Число выводится из ключей тем же
+ * счётчиком, что и в DTO проверки, — иначе строка журнала и открытая работа
+ * показали бы разные числа на одной и той же работе.
+ *
+ * null = число страниц НЕИЗВЕСТНО потому, что фото удалены по семидневному
+ * retention или у строки нет проверки. Не ноль и не единица: правдоподобное
+ * число без источника — выдумка, на которую потом ссылается вся остальная
+ * статистика.
+ *
+ * ТРИ СОСТОЯНИЯ, А НЕ ДВА. Если бакет не ответил (сеть, 5xx), число не
+ * известно по другой причине, и говорить «фото удалены» — тоже враньё. В этом
+ * случае поле просто НЕ ОТДАЁТСЯ, и строка журнала не показывает ничего:
+ * отсутствие числа честнее выдуманной причины.
+ *
+ * СТОИТЬ. На каждую строку — до `MAX_PHOTOS` запросов HEAD в бакет, с
+ * остановкой на первом пробеле. Поэтому строки считаются небольшими
+ * пачками, а не все сразу: двадцать строк по два HEAD — это нормально, а
+ * пятьдесят строк разом упираются в лимит подзапросов воркера.
+ */
+const PAGES_CHUNK = 8;
+
+interface PhotoPagesRow {
+  id: string;
+  r2_key: string | null;
+  deleted_at: number | null;
+}
+
+/**
+ * checkId → число страниц. `null` — фото удалены, ОТСУТСТВУЕТ — не смогли
+ * посчитать. Ключа в `JSON.stringify` не будет — поле у строки не появится.
+ */
+async function countPagesForJournal(
+  db: D1Database,
+  bucket: R2Bucket,
+  checkIds: string[],
+): Promise<Map<string, number | null>> {
+  const result = new Map<string, number | null>();
+  if (checkIds.length === 0) return result;
+
+  const placeholders = checkIds.map((_, i) => `?${i + 1}`).join(", ");
+  const photos = await db
+    .prepare(
+      `SELECT id, r2_key, deleted_at FROM photo_checks WHERE id IN (${placeholders})`,
+    )
+    .bind(...checkIds)
+    .all<PhotoPagesRow>();
+
+  const byId = new Map(photos.results.map((p) => [p.id, p]));
+  // Строки без живой проверки — честный null, а не пропуск поля.
+  const todo = checkIds.filter((id) => {
+    const row = byId.get(id);
+    const alive = row && row.deleted_at === null && row.r2_key !== null;
+    if (!alive) result.set(id, null);
+    return Boolean(alive);
+  });
+
+  for (let i = 0; i < todo.length; i += PAGES_CHUNK) {
+    const chunk = todo.slice(i, i + PAGES_CHUNK);
+    await Promise.all(
+      chunk.map(async (id) => {
+        try {
+          result.set(id, await countPhotoPages(bucket, byId.get(id)!.r2_key!));
+        } catch {
+          // Бакет не ответил: число неизвестно, причина неизвестна. Ключ не
+          // ставим — строка не покажет ни числа, ни выдуманной причины.
+        }
+      }),
+    );
+  }
+
+  return result;
+}
 
 journalRouter.get("/", async (c) => {
   const user = requireAuth(c);
@@ -64,6 +154,11 @@ journalRouter.get("/", async (c) => {
   }
 
   const rows = await listJournalEntries(c.env.DB, { userId: user.id, limit, before });
+  const pages = await countPagesForJournal(
+    c.env.DB,
+    c.env.PDFS,
+    rows.map((r) => r.check_id),
+  );
 
   return c.json({
     ok: true,
@@ -80,6 +175,11 @@ journalRouter.get("/", async (c) => {
       totalPoints: r.total_points,
       source: r.source,
       pendingTasks: r.pending_tasks,
+      // Сколько страниц в этой работе. null = фото удалены, число
+      // восстановить нельзя; поле отсутствует = не смогли посчитать (см.
+      // countPagesForJournal). Ни то, ни другое не заменяем правдоподобной
+      // единицей.
+      pages: pages.get(r.check_id),
       occurredAt: r.occurred_at,
     })),
     // Курсор есть только когда страница может быть ещё полной — иначе фронт

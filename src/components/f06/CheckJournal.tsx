@@ -10,6 +10,8 @@
  * Что учитель обязан увидеть в каждой строке и почему:
  *   дата/время  — «когда я это проверял», главный вопрос при разборе;
  *   предмет/класс — работы лежат стопкой, без класса они неразличимы;
+ *   страницы    — сколько снимков в работе: не открывая её, учитель должен
+ *                 видеть, что проверил одну страницу или пять;
  *   отметка      — либо число, либо честное «не разобрано»;
  *   бейдж        — ЧЬЁ это решение: модель или человек. Без него журнал через
  *                  месяц не отличить от «ИИ всех завалил», и доверие к фиче
@@ -19,7 +21,7 @@
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { SOURCE_HINT, SOURCE_LABEL, journalBadge, type JournalBadge, type JournalEntry } from "@/lib/photo-check/journal";
+import { SOURCE_HINT, SOURCE_LABEL, journalBadge, journalPagesText, type JournalBadge, type JournalEntry } from "@/lib/photo-check/journal";
 import { plural } from "@/lib/photo-check/confidence";
 
 const BADGE_TONE = {
@@ -54,6 +56,12 @@ export function CheckJournal({ entries }: { entries: JournalEntry[] }) {
             ? ` · ждут вас: ${e.pendingTasks} ${plural(e.pendingTasks, "задание", "задания", "заданий")}`
             : "";
         const badge = journalBadge(e);
+        // Сколько страниц в работе — до открытия самой работы. Работу на двух
+        // страницах и на шести учитель оценивает совсем по-разному, а узнать
+        // об этом после разбора — поздно. `null` (фото удалены) — это причина,
+        // а не число: см. journalPagesText. Поле не пришло вовсе — строку не
+        // рисуем: правдоподобная единица без источника была бы выдумкой.
+        const pagesText = e.pages === undefined ? null : journalPagesText(e.pages);
         return (
           <Card key={e.id} className="p-4 sm:p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -66,6 +74,7 @@ export function CheckJournal({ entries }: { entries: JournalEntry[] }) {
                   {e.grade ? ` · ${e.grade} класс` : ""} ·{" "}
                   {e.earnedPoints} из {e.totalPoints} баллов
                 </p>
+                {pagesText && <p className="text-sm text-warm-600 mt-0.5">Страниц: {pagesText}</p>}
                 <p className="text-sm mt-1">
                   <span className="font-medium text-warm-950">
                     {e.percentage !== null ? `${e.percentage}% · ` : ""}

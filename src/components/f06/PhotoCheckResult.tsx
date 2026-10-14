@@ -36,6 +36,12 @@ import type { PhotoCheckItem, PhotoCheckResult, PhotoVerdict } from "@/lib/photo
 
 export interface PhotoCheckResultViewProps {
   result: PhotoCheckResult;
+  /**
+   * Сколько страниц в работе (лист 7.1.4). null = фото удалены, число
+   * восстановить нельзя — тогда строку не рисуем вовсе, потому что молчаливая
+   * «1» читалась бы как «проверили только первую страницу».
+   */
+  pages?: number | null;
   onDeletePhoto: () => void;
   onPrint: () => void;
   deleting?: boolean;
@@ -47,6 +53,7 @@ export interface PhotoCheckResultViewProps {
 
 export function PhotoCheckResultView({
   result,
+  pages = null,
   onDeletePhoto,
   onPrint,
   deleting = false,
@@ -109,6 +116,15 @@ export function PhotoCheckResultView({
               }.`
             : "проверяли её отметки: ИИ."}
         </p>
+
+        {/* Сколько страниц попало в проверку. После досылки это главный ответ на
+            вопрос «а та страница ученика вообще учтена?» — и он должен стоять
+            здесь, а не оставаться на словах у кнопки внизу экрана. */}
+        {pages !== null && (
+          <p className="text-xs text-warm-600 mt-1 mb-0">
+            Проверено страниц: {pages} {plural(pages, "страница", "страницы", "страниц")}.
+          </p>
+        )}
       </div>
 
       {/* ── Что перепроверить ────────────────────────────────────────────── */}

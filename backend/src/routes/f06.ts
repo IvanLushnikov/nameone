@@ -585,7 +585,9 @@ f06Router.post(
 // РУЧНЫЕ ОТМЕТКИ УЧИТЕЛЯ ПРИ ЭТОМ НЕ ТЕРЯЮТСЯ: они лежат в отдельной таблице
 // (`photo_check_manual_marks`) и после пересчёта снова сливаются с новым
 // вердиктом машины. Это ровно то, ради чего «строка машины» и «строка
-// учителя» не смешиваются.
+// учителя» не смешиваются. И в журнал уходит ИТОГ ПОСЛЕ СЛИЯНИЯ: записать
+// сюда сырой вывод машины — значит показать учителю бейдж «проверил ИИ» на
+// работе, где он половину отметок поставил сам.
 
 f06Router.post(
   "/photo-checks/:id/pages",
@@ -725,7 +727,33 @@ f06Router.post(
         updatedAt: now,
       });
 
-      // 10. Журнал. UPSERT по UNIQUE(user_id, check_id) — та же строка работы
+      // 10. Ручные отметки учителя ПЕРЕЖИВАЮТ досылку — и это обязано быть
+      //     видно, а не только «не потеряться в базе».
+      //
+      //     Сами отметки лежат в отдельной таблице, поэтому пересчёт их не
+      //     стирает. Но если записать в журнал сырой вывод машины, строка
+      //     соврёт: в бейдже встанет «проверил ИИ», сумма разъедется с той,
+      //     что учитель видит в таблице, а его решения станут не видны нигде.
+      //     Поэтому итог и источник считаем по СЛИТОМУ состоянию — ровно как
+      //     после `POST /manual-marks`.
+      const fresh = await getPhotoCheckById(db, id);
+      const items = await getPhotoCheckItems(db, id);
+      const marks = await getManualMarks(db, id);
+      const merged = mergeManualMarks(items.map(toStoredItem), marks.map(toMarkInput));
+
+      // Итог самой проверки обязан совпадать с тем, что на экране: строки
+      // таблицы уже слиты, а шапка из сырого вывода машины выглядела бы так,
+      // будто у учителя пропала часть балла.
+      await updatePhotoCheckScore(db, {
+        id,
+        totalPoints: merged.totalPoints,
+        earnedPoints: merged.earnedPoints,
+        percentage: merged.percentage,
+        gradeMark: merged.gradeMark,
+        needsReview: merged.needsReview,
+      });
+
+      // 11. Журнал. UPSERT по UNIQUE(user_id, check_id) — та же строка работы
       //     обновляется, а не появляется вторая запись про ту же работу.
       //     `occurredAt` — время ИСХОДНОЙ проверки, иначе работа в истории
       //     учителя перепрыгнула бы на время досылки.
@@ -734,12 +762,12 @@ f06Router.post(
         checkId: id,
         subject: form.subject ?? check.subject,
         grade: form.grade ?? check.grade,
-        mark: result.summary.reviewCount === 0 ? result.summary.gradeMark : null,
-        percentage: result.summary.reviewCount === 0 ? result.summary.percentage : null,
-        earnedPoints: result.summary.earnedPoints,
-        totalPoints: result.summary.totalPoints,
-        source: "machine",
-        pendingTasks: result.summary.reviewCount,
+        mark: merged.gradeMark,
+        percentage: merged.percentage,
+        earnedPoints: merged.earnedPoints,
+        totalPoints: merged.totalPoints,
+        source: journalSourceFor(marks.length, merged.pendingReview),
+        pendingTasks: merged.pendingReview,
         occurredAt: check.created_at,
         now,
       });
@@ -754,12 +782,13 @@ f06Router.post(
         latencyMs: result.latencyMs,
       });
 
-      const fresh = await getPhotoCheckById(db, id);
-      const items = await getPhotoCheckItems(db, id);
-      const marks = await getManualMarks(db, id);
+      // Ответ — та же проверка, что и у GET, но уже с пересчитанным по всем
+      // страницам итогом и со СЛИТЫМИ ручными отметками. Фронт подставляет
+      // его целиком: собирать итог на клиенте в двух местах — значит через
+      // месяц показать два разных ответа на один вопрос «какая отметка».
       return c.json(
         {
-          ...(await buildCheckDto(fresh ?? check, items, marks, bucket)),
+          ...(await buildCheckDto({ ...(fresh ?? check), ...scoreOf(merged) }, items, marks, bucket)),
           quota: { used: after, limit, resetAt: nextMonthStart(windowStart) },
         },
         201,
