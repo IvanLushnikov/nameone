@@ -28,6 +28,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Context } from "hono";
 import type { AppEnv } from "../../src/types";
 import { checkPhoto } from "../../src/llm";
+import { MAX_PHOTOS } from "../../src/routes/f06";
 import { estimateImageTokens } from "../../src/llm/cost";
 import { _resetPolzaSingleton } from "../../src/llm/providers/polza";
 import { gradePhotoCheck, type ExpectedTask } from "../../src/services/photoCheckGrading";
@@ -161,17 +162,19 @@ describe("readPhotoForm · сколько страниц принимаем", ()
     expect(parsed.images.map((i) => i.mimeType)).toEqual(["image/jpeg", "image/jpeg", "image/png"]);
   });
 
-  it("четыре фотографии отклоняются, а не игнорируются молча", async () => {
+  it(`${MAX_PHOTOS + 1} фотографий отклоняются, а не игнорируются молча`, async () => {
+    // Число страниц НЕ зашито в тест: раньше здесь стояло «4 отклоняются», и
+    // тест молча учил неправильному потолку, пока лимит не подняли до 10.
     const form = ctxWithForm(
       formOf({
         ...CONSENT,
-        image: [1, 2, 3, 4].map((i) => fakeFile("image/jpeg", 1024, i)),
+        image: Array.from({ length: MAX_PHOTOS + 1 }, (_, i) => fakeFile("image/jpeg", 1024, i)),
       }),
     );
 
     // Ошибка читаема учителю: называем и потолок, и фактическое число.
-    await expect(readPhotoForm(form)).rejects.toThrow(/до 3 фото/);
-    await expect(readPhotoForm(form)).rejects.toThrow(/пришло 4/);
+    await expect(readPhotoForm(form)).rejects.toThrow(new RegExp(`до ${MAX_PHOTOS} фото`));
+    await expect(readPhotoForm(form)).rejects.toThrow(new RegExp(`пришло ${MAX_PHOTOS + 1}`));
   });
 
   it("без фото — прежняя понятная ошибка", async () => {
@@ -293,10 +296,11 @@ describe("удаление фото · все страницы, и старые 
 
     await deletePhotoObjects(bucket as unknown as R2Bucket, "pc/1700000000/uuid.jpg");
 
+    // Список страниц выводится из MAX_PHOTOS, поэтому тест не разъезжается,
+    // когда потолок меняют.
     expect(bucket.deletes).toEqual([
       "pc/1700000000/uuid.jpg",
-      "pc/1700000000/uuid-2.jpg",
-      "pc/1700000000/uuid-3.jpg",
+      ...Array.from({ length: MAX_PHOTOS - 1 }, (_, i) => `pc/1700000000/uuid-${i + 2}.jpg`),
     ]);
   });
 
@@ -304,7 +308,10 @@ describe("удаление фото · все страницы, и старые 
     // Именно этот случай мы НЕ должны сломать: в базе полно записей, где
     // фото было одно, а ключей -2/-3 в R2 не существует.
     const bucket = fakeBucket({
-      missing: new Set(["pc/1700000000/uuid-2.jpg", "pc/1700000000/uuid-3.jpg"]),
+      // Отсутствуют все дополнительные страницы, а не две первые.
+      missing: new Set(
+        Array.from({ length: MAX_PHOTOS - 1 }, (_, i) => `pc/1700000000/uuid-${i + 2}.jpg`),
+      ),
     });
     const warnings: string[] = [];
 
@@ -314,7 +321,7 @@ describe("удаление фото · все страницы, и старые 
 
     // Базовый ключ удалён, отсутствие остальных — не ошибка для учителя.
     expect(bucket.deletes).toEqual(["pc/1700000000/uuid.jpg"]);
-    expect(warnings).toHaveLength(2);
+    expect(warnings).toHaveLength(MAX_PHOTOS - 1);
   });
 
   it("ошибка удаления ПЕРВОГО фото пробрасывается — строка не помечается удалённой", async () => {

@@ -1,11 +1,20 @@
 "use client";
 
 /**
- * Сводка по выданной форме (TZ-12, этап 5, сценарий А, шаги 7–10).
+ * Сводка по выданной форме (ТЗ-12, этап 5, сценарий А, шаги 7–10; этап 8 — лист 6.1.7).
  *
- * Ответ на вопрос учителя: «кто не сделал» — поэтому по умолчанию экран
- * «по ученикам» (ТЗ Решение 2, вариант А для этапа 5). Вкладка «по заданиям»
- * (гистограмма) сознательно отложена на этап 8.
+ * Два вопроса учителя и два блока, в этом порядке:
+ *   1. «где класс спотыкается, что переобъяснить» — блок «По заданиям» СВЕРХУ.
+ *      Это то, ради чего учитель вообще открывает разбор: иначе он читает 30
+ *      работ подряд и считает в уме. Считает `src/lib/lk/form-summary.ts`,
+ *      здесь только рисуем.
+ *   2. «кто не сделал» — список по ученикам (ТЗ Решение 2, вариант А).
+ *
+ * Честность блока «По заданиям» (лист 6.1.7):
+ *   - «попыток не было» — отдельная секция, а НЕ «0 %». Пусто ≠ не усвоено.
+ *   - «не уверен» (needsReview) — третье состояние: ни ошибка, ни успех.
+ *   - рядом с процентом всегда сырые числа «N из M», чтобы порог экрана
+ *     нельзя было принять за измерение.
  *
  * Что видно по ученику (DoD фронта): имя, код класса, балл, % верных, время
  * выполнения. Ответы раскрываются по клику на строку — рядом с каждым номером
@@ -23,7 +32,14 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { getForm, patchForm, fetchFormCsv } from "@/lib/forms/api";
 import { FORM_ERROR_MESSAGE, type FormRecord, type FormResponse } from "@/lib/forms/types";
+import {
+  buildTaskSummary,
+  countsLabel,
+  readTaskSnapshot,
+  type TaskStats,
+} from "@/lib/lk/form-summary";
 import { formatDate } from "@/lib/utils/cn";
+import { splitLatexBlocks } from "@/lib/math/latex";
 import { trackEvent } from "@/lib/track";
 
 /** Порог «подозрительно быстро», ТЗ §5.3. */
@@ -137,6 +153,12 @@ export function FormSummary({ formId, onBack }: FormSummaryProps) {
     (acc, r) => acc + r.answers.filter((a) => a.needsReview).length,
     0,
   );
+  // Снимок заданий бэк отдаёт, но тип `FormRecord` его не объявляет — читаем
+  // осторожно, через `readTaskSnapshot` (битый снимок = «данных пока нет»).
+  const summary = buildTaskSummary({
+    responses,
+    tasks: readTaskSnapshot(form),
+  });
 
   return (
     <div className="space-y-4" data-testid="form-summary">
@@ -198,6 +220,10 @@ export function FormSummary({ formId, onBack }: FormSummaryProps) {
         )}
       </Card>
 
+      {/* Слабое место видно ДО списка работ: учитель не должен открывать 30 работ,
+          чтобы узнать, что класс спотыкается на третьем задании. */}
+      <TaskBreakdown summary={summary} />
+
       {responses.length === 0 ? (
         <Card className="text-center py-10">
           <p className="text-sm text-warm-600">Ответов пока нет</p>
@@ -220,6 +246,162 @@ export function FormSummary({ formId, onBack }: FormSummaryProps) {
         </Card>
       )}
     </div>
+  );
+}
+
+/**
+ * «По заданиям» — ответ на вопрос «что переобъяснить» (ТЗ-12, этап 8).
+ *
+ * Порядок блоков внутри карточки тоже продуктовый:
+ *   1. что делать (худшие задания),
+ *   2. задания без единой попытки — ОТДЕЛЬНО и в конце, с явным «это не
+ *      значит, что тема не усвоена»,
+ *   3. задания, где всё в порядке, — короткой строкой.
+ */
+/**
+ * Текст задания одной строкой: формулы — читаемым текстом, без `$\frac…$`.
+ *
+ * В сводке формулу рисовать негде (строка короткая, это не лист), а показать
+ * учителю `$\frac{1}{2}$` — значит заставить его читать исходник. Берём
+ * `splitLatexBlocks`: в ответе бэк у задания может не быть `text_latex`, а
+ * `parseMathText` в этом случае уходит в legacy-режим и `$...$` не трогает.
+ */
+function readableTaskText(raw: string): string {
+  const flat = splitLatexBlocks(raw)
+    .map((s) => (s.type === "math" ? s.fallback : s.value))
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+  return flat.length > 90 ? `${flat.slice(0, 89).trimEnd()}…` : flat;
+}
+
+function TaskBreakdown({ summary }: { summary: ReturnType<typeof buildTaskSummary> }) {
+  return (
+    <Card data-testid="form-task-summary">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <h3 className="text-base font-semibold text-warm-950">По заданиям</h3>
+        {summary.reteach.length > 0 ? (
+          <Badge tone="danger">
+            переобъяснить: {summary.reteach.length}
+          </Badge>
+        ) : null}
+      </div>
+
+      <p className="mt-2 text-sm font-medium text-warm-950">{summary.headline}</p>
+      <p className="mt-1 text-sm text-warm-600">{summary.detail}</p>
+
+      {summary.dataNote && (
+        <p className="mt-3 rounded-lg bg-warm-50 px-3 py-2 text-xs text-warm-600">
+          {summary.dataNote}
+        </p>
+      )}
+
+      {summary.reteach.length > 0 && (
+        <ul className="mt-4 grid gap-2">
+          {summary.reteach.map((row) => (
+            <TaskRow key={row.taskNumber} row={row} />
+          ))}
+        </ul>
+      )}
+
+      {summary.fewAttempts.length > 0 && (
+        <div className="mt-4 rounded-xl border border-warm-100 p-3">
+          <div className="text-xs font-medium text-warm-700">
+            Ответов мало — смотрите работы сами ({summary.fewAttempts.length})
+          </div>
+          <ul className="mt-2 grid gap-1.5">
+            {summary.fewAttempts.map((row) => (
+              <li key={row.taskNumber} className="text-xs text-warm-600">
+                <span className="font-medium text-warm-800">{row.label}</span>
+                {row.text ? ` — ${readableTaskText(row.text)}` : ""}
+                {`: ответили ${row.attempts}`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {summary.noAttempts.length > 0 && (
+        <div className="mt-4 rounded-xl border border-warm-100 p-3">
+          <div className="text-xs font-medium text-warm-700">
+            Попыток не было ({summary.noAttempts.length}) — это не «не усвоено»
+          </div>
+          <ul className="mt-2 grid gap-1.5">
+            {summary.noAttempts.map((row) => (
+              <li key={row.taskNumber} className="text-xs text-warm-600">
+                <span className="font-medium text-warm-800">{row.label}</span>
+                {row.text ? ` — ${readableTaskText(row.text)}` : ""}
+                {row.skipped > 0 ? `: оставили пустым ${row.skipped}` : ": никто не открывал"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {summary.ok.length > 0 && (
+        <details className="mt-3" data-testid="form-task-ok">
+          <summary className="cursor-pointer text-xs text-warm-500 hover:text-warm-700">
+            Задания, где всё в порядке ({summary.ok.length})
+          </summary>
+          <ul className="mt-2 grid gap-1.5">
+            {summary.ok.map((row) => (
+              <TaskRow key={row.taskNumber} row={row} compact />
+            ))}
+          </ul>
+        </details>
+      )}
+    </Card>
+  );
+}
+
+function TaskRow({ row, compact = false }: { row: TaskStats; compact?: boolean }) {
+  const percent = row.successPercent;
+  const barColor =
+    row.verdict === "reteach"
+      ? "bg-rose-400"
+      : row.verdict === "few_attempts"
+        ? "bg-warm-300"
+        : "bg-emerald-400";
+
+  return (
+    <li
+      className={
+        compact
+          ? "text-xs text-warm-700 border-b border-warm-50 pb-2 last:border-0"
+          : "rounded-xl bg-warm-50/60 px-3 py-2.5"
+      }
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <span className={compact ? "" : "text-sm font-medium text-warm-950"}>{row.label}</span>
+        <span className="text-xs text-warm-600 tabular-nums">
+          {countsLabel(row)}
+          {percent === null ? "" : ` · ${percent}%`}
+        </span>
+      </div>
+
+      {row.text && (
+        <p className={compact ? "mt-0.5 line-clamp-2" : "mt-0.5 text-sm text-warm-700"}>
+          {readableTaskText(row.text)}
+        </p>
+      )}
+
+      {!compact && row.attempts > 0 && (
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-warm-100">
+          <div className={`h-full ${barColor}`} style={{ width: `${percent ?? 0}%` }} />
+        </div>
+      )}
+
+      <div className={compact ? "mt-1 text-warm-500" : "mt-2 text-xs text-warm-600"}>
+        {row.action}
+      </div>
+
+      {!compact && row.unsure > 0 && (
+        <p className="mt-1 text-xs text-warm-600">
+          Не уверены: {row.unsure} — модель не смогла решить, это не ошибка и не «верно».
+          Смотрите сами.
+        </p>
+      )}
+    </li>
   );
 }
 

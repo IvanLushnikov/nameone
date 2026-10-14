@@ -64,6 +64,7 @@ import {
 } from "../services/interviewQuestions";
 import {
   completePhotoCheck,
+  deletePhotoCheckItems,
   failPhotoCheck,
   getLatestInterviewQuestions,
   getManualMarks,
@@ -101,15 +102,29 @@ export function monthlyLimitFor(plan: string): number {
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8 МБ — на КАЖДОЕ фото
 /**
- * Сколько страниц одной работы принимаем за одну проверку.
+ * Сколько страниц одной работы принимаем за одну проверку (ТЗ-11, этап 2).
  *
- * Работа ученика почти всегда на двух-трёх страницах. Раньше ручка брала
- * `form.getAll("image")[0]` и тихо выкидывала вторую-третью страницу: учитель
- * получал неполный результат и платил за него как за полный. Три фото —
- * это потолок именно по разумной цене вопроса: каждая картинка — это
- * ~1.3k vision-токенов, а лимит тарифа общий на месяц.
+ * Раньше было три, и это ломало самый частый сценарий: работа на 4–10
+ * страниц не помещалась вообще, и ученик был вынужден начать НОВУЮ проверку,
+ * потеряв уже сделанную. Дослать страницу по одной — тоже не выход: это
+ * отдельный платный вызов модели на ровно тот же результат.
+ *
+ * ЭТО ЕДИНСТВЕННОЕ МЕСТО В КОДЕ, где живёт лимит страниц. Номера страниц
+ * для ключей R2 выводятся из него (`EXTRA_PHOTO_PAGES`), порог в форме — из
+ * него же. Вторую константу с числом страниц заводить нельзя: они молча
+ * разойдутся (именно так и получилось раньше — потолок стоял в одном месте,
+ * а список страниц для ключей — в другом). Скрипт
+ * `scripts/check-photo-stack.mjs` падает, если константа станет больше одной
+ * или если значение разойдётся с десятью.
+ *
+ * ПОЧЕМУ НЕ БОЛЬШЕ ДЕСЯТИ. Каждая страница — примерно 1.3k vision-токенов, и
+ * квота тарифа общая на месяц: десять страниц ≈ 13k токенов на одну проверку,
+ * это в пределах разумной цены вопроса. Выше десяти перестаёт быть «домашка»
+ * — это либо заведомый мусор, либо обход квоты дорогими картинками. Плюс
+ * каждая страница приходит отдельным телом multipart, поэтому лимит заодно
+ * держит размер запроса в разумных рамках.
  */
-const MAX_PHOTOS = 3;
+export const MAX_PHOTOS = 10;
 const MAX_TASKS = 40;
 const MIN_TASKS = 1;
 
@@ -187,8 +202,19 @@ function readCf(c: Context<AppEnv>): CfObject | undefined {
  * одним и тем же кодом, и у старых строк (где фото было одно) ничего не ломается.
  */
 
-/** Номера дополнительных страниц: 2-я и 3-я. Первое фото — сам `r2_key`. */
-const EXTRA_PHOTO_PAGES: readonly number[] = [2, 3];
+/**
+ * Номера дополнительных страниц: 2-я, 3-я, … до `MAX_PHOTOS`. Первое фото —
+ * сам `r2_key`.
+ *
+ * Список ВЫВОДИТСЯ из `MAX_PHOTOS`, а не пишется руками. Раньше здесь стояло
+ * `[2, 3]`, и это была вторая, невидимая копия лимита: подняли потолок до
+ * десяти в одном месте — R2 тихо перестал бы принимать страницу 4, и ученик
+ * получил бы «загрузилось, а страницы нет».
+ */
+const EXTRA_PHOTO_PAGES: readonly number[] = Array.from(
+  { length: MAX_PHOTOS - 1 },
+  (_, i) => i + 2,
+);
 
 /**
  * Положить все страницы проверки в R2 по ключам из `photoR2Keys`.
@@ -242,6 +268,69 @@ export function extraPhotoKey(r2Key: string, page: number): string {
  */
 export function photoR2Keys(r2Key: string, count: number): string[] {
   return [r2Key, ...EXTRA_PHOTO_PAGES.slice(0, Math.max(0, count - 1)).map((p) => extraPhotoKey(r2Key, p))];
+}
+
+/**
+ * Ключ `n`-й страницы: первая — базовый, остальные — с суффиксом.
+ * Общая точка для всех, кто думает «какая страница где лежит».
+ */
+function photoKeyAt(r2Key: string, page: number): string {
+  return page <= 1 ? r2Key : extraPhotoKey(r2Key, page);
+}
+
+/**
+ * Сколько страниц этой работы РЕАЛЬНО лежит в R2.
+ *
+ * Отдельной колонки с числом страниц нет и не будет: миграцию D1 в этот заход
+ * не делаем (решение владельца — см. блок про суффиксы выше). Поэтому число
+ * страниц выводится из самих ключей, ровно так же, как выводится имя каждой
+ * страницы. Плюс это честно: `head()` отвечает про то, что лежит в бакете
+ * СЕЙЧАС, а не про то, что мы когда-то отправили.
+ *
+ * Считаем НЕПРЕРЫВНО от первой страницы. Пробел означает конец: так страницы
+ * нельзя случайно «склеить» из несуществующей середины и нельзя затереть
+ * существующую — дослать можно только в конец.
+ */
+export async function countPhotoPages(bucket: R2Bucket, r2Key: string): Promise<number> {
+  let count = 0;
+  for (let page = 1; page <= MAX_PHOTOS; page += 1) {
+    const head = await bucket.head(photoKeyAt(r2Key, page));
+    if (!head) break;
+    count = page;
+  }
+  return count;
+}
+
+/**
+ * Прочитать все страницы работы по порядку — для перепроверки при досылке.
+ *
+ * Порядок здесь и есть требование №3: массив возвращается строго 1, 2, 3…,
+ * потому что модель читает страницы как страницы тетради. Сортировки «по
+ * времени загрузки» тут быть не может — она бы переставила страницы местами
+ * ровно в том случае, когда учитель дослал вторую после третьей.
+ */
+export async function readPhotoPages(
+  bucket: R2Bucket,
+  r2Key: string,
+  count: number,
+): Promise<ParsedPhotoImage[]> {
+  const images: ParsedPhotoImage[] = [];
+  for (let page = 1; page <= count; page += 1) {
+    const object = await bucket.get(photoKeyAt(r2Key, page));
+    if (!object) {
+      // Страниц нет на месте — проверить работу целиком нельзя, и подставлять
+      // «пустую» страницу было бы враньём в обе стороны: модель увидела бы
+      // работу не той, которую прислали.
+      throw new BadRequestError(
+        `Страница ${page} этой работы не найдена в хранилище — дослать не получится. Загрузите работу заново.`,
+      );
+    }
+    images.push({
+      bytes: await object.arrayBuffer(),
+      mimeType: object.httpMetadata?.contentType ?? "image/jpeg",
+    });
+  }
+  return images;
 }
 
 /**
@@ -480,7 +569,215 @@ f06Router.post(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /photo-checks/usage — остаток квоты
+// POST /photo-checks/:id/pages — дослать страницы к готовой работе
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// СЦЕНАРИЙ, ради которого всё затевалось (ТЗ-11, этап 2): ученик отправил
+// первую страницу, вспомнил про вторую — и обязан был начать проверку заново,
+// потеряв уже сделанное. Теперь можно дослать.
+//
+// ПОЧЕМУ ПЕРЕПРОВЕРЯЕМ ЦЕЛИКОМ, А НЕ «ДОПИСЫВАЕМ»: страницы одной работы
+// должны попасть в модель ОДНИМ запросом и в правильном порядке. Дописать
+// к готовому вердикту нельзя — тогда половина работы осталась бы непроверенной,
+// а учитель заплатил бы как за целую. Пересчёт честнее: он дороже, но он
+// даёт ответ на вопрос «а вся ли работа проверена».
+//
+// РУЧНЫЕ ОТМЕТКИ УЧИТЕЛЯ ПРИ ЭТОМ НЕ ТЕРЯЮТСЯ: они лежат в отдельной таблице
+// (`photo_check_manual_marks`) и после пересчёта снова сливаются с новым
+// вердиктом машины. Это ровно то, ради чего «строка машины» и «строка
+// учителя» не смешиваются.
+
+f06Router.post(
+  "/photo-checks/:id/pages",
+  // Тот же предохранитель, что и у самой проверки: досылка — тоже платный
+  // вызов vision-модели, и без ограничения ею можно выжигать квоту.
+  rateLimitMiddleware({ limit: 20, windowSec: 3600, bucket: "photo-check" }),
+  async (c) => {
+    const user = requireAuth(c);
+    const id = c.req.param("id");
+    const now = Math.floor(Date.now() / 1000);
+    const db = c.env.DB;
+    const bucket = c.env.PDFS;
+
+    // 1. Чужая проверка — 404, а не 403: не подтверждаем её существование.
+    const check = await getPhotoCheckById(db, id);
+    if (!check || check.user_id !== user.id) {
+      throw new NotFoundError("Проверка не найдена");
+    }
+
+    const noPhotos =
+      "Фото этой работы уже удалены — дослать к ним страницы не к чему. Загрузите работу заново.";
+    if (check.deleted_at !== null || !check.r2_key) {
+      throw new BadRequestError(noPhotos);
+    }
+
+    // 2. Сколько страниц в работе УЖЕ есть. Считаем по тому, что реально лежит
+    //    в R2, а не по тому, что когда-то отправляли.
+    const havePages = await countPhotoPages(bucket, check.r2_key);
+    if (havePages === 0) {
+      throw new BadRequestError(noPhotos);
+    }
+
+    const form = await readPhotoPagesForm(c);
+
+    // 3. Потолок — ДО загрузки в бакет и ДО вызова модели. Учителю это должно
+    //    быть видно до потери времени, и тем более до списания денег.
+    const room = MAX_PHOTOS - havePages;
+    if (form.images.length > room) {
+      throw new BadRequestError(
+        `В этой работе уже ${havePages} ${havePages === 1 ? "страница" : "страниц(ы)"} из ${MAX_PHOTOS}. ` +
+          `Дослать можно ${room}. Прислано ${form.images.length} — лишние страницы не попадут в проверку.`,
+      );
+    }
+
+    // 4. Эталоны: из тела запроса, а если их не прислали — из уже сохранённых
+    //    заданий. Учитель не должен диктовать то, что уже отдавал.
+    const storedItems = await getPhotoCheckItems(db, id);
+    const tasks =
+      form.tasks ??
+      storedItems.map((i) => ({
+        number: i.task_number,
+        // Текста задания в базе может не быть (так прислали эталон). Подменять
+        // его выдуманной формулировкой нельзя — модель сравнит ученика с
+        // текстом, которого не существует. Поэтому номер, а не догадка.
+        taskText: i.task_text ?? `Задание №${i.task_number}`,
+        correctAnswer: i.expected ?? "",
+        maxPoints: i.max_points,
+      }));
+    if (tasks.length === 0) {
+      throw new BadRequestError(
+        "По этой проверке нет ни одного задания — дослать страницы не к чему. Загрузите работу заново.",
+      );
+    }
+
+    // 5. Квота — ДО дорогого вызова, как и в первой проверке.
+    const windowStart = monthWindowStart(now);
+    const limit = monthlyLimitFor(user.plan);
+    const used = await getUsageCounter(db, {
+      userId: user.id,
+      metric: "photo_check",
+      windowStart,
+    });
+    if (used >= limit) {
+      throw new PaymentRequiredError(
+        "Месячный лимит проверок исчерпан. Обновится 1-го числа.",
+        { used, limit, resetAt: nextMonthStart(windowStart) },
+      );
+    }
+    if (!isProviderEnabled(c.env, "polza")) {
+      throw new ApiError(503, "LLM_UNAVAILABLE", "Проверка временно недоступна, попробуйте позже");
+    }
+
+    const totalPages = havePages + form.images.length;
+    const newKeys = photoR2Keys(check.r2_key, totalPages).slice(havePages);
+
+    // 6. Новая страница ПРОДОЛЖАЕТ нумерацию. Это и есть требование «страница 2
+    //    не должна оказаться первой»: у новой страницы номер `havePages + 1`,
+    //    а её ключ — суффикс этого номера, а не `-1`.
+    try {
+      await putPhotoObjects(bucket, newKeys, form.images, user.id);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logLlmEvent("error", "photo-check append: R2 put failed", { checkId: id, error: msg.slice(0, 200) });
+      throw new ApiError(503, "UPLOAD_FAILED", "Не удалось сохранить страницы, попробуйте ещё раз");
+    }
+
+    try {
+      // 7. Вся работа целиком и строго по порядку 1, 2, 3…
+      const images = await readPhotoPages(bucket, check.r2_key, totalPages);
+      const result = await checkPhoto(
+        {
+          images,
+          tasks,
+          subject: form.subject ?? check.subject ?? undefined,
+          grade: form.grade ?? check.grade ?? undefined,
+          detail: form.detail,
+          plan: user.plan,
+          userId: user.id,
+          ip: c.get("ip") ?? "0.0.0.0",
+        },
+        c.env,
+        db,
+      );
+
+      // 8. Пересборка вердикта: старые задания уходят, приходят новые. Порядок
+      //    именно такой — сначала удалить (иначе UNIQUE(check_id, task_number)),
+      //    потом записать. Если вставка упадёт, у проверки останется старый
+      //    вердикт, а не пустой: «пусто» читалось бы как «всё верно».
+      await deletePhotoCheckItems(db, id);
+      await completePhotoCheck(db, {
+        id,
+        summary: result.summary,
+        model: result.model,
+        provider: result.provider,
+        costUsd: result.costUsd,
+        latencyMs: result.latencyMs,
+        errorCode: result.summary.needsReview ? "LOW_CONFIDENCE" : null,
+        completedAt: now,
+      });
+
+      // 9. Квота списывается за ЭТОТ вызов: досылка — не бесплатный
+      //    пересчёт, она заново тратит vision-токены.
+      const after = await incrementUsageCounter(db, {
+        userId: user.id,
+        metric: "photo_check",
+        windowStart,
+        updatedAt: now,
+      });
+
+      // 10. Журнал. UPSERT по UNIQUE(user_id, check_id) — та же строка работы
+      //     обновляется, а не появляется вторая запись про ту же работу.
+      //     `occurredAt` — время ИСХОДНОЙ проверки, иначе работа в истории
+      //     учителя перепрыгнула бы на время досылки.
+      await upsertJournalEntry(db, {
+        userId: user.id,
+        checkId: id,
+        subject: form.subject ?? check.subject,
+        grade: form.grade ?? check.grade,
+        mark: result.summary.reviewCount === 0 ? result.summary.gradeMark : null,
+        percentage: result.summary.reviewCount === 0 ? result.summary.percentage : null,
+        earnedPoints: result.summary.earnedPoints,
+        totalPoints: result.summary.totalPoints,
+        source: "machine",
+        pendingTasks: result.summary.reviewCount,
+        occurredAt: check.created_at,
+        now,
+      });
+
+      logLlmEvent("info", "photo-check pages appended", {
+        checkId: id,
+        userId: user.id,
+        hadPages: havePages,
+        added: form.images.length,
+        totalPages,
+        costUsd: result.costUsd,
+        latencyMs: result.latencyMs,
+      });
+
+      const fresh = await getPhotoCheckById(db, id);
+      const items = await getPhotoCheckItems(db, id);
+      const marks = await getManualMarks(db, id);
+      return c.json(
+        {
+          ...(await buildCheckDto(fresh ?? check, items, marks, bucket)),
+          quota: { used: after, limit, resetAt: nextMonthStart(windowStart) },
+        },
+        201,
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logLlmEvent("error", "photo-check append failed", {
+        checkId: id,
+        userId: user.id,
+        error: msg.slice(0, 300),
+      });
+      // Старую проверку НЕ трогаем: она остаётся в том виде, в котором была.
+      // Учитель не должен терять разобранное из-за нашей ошибки.
+      throw new ApiError(503, "LLM_UNAVAILABLE", "Не удалось перепроверить работу, попробуйте ещё раз");
+    }
+  },
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 f06Router.get("/photo-checks/usage", async (c) => {
@@ -560,7 +857,7 @@ f06Router.get("/photo-checks/:id", async (c) => {
 
   const items = await getPhotoCheckItems(c.env.DB, id);
   const marks = await getManualMarks(c.env.DB, id);
-  return c.json(await buildCheckDto(row, items, marks));
+  return c.json(await buildCheckDto(row, items, marks, c.env.PDFS));
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -668,7 +965,7 @@ f06Router.post("/photo-checks/:id/manual-marks", async (c) => {
     now,
   });
 
-  return c.json(await buildCheckDto({ ...row, ...scoreOf(merged) }, items, allMarks));
+  return c.json(await buildCheckDto({ ...row, ...scoreOf(merged) }, items, allMarks, c.env.PDFS));
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1016,10 +1313,17 @@ async function buildCheckDto(
   row: PhotoCheckRow,
   items: PhotoCheckItemRow[],
   marks: Awaited<ReturnType<typeof getManualMarks>>,
+  bucket: R2Bucket,
 ): Promise<Record<string, unknown>> {
   const merged = mergeManualMarks(items.map(toStoredItem), marks.map(toMarkInput));
   const machine = machineResultOf(items.map(toStoredItem));
   const marksByNumber = new Map(marks.map((m) => [m.task_number, m]));
+
+  // Сколько страниц в работе на самом деле. Пока фото живы — это точный
+  // ответ из R2. После удаления фотографий ответ НЕИЗВЕСТЕН, и мы честно
+  // отдаём null, а не угадываем по чему попало: правдоподобное число без
+  // источника — это выдумка, а журнал учителя потом на неё опирается.
+  const pages = row.deleted_at === null && row.r2_key !== null ? await countPhotoPages(bucket, row.r2_key) : null;
 
   return {
     ok: true,
@@ -1066,6 +1370,12 @@ async function buildCheckDto(
     pendingReview: merged.pendingReview,
     modelResult: machine,
     model: row.model,
+    /**
+     * Сколько страниц работы проверили. null = фото уже удалены и число
+     * страниц восстановить нельзя. Учитель обязан видеть это, а не «1»:
+     * молчаливая единица выглядела бы как «проверили только первую страницу».
+     */
+    pages,
     photoDeleted: row.deleted_at !== null,
     photoDeleteAt: row.delete_at,
     createdAt: row.created_at,
@@ -1137,6 +1447,140 @@ export interface ParsedPhotoImage {
   mimeType: string;
 }
 
+/**
+ * Вытащить из multipart только те значения поля `image`, которые реально файл.
+ *
+ * ПОЧЕМУ ТАК, А НЕ `form.get("image")` + `instanceof File`:
+ * в `@cloudflare/workers-types` метод `FormData.get()` объявлен как
+ * `get(name: string): string | null` — в его сигнатуре НЕТ варианта File
+ * вообще (файлы там видны только через `getAll`/`entries`). Поэтому и
+ * `instanceof File` не компилируется (левая часть — `string`), и любой
+ * отсев строки схлопывает тип в `never`.
+ *
+ * Берём значение через `getAll` — там тип элемента union-ный — и сужаем
+ * уже по фактическому рантайм-признаку: строка вместо файла, null либо
+ * объект без `arrayBuffer` — это не загруженное фото.
+ */
+function collectPhotoFiles(form: FormData): File[] {
+  const rawFiles = form.getAll("image") as unknown[];
+  const files: File[] = [];
+  for (const candidate of rawFiles) {
+    if (typeof candidate === "string" || candidate === null || candidate === undefined) continue;
+    const maybeFile = candidate as File;
+    if (typeof maybeFile.arrayBuffer !== "function") continue;
+    files.push(maybeFile);
+  }
+  return files;
+}
+
+/**
+ * Проверить и прочитать страницы. Общая часть для первичной проверки и для
+ * досылки: правила обязаны быть ОДНИМИ, иначе через вторую ручку можно было
+ * бы залить то, что первая не принимает.
+ *
+ * `pageOffset` — сколько страниц в работе уже было. Нужен только для номера в
+ * сообщении об ошибке: при досылке третьей страницы учитель должен видеть
+ * «Фото 3», а не «Фото 1».
+ */
+async function toPageImages(files: File[], pageOffset = 0): Promise<ParsedPhotoImage[]> {
+  const images: ParsedPhotoImage[] = [];
+  for (const [i, uploaded] of files.entries()) {
+    const page = pageOffset + i + 1;
+    const pageLabel = files.length > 1 || pageOffset > 0 ? `Фото ${page}: ` : "";
+    const mimeRaw = (uploaded.type || "").toLowerCase();
+    const mimeType = ALLOWED_MIME[mimeRaw];
+    if (!mimeType) {
+      throw new BadRequestError(`${pageLabel}формат не поддерживается. Загрузите JPEG, PNG или WebP`);
+    }
+    if (uploaded.size === 0) {
+      throw new BadRequestError(`${pageLabel}файл пустой`);
+    }
+    if (uploaded.size > MAX_IMAGE_BYTES) {
+      // ТЗ §11: фото > 8 МБ отклоняется с понятным сообщением, сервер не падает.
+      // Лимит — на КАЖДОЕ фото, поэтому номер страницы обязателен: без него
+      // учитель не понимает, какое именно снимок надо переснять.
+      throw new ApiError(
+        413,
+        "PAYLOAD_TOO_LARGE",
+        `${pageLabel}больше 8 МБ. Снимите в меньшем разрешении или сожмите на устройстве`,
+      );
+    }
+    images.push({ bytes: await uploaded.arrayBuffer(), mimeType });
+  }
+  return images;
+}
+
+export interface ParsedPhotoPagesForm {
+  /** Только новые страницы, в порядке, в котором их прислали. */
+  images: ParsedPhotoImage[];
+  /**
+   * Эталоны. Присылать необязательно: если их нет, берём из уже сохранённых
+   * заданий проверки — учителю не нужно диктовать то, что он уже один раз
+   * отдавал.
+   */
+  tasks: ExpectedTask[] | null;
+  subject: string | null;
+  grade: number | null;
+  detail: "low" | "high";
+}
+
+/**
+ * Разобрать multipart досылки страниц.
+ *
+ * Отдельная функция, а не переиспользование `readPhotoForm`, потому что
+ * требования разные: у досылки НЕТ согласия (оно уже было дано при первой
+ * загрузке, спрашивать учителя второй раз про то же самое — нечестно) и НЕТ
+ * обязательных эталонов.
+ *
+ * Экспортируется ради тестов.
+ */
+export async function readPhotoPagesForm(c: Context<AppEnv>): Promise<ParsedPhotoPagesForm> {
+  const contentType = c.req.header("content-type") ?? "";
+  if (!contentType.includes("multipart/form-data")) {
+    throw new BadRequestError("Ожидается multipart/form-data с полем image");
+  }
+
+  let form: FormData;
+  try {
+    form = await c.req.formData();
+  } catch {
+    throw new BadRequestError("Не удалось прочитать загруженный файл");
+  }
+
+  const files = collectPhotoFiles(form);
+  if (files.length === 0) {
+    throw new BadRequestError("Приложите хотя бы одну страницу работы (поле image)");
+  }
+  // Свой потолок не проверяем здесь: сколько страниц ещё помещается в работу,
+  // знает только вызывающий — он знает, сколько страниц уже загружено.
+  const images = await toPageImages(files);
+
+  // Эталоны необязательны — но если их прислали, они должны быть валидными.
+  let tasks: ExpectedTask[] | null = null;
+  const tasksRaw = form.get("tasks");
+  if (typeof tasksRaw === "string" && tasksRaw.length > 0) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(tasksRaw);
+    } catch {
+      throw new BadRequestError("Поле tasks должно быть корректным JSON");
+    }
+    if (!Array.isArray(parsed) || parsed.length < MIN_TASKS) {
+      throw new BadRequestError("Передайте хотя бы одно задание для проверки");
+    }
+    tasks = parsed as ExpectedTask[];
+  }
+
+  const gradeRaw = Number(form.get("grade"));
+  return {
+    images,
+    tasks,
+    subject: (form.get("subject") as string | null) ?? null,
+    grade: Number.isFinite(gradeRaw) ? gradeRaw : null,
+    detail: form.get("detail") === "high" ? "high" : "low",
+  };
+}
+
 export interface ParsedPhotoForm {
   /** От 1 до `MAX_PHOTOS` страниц, в порядке загрузки. */
   images: ParsedPhotoImage[];
@@ -1170,34 +1614,16 @@ export async function readPhotoForm(c: Context<AppEnv>): Promise<ParsedPhotoForm
     throw new BadRequestError("Не удалось прочитать загруженный файл");
   }
 
-  // 1. Фото. Страниц может быть от одной до трёх, порядок в форме = порядок
-  //    страниц работы, и модель обязана видеть их именно в этом порядке.
-  //
-  // ПОЧЕМУ ТАК, А НЕ `form.get("image")` + `instanceof File`:
-  // в `@cloudflare/workers-types` метод `FormData.get()` объявлен как
-  // `get(name: string): string | null` — в его сигнатуре НЕТ варианта File
-  // вообще (файлы там видны только через `getAll`/`entries`). Поэтому и
-  // `instanceof File` не компилируется (левая часть — `string`), и любой
-  // отсев строки схлопывает тип в `never`.
-  //
-  // Берём значение через `getAll` — там тип элемента union-ный — и сужаем
-  // уже по фактическому рантайм-признаку: строка вместо файла, null либо
-  // объект без `arrayBuffer` — это не загруженное фото.
-  const rawFiles = form.getAll("image") as unknown[];
-  const files: File[] = [];
-  for (const candidate of rawFiles) {
-    if (typeof candidate === "string" || candidate === null || candidate === undefined) continue;
-    const maybeFile = candidate as File;
-    if (typeof maybeFile.arrayBuffer !== "function") continue;
-    files.push(maybeFile);
-  }
+  // 1. Фото. Страниц может быть от одной до `MAX_PHOTOS`, порядок в форме =
+  //    порядок страниц работы, и модель обязана видеть их именно в этом порядке.
+  const files = collectPhotoFiles(form);
 
   if (files.length === 0) {
     throw new BadRequestError("Приложите фото работы (поле image)");
   }
-  // Лишние страницы НЕ игнорируем молча: иначе учитель отправит четыре фото,
-  // получит вердикт по трём и заплатит как за полную работу, не зная, что
-  // четвёртая страница в проверку не попала.
+  // Лишние страницы НЕ игнорируем молча: иначе учитель отправит одиннадцать
+  // фото, получит вердикт по десяти и заплатит как за полную работу, не зная,
+  // что одиннадцатая страница в проверку не попала.
   if (files.length > MAX_PHOTOS) {
     throw new BadRequestError(
       `За одну проверку — до ${MAX_PHOTOS} фото работы, пришло ${files.length}. ` +
@@ -1205,30 +1631,7 @@ export async function readPhotoForm(c: Context<AppEnv>): Promise<ParsedPhotoForm
     );
   }
 
-  const images: ParsedPhotoImage[] = [];
-  for (const [i, uploaded] of files.entries()) {
-    const page = i + 1;
-    const pageLabel = files.length > 1 ? `Фото ${page}: ` : "";
-    const mimeRaw = (uploaded.type || "").toLowerCase();
-    const mimeType = ALLOWED_MIME[mimeRaw];
-    if (!mimeType) {
-      throw new BadRequestError(`${pageLabel}формат не поддерживается. Загрузите JPEG, PNG или WebP`);
-    }
-    if (uploaded.size === 0) {
-      throw new BadRequestError(`${pageLabel}файл пустой`);
-    }
-    if (uploaded.size > MAX_IMAGE_BYTES) {
-      // ТЗ §11: фото > 8 МБ отклоняется с понятным сообщением, сервер не падает.
-      // Лимит — на КАЖДОЕ фото, поэтому номер страницы обязателен: без него
-      // учитель не понимает, какое именно снимок надо переснять.
-      throw new ApiError(
-        413,
-        "PAYLOAD_TOO_LARGE",
-        `${pageLabel}больше 8 МБ. Снимите в меньшем разрешении или сожмите на устройстве`,
-      );
-    }
-    images.push({ bytes: await uploaded.arrayBuffer(), mimeType });
-  }
+  const images = await toPageImages(files);
 
   // 2. Согласие (В-2.2). Текст показан на фронте ДО загрузки; здесь фиксируем
   //    сам факт и версию текста — юридическую силу этому придаёт юрист, не код.

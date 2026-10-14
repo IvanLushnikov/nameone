@@ -12,7 +12,7 @@
 import { describe, it, expect, vi, beforeAll } from "vitest";
 import { useState } from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { PhotoUpload } from "../PhotoUpload";
+import { PhotoUpload, MAX_PAGES } from "../PhotoUpload";
 
 // Сжатие через canvas в jsdom не работает — подменяем на no-op, чтобы тест
 // был про страницы, а не про пиксели.
@@ -81,32 +81,43 @@ describe("Несколько страниц работы", () => {
     ]);
   });
 
-  it("четвёртый файл из того же выбора не теряется молча", async () => {
+  it(`${MAX_PAGES + 1}-й файл из того же выбора не теряется молча`, async () => {
     const onFiles = vi.fn();
     const { container } = render(<Harness onFiles={onFiles} />);
 
-    // Учитель выбрал четыре файла разом — самый частый способ уйти за предел.
-    pick(container, ["page-1.jpg", "page-2.jpg", "page-3.jpg", "page-4.jpg"]);
-    await waitFor(() => expect(screen.getByText(/page-3\.jpg/)).toBeInTheDocument());
+    // Учитель выбрал больше страниц разом, чем сервер разберёт, — самый частый
+    // способ уйти за предел. Потолок берём из компонента: раньше здесь стояло
+    // число 3, и тест молча учил неправильному потолку, пока сервер не
+    // подняли до 10.
+    const picked = Array.from({ length: MAX_PAGES + 1 }, (_, i) => `page-${i + 1}.jpg`);
+    pick(container, picked);
+    await waitFor(() =>
+      expect(screen.getByText(new RegExp(`page-${MAX_PAGES}\\.jpg`))).toBeInTheDocument(),
+    );
 
     expect(await screen.findByText(/не поедут/)).toBeInTheDocument();
-    expect(screen.getAllByTestId("photo-page")).toHaveLength(3);
-    expect(screen.queryByText(/page-4\.jpg/)).not.toBeInTheDocument();
-    expect((onFiles.mock.calls.at(-1)?.[0] as File[]).length).toBe(3);
+    expect(screen.getAllByTestId("photo-page")).toHaveLength(MAX_PAGES);
+    expect(screen.queryByText(new RegExp(`page-${MAX_PAGES + 1}\\.jpg`))).not.toBeInTheDocument();
+    expect((onFiles.mock.calls.at(-1)?.[0] as File[]).length).toBe(MAX_PAGES);
   });
 
-  it("четвёртый файл, добавленный сверх трёх, тоже объясняется", async () => {
+  it("файл сверх потолка, добавленный вторым выбором, тоже объясняется", async () => {
     const onFiles = vi.fn();
     const { container } = render(<Harness onFiles={onFiles} />);
 
-    pick(container, ["page-1.jpg", "page-2.jpg", "page-3.jpg"]);
-    await waitFor(() => expect(screen.getByText(/page-3\.jpg/)).toBeInTheDocument());
+    // Сначала добираем до потолка, потом пробуем добавить ещё один — молчать
+    // об отказе нельзя: учитель поймёт, что файл потерялся, только по факту.
+    const first = Array.from({ length: MAX_PAGES }, (_, i) => `page-${i + 1}.jpg`);
+    pick(container, first);
+    await waitFor(() =>
+      expect(screen.getByText(new RegExp(`page-${MAX_PAGES}\\.jpg`))).toBeInTheDocument(),
+    );
 
-    pick(container, ["page-4.jpg"]);
+    pick(container, ["page-extra.jpg"]);
 
     expect(await screen.findByText(/не поедут/)).toBeInTheDocument();
-    expect(screen.getAllByTestId("photo-page")).toHaveLength(3);
-    expect((onFiles.mock.calls.at(-1)?.[0] as File[]).length).toBe(3);
+    expect(screen.getAllByTestId("photo-page")).toHaveLength(MAX_PAGES);
+    expect((onFiles.mock.calls.at(-1)?.[0] as File[]).length).toBe(MAX_PAGES);
   });
 
   it("удаление страницы оставляет остальные и перенумеровывает их", async () => {

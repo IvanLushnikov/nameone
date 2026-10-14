@@ -23,6 +23,8 @@ interface Props {
  * чтобы TS компилировался независимо от порядка мёрджа.
  */
 type WorksheetWithChart = Worksheet & { chartSpec?: ChartSpec };
+/** Задание со схемой графика от модели (лист 2.1.8). */
+type TaskWithChart = Worksheet["tasks"][number] & { chart_spec?: ChartSpec };
 
 /**
  * Ф-10: задание с опциональным LaTeX-полем для отрисовки.
@@ -138,13 +140,10 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
               </div>
             </div>
 
-            {/* SVG-график (опционально, если LLM вернул chart_spec) */}
-            {(worksheet as WorksheetWithChart).chartSpec && (
-              <SvgChart
-                spec={(worksheet as WorksheetWithChart).chartSpec as ChartSpec}
-                className="worksheet-chart"
-              />
-            )}
+            {/* График на уровне всего листа больше не рисуется: схема приходит
+                у задания (см. ниже). Отрисовка заготовки сверху не удалена бы
+                «на всякий случай» — это был бы мёртвый код, который выглядит
+                как работающая функция. */}
 
             {/* Задания — F-09: разный рендер в зависимости от типа артефакта.
                 - test   → строго multiple-choice с буквами A–D и без поля для ответа
@@ -181,6 +180,18 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
                   <li key={task.number} className="flex items-start gap-2 worksheet-task">
                     <span className="worksheet-task-num">{task.number}</span>
                     <div className="flex-1">
+                      {/* График К ЗАДАНИЮ, а не ко всему листу (лист 2.1.8).
+                          Модель отдаёт схему у того задания, условие которого
+                          без рисунка бессмысленно, поэтому и показывать её надо
+                          там же. Раньше фронт ждал `worksheet.chartSpec` на
+                          верхнем уровне — этого поля не существует, график не
+                          показывался никогда. */}
+                      {(task as TaskWithChart).chart_spec && (
+                        <SvgChart
+                          spec={(task as TaskWithChart).chart_spec as ChartSpec}
+                          className="worksheet-chart my-2"
+                        />
+                      )}
                       <div className="flex items-start gap-2 flex-wrap">
                         <span className="flex-1 min-w-0">
                           <MathText

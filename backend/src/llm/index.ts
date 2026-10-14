@@ -64,6 +64,7 @@ import { buildValidatePrompt } from "./prompts/validate";
 import { SOLVE_PROMPT, VERIFY_PROMPT } from "./prompts/self-verify";
 import { buildPhotoCheckPrompt, type PhotoCheckTask } from "./prompts/photo-check";
 import { calcCost, estimateImageTokens } from "./cost";
+import { attachChartSpecs, type RawSheetTask } from "./prompts/svg-graph-gen";
 import { gradePhotoCheck, type PhotoCheckSummary } from "../services/photoCheckGrading";
 import { findLanguageViolation, passesLanguageGuard } from "./validation/language-guard";
 import {
@@ -730,6 +731,25 @@ export async function generateWorksheet(
       });
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // СХЕМА ГРАФИКА ОТ МОДЕЛИ (лист 2.1.8) — ШОВ.
+    //
+    // Без этих строк модуль `prompts/svg-graph-gen.ts` валидировал бы схемы и
+    // выбрасывала бы их: лист не нёс бы `chart_spec`, то есть написанное
+    // выглядело бы готовым и не работало бы. Спрашиваем ОТДЕЛЬНЫМ коротким
+    // вызовом — основной промпт не трогаем, иначе пришлось бы сбрасывать
+    // кэш system-промпта «Плюса» на каждой генерации.
+    //
+    // Кандидатов нет → сеть не трогается: 0 токенов. Модель ответила ерундой →
+    // задание остаётся текстом, а причина видна в логе (`svg-graph-gen:`).
+    const withCharts = await attachChartSpecs({
+      tasks: primaryFiltered.tasks as unknown as RawSheetTask[],
+      subject: request.subject,
+      grade: request.grade,
+      topic: request.topic,
+      env,
+    });
+
     worksheet = {
       id: worksheetId(),
       title: primaryParsed.title ?? request.topic,
@@ -739,7 +759,7 @@ export async function generateWorksheet(
       difficulty: primaryParsed.difficulty ?? request.difficulty,
       // Ответ обрезан по потолку токенов — материал неполон. Не отдаём его
       // как нормальный: помечаем, чтобы учитель увидел предупреждение (AD-7).
-      tasks: primaryFiltered.tasks as unknown as Worksheet["tasks"],
+      tasks: withCharts.tasks as unknown as Worksheet["tasks"],
       createdAt: new Date().toISOString(),
     };
   } catch {

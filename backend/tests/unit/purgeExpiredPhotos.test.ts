@@ -20,6 +20,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
+import { MAX_PHOTOS } from "../../src/routes/f06";
 
 describe("очистка фото по сроку хранения", () => {
   /** Ключи, дошедшие до удаления, — по порядку вызовов. */
@@ -45,8 +46,9 @@ describe("очистка фото по сроку хранения", () => {
 
     await deletePhotoObjects(bucket(), base);
 
-    // Три вызова delete: базовый ключ + -2 + -3.
-    expect(deleted).toHaveLength(3);
+    // Число страниц берётся из кода: раньше здесь стояло «три вызова», и
+    // очистка молча удаляла бы не всё, если потолок поднимут снова.
+    expect(deleted).toHaveLength(MAX_PHOTOS);
     expect(deleted[0]).toBe(base);
     expect(deleted).toContain("pc/1790000000/abc-123-2.jpg");
     expect(deleted).toContain("pc/1790000000/abc-123-3.jpg");
@@ -62,14 +64,21 @@ describe("очистка фото по сроку хранения", () => {
     const errors: number[] = [];
 
     await deletePhotoObjects(
-      bucket({ failOn: (key) => key.includes("-2") || key.includes("-3") }),
+      bucket({
+        // Отсутствуют ВСЕ дополнительные ключи, а не только -2 и -3: у старых
+        // записей их нет вовсе, сколько бы страниц потолок ни позволял.
+        failOn: (key) => /-\d+\.jpg$/.test(key),
+      }),
       old,
       (page) => errors.push(page),
     );
 
     expect(deleted).toEqual([old]);
     // Ошибки по допстраницам НЕ бросаются наружу — это мягкая часть.
-    expect(errors.sort()).toEqual([2, 3]);
+    // Числовая сортировка: обычный sort() на числах даёт «10, 2, 3, …».
+    expect([...errors].sort((a, b) => a - b)).toEqual(
+      Array.from({ length: MAX_PHOTOS - 1 }, (_, i) => i + 2),
+    );
   });
 
   it("ошибка удаления первой страницы пробрасывается", async () => {

@@ -213,6 +213,26 @@ async function insertPhotoCheckItem(
     .run();
 }
 
+/**
+ * Убрать все разобранные задания проверки.
+ *
+ * Нужна ровно для досылки страниц: работа перепроверяется целиком, а в
+ * `photo_check_items` стоит UNIQUE(check_id, task_number) — второй разбор той
+ * же работы без этого удаления упёрся бы в нарушение уникальности.
+ *
+ * Порядок вызовов важен и находится ВЫШЕ, в роуте: сначала удалить, потом
+ * вставить новые. Промежуточного состояния «ни одного задания» учитель не
+ * увидит — оба запроса идут подряд, а при падении вставки проверка остаётся
+ * со старым вердиктом, а не с пустым. Пустой выглядел бы как «всё верно»,
+ * что хуже любой ошибки.
+ */
+export async function deletePhotoCheckItems(db: D1Database, checkId: string): Promise<void> {
+  await db
+    .prepare(`DELETE FROM photo_check_items WHERE check_id = ?1`)
+    .bind(checkId)
+    .run();
+}
+
 export async function getPhotoCheckById(
   db: D1Database,
   id: string,
