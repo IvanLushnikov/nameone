@@ -186,7 +186,11 @@ function innerFractions(latex: string): string {
  * То есть `\frac{x^{2}}{y}` теряет двойку ЦЕЛИКОМ и в Word выходит `x` вместо
  * `x²`. Потерянная степень хуже неподнятой: материал с неверной формулой учитель
  * отдаст в класс. Поэтому оставляем юникод — он читается и в Word, и в KaTeX.
- * Про сам конвертер — см. G5 листа 2.1.4.
+ *
+ * Лист 2.1.5 закрыл половину этой дыры: `keepScriptsInsideFrac` ниже страхует
+ * `^{...}`/`_{...}` внутри числителя и знаменателя (степень не теряется). До
+ * настоящего надстрочного индекса OMML внутри дроби дело дойдёт, когда
+ * `parseArgument` в `latex-to-omml.ts` перестанет выбрасывать скрипты.
  */
 
 /** Дописывает обычный текст к предыдущему сегменту, не разрывая его на два span. */
@@ -268,6 +272,197 @@ export function splitFormulaText(text: string, textLatex?: string | null): MathS
   return result;
 }
 
+/** Оформление обычных (не формульных) кусков текста внутри абзаца. */
+type FormulaTextRunOptions = {
+  bold?: boolean;
+  italics?: boolean;
+  color?: string;
+  size?: number;
+};
+
+/* -------------------------------------------------------------------------- */
+/*  Степень внутри дроби: почему нужен страховочный перевод                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Ищет парную `{...}` после `\frac` и возвращает границы обоих аргументов
+ * (числителя и знаменателя). Это НЕ второй разбор формул — только балансировка
+ * скобок, чтобы точечно починить конкретное место.
+ */
+function fracArgumentRanges(src: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  let i = 0;
+
+  while (i < src.length) {
+    if (!src.startsWith("\\frac", i)) {
+      i += 1;
+      continue;
+    }
+    let j = i + "\\frac".length;
+    for (let arg = 0; arg < 2; arg += 1) {
+      while (j < src.length && /\s/.test(src[j])) j += 1;
+      if (src[j] !== "{") break;
+      let depth = 0;
+      let close = -1;
+      for (let k = j; k < src.length; k += 1) {
+        if (src[k] === "{") depth += 1;
+        else if (src[k] === "}") {
+          depth -= 1;
+          if (depth === 0) {
+            close = k;
+            break;
+          }
+        }
+      }
+      if (close < 0) break;
+      ranges.push([j, close]);
+      j = close + 1;
+    }
+    i = j;
+  }
+
+  return ranges;
+}
+
+/**
+ * ЗАЧЕМ ЭТА СТРАХОВКА (лист 2.1.5, п. 3).
+ *
+ * `latex-to-omml.ts` при разборе аргумента команды в фигурных скобках
+ * возвращает `slots.map((slot) => slot.node)` — то есть ВМЕСТЕ СО СКРИПТАМИ.
+ * На верхнем уровне `x^{2}` собирается в `MathSuperScript` корректно, а внутри
+ * аргумента двойка пропадает ЦЕЛИКОМ: `\frac{x^{2}}{y}` уезжает в Word как
+ * `\frac{x}{y}`. Это не «некрасиво», а неверная формула в материале, который
+ * учитель отдаёт в класс.
+ *
+ * Что делаем. Внутри числителя и знаменателя `^{...}`/`_{...}` переводим
+ * юникодом ЧЕРЕЗ `latexToUnicode` — это тот же самый юникод-слой, на который
+ * уже опирается рабочий лист для `x²`, поэтому и читаемость, и внешний вид
+ * совпадают с сегодняшним поведением. Вне дробей ничего не трогаем: там
+ * конвертер степень обрабатывает и так, и настоящий надстрочный индекс в Word
+ * лучше юникодного.
+ *
+ * ЧЕГО ЭТО НЕ ДЕЛАЕТ. Настоящий надстрочный индекс ВНУТРИ дроби (`<m:sSup>`
+ * внутри `<m:num>`) требует правки самого `parseArgument` в
+ * `latex-to-omml.ts` — файл не в этом листе. Поэтому здесь гарантируется
+ * «степень НЕ потеряна», а не «степень набрана OMML-скриптом».
+ */
+function keepScriptsInsideFrac(latex: string): string {
+  if (!latex.includes("\\frac")) return latex;
+
+  const ranges = fracArgumentRanges(latex);
+  if (ranges.length === 0) return latex;
+
+  let out = latex;
+  // С конца, чтобы границы предыдущих правок не «поехали».
+  for (let r = ranges.length - 1; r >= 0; r -= 1) {
+    const [start, end] = ranges[r];
+    const body = out
+      .slice(start + 1, end)
+      .replace(/\^\s*\{([^{}]*)\}/g, (_w, script: string) => latexToUnicode(`^{${script}}`))
+      .replace(/_\s*\{([^{}]*)\}/g, (_w, script: string) => latexToUnicode(`_{${script}}`));
+    out = out.slice(0, start + 1) + body + out.slice(end);
+  }
+  return out;
+}
+
+/** Единственная точка вызова конвертера: сначала страховка степени, потом OMML. */
+function toOmml(latex: string) {
+  return latexToOmml(keepScriptsInsideFrac(latex));
+}
+
+/* -------------------------------------------------------------------------- */
+/*  OMML → строка XML (для PPTX)                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Объекты `docx` умеют отдавать разобранное OMML-дерево (`prepForXml`), и для
+ * PPTX это ровно то, что нужно: PowerPoint хранит формулы тем же языком OMML,
+ * только в обёртке `a14:m`. Собирать второй LaTeX-разбор ради этого нельзя —
+ * он разъехался бы с DOCX-конвертером. Здесь только СЕРИАЛИЗАЦИЯ уже
+ * разобранного дерева, без единого решения о том, что такое дробь и степень.
+ */
+type OmmlTree = Record<string, unknown>;
+
+function isOmmlTree(value: unknown): value is OmmlTree {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function ommlEscape(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function ommlAttrs(tree: OmmlTree): string {
+  const raw = tree._attr;
+  if (!isOmmlTree(raw)) return "";
+  return Object.entries(raw)
+    .filter(([, v]) => v !== null && v !== undefined)
+    .map(([k, v]) => ` ${k}="${ommlEscape(String(v))}"`)
+    .join("");
+}
+
+/** Атрибутов нет и детей нет — `<m:degHide/>`, иначе пара с содержимым. */
+function ommlIsEmptyElement(value: unknown): boolean {
+  return (
+    isOmmlTree(value) &&
+    Object.entries(value)
+      .filter(([k]) => k !== "_attr")
+      .every(([, v]) => v === undefined || (Array.isArray(v) && v.length === 0))
+  );
+}
+
+function ommlValueToXml(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return ommlEscape(value);
+  if (typeof value === "number" || typeof value === "boolean") return ommlEscape(String(value));
+  if (Array.isArray(value)) return value.map(ommlValueToXml).join("");
+  return ommlChildrenToXml(value as OmmlTree);
+}
+
+function ommlChildrenToXml(tree: OmmlTree): string {
+  return Object.entries(tree)
+    .filter(([key]) => key !== "_attr")
+    .map(([key, value]) => {
+      if (ommlIsEmptyElement(value)) return `<${key}${ommlAttrs(value as OmmlTree)}/>`;
+      if (Array.isArray(value)) return `<${key}>${ommlValueToXml(value)}</${key}>`;
+      return `<${key}${ommlAttrs(value as OmmlTree)}>${ommlValueToXml(value)}</${key}>`;
+    })
+    .join("");
+}
+
+/**
+ * LaTeX → строка OMML для PPTX.
+ *
+ * @returns готовый фрагмент `<m:oMath>…</m:oMath>`, либо `null`, если формула
+ *          не входит в поддерживаемое подмножество — вызывающий обязан откатиться
+ *          на юникод.
+ */
+export function ommlXml(latex: string): string | null {
+  const components = toOmml(latex);
+  if (!components || components.length === 0) return null;
+
+  const xml = components
+    .flatMap((component) => {
+      // `prepForXml` — внутренний метод `XmlComponent`; в контекст ему не
+      // нужно ничего (Math-классы его игнорируют), но тип его требует.
+      const prep = (component as unknown as { prepForXml?: (ctx: unknown) => unknown }).prepForXml;
+      if (typeof prep !== "function") return [];
+      const tree = prep.call(component, { file: {}, viewWrapper: {}, stack: [] });
+      return isOmmlTree(tree) ? [ommlChildrenToXml(tree)] : [];
+    })
+    .join("");
+
+  return xml === "" ? null : `<m:oMath>${xml}</m:oMath>`;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Сегменты → содержимое абзаца                                                 */
+/* -------------------------------------------------------------------------- */
+
 /**
  * Сегменты → содержимое абзаца, где формулы становятся нативной математикой
  * Word. Текстовые сегменты идут обычными `TextRun`, формульные — OMML через
@@ -275,14 +470,17 @@ export function splitFormulaText(text: string, textLatex?: string | null): MathS
  *
  * @returns `null`, если хоть одну формулу в OMML превести не удалось.
  */
-function ommlChildren(segments: readonly MathSegment[], size?: number): ParagraphChild[] | null {
+function ommlChildren(
+  segments: readonly MathSegment[],
+  run: FormulaTextRunOptions = {}
+): ParagraphChild[] | null {
   const children: ParagraphChild[] = [];
   for (const segment of segments) {
     if (segment.type === "text") {
-      if (segment.value) children.push(new TextRun({ text: segment.value, size }));
+      if (segment.value) children.push(new TextRun({ text: segment.value, ...run }));
       continue;
     }
-    const omml = latexToOmml(segment.latex);
+    const omml = toOmml(segment.latex);
     if (!omml) return null;
     children.push(new DocxMath({ children: omml }));
   }
@@ -293,14 +491,17 @@ function ommlChildren(segments: readonly MathSegment[], size?: number): Paragrap
  * Тот же абзац, но с юникод-фолбэком вместо OMML (`⅛ ⅓ ² √ × ·`).
  * Последний рубеж: файл обязан остаться читаемым, лучше «2/3», чем пустота.
  */
-function unicodeChildren(segments: readonly MathSegment[], size?: number): ParagraphChild[] {
+function unicodeChildren(
+  segments: readonly MathSegment[],
+  run: FormulaTextRunOptions = {}
+): ParagraphChild[] {
   const children: ParagraphChild[] = [];
   for (const segment of segments) {
     if (segment.type === "text") {
-      if (segment.value) children.push(new TextRun({ text: segment.value, size }));
+      if (segment.value) children.push(new TextRun({ text: segment.value, ...run }));
       continue;
     }
-    children.push(new TextRun({ text: latexToUnicode(segment.latex), size }));
+    children.push(new TextRun({ text: latexToUnicode(segment.latex), ...run }));
   }
   return children;
 }
@@ -318,13 +519,36 @@ function unicodeChildren(segments: readonly MathSegment[], size?: number): Parag
  * попадать именно он.
  */
 function mathChildren(text: string, textLatex?: string, size?: number): ParagraphChild[] {
+  return formulaChildren(text, { textLatex, size });
+}
+
+/**
+ * ОБЩАЯ ТОЧКА ВХОДА ДЛЯ ВСЕХ ТИПОВ МАТЕРИАЛА (лист 2.1.5).
+ *
+ * Карточки, КТП, план урока и презентация обязаны резать текст РОВНО ТАК ЖЕ,
+ * как рабочий лист, иначе учитель сверяет распечатку с экраном и видит разные
+ * формулы в одном материале. Поэтому каждый из этих модулей зовёт эту функцию,
+ * а не пишет свой разбор: второй разбор — это гарантированный расхожий
+ * результат через месяц (один поправили, второй забыли).
+ *
+ * Формулы едут в Word нативной математикой (`<m:f>`), а не строкой в скобках,
+ * и учитель может их править прямо в документе.
+ */
+export function formulaChildren(
+  text: string,
+  options: FormulaTextRunOptions & { textLatex?: string | null } = {}
+): ParagraphChild[] {
+  const { textLatex, ...run } = options;
+
   const segments = splitFormulaText(text, textLatex);
 
-  const children = ommlChildren(segments, size);
+  const children = ommlChildren(segments, run);
   if (children) return children;
 
+  // Тот же откат, что у рабочего листа: битый `text_latex` уводит абзац на
+  // исходный `text`, чтобы в файл не уехал огрызок формулы.
   const plain = splitFormulaText(text, undefined);
-  return ommlChildren(plain, size) ?? unicodeChildren(plain, size);
+  return ommlChildren(plain, run) ?? unicodeChildren(plain, run);
 }
 
 /**

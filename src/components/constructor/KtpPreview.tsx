@@ -8,6 +8,8 @@ import { formatDate } from "@/lib/utils/cn";
 import { SITE_HOST } from "@/lib/site";
 import { WorksheetScale } from "./WorksheetScale";
 import { PrintWatermark } from "./PrintWatermark";
+// Лист 2.1.5: тема урока рисуется тем же разбором, что и в выгрузке DOCX.
+import { MathText } from "@/components/math/MathText";
 
 interface Props {
   ktp: Ktp;
@@ -109,7 +111,7 @@ export function KtpPreview({ ktp }: Props) {
                             </td>
                           ) : null}
                           <td className="border border-warm-300 px-2 py-2 text-warm-950">
-                            {entry.topic}
+                            <MathText text={entry.topic} />
                           </td>
                           <td className="border border-warm-300 px-2 py-2 text-warm-700">
                             <KindBadge kind={entry.kind} />

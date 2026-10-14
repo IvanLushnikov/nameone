@@ -14,9 +14,23 @@
 
 import JSZip from "jszip";
 import type { Presentation, Slide, SlideKind } from "@/lib/types";
+// Лист 2.1.5. Разбор формул общий на все типы материала: `splitFormulaText`
+// режет текст на текст и формулы, `ommlXml` отдаёт ту же самую OMML-разметку,
+// что уезжает в DOCX, — PowerPoint хранит формулы тем же языком, только в
+// обёртке `a14:m`. Свой разбор здесь означал бы, что презентация покажет другую
+// дробь, чем рабочий лист.
+import { splitFormulaText, ommlXml } from "./docx";
+import { latexToUnicode } from "@/lib/math/latex-to-omml";
 
 const SLIDE_W = 9144000; // 10" в EMU
 const SLIDE_H = 6858000; // 7.5"
+
+/**
+ * Пространства имён для формул. `a14` — расширение DrawingML для математики
+ * (PowerPoint 2010+), `m` — сам OMML. Без них PowerPoint считает файл битым.
+ */
+const MATH_NS = 'xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main"';
+const OMML_NS = 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"';
 
 function xmlEscape(s: string): string {
   return s
@@ -27,18 +41,44 @@ function xmlEscape(s: string): string {
     .replace(/'/g, "&apos;");
 }
 
+/** Обычный текстовый run с заданным оформлением. */
+function textRun(text: string, rPr: string): string {
+  if (!text) return "";
+  return `<a:r><a:rPr lang="ru-RU"${rPr}/><a:t>${xmlEscape(text)}</a:t></a:r>`;
+}
+
+/**
+ * Один абзац DrawingML, в котором формулы остаются формулами.
+ *
+ * Тот же откат, что и в DOCX: если формулу не удалось перевести в OMML,
+ * уходит читаемая юникод-запись (`a/b`, `x²`) — слайд с «2/3» лучше слайда
+ * с пустотой.
+ */
+function richParagraph(text: string, rPr: string, algn = ""): string {
+  const pPr = algn ? `<a:pPr algn="${algn}"/>` : "";
+
+  const body = splitFormulaText(text)
+    .map((segment) => {
+      if (segment.type === "text") return textRun(segment.value, rPr);
+      const math = ommlXml(segment.latex);
+      if (math) return `<a14:m ${MATH_NS} ${OMML_NS}>${math}</a14:m>`;
+      return textRun(latexToUnicode(segment.latex), rPr);
+    })
+    .join("");
+
+  return `<a:p>${pPr}${body}</a:p>`;
+}
+
 /** Слайд с заголовком + буллетами. */
 function slideXml(slide: Slide, idx: number): string {
-  const bullets = (slide.bullets ?? []).slice(0, 6).map(
-    (b) => `<a:p><a:r><a:rPr lang="ru-RU"/><a:t>${xmlEscape(b)}</a:t></a:r></a:p>`
-  ).join("");
+  const bullets = (slide.bullets ?? []).slice(0, 6).map((b) => richParagraph(b, "")).join("");
   const notes = slide.notes
     ? `<p:notes>
         <p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>
           <p:sp><p:nvSpPr><p:cNvPr id="2" name="Notes"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
             <p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="6000000" cy="900000"/></a:xfrm><a:prstGeom prst="rect"/></p:spPr>
             <p:txBody><a:bodyPr/><a:lstStyle/>
-              <a:p><a:r><a:rPr lang="ru-RU"/><a:t>${xmlEscape(slide.notes)}</a:t></a:r></a:p>
+              ${richParagraph(slide.notes, "")}
             </p:txBody>
           </p:sp>
         </p:spTree></p:cSld>
@@ -48,7 +88,9 @@ function slideXml(slide: Slide, idx: number): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
        xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
-       xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+       xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       ${MATH_NS}
+       ${OMML_NS}>
   <p:cSld>
     <p:spTree>
       <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
@@ -57,7 +99,7 @@ function slideXml(slide: Slide, idx: number): string {
         <p:nvSpPr><p:cNvPr id="2" name="Title"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
         <p:spPr><a:xfrm><a:off x="457200" y="274680"/><a:ext cx="${SLIDE_W - 914400}" cy="900000"/></a:xfrm><a:prstGeom prst="rect"/></p:spPr>
         <p:txBody><a:bodyPr/><a:lstStyle/>
-          <a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="ru-RU" sz="3200" b="1"/><a:t>${xmlEscape(slide.title)}</a:t></a:r></a:p>
+          ${richParagraph(slide.title, ' sz="3200" b="1"', "ctr")}
         </p:txBody>
       </p:sp>
       <p:sp>

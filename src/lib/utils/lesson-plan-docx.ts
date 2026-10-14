@@ -17,6 +17,9 @@ import {
 } from "docx";
 import type { LessonPlan } from "@/lib/types";
 import { SITE_HOST } from "@/lib/site";
+// Лист 2.1.5: общий разбор формул. Ход урока и домашнее задание — текст, который
+// учитель читает со стола на печати, поэтому дробь здесь обязана быть дробью.
+import { formulaChildren } from "./docx";
 
 /**
  * DOCX-экспорт плана урока.
@@ -83,12 +86,7 @@ export async function generateLessonPlanDocx(plan: LessonPlan): Promise<Blob> {
       ? [new Paragraph({ children: [new TextRun({ text: "—", color: "999999" })], spacing: { after: 80 } })]
       : items.flatMap((it, idx) => [
           new Paragraph({
-            children: [
-              new TextRun({
-                text: `${idx + 1}. ${it}`,
-                size: 22,
-              }),
-            ],
+            children: formulaChildren(`${idx + 1}. ${it}`, { size: 22 }),
             spacing: { after: 40 },
           }),
         ])),
@@ -111,7 +109,7 @@ export async function generateLessonPlanDocx(plan: LessonPlan): Promise<Blob> {
     ...plan.equipment.map(
       (line) =>
         new Paragraph({
-          children: [new TextRun({ text: `• ${line}`, size: 22 })],
+          children: formulaChildren(`• ${line}`, { size: 22 }),
           spacing: { after: 40 },
         })
     ),
@@ -179,20 +177,15 @@ export async function generateLessonPlanDocx(plan: LessonPlan): Promise<Blob> {
                   ],
                 }),
                 new Paragraph({
-                  children: [
-                    new TextRun({ text: stage.title, size: 20, italics: true, color: "555555" }),
-                  ],
+                  children: formulaChildren(stage.title, { size: 20, italics: true, color: "555555" }),
                 }),
                 ...(stage.materials && stage.materials.length > 0
                   ? [
                       new Paragraph({
-                        children: [
-                          new TextRun({
-                            text: `Материалы: ${stage.materials.join(", ")}`,
-                            size: 18,
-                            color: "888888",
-                          }),
-                        ],
+                        children: formulaChildren(`Материалы: ${stage.materials.join(", ")}`, {
+                          size: 18,
+                          color: "888888",
+                        }),
                       }),
                     ]
                   : []),
@@ -211,14 +204,14 @@ export async function generateLessonPlanDocx(plan: LessonPlan): Promise<Blob> {
             new TableCell({
               children: [
                 new Paragraph({
-                  children: [new TextRun({ text: stage.teacherActions, size: 20 })],
+                  children: formulaChildren(stage.teacherActions, { size: 20 }),
                 }),
               ],
             }),
             new TableCell({
               children: [
                 new Paragraph({
-                  children: [new TextRun({ text: stage.studentActions, size: 20 })],
+                  children: formulaChildren(stage.studentActions, { size: 20 }),
                 }),
               ],
             }),
@@ -270,7 +263,7 @@ export async function generateLessonPlanDocx(plan: LessonPlan): Promise<Blob> {
       spacing: { before: 200, after: 60 },
     }),
     new Paragraph({
-      children: [new TextRun({ text: plan.homework.text, size: 22 })],
+      children: formulaChildren(plan.homework.text, { size: 22 }),
       spacing: { after: 80 },
     }),
     ...(plan.homework.alternatives && plan.homework.alternatives.length > 0
@@ -282,9 +275,7 @@ export async function generateLessonPlanDocx(plan: LessonPlan): Promise<Blob> {
           ...plan.homework.alternatives.map(
             (alt) =>
               new Paragraph({
-                children: [
-                  new TextRun({ text: `• ${alt}`, size: 22 }),
-                ],
+                children: formulaChildren(`• ${alt}`, { size: 22 }),
                 spacing: { after: 40 },
               })
           ),

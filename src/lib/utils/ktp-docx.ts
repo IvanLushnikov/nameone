@@ -29,6 +29,9 @@ import {
 } from "docx";
 import type { Ktp, KtpEntry, KtpLessonKind } from "@/lib/types";
 import { SITE_HOST } from "@/lib/site";
+// Лист 2.1.5: тема урока — единственное поле КТП, где бывает математика.
+// Разбор берём общий с рабочим листом, свой здесь заводить нельзя.
+import { formulaChildren } from "./docx";
 
 /** Заголовки колонок КТП — единый источник правды для UI и DOCX. */
 export const KTP_COLUMNS = [
@@ -74,14 +77,26 @@ function fillCell(cell: TableCell, fillHex: string) {
   };
 }
 
-function normalCell(text: string, opts?: { bold?: boolean; widthPct: number }) {
+/**
+ * @param math  `true` — текст прогоняется через общий разбор формул, и дробь
+ *              уезжает в Word дробью с чертой. Включаем только для темы урока:
+ *              в «Тип», «Часы», «ФГОС» и датах математики быть не может, а лишний
+ *              разбор там — это риск съехавшего текста на ровном месте.
+ */
+function normalCell(
+  text: string,
+  opts?: { bold?: boolean; widthPct: number; math?: boolean }
+) {
   const w = opts?.widthPct ?? 16;
+  const run = { bold: opts?.bold, size: 20 };
   return new TableCell({
     width: { size: w, type: WidthType.PERCENTAGE },
     children: [
       new Paragraph({
         alignment: AlignmentType.LEFT,
-        children: [new TextRun({ text, bold: opts?.bold, size: 20 })],
+        children: opts?.math
+          ? formulaChildren(text, run)
+          : [new TextRun({ text, bold: opts?.bold, size: 20 })],
       }),
     ],
   });
@@ -90,9 +105,10 @@ function normalCell(text: string, opts?: { bold?: boolean; widthPct: number }) {
 function styledCellForEntry(
   text: string,
   widthPct: number,
-  kind: KtpLessonKind
+  kind: KtpLessonKind,
+  math = false
 ): TableCell {
-  const cell = normalCell(text, { widthPct });
+  const cell = normalCell(text, { widthPct, math });
   const fill = bgForKind(kind);
   if (fill) fillCell(cell, fill);
   return cell;
@@ -200,7 +216,12 @@ export async function generateKtpDocx(ktp: Ktp): Promise<Blob> {
             width: { size: 0, type: WidthType.PERCENTAGE },
             children: [new Paragraph({ children: [new TextRun({ text: "", size: 1 })] })],
           });
-      const topicCell = styledCellForEntry(entry.topic, KTP_COLUMNS[2].widthPct, weekKind);
+      const topicCell = styledCellForEntry(
+        entry.topic,
+        KTP_COLUMNS[2].widthPct,
+        weekKind,
+        true
+      );
       const kindCell = styledCellForEntry(
         `${KIND_LABEL[entry.kind]}${
           entry.kind === "control" || entry.kind === "test" ? " ⚑" : ""

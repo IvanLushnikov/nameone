@@ -25,6 +25,10 @@ import {
   VerticalAlign,
 } from "docx";
 import type { CardSet, FlashCard } from "@/lib/types";
+// Лист 2.1.5: разбор формул общий на все типы материала. Свой разбор в этом
+// модуле означал бы, что карточки рано или поздно покажут другую дробь, чем
+// рабочий лист, и учитель сверит две разные формулы в одном комплекте.
+import { formulaChildren } from "./docx";
 
 /** Сколько карточек помещается на один лист — сетка 2×5. */
 const CARDS_PER_SHEET = 10;
@@ -63,14 +67,16 @@ function cardCell(card: FlashCard | undefined): TableCell {
     verticalAlign: VerticalAlign.CENTER,
     margins: { top: 160, bottom: 160, left: 160, right: 160 },
     children: [
+      // Формулы (`(x² − 9)/(x² + 6x + 9)`) едут в Word дробью с чертой и
+      // остаются редактируемыми — тем же способом, что и в рабочем листе.
       new Paragraph({
-        children: [new TextRun({ text: card.front, bold: true, size: 22 })],
+        children: formulaChildren(card.front, { bold: true, size: 22 }),
         spacing: { after: card.back ? 80 : 0 },
       }),
       ...(card.back
         ? [
             new Paragraph({
-              children: [new TextRun({ text: card.back, size: 18, color: "444444" })],
+              children: formulaChildren(card.back, { size: 18, color: "444444" }),
             }),
           ]
         : []),

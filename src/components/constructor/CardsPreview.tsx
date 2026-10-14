@@ -9,6 +9,9 @@ import { WorksheetScale } from "./WorksheetScale";
 import { PrintWatermark } from "./PrintWatermark";
 import { CARDS_PER_SHEET, ensureCardsPrintStyles, paginateCards } from "@/lib/utils/cards-print";
 import { SITE_HOST } from "@/lib/site";
+// Лист 2.1.5: на экране дробь рисуется тем же разбором, что и в выгрузке, —
+// иначе учитель сверяет карточку с DOCX и видит две разные формулы.
+import { MathText } from "@/components/math/MathText";
 
 interface Props {
   set: CardSet;
@@ -142,7 +145,7 @@ function CardTile({ card, index }: { card: FlashCard; index: number }) {
       </div>
 
       <div className="text-[14px] font-semibold text-warm-950 leading-snug mb-auto">
-        {card.front}
+        <MathText text={card.front} />
       </div>
 
       {/* Оборотная сторона: видна при наведении ИЛИ при раскрытии кликом.
@@ -152,7 +155,7 @@ function CardTile({ card, index }: { card: FlashCard; index: number }) {
           open ? "block" : "hidden group-hover:block"
         }`}
       >
-        {card.back}
+        <MathText text={card.back} />
       </div>
 
       <button

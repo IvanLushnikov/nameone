@@ -6,6 +6,8 @@ import { formatDate } from "@/lib/utils/cn";
 import { SITE_HOST } from "@/lib/site";
 import { WorksheetScale } from "./WorksheetScale";
 import { PrintWatermark } from "./PrintWatermark";
+// Лист 2.1.5: ход урока и домашнее задание — те же формулы, что и в DOCX.
+import { MathText } from "@/components/math/MathText";
 
 interface Props {
   plan: LessonPlan;
@@ -106,7 +108,7 @@ export function LessonPlanPreview({ plan }: Props) {
                 <ul className="text-[13px] text-warm-700 leading-snug flex flex-wrap gap-x-4 gap-y-1">
                   {plan.equipment.map((line, i) => (
                     <li key={i} className="before:content-['•'] before:mr-1.5 before:text-warm-600">
-                      {line}
+                      <MathText text={line} />
                     </li>
                   ))}
                 </ul>
@@ -142,19 +144,25 @@ export function LessonPlanPreview({ plan }: Props) {
                             >
                               {badge.label}
                             </span>
-                            <div className="text-warm-950 font-medium mt-1">{stage.title}</div>
+                            <div className="text-warm-950 font-medium mt-1">
+                              <MathText text={stage.title} />
+                            </div>
                             {stage.materials && stage.materials.length > 0 && (
                               <div className="mt-1 text-[11px] text-warm-500">
                                 <span className="font-semibold">Материалы: </span>
-                                {stage.materials.join(", ")}
+                                <MathText text={stage.materials.join(", ")} />
                               </div>
                             )}
                           </td>
                           <td className="py-2 px-2 text-center font-mono text-warm-700 whitespace-nowrap">
                             {stage.durationMin} мин
                           </td>
-                          <td className="py-2 px-2 text-warm-800">{stage.teacherActions}</td>
-                          <td className="py-2 px-2 text-warm-800">{stage.studentActions}</td>
+                          <td className="py-2 px-2 text-warm-800">
+                            <MathText text={stage.teacherActions} />
+                          </td>
+                          <td className="py-2 px-2 text-warm-800">
+                            <MathText text={stage.studentActions} />
+                          </td>
                         </tr>
                       );
                     })}
@@ -179,13 +187,15 @@ export function LessonPlanPreview({ plan }: Props) {
                 Домашнее задание
               </h2>
               <div className="rounded-lg border border-warm-200 bg-warm-50 p-3 text-[13px] leading-snug text-warm-900">
-                {plan.homework.text}
+                <MathText text={plan.homework.text} />
                 {plan.homework.alternatives && plan.homework.alternatives.length > 0 && (
                   <div className="mt-2 text-warm-600">
                     <span className="font-semibold text-warm-700">Альтернативы:</span>
                     <ul className="mt-1 space-y-0.5 list-disc list-inside marker:text-warm-600">
                       {plan.homework.alternatives.map((alt, i) => (
-                        <li key={i}>{alt}</li>
+                        <li key={i}>
+                          <MathText text={alt} />
+                        </li>
                       ))}
                     </ul>
                   </div>
@@ -231,7 +241,7 @@ function GoalColumn({
         <ul className="space-y-1 text-warm-800">
           {items.map((g, i) => (
             <li key={i} className="pl-3 relative before:absolute before:left-0 before:top-0 before:text-warm-600 before:content-['—']">
-              {g}
+              <MathText text={g} />
             </li>
           ))}
         </ul>
