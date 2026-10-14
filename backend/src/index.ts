@@ -47,6 +47,7 @@ import { f06Router } from "./routes/f06";
 import { f07Router } from "./routes/f07";
 import { f08Router } from "./routes/f08";
 import { publicFormsRouter } from "./routes/publicForms";
+import { classesRouter, publicClassLinksRouter } from "./routes/classes";
 import { purgeExpiredPhotos } from "./jobs/purgeExpiredPhotos";
 import { refreshWeeklyTopicState } from "./jobs/weeklyTopic";
 import { purgeExpiredForms } from "./jobs/purgeExpiredForms";
@@ -219,6 +220,8 @@ app.route("/api/assignments", f06Router); // F-06: POST /:id/photo-check
 app.route("/api/journal", journalRouter); // ТЗ-19: журнал проверок учителя
 app.route("/api/assignments", f07Router); // F-07: формы учителя (требуют входа)
 app.route("/api/public/forms", publicFormsRouter); // TZ-12: страница ученика, БЕЗ авторизации
+app.route("/api/classes", classesRouter); // 3.1.1: классы и ученики учителя (требует входа)
+app.route("/api/public/class-links", publicClassLinksRouter); // 3.1.1: персональная ссылка ученика, БЕЗ авторизации
 app.route("/api/interactives", interactivesRouter); // TZ-13: ЛК учителя (требует входа)
 app.route("/api/public/interactives", publicInteractivesRouter); // TZ-13: игра ученика, БЕЗ авторизации
 app.route("/api/turnstile", turnstileRouter); // проверка капчи антифрода (409 → капча → повтор)

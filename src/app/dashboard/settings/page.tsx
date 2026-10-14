@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { ProfileSection } from "@/components/lk/ProfileSection";
 import { ClassesSection } from "@/components/lk/ClassesSection";
+import { ClassRosterSection } from "@/components/lk/ClassRosterSection";
 import { PasswordSection } from "@/components/lk/PasswordSection";
 import { SessionsSection } from "@/components/lk/SessionsSection";
 import { SubscriptionPanel } from "@/components/lk/SubscriptionPanel";
@@ -114,6 +115,13 @@ export default function SettingsPage() {
       <ProfileSection view={view} onChange={setView} emailConfirmId={emailConfirmId} />
 
       <ClassesSection view={view} onChange={setView} />
+
+      {/* Ученики и персональный QR. Отдельная карточка, а не часть ClassesSection:
+          список названий классов работает без входа и без сервера, а персональная
+          ссылка ученика — только на сервере и только со входом. Смешали бы —
+          либо фильтр кабинета начал бы требовать аккаунт, либо токен ученика
+          уехал бы в localStorage. */}
+      <ClassRosterSection hasAccount={view.source === "account"} />
 
       <SubscriptionPanel />
 

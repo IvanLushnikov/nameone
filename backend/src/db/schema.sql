@@ -888,3 +888,103 @@ CREATE TABLE IF NOT EXISTS user_fingerprints (
 
 CREATE INDEX IF NOT EXISTS idx_uf_user ON user_fingerprints(user_id);
 CREATE INDEX IF NOT EXISTS idx_uf_fingerprint ON user_fingerprints(fingerprint);
+
+-- ─── Классы с учениками и персональный QR (лист 3.1.1) ────────────────────────
+--
+-- ДО этого класс учителя был строкой в `teacher_classes.classes_json`
+-- (`["5А","5Б"]`), а учеников в системе не было вообще. Сценарий, ради которого
+-- всё затевалось — «учитель создаёт лист, раздаёт каждому свой QR, ученики
+-- отвечают с телефонов, учитель видит, кто что ответил» — на такой модели
+-- невозможен: отнести ответ к конкретному ребёнку не к чему.
+--
+-- Три новые таблицы, а НЕ колонки в существующих. Причина ровно та же, что у
+-- `usage_counters` и `recurring_payment_methods` выше: миграция здесь — это
+-- повторный прогон всего schema.sql, а `ALTER TABLE ADD COLUMN` в SQLite
+-- не идемпотентен. Добавить колонку в `forms` или `form_responses` значило бы
+-- либо сломать повторный прогон, либо завести ручную миграцию. Новые таблицы
+-- schema.sql создаёт идемпотентно сам.
+
+-- Один класс учителя: «5А». Строка на класс, а не на «учитель + список строк».
+--
+-- `name_key` — отдельная колонка, а не `lower(name)` в UNIQUE-индексе: SQLite
+-- умеет индексы по выражениям, но полагаться на это в D1 нельзя, а сравнение
+-- должно быть тем же самым, что в приложении. Именно эта колонка закрывает
+-- крайний случай «5А» и «5а» — для учителя это один и тот же класс, и две
+-- строки с таким именем развели бы его список учеников надвое.
+--
+-- UNIQUE(user_id, name_key), а не UNIQUE(name): два разных учителя вправе
+-- назвать свой класс одинаково («5А» есть у каждого), и это не конфликт.
+CREATE TABLE IF NOT EXISTS classes (
+  id         TEXT PRIMARY KEY,             -- cls_<12>
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,                -- «5А» — как показываем учителю
+  name_key   TEXT NOT NULL,                -- «5а» — как сравниваем (lower)
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_classes_user_name ON classes(user_id, name_key);
+CREATE INDEX IF NOT EXISTS idx_classes_user ON classes(user_id, created_at);
+
+-- Ученик в классе.
+--
+-- `token` — 32 символа, персональная ссылка вида `/form/?t=<токен формы>&st=<здесь>`.
+-- В ссылке НЕТ имени: ученик, получивший QR, не должен узнать своё имя, а тем
+-- более чужие. Сервер по токену сам достаёт имя в момент отправки ответа, и в
+-- базу ответа попадает снимок имени — учитель потом видит, кто ответил.
+--
+-- Удаление — МЯГКОЕ (`removed_at`), и это не уборка, а требование к ответу:
+-- удалённый ученик не должен оставлять свои ответы без хозяина. Строка остаётся,
+-- поэтому `class_student_answers.student_id` продолжает резолвиться в имя, и
+-- учитель в «ушедших» видит баллы ушедшего ребёнка. Ссылка при этом перестаёт
+-- работать (410), то есть выданный QR нельзя переиспользовать новеньким.
+--
+-- Поля класса не дублируются: `class_id` достаточно, чтобы класс узнать.
+CREATE TABLE IF NOT EXISTS class_students (
+  id         TEXT PRIMARY KEY,             -- cst_<12>
+  class_id   TEXT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  token      TEXT NOT NULL UNIQUE,         -- 32 символа, персональная ссылка
+  name       TEXT NOT NULL,                -- ФИО или «Иванов И.», как ввёл учитель
+  position   INTEGER NOT NULL DEFAULT 0,   -- порядок в списке учителя
+  removed_at INTEGER,                      -- unix-секунды мягкого удаления, NULL = живой
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_class_students_class ON class_students(class_id, position);
+CREATE INDEX IF NOT EXISTS idx_class_students_token ON class_students(token);
+
+-- Ответ ученика ИЗ ПЕРСОНАЛЬНОЙ ССЫЛКИ: чей это ответ.
+--
+-- Почему отдельная таблица, а не колонка в `form_responses`: `form_responses`
+-- общая для обоих путей — и обычная ссылка (ученик вводит имя руками), и
+-- персональная (имя подставляет сервер). Колонку `student_id` туда нельзя
+-- добавить без ручной миграции, а «подставлять токен ученика в student_label» —
+-- значит затереть код класса, который фронт туда кладёт сам.
+--
+-- Строка здесь = «этот ответ сдал вот этот ученик». Сами баллы и разбор лежат
+-- в `form_responses` / `form_answers` как обычно, поэтому учитель видит ответы
+-- в привычном месте, а «кто ответил» — точно, без угадывания по написанному
+-- учеником имени.
+--
+-- `response_id` — ссылка на строку `form_responses`. Без FOREIGN KEY намеренно:
+-- `form_responses` удаляется каскадом вместе с `forms`, и D1 не проверяет
+-- целостность внешних ключей по умолчанию — то есть FK здесь был бы
+-- украшением, которое молча перестало бы работать.
+--
+-- Повторная отправка учеником = новая строка (UNIQUE на student_id+form_id НЕ
+-- стоит): телефон на плохом Wi-Fi и нажатая дважды «Отправить» должны дать
+-- учителю оба ответа, а список учителя показывает последний.
+CREATE TABLE IF NOT EXISTS class_student_answers (
+  id           TEXT PRIMARY KEY,            -- csa_<12>
+  student_id   TEXT NOT NULL REFERENCES class_students(id) ON DELETE CASCADE,
+  form_id      TEXT NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
+  response_id  TEXT NOT NULL,               -- id строки в form_responses
+  score_total  INTEGER NOT NULL DEFAULT 0,
+  score_max    INTEGER NOT NULL DEFAULT 0,
+  submitted_at INTEGER NOT NULL,
+  created_at   INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_csa_student_form ON class_student_answers(student_id, form_id, submitted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_csa_form ON class_student_answers(form_id, submitted_at DESC);
