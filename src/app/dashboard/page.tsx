@@ -98,6 +98,7 @@ import {
   AlertCircle,
   RotateCcw,
 } from "lucide-react";
+import { ShareFormDialog } from "@/components/teacher/ShareFormDialog";
 import { timeAgo, plural, pluralizeTasks } from "@/lib/utils/cn";
 import { PLANS, priceShort } from "@/lib/content/plans";
 import { getSubject } from "@/lib/content/subjects";
@@ -139,6 +140,16 @@ export default function DashboardPage() {
   const [historyError, setHistoryError] = React.useState(false);
 
   const [query, setQuery] = React.useState("");
+  /**
+   * Какой лист учитель выдаёт классу из кабинета. Само задание сервер
+   * возьмёт из листа по id, поэтому здесь только данные для шапки.
+   */
+  const [shareTarget, setShareTarget] = React.useState<{
+    id: string;
+    title: string;
+    subject: string;
+    grade: number;
+  } | null>(null);
   const [filters, setFilters] = React.useState<HistoryFilters>(EMPTY_FILTERS);
 
   /* ─── Избранное и шаблоны ──────────────────────────────────────────────── */
@@ -588,6 +599,12 @@ export default function DashboardPage() {
                               });
                               window.print();
                             }}
+                            onShare={() => setShareTarget({
+                              id: item.id,
+                              title: item.title,
+                              subject: item.subject as string,
+                              grade: item.grade ?? 5,
+                            })}
                           />
                         ))}
                       </div>
@@ -703,6 +720,17 @@ export default function DashboardPage() {
           <FormsTab />
         </TabsContent>
       </Tabs>
+
+      {/* Выдача листа, выбранного в истории. Модалка одна на все карточки —
+          открывается та, по которой кликнули. */}
+      <ShareFormDialog
+        open={shareTarget !== null}
+        onClose={() => setShareTarget(null)}
+        worksheetId={shareTarget?.id}
+        title={shareTarget?.title ?? ""}
+        subject={shareTarget?.subject ?? ""}
+        grade={shareTarget?.grade ?? 5}
+      />
     </div>
   );
 }
@@ -1011,11 +1039,13 @@ function HistoryCard({
   onRemove,
   onToggleFav,
   onDownload,
+  onShare,
 }: {
   item: HistoryItem;
   onRemove: () => void;
   onToggleFav: () => void;
   onDownload: () => void;
+  onShare: () => void;
 }) {
   const subject = getSubject(item.subject as SubjectSlug);
   const count = countLabel(item);
@@ -1055,12 +1085,28 @@ function HistoryCard({
         </button>
       </div>
       <div className="mt-auto flex items-center gap-1.5 px-4 pb-4">
+        {/* Выдать классу прямо из кабинета. Раньше кнопка жила только в
+            конструкторе, и лист, сделанный вчера, было негде выдать: из
+            истории вели только «Открыть» в предпросмотр, где такой кнопки
+            нет. Забытый лист в итоге нельзя было отдать классу вообще. */}
+        {item.type === "worksheet" && (
+          <Button
+            variant="primary"
+            size="sm"
+            fullWidth
+            onClick={onShare}
+            leftIcon={<Send className="w-4 h-4" />}
+            data-testid="history-share"
+          >
+            Выдать классу
+          </Button>
+        )}
         <Button
           as="link"
           href={`/preview?id=${encodeURIComponent(item.id)}`}
           variant="secondary"
           size="sm"
-          fullWidth
+          className={item.type === "worksheet" ? "shrink-0" : "flex-1"}
         >
           Открыть
         </Button>

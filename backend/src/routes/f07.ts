@@ -22,7 +22,7 @@ import { z } from "zod";
 import type { D1Database } from "@cloudflare/workers-types";
 import type { AppEnv, WorksheetTask } from "../types";
 import type { Env } from "../env";
-import { getWorksheetById } from "../services/worksheet";
+import { getWorksheetById, getWorksheetOwnerId } from "../services/worksheet";
 import { requireAuth } from "../middleware/auth";
 import { BadRequestError, NotFoundError } from "../lib/errors";
 import { formId as makeFormId, formToken } from "../lib/shortid";
@@ -78,6 +78,7 @@ interface AnswerRow {
   points_max: number;
   needs_review: number;
   check_method: string;
+  check_meta_json: string | null;
 }
 
 /** Ответ на задание в ответе API (camelCase, как ждёт фронт). */
@@ -89,6 +90,25 @@ interface AnswerView {
   pointsMax: number;
   needsReview: number;
   checkMethod: string;
+  /** Комментарий учителя из check_meta_json — только для кабинета. */
+  teacherComment: string | null;
+}
+
+/**
+ * Достать комментарий учителя из check_meta_json.
+ *
+ * Метаданные пишет только ручная проверка; у автосверки там может лежать
+ * `reason` без `comment`. Битый JSON не должен ронять всю сводку — поэтому
+ * молча возвращаем null.
+ */
+function parseTeacherComment(metaJson: string | null): string | null {
+  if (!metaJson) return null;
+  try {
+    const parsed = JSON.parse(metaJson) as { comment?: unknown };
+    return typeof parsed.comment === "string" && parsed.comment !== "" ? parsed.comment : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -205,7 +225,7 @@ async function fetchAnswersForResponses(
     const rows = await db
       .prepare(
         `SELECT response_id, task_number, student_answer, is_correct, points_awarded,
-                points_max, needs_review, check_method
+                points_max, needs_review, check_method, check_meta_json
          FROM form_answers
          WHERE response_id IN (${chunk.map(() => "?").join(",")})
          ORDER BY task_number ASC`,
@@ -280,6 +300,18 @@ f07Router.post("/forms", async (c) => {
   let worksheetId: string | null = null;
 
   if (body.worksheetId) {
+    // Чей это лист — проверяем ДО чтения заданий. Раньше здесь стоял только
+    // getWorksheetById: зная id чужого листа, можно было выдать его классу и
+    // получить форму с чужими заданиями и эталонами (а в сводке учитель видит
+    // и то, и другое). Право на чтение листа проверяется ровно так же, как в
+    // `GET /api/worksheets/:id`, — ответ 404, а не 403: по коду ответа иначе
+    // можно перебором узнать, какие id существуют.
+    const ownerId = await getWorksheetOwnerId(c.env.DB, body.worksheetId);
+    if (ownerId === undefined) throw new NotFoundError("Рабочий лист не найден");
+    if (ownerId !== null && ownerId !== user.id && user.isAdmin !== true) {
+      throw new NotFoundError("Рабочий лист не найден");
+    }
+
     const ws = await getWorksheetById(c.env.DB, body.worksheetId);
     if (!ws) throw new NotFoundError("Рабочий лист не найден");
     worksheetId = ws.id ?? body.worksheetId;
@@ -519,6 +551,7 @@ f07Router.get("/forms/:id", async (c) => {
             pointsMax: a.points_max,
             needsReview: a.needs_review,
             checkMethod: a.check_method,
+            teacherComment: parseTeacherComment(a.check_meta_json),
           })),
       });
     }
@@ -622,6 +655,128 @@ f07Router.patch("/forms/:id", async (c) => {
     url: buildFormUrl(c.env, token),
     status: body.action === "close" ? "closed" : "open",
     expiresAt,
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/assignments/forms/:id/responses/:rid/answers/:taskNumber
+// Ручная проверка одного ответа учителем.
+//
+// Зачем этот роут (12.10.2026): автосверка закрывает не всё — эссе всегда
+// учителю, у задания может не быть эталона, а формулировка может отличаться от
+// эталона. До этого роута сводка показывала «ждут проверки N», и закрыть её было
+// НЕЧЕМ: ни кнопок, ни эндпоинта. Флоу учителя упирался в тупик.
+//
+// Что делает:
+//   1. проверяет, что форма своя (loadOwnForm — чужая отдаёт 404);
+//   2. проверяет, что ответ принадлежит именно этой форме (иначе по `rid`
+//      можно было бы править чужую работу);
+//   3. пишет вердикт, балл и комментарий учителя в check_meta_json;
+//   4. ПЕРЕСЧИТЫВАЕТ score_total ответа — без этого сводка продолжила бы
+//      показывать старые 0 баллов, и главная цифра на экране врала бы.
+//
+// Закрытая форма проверке не мешает: закрытие останавливает только отправки.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ReviewAnswerBody = z.object({
+  /** Вердикт учителя: 1 | 0. */
+  isCorrect: z.boolean(),
+  /** Балл. Не передан = полный балл при isCorrect, иначе 0. */
+  pointsAwarded: z.number().int().min(0).max(100).optional(),
+  /** Комментарий учителя ученику не показывается — остаётся в кабинете. */
+  comment: z.string().trim().max(500).optional(),
+});
+
+f07Router.patch("/forms/:id/responses/:rid/answers/:taskNumber", async (c) => {
+  const user = requireAuth(c);
+  const form = await loadOwnForm(c.env.DB, c.req.param("id"), user.id);
+
+  let rawBody: unknown;
+  try {
+    rawBody = await c.req.json();
+  } catch {
+    throw new BadRequestError("Invalid JSON body");
+  }
+  const body = ReviewAnswerBody.parse(rawBody);
+
+  const taskNumber = Number(c.req.param("taskNumber"));
+  if (!Number.isInteger(taskNumber) || taskNumber <= 0) {
+    throw new BadRequestError("Номер задания должен быть положительным целым");
+  }
+
+  // Ответ ищем ТОЛЬКО среди ответов этой формы: иначе учитель, зная rid из
+  // чужой ссылки, отредактировал бы чужую работу.
+  const answer = await c.env.DB
+    .prepare(
+      `SELECT a.id, a.points_max
+       FROM form_answers a
+       JOIN form_responses r ON r.id = a.response_id
+       WHERE a.response_id = ?1 AND r.form_id = ?2 AND a.task_number = ?3`,
+    )
+    .bind(c.req.param("rid"), form.id, taskNumber)
+    .first<{ id: string; points_max: number }>();
+  if (!answer) throw new NotFoundError("Ответ не найден");
+
+  const pointsMax = Number(answer.points_max) || 0;
+  const awarded = body.pointsAwarded ?? (body.isCorrect ? pointsMax : 0);
+  if (awarded > pointsMax) {
+    throw new BadRequestError(`За это задание максимум ${pointsMax} балл.`);
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  // Кто и когда проверил — хранится рядом с вердиктом. Отдельной колонки для
+  // этого в схеме нет, а терять историю проверки нельзя: по форме может
+  // проверять другой учитель (например, вечером дома).
+  const meta = JSON.stringify({
+    reviewedBy: user.id,
+    reviewedAt: now,
+    ...(body.comment ? { comment: body.comment } : {}),
+  });
+
+  await c.env.DB.batch([
+    c.env.DB
+      .prepare(
+        `UPDATE form_answers
+         SET is_correct = ?1, points_awarded = ?2, needs_review = 0,
+             check_method = 'manual', check_meta_json = ?3
+         WHERE id = ?4`,
+      )
+      .bind(body.isCorrect ? 1 : 0, awarded, meta, answer.id),
+    // Итог ответа считаем из строк, а не прибавляем к старому: повторная
+    // правка одного и того же задания не должна удваивать балл.
+    c.env.DB
+      .prepare(
+        `UPDATE form_responses
+         SET score_total = (SELECT COALESCE(SUM(points_awarded), 0)
+                           FROM form_answers WHERE response_id = ?1)
+         WHERE id = ?1`,
+      )
+      .bind(c.req.param("rid")),
+    c.env.DB
+      .prepare(`UPDATE forms SET updated_at = ?1 WHERE id = ?2`)
+      .bind(now, form.id),
+  ]);
+
+  const updated = await c.env.DB
+    .prepare(
+      `SELECT COALESCE(SUM(points_awarded), 0) AS score_total FROM form_answers
+       WHERE response_id = ?1`,
+    )
+    .bind(c.req.param("rid"))
+    .first<{ score_total: number }>();
+
+  return c.json({
+    ok: true,
+    answer: {
+      taskNumber,
+      isCorrect: body.isCorrect,
+      pointsAwarded: awarded,
+      pointsMax,
+      needsReview: false,
+      checkMethod: "manual" as const,
+      teacherComment: body.comment ?? null,
+    },
+    scoreTotal: updated?.score_total ?? 0,
   });
 });
 

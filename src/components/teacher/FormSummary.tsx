@@ -30,8 +30,14 @@ import * as React from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { getForm, patchForm, fetchFormCsv } from "@/lib/forms/api";
-import { FORM_ERROR_MESSAGE, type FormRecord, type FormResponse } from "@/lib/forms/types";
+import { getForm, patchForm, fetchFormCsv, reviewAnswer } from "@/lib/forms/api";
+import {
+  FORM_ERROR_MESSAGE,
+  type FormRecord,
+  type FormResponse,
+  type FormResponseAnswer,
+  type FormSourceTask,
+} from "@/lib/forms/types";
 import {
   buildTaskSummary,
   countsLabel,
@@ -41,6 +47,7 @@ import {
 import { formatDate } from "@/lib/utils/cn";
 import { splitLatexBlocks } from "@/lib/math/latex";
 import { trackEvent } from "@/lib/track";
+import { Check, X } from "lucide-react";
 
 /** Порог «подозрительно быстро», ТЗ §5.3. */
 const SUSPICIOUS_SEC = 60;
@@ -58,6 +65,15 @@ export function FormSummary({ formId, onBack }: FormSummaryProps) {
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [openId, setOpenId] = React.useState<string | null>(null);
+
+  // Снимок заданий с эталонами по номеру: без него учитель в раскрытом ответе
+  // видит только номера заданий и не понимает, что именно он проверяет.
+  // Хук стоит ДО ранних возвратов — иначе порядок хуков «едет» между рендерами.
+  const taskByNumber = React.useMemo(() => {
+    const map = new Map<number, FormSourceTask>();
+    for (const t of form?.tasks ?? []) map.set(t.number, t);
+    return map;
+  }, [form]);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -237,9 +253,12 @@ export function FormSummary({ formId, onBack }: FormSummaryProps) {
             {responses.map((r) => (
               <ResponseRow
                 key={r.id}
+                formId={form.id}
                 response={r}
+                tasks={taskByNumber}
                 open={openId === r.id}
                 onToggle={() => setOpenId(openId === r.id ? null : r.id)}
+                onReviewed={() => void load()}
               />
             ))}
           </ul>
@@ -427,14 +446,52 @@ function Stat({
   );
 }
 
+/**
+ * Как показать ответ ученика учителю.
+ *
+ * Для заданий с выбором ученик отправляет ИНДЕКС варианта («2»), а учителю
+ * показывать индекс бессмысленно — он не знает, что за «2» стоит, и сверяет
+ * работу по невидимому правильному ответу. Показываем текст выбранного
+ * варианта. Если вариантов в снимке нет или индекс не в границах — оставляем
+ * как есть: лучше показать сырое значение, чем ничего.
+ */
+function formatStudentAnswer(
+  task: FormSourceTask | undefined,
+  studentAnswer: string | null | undefined,
+): string | null {
+  const raw = studentAnswer?.trim() ? studentAnswer : null;
+  if (!raw || !task || task.type !== "multiple-choice" || !task.options?.length) return raw;
+  const idx = Number.parseInt(raw, 10);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= task.options.length) return raw;
+  return task.options[idx] ?? raw;
+}
+
+/**
+ * Эталон так же: у multiple-choice он хранится индексом, и «Правильный ответ: 2»
+ * для учителя — тоже мусор. Показываем текст варианта.
+ */
+function formatExpectedAnswer(task: FormSourceTask | undefined): string | null {
+  const raw = task?.answer?.trim() ? task.answer : null;
+  if (!raw || !task || task.type !== "multiple-choice" || !task.options?.length) return raw;
+  const idx = Number.parseInt(raw, 10);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= task.options.length) return raw;
+  return task.options[idx] ?? raw;
+}
+
 function ResponseRow({
+  formId,
   response,
+  tasks,
   open,
   onToggle,
+  onReviewed,
 }: {
+  formId: string;
   response: FormResponse;
+  tasks: Map<number, FormSourceTask>;
   open: boolean;
   onToggle: () => void;
+  onReviewed: () => void;
 }) {
   const percent =
     response.scoreMax > 0 ? Math.round((response.scoreTotal / response.scoreMax) * 100) : 0;
@@ -474,34 +531,253 @@ function ResponseRow({
       {open && (
         <div className="px-4 pb-4 -mt-1">
           <ul className="grid gap-1">
-            {response.answers.map((a) => (
+            {response.answers.map((a) => {
+              const task = tasks.get(a.taskNumber);
+              const shownAnswer = formatStudentAnswer(task, a.studentAnswer);
+              /**
+ * Панель проверки нужна в двух случаях, а не в одном:
+ *  - ответ ждёт учителя (эссе, нет эталона);
+ *  - автосверка поставила минус по ЗАПОЛНЕННОМУ ответу. Это тот же «тупик»,
+ *    который починили: система честно говорит «не совпало», но если
+ *    формулировка верная, а записана иначе, учитель обязан суметь поставить
+ *    балл. Без панели такой ответ закрывался навсегда.
+ *
+ * Пустой ответ сюда НЕ попадает: ученик ничего не писал, подсказка «а записал
+ * иначе» бессмысленна, а счётчик «Ждут проверки» минусы вообще не считает —
+ * на листе с пропусками учитель увидел бы N панелей и «ждут проверки: 0».
+ * Пропуск остаётся просто строкой «без ответа ✗ 0 / 2».
+ */
+const needsAttention =
+  a.needsReview ||
+  (a.checkMethod === "auto" && !a.isCorrect && Boolean(a.studentAnswer?.trim()));
+              return (
               <li
                 key={a.taskNumber}
-                className="flex items-start gap-2 text-sm py-1 border-b border-warm-50 last:border-0"
+                className="text-sm py-1 border-b border-warm-50 last:border-0"
               >
-                <span className="shrink-0 w-6 text-[color:var(--text-muted)]">{a.taskNumber}.</span>
-                <span className="flex-1 min-w-0 break-words text-warm-700">
-                  {a.studentAnswer?.trim() ? a.studentAnswer : <em className="text-[color:var(--text-muted)]">без ответа</em>}
-                </span>
-                <span className="shrink-0">
-                  {a.needsReview ? (
-                    <span className="text-warm-600" title="Учитель проверит сам">
-                      ?
-                    </span>
-                  ) : a.isCorrect ? (
-                    <span className="text-emerald-600">✓</span>
-                  ) : (
-                    <span className="text-rose-600">✗</span>
-                  )}
-                </span>
-                <span className="shrink-0 w-16 text-right text-[color:var(--text-muted)]">
-                  {a.pointsAwarded} / {a.pointsMax}
-                </span>
+                <div className="flex items-start gap-2">
+                  <span className="shrink-0 w-6 text-[color:var(--text-muted)]">{a.taskNumber}.</span>
+                  <span className="flex-1 min-w-0 break-words text-warm-700">
+                    {shownAnswer ?? <em className="text-[color:var(--text-muted)]">без ответа</em>}
+                  </span>
+                  <span className="shrink-0">
+                    {a.needsReview ? (
+                      <span className="text-warm-600" title="Учитель проверит сам">
+                        ?
+                      </span>
+                    ) : a.isCorrect ? (
+                      <span className="text-emerald-600">✓</span>
+                    ) : (
+                      <span className="text-rose-600">✗</span>
+                    )}
+                  </span>
+                  <span className="shrink-0 w-16 text-right text-[color:var(--text-muted)]">
+                    {a.pointsAwarded} / {a.pointsMax}
+                  </span>
+                </div>
+
+                {needsAttention ? (
+                  <ReviewBox
+                    formId={formId}
+                    responseId={response.id}
+                    answer={a}
+                    task={task}
+                    mode={a.needsReview ? "review" : "fix"}
+                    onSaved={onReviewed}
+                  />
+                ) : (
+                  a.teacherComment && (
+                    <p className="ml-8 mt-1 text-xs text-warm-600 border-l-2 border-warm-200 pl-2">
+                      {a.teacherComment}
+                    </p>
+                  )
+                )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         </div>
       )}
     </li>
+  );
+}
+
+/**
+ * Ручная проверка одного ответа (12.10.2026).
+ *
+ * Это блок, которого не было: сводка писала «ждут проверки 3» и на этом
+ * заканчивалась — поставить балл было нечем, флоу учителя упирался в тупик.
+ *
+ * Что видит учитель и почему именно это:
+ *   - текст задания и правильный ответ — без них он проверяет «номер 3», а не
+ *     задание; раньше в сводке их не было вовсе;
+ *   - «Верно» / «Неверно» — закрывают задание в один клик для 90% случаев;
+ *   - поле балла появляется ТОЛЬКО когда за задание больше одного балла: при
+ *     одном балле «верно» и «1 балл» — одно и то же, лишнее поле только
+ *     мешает;
+ *   - комментарий необязательный: он остаётся в кабинете и виден учителю,
+ *     ученику не показывается.
+ */
+function ReviewBox({
+  formId,
+  responseId,
+  answer,
+  task,
+  mode = "review",
+  onSaved,
+}: {
+  formId: string;
+  responseId: string;
+  answer: FormResponseAnswer;
+  task: FormSourceTask | undefined;
+  /** `review` — ответ ждал учителя. `fix` — автоматика поставила минус, учитель его перебивает. */
+  mode?: "review" | "fix";
+  onSaved: () => void;
+}) {
+  const [verdict, setVerdict] = React.useState<boolean | null>(null);
+  const [points, setPoints] = React.useState("");
+  const [comment, setComment] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const maxPoints = answer.pointsMax;
+  const showPointsField = maxPoints > 1;
+
+  const save = async () => {
+    if (verdict === null || saving) return;
+
+    let pointsAwarded: number | undefined;
+    if (showPointsField) {
+      // Пустое поле — это не «ноль баллов». Учитель нажал «Верно» и просто не
+      // стал трогать поле: Number("") даёт 0, и раньше ответ уезжал как
+      // «верно, 0 баллов». Пустое = полный балл при «Верно», ноль при «Неверно».
+      const trimmed = points.trim();
+      if (trimmed !== "") {
+        const parsed = Number(trimmed);
+        if (!Number.isInteger(parsed) || parsed < 0 || parsed > maxPoints) {
+          setError(`Балл должен быть целым числом от 0 до ${maxPoints}`);
+          return;
+        }
+        pointsAwarded = parsed;
+      }
+    }
+
+    setSaving(true);
+    setError(null);
+    const res = await reviewAnswer({
+      formId,
+      responseId,
+      taskNumber: answer.taskNumber,
+      isCorrect: verdict,
+      ...(pointsAwarded === undefined ? {} : { pointsAwarded }),
+      ...(comment.trim() ? { comment: comment.trim() } : {}),
+    });
+    setSaving(false);
+
+    if (!res.ok) {
+      setError(FORM_ERROR_MESSAGE[res.error]);
+      return;
+    }
+    trackEvent("form_answer_reviewed", {
+      isCorrect: verdict,
+      hasComment: Boolean(comment.trim()),
+    });
+    onSaved();
+  };
+
+  return (
+    <div
+      className="ml-8 mt-2 mb-2 rounded-xl border border-warm-200 bg-warm-50/50 p-3"
+      data-testid={`review-box-${answer.taskNumber}`}
+    >
+      {task?.text && (
+        <p className="text-sm text-warm-800 break-words">{task.text}</p>
+      )}
+      {formatExpectedAnswer(task) && (
+        <p className="mt-1 text-xs text-warm-600">
+          Правильный ответ: <span className="text-warm-800">{formatExpectedAnswer(task)}</span>
+        </p>
+      )}
+      {mode === "fix" && (
+        <p className="mt-1 text-xs text-warm-600">
+          Автопроверка не засчитала ответ. Если ученик прав, а записал иначе —
+          поставьте балл здесь.
+        </p>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={verdict === true ? "primary" : "secondary"}
+          aria-pressed={verdict === true}
+          onClick={() => setVerdict(true)}
+          leftIcon={<Check className="w-4 h-4" />}
+          data-testid={`review-yes-${answer.taskNumber}`}
+        >
+          Верно
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={verdict === false ? "dark" : "secondary"}
+          aria-pressed={verdict === false}
+          onClick={() => setVerdict(false)}
+          leftIcon={<X className="w-4 h-4" />}
+          data-testid={`review-no-${answer.taskNumber}`}
+        >
+          Неверно
+        </Button>
+
+        {showPointsField && (
+          <label className="flex items-center gap-2 text-sm text-warm-700">
+            Балл
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={maxPoints}
+              value={points}
+              onChange={(e) => setPoints(e.target.value)}
+              placeholder="0"
+              className="w-16 h-9 px-2 text-sm bg-white border border-warm-200 rounded-lg text-warm-950 focus:outline-none focus:border-brand-500"
+              data-testid={`review-points-${answer.taskNumber}`}
+            />
+            <span className="text-[color:var(--text-muted)]">из {maxPoints}</span>
+          </label>
+        )}
+      </div>
+
+      <input
+        type="text"
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        placeholder="Комментарий учителя (необязательно)"
+        maxLength={500}
+        className="mt-3 w-full h-9 px-3 text-sm bg-white border border-warm-200 rounded-lg text-warm-950 placeholder:text-[color:var(--text-muted)] focus:outline-none focus:border-brand-500"
+        data-testid={`review-comment-${answer.taskNumber}`}
+      />
+
+      {error && <p className="mt-2 text-xs text-rose-600">{error}</p>}
+
+      <div className="mt-3 flex items-center gap-3">
+        <Button
+          type="button"
+          size="sm"
+          variant="primary"
+          disabled={verdict === null}
+          loading={saving}
+          onClick={() => void save()}
+          data-testid={`review-save-${answer.taskNumber}`}
+        >
+          Сохранить оценку
+        </Button>
+        {verdict === null && (
+          <span className="text-xs text-[color:var(--text-muted)]">
+            Выберите «Верно» или «Неверно»
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
