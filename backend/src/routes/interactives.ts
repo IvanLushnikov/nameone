@@ -237,7 +237,8 @@ function hardestItems(rows: AttemptRow[], config: InteractiveConfig | null): Arr
 const CreateBody = z.object({
   worksheetId: z.string().min(1).max(64),
   format: z.enum(INTERACTIVE_FORMATS as unknown as [string, ...string[]]),
-  // zod 4 требует в `z.record` оба типа явно: ключ и значение.
+  // Оба типа в `z.record` передаём явно: ключ и значение. В zod 4 это
+  // обязательно, в zod 3 такая форма тоже принимается.
   options: z.record(z.string(), z.unknown()).optional(),
 });
 

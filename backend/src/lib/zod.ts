@@ -85,9 +85,7 @@ export const generateWorksheetRequestSchema = z.object({
   bypassCache: z.boolean().optional(),
 });
 
-// zod 4: формат почты вынесен в отдельную схему `z.email()`; прежний
-// `z.string().email()` помечен устаревшим. Проверка и лимит те же.
-export const magicLinkEmailSchema = z.email().max(254);
+export const magicLinkEmailSchema = z.string().email().max(254);
 
 export const magicLinkRequestSchema = z.object({
   email: magicLinkEmailSchema,
