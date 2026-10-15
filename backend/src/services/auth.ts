@@ -68,7 +68,8 @@ const MAIL_UNAVAILABLE_MESSAGE =
 // На реальных UI пользователь легко вставляет email с пробелами из буфера обмена.
 export const emailSchema = z.preprocess(
   (v) => (typeof v === "string" ? v.trim().toLowerCase() : v),
-  z.string().email().max(254),
+  // zod 4: формат почты — отдельная схема `z.email()`.
+  z.email().max(254),
 );
 
 /**
