@@ -833,10 +833,7 @@ describe("учительские формы (TZ-12, f07)", () => {
     expect(other.formId).not.toBe(formId);
   });
 
-  // ── F15: короткий ответ сверяется сам, а не уходит учителю ────────────────
-  //
-  // До 12.10.2026 short-answer всегда давал needs_review, и ученик после
-  // правильного ответа видел «0 баллов». Это треть всех заданий на проде.
+  // ── Короткий ответ: сверка, ручная проверка, честное «не угадываем» ──────
 
   async function submitShortAnswer(token: string, value: string): Promise<Response> {
     return SELF.fetch(`https://worker.test/api/public/forms/${token}/submit`, {
@@ -859,44 +856,14 @@ describe("учительские формы (TZ-12, f07)", () => {
     return created;
   }
 
-  it("F15: короткий ответ, совпавший с эталоном, засчитывается сразу", async () => {
-    const created = await createShortAnswerForm(sessionA, "воздух");
-    const res = await submitShortAnswer(created.token, "Воздух");
-    // Публичная отправка отвечает 201 Created — ответ ученика создан.
-    expect(res.status).toBe(201);
-    const body = (await res.json()) as {
-      scoreTotal: number;
-      perTask: Array<{ status: string }>;
-    };
-    expect(body.scoreTotal).toBe(2);
-    expect(body.perTask[0]!.status).toBe("correct");
-
-    const pending = await env.DB
-      .prepare(`SELECT COUNT(*) AS cnt FROM form_answers WHERE needs_review = 1`)
-      .first<{ cnt: number }>();
-    expect(pending?.cnt).toBe(0);
-  });
-
-  it("F16: ответ с другой формулировкой — минус, а не «ждут проверки»", async () => {
-    const created = await createShortAnswerForm(sessionA, "воздух");
-    const body = (await (await submitShortAnswer(created.token, "вода")).json()) as {
-      scoreTotal: number;
-      perTask: Array<{ status: string }>;
-    };
-    expect(body.scoreTotal).toBe(0);
-    expect(body.perTask[0]!.status).toBe("wrong");
-  });
-
-  it("F17: пустой ответ при непустом эталоне — минус, а не «ждут проверки»", async () => {
-    const created = await createShortAnswerForm(sessionA, "воздух");
-    const res = await SELF.fetch(`https://worker.test/api/public/forms/${created.token}/submit`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ studentName: "Аня", answers: [] }),
-    });
-    const body = (await res.json()) as { perTask: Array<{ status: string }> };
-    expect(body.perTask[0]!.status).toBe("wrong");
-  });
+  // F15–F17 (короткий ответ сверяется точным совпадением с эталоном) удалены
+  // 15.10.2026 при переносе ветки fix/qr-form-review: в `main` с 12.10.2026
+  // короткий ответ сверяет модель, а не сравнение строк — см. `gradeFromModel`
+  // и `applyTeacherOverride` в `backend/src/services/formGrading.ts` и блок
+  // «gradeAnswer · short-answer / essay → только учитель» в formGrading.test.ts,
+  // где зафиксировано ожидаемое поведение. Тесты проверяли то, что `main`
+  // осознанно заменил, и падали бы в красном на боевой кодовой базе. Вернуть их
+  // можно только вместе с возвратом сверки «строка == строка».
 
   it("F18: без эталона ответ честно уходит учителю, а не ставится наугад", async () => {
     const created = await createShortAnswerForm(sessionA, "");

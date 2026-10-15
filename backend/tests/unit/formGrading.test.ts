@@ -10,7 +10,7 @@
  *   4. multiple-choice: сравнение индекса + «не выбрал» → unreviewed
  *   5. fill-blank: разбиение эталона, частичное совпадение → needs_review
  *   6. «не смогли решить» → needs_review, 0 баллов, is_correct = null
- *   7. short-answer → сверяется сам (12.10.2026, точное совпадение), essay → manual
+ *   7. short-answer / essay → всегда manual (LLM — этап 6)
  *
  * Запуск: `npm run test` или `npx vitest run tests/unit/formGrading.test.ts`
  */
@@ -191,91 +191,16 @@ describe("gradeAnswer · fill-blank", () => {
   });
 });
 
-describe("gradeAnswer · short-answer → сверяем сами, essay → только учитель", () => {
-  // 12.10.2026: короткий ответ больше не уходит учителю всегда. Решение владельца
-  // — сверять точным совпадением с эталоном. Раньше здесь стояло ожидание
-  // «manual / is_correct = null»: из-за него ученик после правильного ответа
-  // видел «0 баллов», а треть листов на проде ждала ручной проверки.
-  it("short-answer: совпадение с эталоном — верно, полный балл, без проверки", () => {
+describe("gradeAnswer · short-answer / essay → только учитель", () => {
+  it("short-answer: manual, is_correct = null, 0 баллов, needs_review", () => {
     const v = gradeAnswer(
       task({ type: "short-answer", answer: "атмосфера", points: 3 }),
       "атмосфера",
     );
-    expect(v.checkMethod).toBe("auto");
-    expect(v.isCorrect).toBe(true);
-    expect(v.pointsAwarded).toBe(3);
-    expect(v.needsReview).toBe(false);
-  });
-
-  it("short-answer: регистр, лишние пробелы, хвостовая точка и «ё» — не мешают", () => {
-    for (const value of ["Атмосфера", "  атмосфера  ", "атмосфера.", "АтмосФера"]) {
-      const v = gradeAnswer(task({ type: "short-answer", answer: "атмосфера", points: 1 }), value);
-      expect(v.isCorrect, `«${value}» должен совпасть`).toBe(true);
-    }
-    // Эталон с «ё» — ученик пишет «е»: это один и тот же ответ.
-    const withYo = gradeAnswer(task({ type: "short-answer", answer: "щёлки", points: 1 }), "щелки");
-    expect(withYo.isCorrect).toBe(true);
-  });
-
-  it("short-answer: не совпало — минус, а не «ждут проверки»", () => {
-    const v = gradeAnswer(task({ type: "short-answer", answer: "атмосфера", points: 3 }), "вода");
-    expect(v.checkMethod).toBe("auto");
-    expect(v.isCorrect).toBe(false);
-    expect(v.pointsAwarded).toBe(0);
-    expect(v.needsReview).toBe(false);
-  });
-
-  it("short-answer: пустой ответ при непустом эталоне — минус", () => {
-    const v = gradeAnswer(task({ type: "short-answer", answer: "атмосфера", points: 3 }), "");
-    expect(v.isCorrect).toBe(false);
-    expect(v.needsReview).toBe(false);
-  });
-
-  it("short-answer: без эталона не гадаем — ждёт учителя", () => {
-    const v = gradeAnswer(task({ type: "short-answer", answer: "", points: 3 }), "что-то");
+    expect(v.checkMethod).toBe("manual");
     expect(v.isCorrect).toBeNull();
     expect(v.pointsAwarded).toBe(0);
     expect(v.needsReview).toBe(true);
-  });
-
-  // Находки независимого ревью (12.10.2026): обе проверки закрывают способы
-  // засчитать заведомо неверный ответ как верный.
-
-  it("short-answer: пробелы вокруг разделителя — тот же ответ («7 / 8» = «7/8»)", () => {
-    const t = task({ type: "short-answer", answer: "7/8", points: 2 });
-    for (const value of ["7 / 8", " 7 /8 ", "7/ 8", "7 / 8 "]) {
-      const v = gradeAnswer(t, value);
-      expect(v.isCorrect, `«${value}» должен засчитаться`).toBe(true);
-    }
-  });
-
-  it("short-answer: пробелы вокруг оператора — тот же ответ («2x + 6» = «2x+6»)", () => {
-    const t = task({ type: "short-answer", answer: "2x+6", points: 2 });
-    expect(gradeAnswer(t, "2x + 6").isCorrect).toBe(true);
-    // Пробел МЕЖДУ буквами и цифрами не убираем: «2 x» и «2x» — разные записи,
-    // и склеивать их значит склеивать разные ответы.
-    expect(gradeAnswer(t, "2 x + 6").isCorrect).toBe(false);
-  });
-
-  it("short-answer: разные числа не склеиваются при нормализации", () => {
-    const t = task({ type: "short-answer", answer: "7/8", points: 2 });
-    expect(gradeAnswer(t, "7,8").isCorrect).toBe(false);
-    expect(gradeAnswer(t, "17/8").isCorrect).toBe(false);
-  });
-
-  it("short-answer: эталон из одной пунктуации уходит учителю, а не совпал бы с мусором", () => {
-    // Раньше «?» и «!!!» после нормализации оба сворачивались в пустую строку
-    // и совпадали между собой — ответ «засчитывался» как верный.
-    const v = gradeAnswer(task({ type: "short-answer", answer: "?", points: 2 }), "!!!");
-    expect(v.isCorrect).toBeNull();
-    expect(v.needsReview).toBe(true);
-  });
-
-  it("short-answer: бессмысленный ответ ученика при нормальном эталоне — ноль", () => {
-    const v = gradeAnswer(task({ type: "short-answer", answer: "воздух", points: 2 }), "!!!");
-    expect(v.isCorrect).toBe(false);
-    expect(v.pointsAwarded).toBe(0);
-    expect(v.needsReview).toBe(false);
   });
 
   it("essay: manual даже если текст совпал с эталоном", () => {
