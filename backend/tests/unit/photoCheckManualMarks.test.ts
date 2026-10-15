@@ -1,4 +1,4 @@
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 /**
  * Ручные отметки учителя после проверки по фото (ТЗ-19).
  *
@@ -22,7 +22,6 @@
 import { env, SELF, applyD1Migrations } from "cloudflare:test";
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import { Hono } from "hono";
-import type { Env } from "../../src/env";
 import type { AppEnv } from "../../src/types";
 import { authMiddleware } from "../../src/middleware/auth";
 import { errorMiddleware } from "../../src/middleware/error";
@@ -612,6 +611,3 @@ describe("ручные отметки · D1 и роуты (ТЗ-19 §3)", () => 
   });
 });
 
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}

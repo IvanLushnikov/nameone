@@ -22,15 +22,11 @@
  * (в dev ссылку возвращать можно и нужно, в prod — нельзя).
  */
 
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 import { env, applyD1Migrations } from "cloudflare:test";
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import { app } from "../../src/index";
 import type { Env } from "../../src/env";
-
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}
 
 // ── Схема ────────────────────────────────────────────────────────────────────
 // Своя копия вместо чтения schema.sql: workerd-runtime не умеет node:fs.
@@ -197,6 +193,17 @@ const db = () => (env as unknown as { DB: D1Database }).DB;
 // контексте, и миграция в первом блоке не дойдёт до остальных.
 beforeAll(async () => {
   await applyD1Migrations(env.DB, [{ name: "security", queries: [SCHEMA_SQL] }]);
+});
+
+// С Vitest 4 и @cloudflare/vitest-plugin хранилище изолируется на файл, а не
+// на отдельный тест: опция `isolatedStorage` удалена. Раньше каждый `it`
+// начинал с пустой базы, и счётчик ограничения частоты запросов был нулевым.
+// Теперь соседние тесты делят базу, и после нескольких вызовов
+// `/api/auth/magic-link` сервер отдавал 429 там, где тест ждал 503 или
+// созданного пользователя. Чистим счётчики — это ровно то состояние, на
+// котором тесты и были написаны.
+beforeEach(async () => {
+  await db().prepare("DELETE FROM rate_limits").run();
 });
 
 /** Завести пользователя, сессию и вернуть токен сессии. */
@@ -739,6 +746,10 @@ describe("Конфигурация: отсутствие секретов не �
       .prepare("SELECT token FROM sessions WHERE user_id = ?1 LIMIT 1")
       .bind(userId)
       .first<{ token: string }>();
+    // Чистим платежи перед проверкой. Проверяем мы не «таблица пуста», а
+    // «этот вызов ничего не создал», и база у файла общая с соседними
+    // тестами (изоляция теперь на файл, а не на тест).
+    await db().prepare("DELETE FROM payments").run();
     const pay = await call("/api/billing/create", { body: { plan: "base", period: "monthly" }, token: token!.token }, bad);
     expect(pay.status).toBeGreaterThanOrEqual(400);
     expect(await db().prepare("SELECT id FROM payments").all()).toMatchObject({ results: [] });

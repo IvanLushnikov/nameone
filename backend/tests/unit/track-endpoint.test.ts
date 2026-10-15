@@ -16,14 +16,9 @@
  * читать fs (см. шапку tests/unit/auth.test.ts).
  */
 
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 import { env, applyD1Migrations, SELF } from "cloudflare:test";
 import { describe, it, expect, beforeAll } from "vitest";
-import type { Env } from "../../src/env";
-
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS users (

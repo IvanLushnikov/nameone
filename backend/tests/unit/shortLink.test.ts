@@ -1,4 +1,4 @@
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 /**
  * Короткая ссылка на интерактив для доски — `/p/<код>` (лист 6.1.8, G1/G3/G4).
  *
@@ -24,11 +24,6 @@
 
 import { env, SELF, applyD1Migrations } from "cloudflare:test";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import type { Env } from "../../src/env";
-
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}
 
 // Только таблицы, которых касается GET /p/:code: сам `interactives`,
 // `worksheets` (LEFT JOIN не используется в этом хендлере, но оставляем —

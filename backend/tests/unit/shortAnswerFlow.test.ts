@@ -1,4 +1,4 @@
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 /**
  * Поток сверки коротких ответов (лист 3.1.6, G1).
  *
@@ -37,10 +37,6 @@ import { errorMiddleware } from "../../src/middleware/error";
 import { readShortAnswerLlmSettings } from "../../src/services/formGrading";
 import type { AppEnv, WorksheetTask } from "../../src/types";
 import type { Env } from "../../src/env";
-
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS users (

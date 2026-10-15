@@ -564,7 +564,7 @@ export async function generateWorksheet(
   let sheetPlan: ReturnType<typeof normalizePlan> = null;
   try {
     // Флаг берём из `env` бэкенда, а НЕ из `process.env`: в пуле
-    // `@cloudflare/vitest-pool-workers` процессные переменные не видны вообще —
+    // `@cloudflare/vitest-plugin` процессные переменные не видны вообще —
     // там окружение живёт в биндингах. Проверено на живом прогоне
     // 13.10.2026: с `PLAN=1` в командной строке стадия молча не включалась,
     // и прогоны шли по старому пути, а лог врал.

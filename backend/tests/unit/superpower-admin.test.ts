@@ -22,14 +22,9 @@
  * эндпоинта сверяет с ними. Иначе проверка «совпало с тем же самым» всегда проходит.
  */
 
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 import { env, applyD1Migrations, SELF } from "cloudflare:test";
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
-import type { Env } from "../../src/env";
-
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS users (
@@ -180,6 +175,24 @@ function monthStart(): number {
 }
 
 async function seed() {
+  // Чистим всё, что сейчас же вставим. С Vitest 4 и @cloudflare/vitest-plugin
+  // хранилище изолируется НА ФАЙЛ, а не на отдельный тест (опция
+  // `isolatedStorage` удалена). Раньше каждый `it` получал пустую базу, и
+  // повторный вызов seed() был безобиден. Теперь соседние тесты делят одну
+  // базу, и второй вызов seed() падал бы на UNIQUE по users.email.
+  // Порядок — от детей к родителям, иначе внешние ключи не дадут удалить.
+  for (const table of [
+    "events",
+    "polza_balance_snapshots",
+    "llm_logs",
+    "llm_costs_actual",
+    "payments",
+    "sessions",
+    "users",
+  ]) {
+    await env.DB.prepare(`DELETE FROM ${table}`).run();
+  }
+
   await env.DB.prepare(
     `INSERT INTO users (id, email, name, plan, is_admin, created_at, updated_at)
      VALUES ('u_admin', 'admin@test.local', 'Admin', 'plus', 1, ?1, ?1),

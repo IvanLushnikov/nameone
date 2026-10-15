@@ -1,4 +1,4 @@
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 /**
  * Материалы учителей: сдача на публикацию, модерация, чужие материалы (лист 5.1.1).
  *
@@ -26,11 +26,6 @@
 
 import { env, SELF, applyD1Migrations } from "cloudflare:test";
 import { describe, it, expect, beforeAll } from "vitest";
-import type { Env } from "../../src/env";
-
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}
 
 /**
  * DDL листа взят ДОСЛОВНО из `db/migrations/0003_user_materials.ts` и из

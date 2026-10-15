@@ -1,4 +1,4 @@
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 /**
  * BL-07 (учёт) + BL-06 (жёсткий предел квоты): анонимный расход виден И три
  * попытки остаются тремя.
@@ -52,10 +52,6 @@ import {
 import { consumeGenerationQuota, guardGeneration } from "../../src/llm/ratelimit";
 import { fingerprintHash } from "../../src/lib/antifraud";
 import type { Env } from "../../src/env";
-
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}
 
 const SALT = "test-salt-free-quota";
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)";

@@ -1,4 +1,4 @@
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 /**
  * Ведомость по классу: сводка, отметки и выгрузка (лист 3.1.3).
  *
@@ -34,13 +34,8 @@
  */
 
 import { env, SELF, applyD1Migrations } from "cloudflare:test";
-import { describe, it, expect, beforeAll } from "vitest";
-import type { Env } from "../../src/env";
+import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import type { WorksheetTask } from "../../src/types";
-
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS users (
@@ -402,6 +397,18 @@ function countCsvCells(line: string): number {
  * ─────────────────────────────────────────────────────────────────────────── */
 
 describe("ведомость по классу (лист 3.1.3)", () => {
+  // С Vitest 4 и @cloudflare/vitest-plugin хранилище изолируется на файл, а не
+  // на отдельный тест: опция `isolatedStorage` удалена. Раньше каждый `it`
+  // начинал с пустой базы, и проверки «ведомость пуста», «больше 12 работ
+  // обрезается», «спецсимволы не ломают CSV» считали ровно свои строки.
+  // Теперь соседние тесты делят базу, и ведомость включала чужие работы.
+  // Учителей из beforeAll не трогаем — они нужны каждому тесту.
+  beforeEach(async () => {
+    for (const table of ["class_student_answers", "form_answers", "form_responses", "forms"]) {
+      await env.DB.prepare(`DELETE FROM ${table}`).run();
+    }
+  });
+
   beforeAll(async () => {
     await applyD1Migrations(env.DB, [{ name: "schema", queries: [SCHEMA_SQL] }]);
     const now = Math.floor(Date.now() / 1000);
@@ -585,9 +592,15 @@ describe("ведомость по классу (лист 3.1.3)", () => {
     expect(disposition).toContain("filename*=UTF-8''");
     expect(decodeURIComponent(/filename\*=UTF-8''([^;]+)/.exec(disposition)![1]!)).toContain("5Д");
 
-    const text = await res.text();
     // BOM — из-за него русский Excel открывает файл таблицей, а не кракозябрами.
-    expect(text.startsWith("\uFEFF")).toBe(true);
+    //
+    // Проверяем байты ответа, а не `res.text()`: ведущий BOM при декодировании
+    // текста срезается (в новом workerd — тоже), хотя в самом ответе он есть и
+    // именно его видит Excel. Проверка на тексте ловила бы особенность
+    // декодера, а не выгрузку.
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xef, 0xbb, 0xbf]);
+    const text = new TextDecoder("utf-8").decode(bytes);
     // Переводы строк CRLF: русский Excel не «склеивает» строки в одну.
     expect(text).toContain("\r\n");
     expect(text.replace(/\r\n/g, "")).not.toContain("\n");
@@ -614,8 +627,12 @@ describe("ведомость по классу (лист 3.1.3)", () => {
     expect(noStudents.summary.studentsTotal).toBe(0);
 
     // Выгрузка пустого класса — тоже файл с объяснением, а не таблица в пустоту.
-    const emptyCsv = await (await fetchCsv(SESSION_A, emptyClass)).text();
-    expect(emptyCsv.startsWith("\uFEFF")).toBe(true);
+    // BOM проверяем по байтам: при декодировании текста ведущий BOM срезается
+    // (в том числе в новом workerd), хотя в самом ответе он остаётся и его
+    // видит Excel. Проверка на тексте ловила особенность декодера.
+    const emptyBytes = new Uint8Array(await (await fetchCsv(SESSION_A, emptyClass)).arrayBuffer());
+    expect([emptyBytes[0], emptyBytes[1], emptyBytes[2]]).toEqual([0xef, 0xbb, 0xbf]);
+    const emptyCsv = new TextDecoder("utf-8").decode(emptyBytes);
     expect(emptyCsv).toContain("В этом классе пока нет учеников");
     // Расшифровки нет: таблицы нет — расшифровывать нечего.
     expect(emptyCsv).not.toContain("Расшифровка:");

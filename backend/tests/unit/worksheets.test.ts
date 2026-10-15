@@ -19,15 +19,10 @@
  * см. комментарий в начале auth.test.ts.
  */
 
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 import { env, SELF, applyD1Migrations } from "cloudflare:test";
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}
-
-import type { Env } from "../../src/env";
 import { createMagicLink, consumeMagicLink, createSession, createUser } from "../../src/db/queries";
 
 // ─────────────────────────────────────────────────────────────────────────────

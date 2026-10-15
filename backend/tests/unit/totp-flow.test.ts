@@ -17,7 +17,7 @@
  *    не получится.
  */
 
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 import { env, applyD1Migrations, SELF } from "cloudflare:test";
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import type { Env } from "../../src/env";
@@ -25,10 +25,6 @@ import type { Env } from "../../src/env";
 // wrangler.toml, а не текущий src/index.ts, и роутов в нём может не быть.
 // Так делают остальные тесты с SELF (auth.test.ts, artifact-routes.test.ts).
 import app from "../../src/index";
-
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS users (

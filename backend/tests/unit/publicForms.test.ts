@@ -1,4 +1,4 @@
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 /**
  * Тесты публичного бэкенда форм (TZ-12, этап 2) + ЗАЩИТА ОТ УТЕЧКИ ЭТАЛОНОВ.
  *
@@ -24,12 +24,7 @@
 
 import { env, SELF, applyD1Migrations } from "cloudflare:test";
 import { describe, it, expect, beforeAll } from "vitest";
-import type { Env } from "../../src/env";
 import type { WorksheetTask } from "../../src/types";
-
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}
 
 // Только нужные для публичных роутов таблицы: формы, ответы и rate_limits
 // (её трогает rateLimitMiddleware на каждом публичном запросе).

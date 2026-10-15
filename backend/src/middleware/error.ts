@@ -42,7 +42,10 @@ export const errorMiddleware: ErrorHandler<AppEnv> = (err, c) => {
         ok: false,
         error: "Validation failed",
         code: "VALIDATION_ERROR",
-        details: err.errors.map((e) => ({ path: e.path.join("."), message: e.message })),
+        // `issues` — каноническое имя списка проблем в zod, `errors` в zod 3
+        // держится как устаревший псевдоним. Форма ответа не меняется: клиенты
+        // читают `details[].path` и `details[].message`.
+        details: err.issues.map((e) => ({ path: e.path.join("."), message: e.message })),
       },
       400,
     );

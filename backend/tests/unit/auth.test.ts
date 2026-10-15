@@ -8,7 +8,7 @@
  *   - consumeMagicLinkAndCreateSession — атомарный swap, повторное использование → null
  *   - ТЗ-23 §9.6 п.6     — семь сценариев входа по паролю, через настоящие ручки
  *
- * D1 используется реальный (workerd-pool через @cloudflare/vitest-pool-workers).
+ * D1 используется реальный (workerd-pool через @cloudflare/vitest-plugin).
  * Email — мок через RESEND_API_KEY=undefined → dev-режим (URL возвращается в devMagicUrl).
  * Сценарии входа по паролю идут через собранное приложение из src/index: их суть —
  * в ответах ручек (текст отказа, cookie, 429, 401), а не во внутренних функциях.
@@ -20,17 +20,13 @@
  */
 
 // Подтягиваем типы `cloudflare:test` через triple-slash reference. Прямой
-// side-effect import (`import "@cloudflare/vitest-pool-workers"`) тянет
+// side-effect import (`import "@cloudflare/vitest-plugin"`) тянет
 // dist/pool/index.mjs, рассчитанный на Node-runtime vitest.config.ts.
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 import { env, applyD1Migrations } from "cloudflare:test";
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import type { D1Database } from "@cloudflare/workers-types";
 
-declare module "cloudflare:test" {
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  interface ProvidedEnv extends Env {}
-}
 
 import {
   parseAdminEmails,

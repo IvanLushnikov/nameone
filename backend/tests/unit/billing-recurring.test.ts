@@ -18,7 +18,7 @@
  *   7. отмена гасит автопродление и не отрезает оплаченный период.
  */
 
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 import { env, applyD1Migrations } from "cloudflare:test";
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import {
@@ -34,10 +34,6 @@ import {
 } from "../../src/jobs/billingRecurring";
 import { BATCH_LIMIT } from "../../src/services/billingRecurring";
 import type { Env } from "../../src/env";
-
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}
 
 /**
  * Схема для этих тестов — своя копия: workerd не умеет node:fs и прочитать
