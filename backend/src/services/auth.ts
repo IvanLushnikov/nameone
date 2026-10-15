@@ -241,6 +241,52 @@ async function createSessionForUser(
 }
 
 /**
+ * Разделяем надвое: «съесть ссылку и узнать, кто по ней пришёл» и «съесть
+ * ссылку и выдать сессию».
+ *
+ * Разделение нужно администратору: ссылка может оказаться в чужих руках, и
+ * прежде чем выдавать сессию, надо спросить, включён ли у этого человека код
+ * подтверждения. Выдать сессию «на всякий случай, а код спросим потом» нельзя —
+ * тогда второй шаг не защищает ничего.
+ *
+ * Общая часть одна: consumeMagicLink одноразовый, второй вызов вернёт null, и
+ * ссылка сгорит зря.
+ */
+async function consumeAndLoadUser(db: D1Database, token: string): Promise<UserRow | null> {
+  const consumed = await consumeMagicLink(db, token);
+  if (!consumed) return null;
+
+  // user должен существовать (createUser выше). Иначе — race condition /
+  // ручная очистка БД. Возвращаем null, чтобы роут ответил 401.
+  const user = await getUserByEmail(db, consumed.email);
+  return user ?? null;
+}
+
+/**
+ * Съесть magic-link и узнать пользователя БЕЗ выдачи сессии.
+ *
+ * Путь входа по ссылке для администратора с кодом подтверждения: сначала
+ * решаем, спрашивать ли код, и только потом — выдавать ли сессию.
+ */
+export async function consumeMagicLinkAndLoadUser(
+  db: D1Database,
+  token: string,
+): Promise<UserRow | null> {
+  return consumeAndLoadUser(db, token);
+}
+
+/**
+ * Создать сессию для уже проверенного пользователя — второй шаг входа
+ * администратора, где код подтверждения уже сошёлся.
+ */
+export async function createSessionForVerifiedUser(
+  db: D1Database,
+  user: UserRow,
+): Promise<{ sessionToken: string; sessionExpiresAt: number }> {
+  return createSessionForUser(db, user);
+}
+
+/**
  * "Обменять" magic-link токен на session-токен.
  *
  * Атомарность: consumeMagicLink в db/queries.ts уже делает
@@ -253,13 +299,7 @@ export async function consumeMagicLinkAndCreateSession(
   db: D1Database,
   token: string,
 ): Promise<ConsumeMagicLinkResult | null> {
-  const consumed = await consumeMagicLink(db, token);
-  if (!consumed) return null;
-
-  // user должен существовать (createUser выше). Иначе — race condition /
-  // ручная очистка БД. Возвращаем null, чтобы роут ответил 401.
-  const { getUserByEmail } = await import("../db/queries");
-  const user = await getUserByEmail(db, consumed.email);
+  const user = await consumeAndLoadUser(db, token);
   if (!user) return null;
 
   const session = await createSessionForUser(db, user);

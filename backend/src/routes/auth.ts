@@ -19,14 +19,15 @@
 
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler, Next } from "hono";
-import { setCookie, deleteCookie } from "hono/cookie";
+import { deleteCookie } from "hono/cookie";
 import type { AppEnv } from "../types";
 import { z } from "zod";
 import {
   LOGIN_FAILED_MESSAGE,
   LOGIN_RATE_LIMIT_MESSAGE,
   changeUserPassword,
-  consumeMagicLinkAndCreateSession,
+  consumeMagicLinkAndLoadUser,
+  createSessionForVerifiedUser,
   emailSchema,
   loginWithPassword,
   removeUserPassword,
@@ -38,6 +39,7 @@ import { deleteSession, getUserPasswordState } from "../db/queries";
 import type { UserRow } from "../db/queries";
 import { BadRequestError, RateLimitError, UnauthorizedError } from "../lib/errors";
 import { checkPasswordPolicy, PASSWORD_MAX_LENGTH } from "../lib/password";
+import { setSessionCookie } from "../lib/session-cookie";
 import { djb2, rateLimitMiddleware } from "../middleware/ratelimit";
 import type { RateLimitOpts } from "../middleware/ratelimit";
 import { requireAuth } from "../middleware/auth";
@@ -47,35 +49,6 @@ const authRouter = new Hono<AppEnv>();
 // ─────────────────────────────────────────────────────────────────────────────
 // Общие куски для входа по ссылке и по паролю
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Поставить session-cookie.
- *
- * Общий код для обоих входов: cookie от входа по паролю должна быть РОВНО такой
- * же, как от входа по ссылке (контракт §2.3). Копия «почти такая же» рано или
- * поздно разъедется, и одна из форм входа перестанет работать.
- *
- * Домен и SameSite — не «значения до ТЗ-23», а следствие того, ГДЕ живёт бэк.
- * SESSION_COOKIE_DOMAIN задан (`.uchlist.ru`) с 12.10.2026, когда бэк переехал с
- * `*.workers.dev` на собственный домен api.uchlist.ru. Cookie на своём домене —
- * «своя» для uchlist.ru, и браузеры её не блокируют; SameSite=Lax при этом
- * ещё и защищает от CSRF. Пока переменная не задана (локальная разработка,
- * старый деплой) — поведение прежнее: SameSite=None без домена.
- *
- * ВАЖНО: cookie ставится сразу после привязки домена и одновременно с
- * переключением NEXT_PUBLIC_API_URL фронта. Одно без другого ломает вход.
- */
-function setSessionCookie(c: Context<AppEnv>, token: string): void {
-  const cookieDomain = c.env.SESSION_COOKIE_DOMAIN || undefined;
-  setCookie(c, "session", token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: cookieDomain ? "Lax" : "None",
-    maxAge: 30 * 24 * 60 * 60, // 30 дней
-    path: "/",
-    ...(cookieDomain ? { domain: cookieDomain } : {}),
-  });
-}
 
 /**
  * Тело user в ответах /callback и /login — одно и то же (контракт §2.3):
@@ -197,33 +170,45 @@ authRouter.post("/callback", async (c) => {
   }
   const { token } = callbackSchema.parse(body);
 
-  const result = await consumeMagicLinkAndCreateSession(c.env.DB, token);
-  if (!result) throw new UnauthorizedError("Invalid or expired magic link");
+  // Сначала узнаём, кто пришёл по ссылке, и только потом решаем, выдавать ли
+  // сессию. Для обычного учителя это один шаг, для администратора с кодом
+  // подтверждения — два, и второй обязателен.
+  const user = await consumeMagicLinkAndLoadUser(c.env.DB, token);
+  if (!user) throw new UnauthorizedError("Invalid or expired magic link");
 
-  // Set HttpOnly Secure cookie.
+  // ─────────────────────────────────────────────────────────────────────
+  // ВТОРОЙ ШАГ ДЛЯ АДМИНИСТРАТОРА (ТЗ-24 §8.1) — тот же, что и при входе
+  // по паролю, и по той же причине: ссылка из письма — это первый шаг,
+  // а не доказательство входа.
   //
-  // SameSite=None: фронт на listai-prototype.pages.dev (Pages preview, рабочее название
-  // до выбора бренда — см. docs/BRAND.md) и в перспективе на uchlist.ru (прод-домен),
-  // бэк на *.workers.dev — разные origin'ы. С SameSite=Lax браузер НЕ отдаёт cookie
-  // при cross-origin fetch (XHR/fetch из фронта на бэк). SameSite=None + Secure —
-  // единственный вариант, который работает на разных доменах.
-  //
-  // Когда переедем на один eTLD+1 (например uchlist.ru apex + api.uchlist.ru),
-  // можно вернуть SameSite=Lax — это безопаснее (CSRF mitigation).
-  //
-  // Сам код cookie — в setSessionCookie: он общий с входом по паролю и уже
-  // несёт поведение из origin/main (SESSION_COOKIE_DOMAIN → домен + SameSite=Lax,
-  // без домена → SameSite=None для workers.dev). Дублировать setCookie здесь
-  // нельзя: через год два места разойдутся, и одна из них перестанет ставить
-  // cookie на правильный домен.
-  setSessionCookie(c, result.sessionToken);
+  // Дыра, которую это закрывает (найдена 15.10.2026): вход по ссылке выдавал
+  // администратору полную 30-дневную сессию сразу, минуя код. Второй фактор
+  // при этом защищал только один из двух путей входа — то есть ровно наполовину.
+  // Кто получал письмо со ссылкой на админскую почту, получал суперадминку.
+  // ─────────────────────────────────────────────────────────────────────
+  if (user.is_admin === 1 && (await isTotpEnabled(c.env.DB, user.id))) {
+    const pendingToken = await createPendingToken(c.env.DB, user.id);
+    return c.json({
+      ok: true,
+      mfaRequired: true,
+      pendingToken,
+      // Почту не возвращаем: первый шаг не должен подтверждать, что адрес
+      // зарегистрирован. На втором шаге сессия уже есть, там почта придёт.
+      message: "Введите код из приложения-аутентификатора",
+    });
+  }
+
+  const session = await createSessionForVerifiedUser(c.env.DB, user);
+  // Домен, SameSite и срок cookie — в setSessionCookie (backend/src/lib/session-cookie.ts):
+  // этот код общий с входом по паролю и со вторым шагом администратора.
+  setSessionCookie(c, session.sessionToken);
 
   return c.json({
     ok: true,
     // Сессионный токен НЕ возвращается в теле ответа — только в HttpOnly-cookie
     // выше. Раньше он дублировался в JSON, и любая XSS или вредоносное
     // расширение браузера могли его просто прочитать из ответа.
-    user: toSessionUser(result.user),
+    user: toSessionUser(user),
   });
 });
 

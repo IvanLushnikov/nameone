@@ -76,12 +76,28 @@ export const regenerateBackupCodes = () =>
 export const disableTotp = () =>
   request<{ ok: true; enabled: false }>("/api/admin/totp", { method: "DELETE" });
 
-/** Второй шаг входа: проверка кода и получение сессии. */
+/**
+ * Второй шаг входа: проверка кода и получение сессии.
+ *
+ * Сессия приходит в HttpOnly-cookie — токен в теле ответа больше не
+ * возвращается (15.10.2026). Пользователь в ответе нужен, чтобы обновить
+ * профиль после входа.
+ */
 export const verifyLoginCode = (code: string, pendingToken: string) =>
-  request<{ ok: true; method: "totp" | "backup"; token: string }>(
-    "/api/admin/totp/verify",
-    { method: "POST", body: { code, pendingToken } },
-  );
+  request<{
+    ok: true;
+    method: "totp" | "backup";
+    user: {
+      id: string;
+      email: string;
+      name: string;
+      plan: "free" | "base" | "standard" | "plus";
+      generationsTotal: number;
+      generationsToday: number;
+      generationsLimit: number;
+      createdAt: string;
+    } | null;
+  }>("/api/admin/totp/verify", { method: "POST", body: { code, pendingToken } });
 
 /**
  * Ключ для ручного ввода в приложение — четырьмя группами по четыре.

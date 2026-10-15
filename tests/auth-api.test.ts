@@ -184,9 +184,38 @@ describe("verifyMagicLink", () => {
     const r = await verifyMagicLink("tok-123");
 
     expect(r.ok).toBe(true);
-    if (r.ok) {
+    // Сужаем до ветки «сессия выдана»: у администратора по ссылке вместо неё
+    // приходит ветка «нужен код» (проверяется отдельным тестом ниже).
+    if (r.ok && "user" in r) {
       expect(r.user.id).toBe("u1");
       expect(r.user.plan).toBe("free");
+    } else {
+      throw new Error("ожидалась ветка с пользователем, а не с кодом подтверждения");
+    }
+  });
+
+  it("ссылка администратору с кодом подтверждения возвращает второй шаг, а не сессию", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        okResponse({
+          ok: true,
+          mfaRequired: true,
+          pendingToken: "pend_abc123",
+          message: "Введите код из приложения-аутентификатора",
+        }),
+      ),
+    );
+
+    const r = await verifyMagicLink("tok-123");
+
+    expect(r.ok).toBe(true);
+    if (r.ok && "mfaRequired" in r) {
+      expect(r.pendingToken).toBe("pend_abc123");
+      // Пользователя в ответе быть не должно: человек ещё не вошёл.
+      expect("user" in r).toBe(false);
+    } else {
+      throw new Error("ожидался второй шаг с кодом подтверждения");
     }
   });
 

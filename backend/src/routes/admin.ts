@@ -32,6 +32,8 @@ import { ForbiddenError, BadRequestError } from "../lib/errors";
 import { requireAuth } from "../middleware/auth";
 import { rateLimitMiddleware } from "../middleware/ratelimit";
 import { getUsageStatus, PLAN_NORM_PER_MONTH } from "../services/usage";
+import { listAdminUsers, getUserById, setUserAdmin } from "../db/queries";
+import { z } from "zod";
 import {
   currentMonth,
   getOverview,
@@ -267,27 +269,49 @@ adminRouter.get("/overview", adminRateLimit, async (c) => {
   const admin = requireAdmin(c);
   const month = parseMonth(c);
   const overview = await getOverview(c.env.DB, month);
+  await writeAdminAudit(c.env.DB, {
+    actorId: admin.id,
+    action: "superpower.overview.view",
+    targetType: "dashboard",
+    payload: { month },
+  });
   return c.json({ ok: true, adminId: admin.id, ...overview });
 });
 
 /** Экран 2 — экраны и воронка. */
 adminRouter.get("/screens", adminRateLimit, async (c) => {
-  requireAdmin(c);
+  const admin = requireAdmin(c);
   const days = parseDays(c);
+  await writeAdminAudit(c.env.DB, {
+    actorId: admin.id,
+    action: "superpower.screens.view",
+    targetType: "dashboard",
+    payload: { days },
+  });
   return c.json({ ok: true, ...(await getScreens(c.env.DB, days)) });
 });
 
 /** Экран 3 — генерации. */
 adminRouter.get("/generations", adminRateLimit, async (c) => {
-  requireAdmin(c);
+  const admin = requireAdmin(c);
   const days = parseDays(c);
+  await writeAdminAudit(c.env.DB, {
+    actorId: admin.id,
+    action: "superpower.generations.view",
+    targetType: "usage",
+    payload: { days },
+  });
   return c.json({ ok: true, ...(await getGenerations(c.env.DB, days)) });
 });
 
 /**
- * Экран 4 — деньги подробно. Единственный экран, который пишет в аудит-лог:
- * открыть выручку и себестоимость — это действие, о котором потом может идти
- * спор.
+ * Экран 4 — деньги подробно.
+ *
+ * Пишет в аудит-лог так же, как остальные экраны. Раньше журнал вёлся только
+ * здесь, и потому на остальных четырёх не оставалось никакого следа: посмотреть
+ * статистику генераций можно было совершенно незаметно. Теперь след есть у
+ * каждого экрана, потому что «а вчера такого не было» — вопрос, который
+ * задают именно после тихого просмотра.
  */
 adminRouter.get("/money", adminRateLimit, async (c) => {
   const admin = requireAdmin(c);
@@ -331,6 +355,84 @@ adminRouter.get("/money", adminRateLimit, async (c) => {
     payments: payments.results,
     subscriptions: subscriptions.results,
   });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Кто может заходить в суперадминку (ТЗ-24 §8, добавлено 15.10.2026)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// ЗАЧЕМ. Права администратора выдавались один раз — в момент первой регистрации,
+// если адрес совпал со списком ADMIN_EMAILS на сервере, — и висели в базе
+// навсегда. Снять их было нечем: `setUserAdmin` существовал, но не вызывался
+// ниоткуда. Практический случай: адрес в списке освободился, его занял другой
+// человек, зарегистрировался и получил доступ ко всей финансовой информации.
+//
+// ПОЧЕМУ НЕЛЬЗЯ СНЯТЬ С СЕБЯ. Единственный администратор, снявший с себя права
+// одним нажатием, теряет доступ к разделу навсегда — и вернуть его можно будет
+// только правкой базы вручную. Отказ здесь безопаснее, чем «потом разберёмся».
+
+const adminsSchema = z.object({
+  userId: z.string().min(1).max(64),
+  isAdmin: z.boolean(),
+});
+
+/** GET /api/admin/admins — кто сейчас может заходить в суперадминку. */
+adminRouter.get("/admins", adminRateLimit, async (c) => {
+  const admin = requireAdmin(c);
+  const admins = await listAdminUsers(c.env.DB);
+  await writeAdminAudit(c.env.DB, {
+    actorId: admin.id,
+    action: "superpower.admins.view",
+    targetType: "access",
+  });
+  return c.json({
+    ok: true,
+    admins: admins.map((a) => ({
+      id: a.id,
+      email: a.email,
+      name: a.name,
+      plan: a.plan,
+      // Код подтверждения — не украшение: без него ссылка из письма даёт
+      // полный доступ. Поэтому показываем его прямо в списке.
+      totpEnabled: a.totp_enabled === 1,
+      createdAt: new Date(a.created_at * 1000).toISOString(),
+      isSelf: a.id === admin.id,
+    })),
+  });
+});
+
+/** POST /api/admin/admins — снять или вернуть права администратора. */
+adminRouter.post("/admins", adminRateLimit, async (c) => {
+  const admin = requireAdmin(c);
+  const body = (await c.req.json().catch(() => ({}))) as unknown;
+  const parsed = adminsSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new BadRequestError("Ожидается { userId, isAdmin }");
+  }
+  const { userId, isAdmin } = parsed.data;
+
+  if (userId === admin.id) {
+    throw new ForbiddenError(
+      "Нельзя снять права с себя — иначе доступ к суперадминке пропадёт навсегда",
+    );
+  }
+
+  const target = await getUserById(c.env.DB, userId);
+  if (!target) {
+    throw new BadRequestError("Аккаунт не найден");
+  }
+
+  // Последнего администратора снять нельзя — но снять себя мы уже запретили
+  // выше, а чужих снимать можно: решение владельца оставить одного.
+  await setUserAdmin(c.env.DB, userId, isAdmin);
+  await writeAdminAudit(c.env.DB, {
+    actorId: admin.id,
+    action: isAdmin ? "access.grant" : "access.revoke",
+    targetType: "user",
+    payload: { userId, email: target.email },
+  });
+
+  return c.json({ ok: true, userId, isAdmin });
 });
 
 export { adminRouter };

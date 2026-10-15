@@ -139,6 +139,15 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   updated_at          INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS admin_totp (
+  user_id      TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  secret_enc   TEXT NOT NULL,
+  secret_iv    TEXT NOT NULL,
+  created_at   INTEGER NOT NULL,
+  confirmed_at INTEGER,
+  last_used_at INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS admin_audit_log (
   id          TEXT PRIMARY KEY,
   actor_id    TEXT,
@@ -187,6 +196,7 @@ async function seed() {
     "llm_logs",
     "llm_costs_actual",
     "payments",
+    "admin_totp",
     "sessions",
     "users",
   ]) {
@@ -443,13 +453,19 @@ describe("G3: раздел с деньгами оставляет след в а
     expect(rows.results[0]!.target_type).toBe("finance");
   });
 
-  it("светофор аудит не пишет — его открывают постоянно, спор будет не про него", async () => {
+  it("светофор тоже оставляет след — решение 15.10.2026", async () => {
+    // Раньше здесь стояло обратное: «светофор аудит не пишет — его открывают
+    // постоянно». Причина была понятна (светофор открывают часто), но из-за
+    // этого журнал вёлся только на деньгах, и на остальных экранах не
+    // оставалось следа вообще. 15.10.2026 владелец решил чинить все находки
+    // аудита, и след теперь есть у каждого экрана.
     await seed();
     await callApi("/api/admin/overview", ADMIN_TOKEN);
-    const rows = await env.DB.prepare(`SELECT COUNT(*) AS n FROM admin_audit_log`).first<{
-      n: number;
-    }>();
-    expect(rows?.n).toBe(0);
+    const rows = await env.DB
+      .prepare(`SELECT action, target_type FROM admin_audit_log ORDER BY created_at DESC`)
+      .all<{ action: string; target_type: string | null }>();
+    expect(rows.results[0]!.action).toBe("superpower.overview.view");
+    expect(rows.results[0]!.target_type).toBe("dashboard");
   });
 
   it("учитель не пишет след: его запрос отбит до попадания в обработчик", async () => {
@@ -527,5 +543,172 @@ describe("итог листа-3", () => {
     }
     expect(blocked).toBeGreaterThan(0);
     console.log("ADMIN_RATE_LIMITED");
+  });
+});
+/**
+ * Права администратора (15.10.2026).
+ *
+ * До этого дня права выдавались один раз — при первой регистрации, если адрес
+ * совпал со списком ADMIN_EMAILS на сервере — и держались навсегда. Снять их
+ * было нечем: `setUserAdmin` существовал, но не вызывался ниоткуда. Практический
+ * случай: адрес из списка освободился, его занял другой человек, зарегистрировался
+ * и получил суперадминку. Заметить это было негде.
+ *
+ * Здесь проверяется ровно то, ради чего добавлен блок: список виден, чужие права
+ * снимаются, свои — нет.
+ */
+describe("G5: права администратора", () => {
+  it("список прав виден и показывает, включён ли код подтверждения", async () => {
+    await seed();
+    // Второй администратор с подтверждённым кодом — как в бою.
+    await env.DB.prepare(
+      `INSERT INTO users (id, email, name, plan, is_admin, created_at, updated_at)
+       VALUES ('u_admin2', 'second@test.local', 'Второй', 'plus', 1, ?1, ?1)`,
+    )
+      .bind(NOW)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO admin_totp (user_id, secret_enc, secret_iv, created_at, confirmed_at)
+       VALUES ('u_admin2', 'x', 'y', ?1, ?1)`,
+    )
+      .bind(NOW)
+      .run();
+
+    const res = await callApi("/api/admin/admins", ADMIN_TOKEN);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      admins: {
+        id: string;
+        email: string;
+        totpEnabled: boolean;
+        isSelf: boolean;
+      }[];
+    };
+
+    expect(body.admins.length).toBe(2);
+    const self = body.admins.find((a) => a.id === "u_admin");
+    const other = body.admins.find((a) => a.id === "u_admin2");
+    expect(self?.isSelf).toBe(true);
+    // Без кода подтверждения ссылка из письма сама пускает в суперадминку —
+    // список обязан это показывать.
+    expect(self?.totpEnabled).toBe(false);
+    expect(other?.totpEnabled).toBe(true);
+    console.log("ADMINS_LISTED_WITH_TOTP");
+  });
+
+  it("права чужого аккаунта можно снять и вернуть", async () => {
+    await seed();
+    await env.DB.prepare(
+      `INSERT INTO users (id, email, name, plan, is_admin, created_at, updated_at)
+       VALUES ('u_admin2', 'second@test.local', 'Второй', 'plus', 1, ?1, ?1)`,
+    )
+      .bind(NOW)
+      .run();
+
+    const revoke = await SELF.fetch("https://uchlist.test/api/admin/admins", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `session=${ADMIN_TOKEN}` },
+      body: JSON.stringify({ userId: "u_admin2", isAdmin: false }),
+    });
+    expect(revoke.status).toBe(200);
+
+    const afterRevoke = await env.DB
+      .prepare(`SELECT is_admin FROM users WHERE id = 'u_admin2'`)
+      .first<{ is_admin: number }>();
+    expect(afterRevoke?.is_admin).toBe(0);
+
+    await SELF.fetch("https://uchlist.test/api/admin/admins", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `session=${ADMIN_TOKEN}` },
+      body: JSON.stringify({ userId: "u_admin2", isAdmin: true }),
+    });
+    const afterGrant = await env.DB
+      .prepare(`SELECT is_admin FROM users WHERE id = 'u_admin2'`)
+      .first<{ is_admin: number }>();
+    expect(afterGrant?.is_admin).toBe(1);
+    console.log("ADMIN_RIGHTS_REVOKED_AND_GRANTED");
+  });
+
+  it("свои права снять нельзя — иначе доступ к разделу теряется навсегда", async () => {
+    await seed();
+    const res = await SELF.fetch("https://uchlist.test/api/admin/admins", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `session=${ADMIN_TOKEN}` },
+      body: JSON.stringify({ userId: "u_admin", isAdmin: false }),
+    });
+    expect(res.status).toBe(403);
+
+    const still = await env.DB
+      .prepare(`SELECT is_admin FROM users WHERE id = 'u_admin'`)
+      .first<{ is_admin: number }>();
+    expect(still?.is_admin).toBe(1);
+    console.log("CANNOT_REVOKE_SELF");
+  });
+
+  it("смена прав попадает в журнал — кто кому и когда", async () => {
+    await seed();
+    await env.DB.prepare(
+      `INSERT INTO users (id, email, name, plan, is_admin, created_at, updated_at)
+       VALUES ('u_admin2', 'second@test.local', 'Второй', 'plus', 1, ?1, ?1)`,
+    )
+      .bind(NOW)
+      .run();
+
+    await SELF.fetch("https://uchlist.test/api/admin/admins", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `session=${ADMIN_TOKEN}` },
+      body: JSON.stringify({ userId: "u_admin2", isAdmin: false }),
+    });
+
+    const rows = await env.DB
+      .prepare(
+        `SELECT actor_id, action, payload_json FROM admin_audit_log ORDER BY created_at DESC`,
+      )
+      .all<{ actor_id: string | null; action: string; payload_json: string | null }>();
+    const entry = rows.results[0]!;
+    expect(entry.actor_id).toBe("u_admin");
+    expect(entry.action).toBe("access.revoke");
+    expect(JSON.parse(entry.payload_json ?? "{}")).toMatchObject({
+      userId: "u_admin2",
+      email: "second@test.local",
+    });
+    console.log("ACCESS_CHANGE_AUDITED");
+  });
+
+  it("учитель не видит список прав и не может их менять", async () => {
+    await seed();
+    const list = await callApi("/api/admin/admins", TEACHER_TOKEN);
+    expect(list.status).toBe(403);
+
+    const change = await SELF.fetch("https://uchlist.test/api/admin/admins", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `session=${TEACHER_TOKEN}` },
+      body: JSON.stringify({ userId: "u_admin", isAdmin: false }),
+    });
+    expect(change.status).toBe(403);
+    console.log("TEACHER_CANNOT_TOUCH_RIGHTS");
+  });
+});
+
+describe("G6: журнал одинаков на всех экранах", () => {
+  it("каждый экран админки оставляет след — ни один не молчит", async () => {
+    const screens: { path: string; action: string }[] = [
+      { path: "/api/admin/overview", action: "superpower.overview.view" },
+      { path: "/api/admin/screens?days=30", action: "superpower.screens.view" },
+      { path: "/api/admin/generations?days=30", action: "superpower.generations.view" },
+      { path: "/api/admin/money", action: "superpower.money.view" },
+    ];
+
+    for (const screen of screens) {
+      await env.DB.prepare(`DELETE FROM admin_audit_log`).run();
+      await seed();
+      const res = await callApi(screen.path, ADMIN_TOKEN);
+      expect(res.status).toBe(200);
+      const row = await env.DB
+        .prepare(`SELECT action FROM admin_audit_log ORDER BY created_at DESC`)
+        .first<{ action: string }>();
+      expect(row?.action).toBe(screen.action);
+    }
+    console.log("ALL_SCREENS_AUDITED");
   });
 });

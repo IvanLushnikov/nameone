@@ -113,6 +113,14 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
   payload_json TEXT,
   created_at  INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS magic_links (
+  token      TEXT PRIMARY KEY,
+  email      TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used_at    INTEGER,
+  created_at INTEGER NOT NULL
+);
 `;
 
 const ADMIN_TOKEN = "tok_admin_mfa";
@@ -198,6 +206,7 @@ beforeEach(async () => {
     "user_passwords",
     "rate_limits",
     "admin_audit_log",
+    "magic_links",
     "users",
   ]) {
     await env.DB.prepare(`DELETE FROM ${table}`).run();
@@ -302,11 +311,16 @@ describe("G1: настройка и вход с кодом", () => {
     const res = await callApi("/api/admin/totp/verify", {
       body: { code: await codeFor(secret), pendingToken: pending },
     });
-    const body = (await res.json()) as { token: string };
+
+    // Токен берём из cookie: с 15.10.2026 он туда только и отдаётся, в теле
+    // ответа его больше нет — иначе его прочитает любой XSS.
+    const cookie = res.headers.get("set-cookie") ?? "";
+    const sessionToken = /session=([^;]+)/.exec(cookie)?.[1];
+    expect(sessionToken).toBeTruthy();
 
     const row = await env.DB
       .prepare(`SELECT expires_at, created_at FROM sessions WHERE token = ?1`)
-      .bind(body.token)
+      .bind(sessionToken!)
       .first<{ expires_at: number; created_at: number }>();
 
     // Решение владельца: сессия суперадминки — сутки (у учителя 30 дней).
@@ -539,5 +553,111 @@ describe("итог листа-5", () => {
     const adminRes = await callApi("/api/admin/totp/setup", { token: ADMIN_TOKEN, method: "POST" });
     expect(adminRes.status).toBe(200);
     console.log("TEACHER_LOGIN_UNCHANGED");
+  });
+});
+
+/**
+ * G7: вход по ссылке из письма (15.10.2026).
+ *
+ * Найдено при аудите: `/api/auth/callback` выдавал администратору полную
+ * 30-дневную сессию сразу, минуя код подтверждения. Второй фактор защищал
+ * только вход по паролю — то есть ровно наполовину, а получить суперадминку
+ * было достаточно через письмо.
+ *
+ * Здесь закрывается именно это, и проверяется не «есть ли код», а «какая
+ * сессия в итоге у человека»: cookie, база и срок жизни.
+ */
+describe("G7: вход по ссылке из письма", () => {
+  /** Положить ссылку для входа на указанную почту и вернуть её токен. */
+  async function issueLink(email: string): Promise<string> {
+    const token = `ml_${email.replace(/[^a-z]/gi, "")}_${Math.random().toString(36).slice(2, 8)}`;
+    const now = Math.floor(Date.now() / 1000);
+    await env.DB.prepare(
+      `INSERT INTO magic_links (token, email, expires_at, created_at) VALUES (?1, ?2, ?3, ?4)`,
+    )
+      .bind(token, email, now + 900, now)
+      .run();
+    return token;
+  }
+
+  async function enableTotpForAdmin(): Promise<string> {
+    const { startTotpSetup } = await import("../../src/services/admin-totp");
+    const { secret } = await startTotpSetup(env.DB, env as unknown as Env, "u_mfa_admin");
+    await callApi("/api/admin/totp/confirm", {
+      token: ADMIN_TOKEN,
+      body: { code: await codeFor(secret) },
+    });
+    return secret;
+  }
+
+  /** Сколько сессий у админа прямо сейчас. */
+  async function adminSessionCount(): Promise<number> {
+    const row = await env.DB
+      .prepare(`SELECT COUNT(*) AS n FROM sessions WHERE user_id = 'u_mfa_admin'`)
+      .first<{ n: number }>();
+    return row?.n ?? 0;
+  }
+
+  it("ссылка администратору с включённым кодом не выдаёт сессию — только второй шаг", async () => {
+    await enableTotpForAdmin();
+    const before = await adminSessionCount();
+
+    const token = await issueLink(ADMIN_EMAIL);
+    const res = await callApi("/api/auth/callback", { body: { token } });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { mfaRequired?: boolean; pendingToken?: string; user?: unknown };
+    expect(body.mfaRequired).toBe(true);
+    expect(typeof body.pendingToken).toBe("string");
+    // Пользователя в ответе быть не должно: человек ещё не вошёл.
+    expect(body.user).toBeUndefined();
+
+    // Главное утверждение теста: сессии нет ни в cookie, ни в базе.
+    const cookie = res.headers.get("set-cookie") ?? "";
+    expect(cookie).not.toContain("session=");
+    expect(await adminSessionCount()).toBe(before);
+    console.log("MAGIC_LINK_NO_SESSION_WITHOUT_CODE");
+  });
+
+  it("ссылка учителю по-прежнему входит сразу — второй шаг только у администратора", async () => {
+    const token = await issueLink(TEACHER_EMAIL);
+    const res = await callApi("/api/auth/callback", { body: { token } });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { user?: { email: string }; mfaRequired?: boolean };
+    expect(body.mfaRequired).toBeUndefined();
+    expect(body.user?.email).toBe(TEACHER_EMAIL);
+    expect(res.headers.get("set-cookie") ?? "").toContain("session=");
+    console.log("TEACHER_MAGIC_LINK_UNCHANGED");
+  });
+
+  it("второй шаг кладёт cookie сессии, а не возвращает токен в теле ответа", async () => {
+    const secret = await enableTotpForAdmin();
+
+    const token = await issueLink(ADMIN_EMAIL);
+    const first = await callApi("/api/auth/callback", { body: { token } });
+    const firstBody = (await first.json()) as { pendingToken: string };
+
+    const second = await callApi("/api/admin/totp/verify", {
+      body: { code: await codeFor(secret), pendingToken: firstBody.pendingToken },
+    });
+
+    expect(second.status).toBe(200);
+    const cookie = second.headers.get("set-cookie") ?? "";
+    expect(cookie).toContain("session=");
+
+    // Токен в теле ответа — утечка: его читает любой XSS или расширение.
+    const body = (await second.json()) as Record<string, unknown>;
+    expect(body.token).toBeUndefined();
+    expect((body.user as { email?: string } | null)?.email).toBe(ADMIN_EMAIL);
+
+    // И эта cookie действительно рабочая, а не просто выглядит: с ней сервер
+    // узнаёт администратора. Проверяем через /api/auth/me — он не требует
+    // таблиц статистики и потому доступен в этой тестовой схеме.
+    const sessionToken = /session=([^;]+)/.exec(cookie)?.[1];
+    const me = await callApi("/api/auth/me", { token: sessionToken });
+    expect(me.status).toBe(200);
+    expect(((await me.json()) as { user: { email: string } | null }).user?.email).toBe(ADMIN_EMAIL);
+    console.log("MFA_STEP_SETS_SESSION_COOKIE");
   });
 });

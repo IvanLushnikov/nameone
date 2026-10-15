@@ -19,6 +19,8 @@ import type { AppEnv } from "../types";
 import { requireAuth } from "../middleware/auth";
 import { rateLimitMiddleware } from "../middleware/ratelimit";
 import { BadRequestError } from "../lib/errors";
+import { getUserById } from "../db/queries";
+import { setSessionCookie, ADMIN_SESSION_MAX_AGE_SECONDS } from "../lib/session-cookie";
 import {
   startTotpSetup,
   confirmTotpSetup,
@@ -153,9 +155,20 @@ totpRouter.delete("/totp", async (c) => {
 /**
  * POST /api/admin/totp/verify — второй шаг входа.
  *
- * Вызывается после того, как `/api/auth/login` вернул `mfa_required` вместо
- * сессии. Пароль к этому моменту уже проверен, а сессия — ещё нет: она
- * создаётся только здесь, и только если код сошёлся.
+ * Вызывается после того, как вход по паролю ИЛИ по ссылке из письма вернул
+ * `mfaRequired` вместо сессии. Первый шаг к этому моменту уже прошёл, а
+ * сессия — ещё нет: она создаётся только здесь, и только если код сошёлся.
+ *
+ * ЧТО БЫЛО НЕ ТАК (15.10.2026)
+ * ----------------------------
+ * Ручка возвращала токен сессии в теле ответа и НЕ ставила cookie. Фронт после
+ * неё просто открывал кабинет — то есть вход администратора по паролю с кодом
+ * подтверждения заканчивался без сессии. Это видно и в боевой базе: код
+ * подтверждения включён 12.10, ни разу не использован, при этом живая сессия
+ * есть — она была получена в обход, входом по ссылке.
+ *
+ * Теперь cookie ставится здесь же, и токен из тела ответа убран: сессионный
+ * токен в JSON — это то, что может утечь через XSS или расширение браузера.
  */
 totpRouter.post("/totp/verify", codeRateLimit, async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as {
@@ -169,8 +182,8 @@ totpRouter.post("/totp/verify", codeRateLimit, async (c) => {
   }
 
   // Временный токен: короткоживущий и одноразовый, выданный первым шагом.
-  // Он держит в себе id пользователя, уже проверенного паролем, — и НИЧЕГО
-  // больше: почту, тариф и любые данные туда класть нельзя.
+  // Он держит в себе id пользователя, уже проверенного паролем или ссылкой, —
+  // и НИЧЕГО больше: почту, тариф и любые данные туда класть нельзя.
   const pending = await decodePendingToken(c.env.DB, pendingToken);
   if (!pending) {
     return c.json({ ok: false, error: "Временный токен истёк, войдите заново" }, 401);
@@ -185,12 +198,37 @@ totpRouter.post("/totp/verify", codeRateLimit, async (c) => {
 
   await consumePendingToken(c.env.DB, pendingToken);
   const sessionToken = await createSession(c.env.DB, pending);
+  // Сессия администратора кладётся в cookie здесь — иначе «вход с кодом»
+  // заканчивается экраном кабинета без входа. Срок — сутки (ADMIN_SESSION_
+  // MAX_AGE_SECONDS), он же в самой сессии.
+  setSessionCookie(c, sessionToken, ADMIN_SESSION_MAX_AGE_SECONDS);
+
   logLlmEvent("info", "superpower: вход с кодом подтверждения", {
     userId: pending,
     method: result.method,
   });
 
-  return c.json({ ok: true, method: result.method, token: sessionToken });
+  // Тело пользователя нужно фронту, чтобы обновить профиль после входа —
+  // иначе в шапке остаётся имя из прошлой сессии.
+  const user = await getUserById(c.env.DB, pending);
+
+  return c.json({
+    ok: true,
+    method: result.method,
+    // Токен намеренно НЕ возвращается: сессия живёт в HttpOnly-cookie.
+    user: user
+      ? {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          plan: user.plan,
+          generationsTotal: user.generations_total,
+          generationsToday: user.generations_today,
+          generationsLimit: user.plan === "free" ? 3 : -1,
+          createdAt: new Date(user.created_at * 1000).toISOString(),
+        }
+      : null,
+  });
 });
 
 interface PendingRow {

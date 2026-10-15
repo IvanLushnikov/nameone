@@ -107,19 +107,48 @@ export async function requestMagicLink(
 }
 
 /**
- * POST /api/auth/callback — обменять magic-link токен на session-cookie.
+ * Результат подтверждения ссылки из письма.
  *
- * На 200 OK возвращает {ok:true, user}. На 401/404 (просрочен или использован)
- * — {ok:false, error}. Бэк при успехе дополнительно ставит HttpOnly cookie
- * `session=<token>`, которую дальше использует /api/auth/me и /api/users/*.
+ * Три состояния, а не два: у администратора с включённым кодом подтверждения
+ * ссылка — это только ПЕРВЫЙ шаг. Сервер не выдаёт сессию и просит код
+ * (15.10.2026: раньше выдавал, и второй фактор защищал только вход по паролю).
  */
-export async function verifyMagicLink(
-  token: string,
-): Promise<{ ok: true; user: AuthUser } | { ok: false; error: string }> {
+export type MagicLinkResult =
+  | { ok: true; user: AuthUser }
+  | { ok: true; mfaRequired: true; pendingToken: string; message: string }
+  | { ok: false; error: string };
+
+/**
+ * POST /api/auth/callback — обменять токен из письма на сессию.
+ *
+ * На 200 OK возвращает {ok:true, user} и ставит HttpOnly-cookie `session`,
+ * которой дальше пользуются /api/auth/me и /api/users/*. Для администратора с
+ * кодом подтверждения вместо этого приходит {ok:true, mfaRequired, pendingToken} —
+ * тогда сессии ещё нет, и её выдаст /api/admin/totp/verify.
+ *
+ * На 401/404 (просрочен или использован) — {ok:false, error}.
+ */
+export async function verifyMagicLink(token: string): Promise<MagicLinkResult> {
   try {
     const res = (await postJson("/api/auth/callback", { token })) as
-      | (ApiOk & { user: AuthUser })
+      | (ApiOk & {
+          user?: AuthUser;
+          mfaRequired?: unknown;
+          pendingToken?: unknown;
+          message?: unknown;
+        })
       | ApiErr;
+    if (res.ok === true && res.mfaRequired === true && typeof res.pendingToken === "string") {
+      return {
+        ok: true,
+        mfaRequired: true,
+        pendingToken: res.pendingToken,
+        message:
+          typeof res.message === "string"
+            ? res.message
+            : "Введите код из приложения-аутентификатора",
+      };
+    }
     if (res.ok === true && res.user) {
       return { ok: true, user: res.user };
     }

@@ -4,15 +4,18 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Loader2, CheckCircle2, AlertTriangle, RefreshCw, Mail } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, RefreshCw, Mail, ShieldCheck } from "lucide-react";
 import { setProfile } from "@/lib/utils/storage";
 import type { UserProfile } from "@/lib/types";
 import { trackEvent } from "@/lib/track";
 import { verifyMagicLink, AuthApiError } from "@/lib/auth/api";
+import type { AuthUser } from "@/lib/auth/api";
+import { verifyLoginCode } from "@/lib/superpower-totp-api";
 import { PROFILE_CHANGED_EVENT } from "@/lib/events";
 
 type State =
   | { kind: "loading" }
+  | { kind: "mfa"; pendingToken: string }
   | { kind: "success" }
   | { kind: "expired"; message: string }
   | { kind: "error"; message: string };
@@ -30,52 +33,62 @@ export function AuthCallbackInner() {
   // заход обязан показать «В ссылке нет токена», а не крутить вечную загрузку.
   const [token, setToken] = React.useState<string | undefined>(undefined);
   const [state, setState] = React.useState<State>({ kind: "loading" });
+  const [mfaCode, setMfaCode] = React.useState("");
+  const [mfaError, setMfaError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setToken(new URLSearchParams(window.location.search).get("token") ?? "");
   }, []);
+
+  /** Открыть кабинет и обновить шапку — общий хвост для обоих путей входа. */
+  const openCabinet = React.useCallback(
+    (u: AuthUser) => {
+      // Маппим AuthUser → UserProfile (поля соответствуют src/lib/types.ts:176-185).
+      // generationsLimit: -1 у base/plus трактуется как безлимит — конструктор сам решит.
+      const profile: UserProfile = {
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        plan: u.plan,
+        generationsTotal: u.generationsTotal ?? 0,
+        generationsToday: u.generationsToday ?? 0,
+        generationsLimit: u.generationsLimit ?? (u.plan === "free" ? 3 : -1),
+        createdAt: u.createdAt ?? new Date().toISOString(),
+      };
+      setProfile(profile);
+      // Уведомляем Header (и другие компоненты в той же вкладке), что профиль
+      // появился, чтобы переключить «Войти» → «{name} →» без перезагрузки.
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event(PROFILE_CHANGED_EVENT));
+      }
+      trackEvent("auth_callback_success", { plan: u.plan });
+      setState({ kind: "success" });
+      // Короткий flash, чтобы юзер увидел "Готово!" — иначе редирект выглядит миганием.
+      setTimeout(() => router.push("/dashboard"), 600);
+    },
+    [router],
+  );
 
   const verify = React.useCallback(
     async (t: string) => {
       setState({ kind: "loading" });
       try {
         const result = await verifyMagicLink(t);
-        if (result.ok) {
-          const u = result.user;
-          // Маппим AuthUser → UserProfile (поля соответствуют src/lib/types.ts:176-185).
-          // generationsLimit: -1 у base/plus трактуется как безлимит — конструктор сам решит.
-          const profile: UserProfile = {
-            id: u.id,
-            email: u.email,
-            name: u.name,
-            plan: u.plan,
-            generationsTotal: u.generationsTotal ?? 0,
-            generationsToday: u.generationsToday ?? 0,
-            generationsLimit:
-              u.generationsLimit ??
-              (u.plan === "free" ? 3 : -1),
-            createdAt: u.createdAt ?? new Date().toISOString(),
-          };
-          setProfile(profile);
-          // Уведомляем Header (и другие компоненты в той же вкладке), что профиль появился,
-          // чтобы переключить «Войти» → «{name} →» без перезагрузки.
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(new Event(PROFILE_CHANGED_EVENT));
-          }
-          trackEvent("auth_callback_success", {
-            plan: u.plan,
-          });
-          setState({ kind: "success" });
-          // Короткий flash, чтобы юзер увидел "Готово!" — иначе редирект выглядит миганием.
-          setTimeout(() => router.push("/dashboard"), 600);
-        } else {
-          trackEvent("auth_callback_error", {
-            reason: "invalid_token",
-          });
-          setState({
-            kind: "expired",
-            message: result.error,
-          });
+        if (!result.ok) {
+          trackEvent("auth_callback_error", { reason: "invalid_token" });
+          setState({ kind: "expired", message: result.error });
+          return;
+        }
+        // Администратору с кодом подтверждения ссылка — только первый шаг.
+        if ("mfaRequired" in result) {
+          setMfaCode("");
+          setMfaError(null);
+          setState({ kind: "mfa", pendingToken: result.pendingToken });
+          trackEvent("auth_callback_mfa_required", {});
+          return;
+        }
+        if ("user" in result) {
+          openCabinet(result.user);
         }
       } catch (err) {
         const message =
@@ -93,8 +106,38 @@ export function AuthCallbackInner() {
         });
       }
     },
-    [router],
+    [openCabinet],
   );
+
+  /**
+   * Второй шаг: код из приложения. На ошибке экран НЕ сбрасывается — человеку
+   * нужно просто ввести код заново, стирать введённое было бы наказанием за
+   * опечатку.
+   */
+  const handleMfaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (state.kind !== "mfa" || mfaCode.length !== 6) return;
+
+    setMfaError(null);
+    const { data, error } = await verifyLoginCode(mfaCode, state.pendingToken);
+    if (error || !data) {
+      setMfaError(error ?? "Код не подошёл");
+      setMfaCode("");
+      return;
+    }
+
+    // Сессия выдана сервером и лежит в cookie. Профиль обновляем тем же путём,
+    // что и после обычного входа, — иначе в шапке осталось бы имя из прошлой сессии.
+    if (data.user) {
+      openCabinet(data.user);
+    } else {
+      // Пользователя в ответе нет, но сессия уже выдана: идём в кабинет, а
+      // шапка подтянет имя сама через /api/auth/me.
+      trackEvent("auth_callback_success", {});
+      setState({ kind: "success" });
+      setTimeout(() => router.push("/dashboard"), 600);
+    }
+  };
 
   React.useEffect(() => {
     if (token === undefined) return;
@@ -126,6 +169,56 @@ export function AuthCallbackInner() {
                 Это занимает пару секунд.
               </p>
             </>
+          )}
+
+          {state.kind === "mfa" && (
+            <form onSubmit={handleMfaSubmit}>
+              <div className="flex flex-col items-center text-center mb-6">
+                <div className="w-12 h-12 rounded-xl bg-brand-500 text-white grid place-items-center mx-auto mb-4 shadow-brand">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <h1 className="text-xl font-semibold text-warm-950">
+                  Подтвердите вход кодом
+                </h1>
+                <p className="text-sm text-warm-600 mt-2">
+                  Введите шесть цифр из приложения-аутентификатора. Подойдёт и
+                  резервный код, если телефон недоступен.
+                </p>
+              </div>
+
+              <input
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="000000"
+                aria-label="Код подтверждения"
+                data-testid="auth-callback-mfa-code"
+                className="w-full px-4 py-3 rounded-xl border border-warm-200 text-center text-2xl tracking-[0.4em] font-mono focus:outline-none focus:border-brand-500 mb-3"
+              />
+
+              {mfaError && (
+                <div
+                  className="rounded-xl bg-accent-50 border border-accent-200 px-4 py-3 text-sm text-accent-800 mb-3"
+                  data-testid="auth-callback-mfa-error"
+                >
+                  {mfaError}
+                </div>
+              )}
+
+              <Button
+                type="submit"
+                size="lg"
+                fullWidth
+                disabled={mfaCode.length !== 6}
+              >
+                Войти
+              </Button>
+
+              <p className="mt-4 text-xs text-warm-500 text-center">
+                Вход подтверждается кодом, потому что это админский раздел.
+              </p>
+            </form>
           )}
 
           {state.kind === "success" && (

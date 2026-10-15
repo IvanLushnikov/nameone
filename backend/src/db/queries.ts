@@ -116,6 +116,48 @@ export async function setUserAdmin(
     .run();
 }
 
+/**
+ * Список аккаунтов с правами администратора.
+ *
+ * Зачем он в продукте (найдено 15.10.2026): права выдавались один раз — при
+ * первой регистрации, если адрес попал в ADMIN_EMAILS на сервере — и с тех пор
+ * висели в базе навсегда. Снять их из интерфейса было нечем: `setUserAdmin`
+ * существовал, но не вызывался ниоткуда. Потерянный доступ к админской почте
+ * означал, что новый её владелец получит суперадминку навсегда.
+ */
+export interface AdminUserRow {
+  id: string;
+  email: string;
+  name: string | null;
+  plan: string;
+  is_admin: number;
+  /** Включён ли код подтверждения — без него админ входит по одной ссылке. */
+  totp_enabled: number;
+  created_at: number;
+}
+
+export async function listAdminUsers(db: D1Database): Promise<AdminUserRow[]> {
+  const rows = await db
+    .prepare(
+      `SELECT u.id, u.email, u.name, u.plan, u.is_admin, u.created_at,
+              CASE WHEN t.confirmed_at IS NULL THEN 0 ELSE 1 END AS totp_enabled
+       FROM users u
+       LEFT JOIN admin_totp t ON t.user_id = u.id
+       WHERE u.is_admin = 1
+       ORDER BY u.created_at`,
+    )
+    .all<AdminUserRow>();
+  return rows.results;
+}
+
+/** Сколько всего аккаунтов с правами администратора. */
+export async function countAdmins(db: D1Database): Promise<number> {
+  const row = await db
+    .prepare(`SELECT COUNT(*) AS n FROM users WHERE is_admin = 1`)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
 export async function updateUserPlan(
   db: D1Database,
   id: string,
