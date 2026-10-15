@@ -26,7 +26,6 @@ import { env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import type { Context } from "hono";
 import type { AppEnv } from "../../src/types";
-import type { Env } from "../../src/env";
 import {
   MAX_PHOTOS,
   readPhotoForm,
@@ -38,10 +37,6 @@ import {
   deletePhotoObjects,
 } from "../../src/routes/f06";
 import type { ExpectedTask } from "../../src/services/photoCheckGrading";
-
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}
 
 const TASKS: ExpectedTask[] = [{ number: 1, taskText: "5+7", correctAnswer: "12", maxPoints: 1 }];
 const CONSENT = { consent: ["true"], tasks: [JSON.stringify(TASKS)] };

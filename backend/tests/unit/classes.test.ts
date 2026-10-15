@@ -1,4 +1,4 @@
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 /**
  * Классы, ученики и персональный QR (лист 3.1.1).
  *
@@ -33,13 +33,8 @@
  */
 
 import { env, SELF, applyD1Migrations } from "cloudflare:test";
-import { describe, it, expect, beforeAll } from "vitest";
-import type { Env } from "../../src/env";
+import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import type { WorksheetTask } from "../../src/types";
-
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS users (
@@ -287,6 +282,26 @@ const correctAnswers = [
  * ─────────────────────────────────────────────────────────────────────────── */
 
 describe("классы, ученики и персональный QR (лист 3.1.1)", () => {
+  // С Vitest 4 и @cloudflare/vitest-plugin хранилище изолируется на файл, а не
+  // на отдельный тест: опция `isolatedStorage` удалена. Раньше каждый `it`
+  // получал пустую базу, и проверки вида «у учителя нет учеников» или
+  // «потрачен ровно один лимит отправки» проходили на чистом старте. Теперь
+  // соседние тесты делят базу, и эти проверки видели данные предыдущих.
+  // Учителей из beforeAll не трогаем — они нужны каждому тесту.
+  beforeEach(async () => {
+    for (const table of [
+      "class_student_answers",
+      "class_students",
+      "classes",
+      "form_answers",
+      "form_responses",
+      "forms",
+      "rate_limits",
+    ]) {
+      await env.DB.prepare(`DELETE FROM ${table}`).run();
+    }
+  });
+
   beforeAll(async () => {
     await applyD1Migrations(env.DB, [{ name: "schema", queries: [SCHEMA_SQL] }]);
     const now = Math.floor(Date.now() / 1000);

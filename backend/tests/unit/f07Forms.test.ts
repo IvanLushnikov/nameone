@@ -1,4 +1,4 @@
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 /**
  * Тесты учительского бэкенда форм (TZ-12, этап 1) — `routes/f07.ts`.
  *
@@ -19,10 +19,6 @@ import { env, SELF, applyD1Migrations } from "cloudflare:test";
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import type { Env } from "../../src/env";
 import { buildFormUrl } from "../../src/routes/f07";
-
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS users (
@@ -507,10 +503,16 @@ describe("учительские формы (TZ-12, f07)", () => {
     expect(disposition).toContain("attachment");
     expect(disposition).toMatch(/filename="otchet-\d{4}-\d{2}-\d{2}\.csv"/);
 
-    const csv = await res.text();
     // UTF-8 BOM — без него русский Excel открывает кракозябры.
-    expect(csv.charCodeAt(0)).toBe(0xfeff);
-    const body = csv.slice(1);
+    //
+    // Проверяем БАЙТЫ, а не `res.text()`: по спецификации декодирования
+    // ведущий BOM при чтении текста срезается, и в новом workerd это происходит.
+    // Сам BOM при этом в ответе остаётся — его видит Excel, ради которого он и
+    // нужен. Тест на `charCodeAt(0) === 0xfeff` проверял особенность
+    // декодера, а не выгрузку.
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xef, 0xbb, 0xbf]);
+    const body = new TextDecoder("utf-8").decode(bytes.subarray(3));
     const lines = body.trim().split("\r\n");
     expect(lines[0]).toBe("ФИО;Класс;Задание;Ответ ученика;Верно;Балл;Макс.балл");
     // Имя с точкой с запятой экранируется кавычками, иначе CSV разъедется.

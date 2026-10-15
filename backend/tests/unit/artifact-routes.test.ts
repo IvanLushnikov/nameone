@@ -30,7 +30,7 @@
  * здесь не нужна.
  */
 
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 

@@ -28,11 +28,6 @@ import {
   linkUserFingerprint,
 } from "../../src/services/usage";
 import { fingerprintHash } from "../../src/lib/antifraud";
-import type { Env } from "../../src/env";
-
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}
 
 const SALT = "test-salt-user-fp";
 // Тот же Proxy, что и в freeQuotaAccounting.test.ts: воркерский `env.DB`

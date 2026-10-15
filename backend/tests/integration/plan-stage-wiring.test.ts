@@ -46,7 +46,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-// Окружение воркера: в пуле @cloudflare/vitest-pool-workers процессных
+// Окружение воркера: в пуле @cloudflare/vitest-plugin процессных
 // переменных нет вовсе, всё окружение живёт в биндингах.
 import { env as workerEnv } from "cloudflare:test";
 

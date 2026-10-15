@@ -11,7 +11,7 @@
  * персональных данных молча нельзя, поэтому незнакомый триггер должен
  * приводить к лишней работе, а не к пропуску.
  */
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin" />
 import { env, SELF, applyD1Migrations } from "cloudflare:test";
 // Настоящая схема из репозитория, а не выдержка: тест про разведение
 // триггеров не должен расходиться с тем, что реально применяется в проде.
@@ -19,11 +19,6 @@ import schemaSql from "../../src/db/schema.sql?raw";
 // Типы для `?raw` — в tests/raw-imports.d.ts.
 import { describe, it, expect, beforeAll } from "vitest";
 import app from "../../src/index";
-import type { Env } from "../../src/env";
-
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
-}
 
 const HOURLY_CRON = "0 * * * *";
 const DAILY_CRON = "0 3 * * *";

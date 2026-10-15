@@ -1,11 +1,11 @@
 /**
  * Vitest config для backend.
  *
- * Используем @cloudflare/vitest-pool-workers — он запускает тесты внутри
+ * Используем @cloudflare/vitest-plugin — он запускает тесты внутри
  * workerd runtime с реальными D1/R2 биндингами. Так тесты максимально
  * близки к продакшну, без mock-обёрток.
  *
- * Pool тут — `@cloudflare/vitest-pool-workers` (не `forks`/`threads`), иначе
+ * Pool тут — `@cloudflare/vitest-plugin` (не `forks`/`threads`), иначе
  * workerd не стартует и D1 не получит реальный биндинг.
  *
  * Чистые unit-тесты (cost, moderation, checkExam, shortid, prompts, billing)
@@ -13,12 +13,36 @@
  * автоматически использует workers-pool, если они не используют env.
  */
 
-import { defineWorkersConfig } from "@cloudflare/vitest-pool-workers/config";
+import { cloudflareTest } from "@cloudflare/vitest-plugin";
+import { defineConfig } from "vitest/config";
 
 // Флаг разрешает платные прогоны. Пусто — обычный `npm test`, без них.
 const LIVE_TESTS = process.env.LIVE === "1";
 
-export default defineWorkersConfig({
+export default defineConfig({
+  // Настройка Workers-окружения живёт в плагине, а не в `test.poolOptions`:
+  // с Vitest 4 `defineWorkersConfig` и пул «workers» удалены, их заменил
+  // плагин `cloudflareTest()`. Опции, которые раньше лежали в
+  // `test.poolOptions.workers`, передаются плагину напрямую.
+  plugins: [
+    cloudflareTest({
+      wrangler: { configPath: "./wrangler.toml" },
+      miniflare: {
+        compatibilityFlags: ["nodejs_compat"],
+        compatibilityDate: "2026-09-01",
+        // Ключ шифрования секрета кода подтверждения (ТЗ-24 §8.1).
+        //
+        // Тестовый и только для тестов: 32 байта в base64. Без него роут
+        // настройки кода подтверждения отвечал бы «на сервере не задан
+        // ключ», и проверять было бы нечего. В боевом окружении ключ ставится
+        // через `wrangler secret put TOTP_ENCRYPTION_KEY` и в репозиторий
+        // не попадает.
+        bindings: {
+          TOTP_ENCRYPTION_KEY: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+        },
+      },
+    }),
+  ],
   test: {
     // ЖИВЫЕ прогоны (реальные деньги) НЕ входят в обычный `npm test`.
     //
@@ -37,26 +61,6 @@ export default defineWorkersConfig({
       "**/node_modules/**",
       "tests/integration/tz26-live-quality.test.ts",
     ],
-    pool: "@cloudflare/vitest-pool-workers",
-    poolOptions: {
-      workers: {
-        wrangler: { configPath: "./wrangler.toml" },
-        miniflare: {
-          compatibilityFlags: ["nodejs_compat"],
-          compatibilityDate: "2026-09-01",
-          // Ключ шифрования секрета кода подтверждения (ТЗ-24 §8.1).
-          //
-          // Тестовый и только для тестов: 32 байта в base64. Без него роут
-          // настройки кода подтверждения отвечал бы «на сервере не задан
-          // ключ», и проверять было бы нечего. В боевом окружении ключ ставится
-          // через `wrangler secret put TOTP_ENCRYPTION_KEY` и в репозиторий
-          // не попадает.
-          bindings: {
-            TOTP_ENCRYPTION_KEY: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
-          },
-        },
-      },
-    },
     testTimeout: 30_000,
     hookTimeout: 30_000,
     include: ["tests/**/*.test.ts"],

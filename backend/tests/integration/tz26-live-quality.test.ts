@@ -30,7 +30,7 @@
 
 import { describe, it, expect, afterEach } from "vitest";
 // Ключ лежит в биндинге воркера, а не в process.env: пул
-// `@cloudflare/vitest-pool-workers` грузит `.dev.vars` в окружение воркера.
+// `@cloudflare/vitest-plugin` грузит `.dev.vars` в окружение воркера.
 // Через `cloudflare:test` — единственное место, где он виден тесту.
 import { env as workerEnv } from "cloudflare:test";
 
@@ -54,7 +54,7 @@ const live = API_KEY ? describe : describe.skip;
  * когда денег мало.
  *
  * Значение читается из `env` ВОРКЕРА, а не из `process.env`: в пуле
- * `@cloudflare/vitest-pool-workers` процессных переменных нет вовсе, и
+ * `@cloudflare/vitest-plugin` процессных переменных нет вовсе, и
  * фильтр молча не срабатывал, прогоняя все шесть листов вместо одного.
  * Ровно та же ошибка была со флагом `PLAN`.
  */
