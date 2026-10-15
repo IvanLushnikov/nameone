@@ -37,10 +37,10 @@
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
     "@types/canvas-confetti": "^1.9.0",
-    "@types/node": "^20",
+    "@types/node": "^22.20.5",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "@vitest/ui": "^3.2.7",
+    "@vitest/ui": "^4.1.11",
     "eslint": "^8",
     "eslint-config-next": "14.2.35",
     "hono": "^4.13.13",
@@ -49,8 +49,13 @@
     "tailwindcss": "^3.4.1",
     "tsx": "^4.23.15",
     "typescript": "^5",
-    "vitest": "^3.2.7",
+    "vitest": "^4.1.11",
     "wrangler": "^4.140.0",
     "zod": "^4.6.5"
+  },
+  "allowScripts": {
+    "unrs-resolver@1.12.2": true,
+    "workerd@1.20260923.1": true,
+    "esbuild@0.28.1": true
   }
 }

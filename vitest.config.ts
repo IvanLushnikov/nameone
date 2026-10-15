@@ -12,11 +12,17 @@ const BACKEND_DIR = path.resolve(__dirname, './backend');
 
 export default defineConfig({
   // F-test: tests/regression/*.test.tsx — это RTL + JSX.
-  // tsconfig.json "jsx":"preserve" рассчитан на Next.js/SWC, а vitest идёт через esbuild.
-  // esbuild default = "transform" (classic runtime), который требует `import React from 'react'`.
-  // Переключаем на "automatic" — JSX-трансформ как в современных React-проектах, без React import.
-  esbuild: {
-    jsx: 'automatic',
+  // tsconfig.json "jsx":"preserve" рассчитан на Next.js/SWC, а vitest идёт
+  // через собственный трансформер.
+  // Дефолт = "classic" runtime, который требует `import React from 'react'`.
+  // Переключаем на "automatic" — JSX-трансформ как в современных React-проектах,
+  // без React import.
+  //
+  // Важно: с Vite 8 трансформацию делает не esbuild, а oxc (движок rolldown).
+  // Опция `esbuild` там не просто устарела — она молча игнорируется, и все
+  // .tsx падают с «Unexpected JSX expression». Поэтому настройка живёт в `oxc`.
+  oxc: {
+    jsx: { runtime: 'automatic' },
   },
   test: {
     environment: 'jsdom',

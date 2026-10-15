@@ -48,7 +48,10 @@ const failResponse = (status: number, body: unknown = {}) =>
 const nowSec = Math.floor(Date.now() / 1000);
 const DAY = 86400;
 
-function stubAuth(fetchMock: ReturnType<typeof vi.fn>) {
+// Тип аргумента — «функция, которая берёт url и отдаёт ответ», а не
+// `ReturnType<typeof vi.fn>`: в vitest 4 `vi.fn` без аргументов получает тип
+// `Mock<Procedure | Constructable>`, который TypeScript не считает вызываемым.
+function stubAuth(fetchMock: (url: string) => Promise<Response>) {
   return vi.fn(async (url: string) => {
     if (url.includes("/api/auth/me")) {
       return okResponse({

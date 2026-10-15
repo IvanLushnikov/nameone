@@ -85,7 +85,7 @@ jobs:
         run: npm run lint
 
       # Тесты гоняются БЕЗ --environment node: бэкенд работает на
-      # @cloudflare/vitest-pool-workers (workerd + реальные биндинги D1/R2),
+      # @cloudflare/vitest-plugin (workerd + реальные биндинги D1/R2),
       # и подмена окружения сломала бы D1. Медленный setup из jsdom — проблема
       # только корневого конфига, здесь её нет.
       - name: Test
