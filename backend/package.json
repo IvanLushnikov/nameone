@@ -26,14 +26,20 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.5.41",
+    "@cloudflare/vitest-plugin": "^1.4.2",
     "@cloudflare/workers-types": "^5.20261004.1",
     "@typescript-eslint/eslint-plugin": "^8.70.0",
     "@typescript-eslint/parser": "^8.70.0",
     "eslint": "^9.39.0",
     "tsx": "^4.19.0",
     "typescript": "^5.9.0",
-    "vitest": "^2.1.9",
+    "vitest": "^4.1.0",
     "wrangler": "^4.147.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "esbuild@0.28.2": true,
+    "workerd@1.20260815.1": true,
+    "workerd@1.20261012.1": true
   }
 }
