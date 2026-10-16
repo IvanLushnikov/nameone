@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit && next build --no-lint",
+    "build": "npm run build:clean && tsc --noEmit && next build --no-lint && npm run build:prune",
+    "build:clean": "node scripts/clean-export.mjs",
+    "build:prune": "node scripts/prune-export.mjs",
     "build:full": "next build",
     "start": "next start",
     "lint": "next lint",
