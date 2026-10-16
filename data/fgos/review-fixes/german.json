@@ -1,0 +1,171 @@
+{
+ "subject": "german",
+ "checked": { "topics": 12, "examples": 24 },
+ "issues": [
+  {
+   "grade": 5,
+   "slug": "formirovanie-umeniya-obschatsya-v-ustnoy-i-pismennoy-forme-2",
+   "exampleIndex": 0,
+   "severity": "wrong",
+   "whatIsWrong": "Диалог построен неверно: на приветствие «Guten Tag, Anna!» нельзя отвечать «Auf Wiedersehen!» — это формула прощания, а не ответа на приветствие. Кроме того, реплика «Gut.» вместо приветствия не употребляется. Ученик, выписывающий приветствие и прощание, получит пример неверного речевого обмена.",
+   "fix": {
+    "text": "Прочитайте мини-диалог и выпишите из него приветствие и прощание: — Guten Tag, Anna! — Guten Tag, Lisa! — Auf Wiedersehen, Anna!",
+    "answer": "Guten Tag! Auf Wiedersehen!"
+   }
+  },
+  {
+   "grade": 5,
+   "slug": "formirovanie-umeniya-obschatsya-v-ustnoy-i-pismennoy-forme-2",
+   "exampleIndex": 1,
+   "severity": "wrong",
+   "whatIsWrong": "Две ошибки в немецком материале: «bitte» — это «пожалуйста», а не «спасибо», поэтому пара для поблагодарить неверна (нужно danke, danke schön); «tschuldigung» написано с маленькой буквы и с пропущенной гласной — правильно Entschuldigung.",
+   "fix": {
+    "text": "Подберите к каждому действию по два слова: поздороваться, поблагодарить, извиниться.",
+    "answer": "поздороваться — Guten Tag, Hallo; поблагодарить — Danke, danke schön; извиниться — Entschuldigung, Es tut mir leid"
+   }
+  },
+  {
+   "grade": 5,
+   "slug": "napisanie-elektronnogo-soobscheniya-lichnogo-haraktera-soo-2",
+   "exampleIndex": 0,
+   "severity": "ambiguous",
+   "whatIsWrong": "Задание говорит «распределите части сообщения по местам», но сами места (подписи частей) не заданы, а ответ просто повторяет части в том же порядке, в каком они перечислены в условии, — проверить правильность распределения нельзя.",
+   "fix": {
+    "text": "Распределите части сообщения по местам — приветствие, обращение, информация, подпись: Hallo!; Liebe Anna; Ich wohne in Köln; Viele Grüße, Max.",
+    "answer": "приветствие — Hallo!; обращение — Liebe Anna; информация — Ich wohne in Köln; подпись — Viele Grüße, Max"
+   }
+  },
+  {
+   "grade": 6,
+   "slug": "formirovanie-umeniya-obschatsya-v-ustnoy-i-pismennoy-forme-2",
+   "exampleIndex": 1,
+   "severity": "ambiguous",
+   "whatIsWrong": "«Чтение вслух» попадает сразу в два столбца: ученик и понимает текст (рецептивная речь), и одновременно произносит его вслух (продуктивная речь). Ключ относит его к рецептивным, хотя в школьной практике чтение вслух относят к говорению — у задания два допустимых ответа.",
+   "fix": {
+    "text": "Распределите виды речевой деятельности в две колонки: рецептивные и продуктивные. Чтение вслух, письмо, аудирование, говорение.",
+    "answer": "рецептивные: чтение (понимание текста), аудирование; продуктивные: говорение, письмо. «Чтение вслух» относится к обоим видам: ученик понимает текст и одновременно произносит его вслух."
+   }
+  },
+  {
+   "grade": 6,
+   "slug": "razlichenie-na-sluh-bez-fonematicheskih-oshibok-veduschih-2",
+   "exampleIndex": 0,
+   "severity": "wrong",
+   "whatIsWrong": "Условие требует двух действий — определить интонацию и отметить безударные служебные слова, а ответ разбирает только интонацию. Вторую часть задания выполнить нечем, ключ на неё не отвечает.",
+   "fix": {
+    "text": "Прочитайте предложения вслух и определите интонацию каждого: Ich gehe heute in die Schule. Wer kommt heute? Komm nicht!",
+    "answer": "1 — нисходящая; 2 — восходящая; 3 — резкая нисходящая"
+   }
+  },
+  {
+   "grade": 6,
+   "slug": "razlichenie-na-sluh-bez-fonematicheskih-oshibok-veduschih-2",
+   "exampleIndex": 1,
+   "severity": "ambiguous",
+   "whatIsWrong": "В отрезке «am Samstag in den Park» два смысловых слова, а фразовое ударение падает только на одно, поэтому ответ «Samstag; Park» допускает два прочтения и проверить его нельзя.",
+   "fix": {
+    "text": "Прочитайте вслух и отметьте слово, на которое падает фразовое ударение: am Samstag.",
+    "answer": "Samstag (служебное слово am — безударное)"
+   }
+  },
+  {
+   "grade": 7,
+   "slug": "foneticheskaya-storona-rechi",
+   "exampleIndex": 1,
+   "severity": "broken",
+   "whatIsWrong": "Ответ дословно повторяет слова из условия: знаки ударения так и не расставлены, задание в ключе не выполнено. Дефект есть и в файле проекта.",
+   "fix": {
+    "text": "Расставьте знак ударения в словах: schön, Musik, über.",
+    "answer": "schö́n, Musík, úber"
+   }
+  },
+  {
+   "grade": 8,
+   "slug": "sostavlenie-plana-tezisov-ustnogo-ili-pismennogo-soobschen-2",
+   "exampleIndex": 0,
+   "severity": "broken",
+   "whatIsWrong": "В условии нет текста, а ключ говорит «4 пункта в порядке текста» — опереться не на что, задание невыполнимо.",
+   "fix": {
+    "text": "Составьте план сообщения о выходных из четырёх пунктов по ключевым словам: сходить в кино, сделать уроки, погулять, рано лечь спать. Текст: Am Samstag bin ich mit meiner Freundin ins Kino gegangen. Danach habe ich zu Hause meine Hausaufgaben gemacht. Am Nachmittag haben wir im Park spazieren gegangen. Um neun Uhr bin ich schlafen gegangen.",
+    "answer": "1) mit meiner Freundin ins Kino gehen; 2) die Hausaufgaben machen; 3) im Park spazieren gehen; 4) früh schlafen"
+   }
+  },
+  {
+   "grade": 9,
+   "slug": "formirovanie-umeniya-obschatsya-v-ustnoy-i-pismennoy-forme-2",
+   "exampleIndex": 0,
+   "severity": "wrong",
+   "whatIsWrong": "Пункты 1 и 3 смешанные: «прослушать рассказ и ответить» и «прочитать текст и озаглавить его» требуют не только понимания, но и собственного ответа и заголовка. Их нельзя однозначно отнести ни к рецептивным, ни к продуктивным, поэтому ключ «1, 3 — рецептивные» противоречит формулировке пунктов.",
+   "fix": {
+    "text": "Определите, какие задания требуют рецептивной речи, а какие — продуктивной. Запишите номера в два столбца: 1) прослушать рассказ; 2) написать письмо другу; 3) прочитать текст; 4) задать вопросы по содержанию фильма.",
+    "answer": "Рецептивные: 1, 3. Продуктивные: 2, 4"
+   }
+  },
+  {
+   "grade": 9,
+   "slug": "formirovanie-umeniya-obschatsya-v-ustnoy-i-pismennoy-forme-2",
+   "exampleIndex": 1,
+   "severity": "wrong",
+   "whatIsWrong": "Условие противоречиво: сказано «придумайте, что делает учитель, а что — ученик», но в списке исполнитель уже назван у каждого действия («учитель объясняет правило, ученик диктует текст»). Ученику остаётся только переписать условие — задания нет.",
+   "fix": {
+    "text": "Распределите действия между учителем и учеником: объяснять правило; диктовать текст; писать на доске; слушать и записывать.",
+    "answer": "Учитель: объясняет правило, пишет на доске. Ученик: диктует, слушает и записывает"
+   }
+  },
+  {
+   "grade": 9,
+   "slug": "zapolnenie-anket-i-formulyarov-soobschat-o-sebe-osnovnye-s-2",
+   "exampleIndex": 1,
+   "severity": "wrong",
+   "whatIsWrong": "«Hobbys: schwimmen» — грамматическая ошибка: инфинитив в значении существительного в немецком пишется с большой буквы (das Schwimmen). Ключ учит неверному написанию.",
+   "fix": {
+    "text": "Дополните анкету недостающими данными по нормам страны: «Name: Lisa Meier / Alter: … / Wohnort: Mainz / Sprachen: Deutsch / Hobbys: …»",
+    "answer": "Alter: 15; Hobbys: Schwimmen"
+   }
+  },
+  {
+   "grade": 10,
+   "slug": "razvitie-umeniya-obschatsya-v-ustnoy-i-pismennoy-forme-isp-2",
+   "exampleIndex": 0,
+   "severity": "broken",
+   "whatIsWrong": "Сбита типографика кавычек: в названии темы стоит открывающая кавычка-ёлочка и закрывающая прямая. В остальных заданиях немецкого блока пара кавычек стоит правильно (сравните „Профессия“ в соседней теме), то есть здесь опечатка.",
+   "fix": {
+    "text": "Составьте устное высказывание (5 фраз) и письменное (до 50 слов) по теме „Mein Wochenende“.",
+    "answer": "Устное — обращения, разговорные обороты. Письменное — связки."
+   }
+  },
+  {
+   "grade": 10,
+   "slug": "razvitie-umeniya-obschatsya-v-ustnoy-i-pismennoy-forme-isp-2",
+   "exampleIndex": 1,
+   "severity": "wrong",
+   "whatIsWrong": "Задание требует определить, устное высказывание или письменное, но в самой фразе «Ich komme heute nicht, ich habe einen Termin» нет ни одного признака письменной речи — определить по ней вид невозможно, поэтому ключевой ответ «Устное» не следует из условия.",
+   "fix": {
+    "text": "Определите, устное или письменное высказывание и какой речевой акт оно выражает. 1) — Nein, ich komme heute nicht, ich habe einen Termin! (в ответ другу по телефону). 2) — Sehr geehrte Frau Meier, ich komme heute nicht, ich habe einen Termin (в ответном письме).",
+    "answer": "1 — устное, отказ с причиной; 2 — письменное, официальный отказ с причиной"
+   }
+  },
+  {
+   "grade": 10,
+   "slug": "raspoznavanie-i-upotreblenie-v-ustnoy-i-pismennoy-rechi-le-2",
+   "exampleIndex": 0,
+   "severity": "wrong",
+   "whatIsWrong": "Две из четырёх «нарушений» не являются ошибками: «einen Bus nehmen» и «ein Brot kaufen» — правильные немецкие сочетания. Ключ заменяет их другими оборотами, причём «einen Bus fahren» означает «вести автобус», а не «ехать на автобусе», то есть меняет смысл, а не исправляет ошибку.",
+   "fix": {
+    "text": "Исправьте четыре нарушения сочетаемости: „eine Frage machen, eine Musik hören, mit ein Freund gehen, in ein Firma arbeiten.“",
+    "answer": "eine Frage stellen, Musik hören, mit einem Freund gehen, in einer Firma arbeiten"
+   }
+  },
+  {
+   "grade": 10,
+   "slug": "raspoznavanie-i-upotreblenie-v-ustnoy-i-pismennoy-rechi-le-2",
+   "exampleIndex": 1,
+   "severity": "wrong",
+   "whatIsWrong": "Задание требует четыре устойчивых сочетания, а в ответе только три.",
+   "fix": {
+    "text": "Составьте четыре устойчивых сочетания глагол и существительное по теме „Профессия“.",
+    "answer": "eine Stelle suchen, Kenntnisse haben, einen Beruf erlernen, eine Ausbildung machen"
+   }
+  }
+ ]
+}

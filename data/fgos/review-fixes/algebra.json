@@ -1,0 +1,17 @@
+{
+ "subject": "algebra",
+ "checked": { "topics": 12, "examples": 24 },
+ "issues": [
+  {
+   "grade": 10,
+   "slug": "pokazatelnaya-i-logarifmicheskaya-funktsii-ih-svoystva-i-g-2",
+   "exampleIndex": 1,
+   "severity": "wrong",
+   "whatIsWrong": "У уравнения 2^x = x + 2 два корня, а не один. Проверено: f(-2) = 0,25 > 0, f(-1) = -0,5 < 0, значит на отрезке [-2; -1] есть корень (методом бисекции получается x ≈ -1,69). Второй корень x = 2. Ответ «один корень» неверен.",
+   "fix": {
+    "text": "Решите графически уравнение 2^x = x + 2 и укажите число его корней.",
+    "answer": "два корня: x = 2 и x ≈ −1,7"
+   }
+  }
+ ]
+}

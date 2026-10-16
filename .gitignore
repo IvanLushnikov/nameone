@@ -91,4 +91,9 @@ ai-feedback/
 # «cloudflare-test-env.d 2.ts» и подобные — копии Finder/iCloud с суффиксом
 # « N». Блокируются по маске, потому что появляются снова при каждом
 # столкновении с облачным диском.
-backend/tests/cloudflare-test-env.d *.d 2.ts
+backend/tests/cloudflare-test-env.d 2.ts
+
+# Пробники, которыми проверяли запись и права на D1/локальной базе.
+.probe*
+.wtest
+_probe*

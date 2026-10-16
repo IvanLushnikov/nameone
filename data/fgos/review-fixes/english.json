@@ -1,0 +1,72 @@
+{
+ "subject": "english",
+ "checked": { "topics": 12, "examples": 24 },
+ "issues": [
+  {
+   "grade": 2,
+   "slug": "mir-moego-ya",
+   "exampleIndex": 0,
+   "severity": "wrong",
+   "whatIsWrong": "В ответе предложения соединены запятыми, а третье предложение начато с заглавной буквы — это русская пунктуация, а не английский текст. Сам шаблон задания заканчивает каждое предложение точкой, поэтому ученик, списывающий по образцу, запишет предложения неправильно.",
+   "fix": {
+    "text": "Прочитайте и спишите предложения о себе, вставив свои данные вместо пропусков: My name is ___. I am ___. My favourite colour is ___.",
+    "answer": "My name is Ann. I am 8. My favourite colour is red."
+   }
+  },
+  {
+   "grade": 2,
+   "slug": "mir-moego-ya-2",
+   "exampleIndex": 0,
+   "severity": "wrong",
+   "whatIsWrong": "Дубликат предыдущей темы: ответ записан через запятые и с заглавной буквы внутри предложения, хотя шаблон задания требует полные предложения с точками.",
+   "fix": {
+    "text": "Прочитайте и спишите предложения о себе, вставив свои данные вместо пропусков: My name is ___. I am ___. My favourite colour is ___.",
+    "answer": "My name is Ann. I am 8. My favourite colour is red."
+   }
+  },
+  {
+   "grade": 4,
+   "slug": "mir-moego-ya",
+   "exampleIndex": 1,
+   "severity": "too_easy",
+   "whatIsWrong": "Все три предложения текста содержат to be, поэтому выбирать нечего: задание не требует ни одного решения, а ключ дословно повторяет исходный текст целиком.",
+   "fix": {
+    "text": "Прочитайте и выпишите предложения с глаголом to be из текста: My friend is Ben. He is eight. We are in the park. We play football.",
+    "answer": "My friend is Ben. He is eight. We are in the park."
+   }
+  },
+  {
+   "grade": 5,
+   "slug": "spisyvanie-teksta-i-vypisyvanie-iz-nego-slov-slovosochetan-2",
+   "exampleIndex": 0,
+   "severity": "broken",
+   "whatIsWrong": "Задание ссылается на текст, которого в условии нет («Спишите текст… выпишите из него»), и без него выполнить его невозможно. Кроме того, ответ «список слов с буквой a» — это пересказ задания, а не ответ. Дефект есть и в самом файле проекта, а не только в выгрузке.",
+   "fix": {
+    "text": "Спишите текст без ошибок, затем выпишите из него все слова, в которых есть буква a: My cat and my dog play in the garden. Anna can draw and sing.",
+    "answer": "cat, and, play, garden, Anna, can, draw"
+   }
+  },
+  {
+   "grade": 5,
+   "slug": "spisyvanie-teksta-i-vypisyvanie-iz-nego-slov-slovosochetan-2",
+   "exampleIndex": 1,
+   "severity": "broken",
+   "whatIsWrong": "Текст, из которого предлагается выписать предложения, отсутствует, а ответ «предложения с глаголом is» повторяет формулировку задания вместо ответа.",
+   "fix": {
+    "text": "Спишите из текста только предложения с глаголом is: This is my cat. Its name is Tom. I am happy.",
+    "answer": "This is my cat. Its name is Tom."
+   }
+  },
+  {
+   "grade": 7,
+   "slug": "sozdanie-nebolshogo-pismennogo-vyskazyvaniya-s-ispolzovani-2",
+   "exampleIndex": 0,
+   "severity": "broken",
+   "whatIsWrong": "Условие требует «прочитайте образец письма», но образца в задании нет — ученик не может выполнить задание «по тому же плану», потому что сам план не показан.",
+   "fix": {
+    "text": "Прочитайте образец письма и напишите своё по тому же плану — 6–8 предложений о любимом месте: Hi! My name is Kate. I am ten. My favourite place is the zoo. I go there with my family. I like watching the monkeys. Write to me!",
+    "answer": "6–8 предложений по плану образца: приветствие, имя и возраст, любимое место, с кем и что там делаем, просьба написать в ответ"
+   }
+  }
+ ]
+}
