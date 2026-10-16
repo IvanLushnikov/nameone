@@ -394,7 +394,6 @@ export async function freeQuotaForUser(
   history: FreeUsageMonthRow[];
 }> {
   const keys = await quotaOwnerKeys(db, userId, null);
-  const nowSec = Math.floor(nowMs / 1000);
   const month = monthKeyOf(nowMs);
   const [used, history] = await Promise.all([
     readMonthGenerations(db, keys, month),
