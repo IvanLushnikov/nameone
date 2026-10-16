@@ -1,0 +1,75 @@
+{
+  "source": "english-6-part2",
+  "topics": [
+    {
+      "statement": "кратко рассказывать о выдающихся людях родной страны и страны (стран) изучаемого языка (ученых, писателях, поэтах)",
+      "title": "Выдающиеся люди родной страны",
+      "examples": [
+        {
+          "text": "Прочитайте текст об английском писателе: Charles Dickens wrote many stories about children. He was born in Portsmouth in 1812. His book about a poor boy became famous all over the world. Составьте план рассказа из трёх пунктов и запишите по одному предложению к каждому.",
+          "answer": "план: где родился — что создал — чем известен"
+        },
+        {
+          "text": "Прочитайте предложения о людях и распределите их в два столбика: «учёные» и «писатели». 1) Newton studied gravity. 2) Pushkin wrote many poems. 3) Tim Berners-Lee created the Internet. 4) Jane Austen wrote eleven novels. Запишите номера предложений по столбикам.",
+          "answer": "учёные — 1, 3; писатели — 2, 4"
+        }
+      ]
+    },
+    {
+      "statement": "Использование при чтении и аудировании языковой догадки, в том числе контекстуальной",
+      "title": "Языковая догадка",
+      "examples": [
+        {
+          "text": "Вставьте пропущенное слово по смыслу: There is no ____ in my bag. All my books are wet, because it rained.",
+          "answer": "umbrella"
+        },
+        {
+          "text": "Прочитайте предложение: We must reduce the amount of plastic in our rivers. Определите по смыслу значение слова reduce и запишите его перевод.",
+          "answer": "уменьшать, сокращать"
+        }
+      ]
+    },
+    {
+      "statement": "Использование при формулировании собственных высказываний, ключевых слов, плана",
+      "title": "Ключевые слова и план",
+      "examples": [
+        {
+          "text": "Прочитайте: «Last Sunday our class went to the museum. We saw big machines and learned how a rocket is built. After that we played games in the park.» Выпишите 3 ключевых слова к теме «поездка в музей».",
+          "answer": "museum, machines, park"
+        },
+        {
+          "text": "Составьте план рассказа о своём выходном дне из 4 пунктов: где был, с кем, что делал, почему понравилось. Запишите по одному предложению к каждому пункту.",
+          "answer": "4 пункта: место — компания — дело — впечатление"
+        }
+      ]
+    },
+    {
+      "statement": "Игнорирование информации, не являющейся необходимой для понимания основного содержания прочитанного (прослушанного) текста или для нахождения в тексте запрашиваемой информации",
+      "title": "Лишняя информация",
+      "examples": [
+        {
+          "text": "Прочитайте объявление: «School trip. Meet at 8:00. Bring warm clothes, a sandwich and a bottle of water. The bus leaves at 8:30 and comes back at 4:00.» Ответьте только на вопрос: во сколько уезжает автобус?",
+          "answer": "at 8:30"
+        },
+        {
+          "text": "Прочитайте: «In London it was cool and cloudy, the temperature was 12 degrees. In Delhi it was very hot — 38 degrees.» Найдите предложение с ответом на вопрос Where was it hottest? Выпишите только это предложение.",
+          "answer": "In Delhi it was very hot — 38 degrees"
+        }
+      ]
+    },
+    {
+      "statement": "Сравнение (в том числе установление основания для сравнения) объектов, явлений, процессов, их элементов и основных функций в рамках изученной тематики",
+      "title": "Сравнение и различие",
+      "examples": [
+        {
+          "text": "Прочитайте: «Trains are fast, but they are expensive. Buses are cheap, but they are slow.» Составьте таблицу сравнения: что общего у поезда и автобуса и в чём они различаются.",
+          "answer": "общее — оба возят людей; различие — скорость и цена"
+        },
+        {
+          "text": "Рассмотрите три пары предметов: 1) a book and a pen; 2) summer and winter; 3) London and Moscow. Определите, по какому признаку сравнивают каждую пару, и запишите этот признак.",
+          "answer": "1 — по назначению, 2 — по погоде, 3 — по размеру"
+        }
+      ]
+    }
+  ]
+}

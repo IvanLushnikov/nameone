@@ -1,0 +1,915 @@
+{
+  "source": "english-4",
+  "topics": [
+    {
+      "statement": "Мир моего \"я\"",
+      "title": "Мир моего я",
+      "examples": [
+        {
+          "text": "Впишите предложения о себе, заменив пропуски данными из карточки (имя, город, любимое занятие): I live in ___. I like ___.",
+          "answer": "I live in Perm. I like drawing."
+        },
+        {
+          "text": "Прочитайте и выпишите предложения с глаголом to be из текста: My friend is Ben. He is eight. We are in the park.",
+          "answer": "My friend is Ben. He is eight. We are in the park."
+        }
+      ]
+    },
+    {
+      "statement": "Моя семья. Мой день рождения, подарки. Моя любимая еда. Мой день (распорядок дня, домашние обязанности)",
+      "title": "Семья, еда и распорядок дня",
+      "examples": [
+        {
+          "text": "Прочитайте и впишите пропущенные слова из списка (April, help, breakfast): My birthday is in ___. I ___ my mum in the kitchen. We have ___ for dinner.",
+          "answer": "April; help; breakfast"
+        },
+        {
+          "text": "Прочитайте слова и разделите их на две группы: еда и подарки — cake, milk, chicken, present, balloon, card, rice, chocolate.",
+          "answer": "еда: cake, milk, chicken, rice, chocolate; подарки: present, balloon, card"
+        }
+      ]
+    },
+    {
+      "statement": "Мир моих увлечений",
+      "title": "Мир моих увлечений",
+      "examples": [
+        {
+          "text": "Составьте вопрос из данных слов: / do / What / you / play / ?",
+          "answer": "What do you play?"
+        },
+        {
+          "text": "Прочитайте и впишите своё хобби по образцу: I like ___. I don't like ___.",
+          "answer": "I like swimming. I don't like boxing."
+        }
+      ]
+    },
+    {
+      "statement": "Любимая игрушка, игра. Мой питомец. Любимые занятия. Занятия спортом. Любимая сказка/история/рассказ. Выходной день. Каникулы",
+      "title": "Игрушки, питомцы и каникулы",
+      "examples": [
+        {
+          "text": "Прочитайте слова и разделите их на две группы: питомцы и игрушки — dog, doll, cat, bear, kite, rabbit, ball.",
+          "answer": "питомцы: dog, cat, rabbit; игрушки: doll, bear, kite, ball"
+        },
+        {
+          "text": "Расскажите о выходном дне в прошедшем времени, опираясь на план: When? Where? What did you do?",
+          "answer": "I played with my dog at home."
+        }
+      ]
+    },
+    {
+      "statement": "Мир вокруг меня",
+      "title": "Мир вокруг меня",
+      "examples": [
+        {
+          "text": "Прочитайте и впишите предлоги места (in, on, under): The cat is ___ the table. The book is ___ the desk. The ball is ___ the chair.",
+          "answer": "under; on; in"
+        },
+        {
+          "text": "Прочитайте предложения и выпишите из них названия мест: My school is in the centre. I live in a big house. My grandma lives in a small village.",
+          "answer": "the centre, a big house, a small village"
+        }
+      ]
+    },
+    {
+      "statement": "Моя комната (квартира, дом), предметы мебели и интерьера. Моя школа, любимые учебные предметы. Мои друзья, их внешность и черты характера. Моя малая родина (город, село). Путешествия. Дикие и домашние животные. Погода. Времена года (месяцы). Покупки",
+      "title": "Дом, школа, погода и покупки",
+      "examples": [
+        {
+          "text": "Прочитайте и впишите пропущенные слова из списка (armchair, cloudy, shop, September): There is an ___ in my room. The weather is ___ today. I go to the ___ on Sunday. My birthday is in ___.",
+          "answer": "armchair; cloudy; shop; September"
+        },
+        {
+          "text": "Прочитайте слова и разделите их на две группы: месяцы и погода — May, winter, rainy, June, snow, July.",
+          "answer": "месяцы: May, June, July; погода: winter, rainy, snow"
+        }
+      ]
+    },
+    {
+      "statement": "Родная страна и страны изучаемого языка",
+      "title": "Моя страна и другие страны",
+      "examples": [
+        {
+          "text": "Прочитайте и впишите названия стран вместо дней недели и месяцев: I live in ___ (Russia / Monday). The UK is in ___ (May / Europe).",
+          "answer": "Russia; Europe"
+        },
+        {
+          "text": "Прочитайте текст и выпишите названия стран, которые в нём встречаются: Russia is a big country. Moscow is its capital. The UK and Japan are far away.",
+          "answer": "Russia, the UK, Japan"
+        }
+      ]
+    },
+    {
+      "statement": "Россия и страна/страны изучаемого языка. Их столицы, основные достопримечательности и интересные факты. Произведения детского фольклора. Литературные персонажи детских книг. Праздники родной страны и страны/стран изучаемого языка",
+      "title": "Столицы, достопримечательности и праздники",
+      "examples": [
+        {
+          "text": "Составьте правильные пары «страна — столица»: France — London; Russia — Paris; Italy — Rome.",
+          "answer": "France — Paris; Russia — Moscow; Italy — Rome"
+        },
+        {
+          "text": "Прочитайте и выпишите названия праздников: New Year is in January. Christmas is in December. Mother's Day is in spring.",
+          "answer": "New Year, Christmas, Mother's Day"
+        }
+      ]
+    },
+    {
+      "statement": "Коммуникативные умения диалогической речи",
+      "title": "Диалогическая речь",
+      "examples": [
+        {
+          "text": "Прочитайте диалог и определите его тему одним словом: — Hello! How are you? — I'm fine, thank you. And you?",
+          "answer": "приветствие"
+        },
+        {
+          "text": "Расположите реплики в порядке знакомства, затем выпишите первую и последнюю: 1) What's your name? 2) My name is Ann. 3) Nice to meet you. 4) I'm Ben.",
+          "answer": "I'm Ben. Nice to meet you."
+        }
+      ]
+    },
+    {
+      "statement": "диалога этикетного характера: приветствие, ответ на приветствие; завершение разговора (в том числе по телефону), прощание; знакомство с собеседником; поздравление с праздником, выражение благодарности за поздравление; выражение извинения;",
+      "title": "Этикетный диалог",
+      "examples": [
+        {
+          "text": "Впишите подходящую реплику из списка (You're welcome! / Goodbye! / Sorry!) в ответ: — Thank you for the book. — ___",
+          "answer": "You're welcome!"
+        },
+        {
+          "text": "Исправьте порядок слов в вежливой реплике: am / I / sorry / late.",
+          "answer": "I am sorry I am late."
+        }
+      ]
+    },
+    {
+      "statement": "диалога - побуждения к действию: обращение к собеседнику с просьбой, вежливое согласие выполнить просьбу; приглашение собеседника к совместной деятельности, вежливое согласие/несогласие на предложение собеседника;",
+      "title": "Просьба и приглашение",
+      "examples": [
+        {
+          "text": "Прочитайте и впишите слово из списка (Can / Is / Do) в вопрос-просьбу: ___ you help me, please?",
+          "answer": "Can"
+        },
+        {
+          "text": "Прочитайте и допишите вежливый ответ на приглашение, выбрав один вариант: Would you like to play with us? — Yes, ___. / No, ___.",
+          "answer": "Yes, I'd love to."
+        }
+      ]
+    },
+    {
+      "statement": "диалога-расспроса: запрашивание интересующей информации; сообщение фактической информации, ответы на вопросы собеседника",
+      "title": "Расспрос собеседника",
+      "examples": [
+        {
+          "text": "Прочитайте диалог и выпишите из него вопросы: — How old are you? — I'm nine. — Where do you live? — In Perm.",
+          "answer": "How old are you? Where do you live?"
+        },
+        {
+          "text": "Поставьте вопрос к выделенному ответу: My favourite subject is maths. — ___ your favourite subject?",
+          "answer": "What's your favourite subject?"
+        }
+      ]
+    },
+    {
+      "statement": "Коммуникативные умения монологической речи",
+      "title": "Монологическая речь",
+      "examples": [
+        {
+          "text": "Прочитайте и выпишите из текста три факта об одной девочке: My sister is Kate. She is ten. She has long hair. She likes swimming.",
+          "answer": "Kate is ten; she has long hair; she likes swimming"
+        },
+        {
+          "text": "Составьте описание своего друга по плану: имя, возраст, внешность, любимое занятие.",
+          "answer": "My friend is Ivan. He is ten. He likes football."
+        }
+      ]
+    },
+    {
+      "statement": "Создание с использованием ключевых слов, вопросов и (или) иллюстраций устных монологических высказываний: описание предмета, внешности и одежды, черт характера реального человека или литературного персонажа; рассказ/сообщение (повествование) с использованием ключевых слов, вопросов и (или) иллюстраций",
+      "title": "Описание предмета и человека",
+      "examples": [
+        {
+          "text": "Опишите предмет по ключевым словам и картинке, составьте одно-два предложения: a ball, red, big, round.",
+          "answer": "It is a ball. It is red, big and round."
+        },
+        {
+          "text": "Прочитайте и выпишите слова об одежде и внешности: My coat is blue. My hat is new. My eyes are brown.",
+          "answer": "coat, hat; eyes"
+        }
+      ]
+    },
+    {
+      "statement": "Создание устных монологических высказываний в рамках тематического содержания речи по образцу (с выражением своего отношения к предмету речи)",
+      "title": "Выражение отношения к предмету",
+      "examples": [
+        {
+          "text": "Прочитайте и впишите причину по образцу: I don't like rain. I don't like it because ___.",
+          "answer": "it is wet and cold"
+        },
+        {
+          "text": "Составьте высказывание о любимой книге, выразив отношение по образцу: I like my book. It is ___.",
+          "answer": "It is funny and interesting."
+        }
+      ]
+    },
+    {
+      "statement": "Пересказ основного содержания прочитанного текста с использованием ключевых слов, вопросов, плана и (или) иллюстраций",
+      "title": "Пересказ прочитанного текста",
+      "examples": [
+        {
+          "text": "Прочитайте текст и перескажите его в прошедшем времени по плану: Who? Where? What did he do? — Tom went to the park. He played football. He saw a dog.",
+          "answer": "Tom went to the park, played football and saw a dog."
+        },
+        {
+          "text": "Прочитайте текст и составьте план пересказа из трёх пунктов: Anna got up at seven. She made breakfast. She went to school with her brother.",
+          "answer": "1) Got up at seven 2) Made breakfast 3) Went to school"
+        }
+      ]
+    },
+    {
+      "statement": "Краткое устное изложение результатов выполненного несложного проектного задания",
+      "title": "Результаты проекта",
+      "examples": [
+        {
+          "text": "Прочитайте и выпишите из текста три главных факта о проекте: Our class made a poster about animals. We chose six animals and drew them. We put up the poster in the hall.",
+          "answer": "made a poster; chose six animals; put it up in the hall"
+        },
+        {
+          "text": "Составьте короткий рассказ о своём проекте по плану: What did you make? Where did you show it?",
+          "answer": "I made a rocket model. I showed it in our class."
+        }
+      ]
+    },
+    {
+      "statement": "Коммуникативные умения аудирования",
+      "title": "Умения аудирования",
+      "examples": [
+        {
+          "text": "Прослушайте диалог и выберите одно слово к каждому слову на русском: парк, музей, магазин. — Where is Tom? — He is in the park.",
+          "answer": "парк — park"
+        },
+        {
+          "text": "Прослушайте рассказ и выпишите три ключевых слова, которые передают его содержание: Ann is ten. She has a cat. She goes to school by bus.",
+          "answer": "ten, cat, bus"
+        }
+      ]
+    },
+    {
+      "statement": "Понимание на слух речи учителя и других обучающихся и вербальная/невербальная реакция на услышанное (при непосредственном общении)",
+      "title": "Понимание речи на слух",
+      "examples": [
+        {
+          "text": "Прослушайте фразу учителя и выберите верную реакцию из двух: а) Я открываю учебник; б) Я закрываю окно. — Open your books, please.",
+          "answer": "а) Я открываю учебник"
+        },
+        {
+          "text": "Прослушайте две фразы и выберите ту, которую надо выполнить: Stand up, please. / Sit down, please.",
+          "answer": "Stand up, please."
+        }
+      ]
+    },
+    {
+      "statement": "Восприятие и понимание на слух учебных и адаптированных аутентичных текстов, построенных на изученном языковом материале, в соответствии с поставленной коммуникативной задачей: с пониманием основного содержания, с пониманием запрашиваемой информации (при опосредованном общении)",
+      "title": "Понимание аудиотекстов",
+      "examples": [
+        {
+          "text": "Прослушайте текст и выберите его основную тему: погода, семья, питомцы. — Today is Sunday. My family is at home. We have lunch together.",
+          "answer": "семья (family)"
+        },
+        {
+          "text": "Прослушайте сообщение и выпишите запрашиваемую информацию: The lesson starts at ten o'clock. — When does the lesson start?",
+          "answer": "At ten o'clock."
+        }
+      ]
+    },
+    {
+      "statement": "Аудирование с пониманием основного содержания текста предполагает умение определять основную тему и главные факты/события в воспринимаемом на слух тексте с использованием иллюстраций и языковой, в том числе контекстуальной, догадки",
+      "title": "Основное содержание на слух",
+      "examples": [
+        {
+          "text": "Прослушайте короткий рассказ и запишите его главную тему одним словом: It is winter. The children play in the snow. They make a snowman.",
+          "answer": "зима (winter)"
+        },
+        {
+          "text": "Прослушайте рассказ и выпишите два главных факта о герое: Ben is ten. He lives in Moscow. He has a big dog.",
+          "answer": "Ben is ten; he has a big dog"
+        }
+      ]
+    },
+    {
+      "statement": "Аудирование с пониманием запрашиваемой информации предполагает умение выделять запрашиваемую информацию фактического характера с использованием иллюстраций и языковой, в том числе контекстуальной, догадки",
+      "title": "Запрашиваемая информация на слух",
+      "examples": [
+        {
+          "text": "Прослушайте диалог и ответьте на вопрос: — What colour is your bag? — It is blue.",
+          "answer": "It is blue."
+        },
+        {
+          "text": "Прослушайте текст и выпишите только ответ на вопрос о месте: My sister lives in a small town. I live in a big city. — Where does your sister live?",
+          "answer": "In a small town."
+        }
+      ]
+    },
+    {
+      "statement": "Тексты для аудирования: диалог, высказывания собеседников в ситуациях повседневного общения, рассказ, сказка, сообщение информационного характера",
+      "title": "Виды текстов для аудирования",
+      "examples": [
+        {
+          "text": "Прослушайте отрывок и укажите его тип: диалог, рассказ, сообщение. — What's your name? — I'm Kate.",
+          "answer": "диалог"
+        },
+        {
+          "text": "Прослушайте сказку и выпишите три слова-ключа, по которым её узнаете: Once upon a time there was a small fox. It lived in the forest. One day it met a hare.",
+          "answer": "fox, forest, hare"
+        }
+      ]
+    },
+    {
+      "statement": "Смысловое чтение",
+      "title": "Смысловое чтение",
+      "examples": [
+        {
+          "text": "Прочитайте текст и сформулируйте его главную мысль одним предложением: My New Bag. I got a blue bag for my birthday. It has three pockets. I put my books in it.",
+          "answer": "I got a blue bag with three pockets for my birthday."
+        },
+        {
+          "text": "Прочитайте текст и выпишите три ключевых слова, передающих его содержание: It is Sunday. The weather is warm. My family is in the park.",
+          "answer": "Sunday, warm, park"
+        }
+      ]
+    },
+    {
+      "statement": "Чтение вслух учебных текстов с соблюдением правил чтения и соответствующей интонацией, понимание прочитанного",
+      "title": "Чтение вслух",
+      "examples": [
+        {
+          "text": "Прочитайте вслух, следя за интонацией, и ответьте кратко: Is your brother at home? Are you a pupil?",
+          "answer": "Yes, he is. Yes, I am."
+        },
+        {
+          "text": "Прочитайте вслух и перечислите три факта, которые вы поняли из текста: Kate is nine. She lives in Kazan. She likes music.",
+          "answer": "Kate is nine; lives in Kazan; likes music"
+        }
+      ]
+    },
+    {
+      "statement": "Тексты для чтения вслух: диалог, рассказ, сказка",
+      "title": "Тексты для чтения вслух",
+      "examples": [
+        {
+          "text": "Прочитайте вслух диалог и впишите имя героя и место действия: — Hi! — I'm Nick. — Where are you? — I'm at the park.",
+          "answer": "Ник — в парке"
+        },
+        {
+          "text": "Прочитайте вслух отрывок сказки и выпишите одним предложением, о ком и о чём он: A little mouse lived in a small house. Every day it looked for cheese.",
+          "answer": "A little mouse that looked for cheese."
+        }
+      ]
+    },
+    {
+      "statement": "Чтение про себя учебных текстов, построенных на изученном языковом материале, с различной глубиной проникновения в их содержание в зависимости от поставленной коммуникативной задачи: с пониманием основного содержания, с пониманием запрашиваемой информации",
+      "title": "Чтение про себя",
+      "examples": [
+        {
+          "text": "Прочитайте про себя и придумайте два факта о Бене, которых нет в тексте: Ben is a pupil. He is nine. He lives in Omsk.",
+          "answer": "Ben has a dog; Ben likes football"
+        },
+        {
+          "text": "Прочитайте про себя и выпишите предложение, отвечающее на вопрос Where does Ann live?: Ann is a pupil. She lives in Novgorod. She likes reading.",
+          "answer": "She lives in Novgorod."
+        }
+      ]
+    },
+    {
+      "statement": "Чтение с пониманием основного содержания текста предполагает определение основной темы и главных фактов/событий в прочитанном тексте с использованием иллюстраций и языковой, в том числе контекстуальной, догадки",
+      "title": "Главная тема и факты текста",
+      "examples": [
+        {
+          "text": "Прочитайте и выберите основную тему текста: школа, погода, еда. — On Monday I have five lessons. My favourite subject is English. At noon I eat in the school canteen.",
+          "answer": "школа (school)"
+        },
+        {
+          "text": "Прочитайте и выпишите два главных события текста: Yesterday we went to the zoo. We saw two tigers and a big snake.",
+          "answer": "went to the zoo; saw two tigers and a snake"
+        }
+      ]
+    },
+    {
+      "statement": "Чтение с пониманием запрашиваемой информации предполагает нахождение в прочитанном тексте и понимание запрашиваемой информации фактического характера с использованием иллюстраций, языковой, в том числе контекстуальной, догадки",
+      "title": "Поиск факта в тексте",
+      "examples": [
+        {
+          "text": "Прочитайте и выпишите из текста слова, отвечающие на вопрос What does Dad cook?: On Sunday Dad cooks fish and rice for lunch.",
+          "answer": "fish and rice"
+        },
+        {
+          "text": "Прочитайте и ответьте на вопрос о количестве: I have three notebooks and two pens. — How many pens has the speaker got?",
+          "answer": "Two"
+        }
+      ]
+    },
+    {
+      "statement": "Смысловое чтение про себя учебных и адаптированных аутентичных текстов, содержащих отдельные незнакомые слова, понимание основного содержания (тема, главная мысль, главные факты/события) текста с использованием иллюстраций и языковой, в том числе контекстуальной, догадки, в том числе контекстуальной",
+      "title": "Чтение с незнакомыми словами",
+      "examples": [
+        {
+          "text": "Прочитайте и определите значение незнакомого слова из контекста: My uncle is a pilot. He flies a big plane. He works in the sky every day. — Что значит pilot?",
+          "answer": "тот, кто летает на самолёте, лётчик"
+        },
+        {
+          "text": "Прочитайте и выпишите незнакомые слова с русским переводом: My grandma bakes a cake in the kitchen on Sunday.",
+          "answer": "bakes — печёт; grandma — бабушка"
+        }
+      ]
+    },
+    {
+      "statement": "Прогнозирование содержания текста на основе заголовка",
+      "title": "Прогнозирование по заголовку",
+      "examples": [
+        {
+          "text": "Прочитайте заголовок и придумайте три подзаголовка к тексту: My Birthday.",
+          "answer": "1) Presents 2) The cake 3) My friends"
+        },
+        {
+          "text": "Прочитайте заголовок и запишите, о чём, скорее всего, расскажет текст: At the Seaside.",
+          "answer": "о поездке на море и отдыхе на пляже"
+        }
+      ]
+    },
+    {
+      "statement": "Чтение не сплошных текстов (таблиц, диаграмм) и понимание представленной в них информации",
+      "title": "Чтение таблиц и диаграмм",
+      "examples": [
+        {
+          "text": "Прочитайте таблицу с расписанием и ответьте на вопрос: понедельник — Math, English, PE. Сколько уроков в понедельник?",
+          "answer": "Три (three)"
+        },
+        {
+          "text": "Прочитайте таблицу любимых занятий и выпишите любимое занятие Маши и Лизы: Ann — swimming; Bob — football; Masha — reading; Liza — dancing.",
+          "answer": "Masha — reading; Liza — dancing"
+        }
+      ]
+    },
+    {
+      "statement": "Тексты для чтения: диалог, рассказ, сказка, электронное сообщение личного характера, текст научно-популярного характера, стихотворение",
+      "title": "Виды текстов для чтения",
+      "examples": [
+        {
+          "text": "Прочитайте и укажите тип текста: диалог, рассказ, стихотворение. Rain, rain, go away. All the children want to play.",
+          "answer": "стихотворение"
+        },
+        {
+          "text": "Прочитайте и выпишите имя отправителя и тему сообщения: Hi! I'm Tom. I'm in London now. My school is big. Write to me!",
+          "answer": "Tom — о школе в Лондоне"
+        }
+      ]
+    },
+    {
+      "statement": "Выписывание из текста слов, словосочетаний, предложений; вставка пропущенных букв в слово или слов в предложение в соответствии с решаемой коммуникативной/учебной задачей",
+      "title": "Выписывание и вставка букв",
+      "examples": [
+        {
+          "text": "Прочитайте и вставьте пропущенные буквы в слова: sch__l, w_nt_r, b__ok, summ__.",
+          "answer": "school, winter, book, summer"
+        },
+        {
+          "text": "Прочитайте и выпишите из текста словосочетания с прилагательными: We live in a small town. My school is new. The streets are wide.",
+          "answer": "a small town; a new school; the wide streets"
+        }
+      ]
+    },
+    {
+      "statement": "Заполнение простых анкет и формуляров с указанием личной информации (имя, фамилия, возраст, местожительство (страна проживания, город), любимые занятия) в соответствии с нормами, принятыми в стране/странах изучаемого языка",
+      "title": "Анкета о себе",
+      "examples": [
+        {
+          "text": "Заполните анкету данными об ученике по подсказке: имя Ann, 9 лет, город Perm, хобби reading.",
+          "answer": "Name: Ann; Age: 9; City: Perm; Hobby: reading"
+        },
+        {
+          "text": "Прочитайте анкету и выпишите ответ на вопрос Where does Ben live?: Name: Ben; Age: 10; City: Kazan; Hobby: football.",
+          "answer": "Kazan"
+        }
+      ]
+    },
+    {
+      "statement": "Написание с использованием образца поздравления с праздниками (с днем рождения, Новым годом, Рождеством) с выражением пожеланий",
+      "title": "Поздравление с праздником",
+      "examples": [
+        {
+          "text": "Напишите поздравление с днём рождения по образцу, подставив имя: Happy birthday, ___! You are ___ years old. Have a nice day!",
+          "answer": "Happy birthday, Ann! You are nine years old."
+        },
+        {
+          "text": "Прочитайте два поздравления и исправьте в одном из них ошибку в заглавной букве: happy birthday, Tom! / Merry Christmas, Mum!",
+          "answer": "Исправить: Happy birthday, Tom!"
+        }
+      ]
+    },
+    {
+      "statement": "Написание электронного сообщения личного характера с использованием образца",
+      "title": "Электронное сообщение",
+      "examples": [
+        {
+          "text": "Напишите личное сообщение другу по образцу: Hi, ___! How are you? My holiday starts ___. Write to me!",
+          "answer": "Hi, Ben! How are you? My holiday starts on 1 June."
+        },
+        {
+          "text": "Прочитайте сообщение и выпишите из него просьбу: Kate, please send me your photo. I miss you! Anna.",
+          "answer": "Please send me your photo."
+        }
+      ]
+    },
+    {
+      "statement": "Фонетическая сторона речи",
+      "title": "Фонетическая сторона речи",
+      "examples": [
+        {
+          "text": "Прочитайте слова вслух и выпишите те, в которых гласные долгие: name, ship, night, sit.",
+          "answer": "name, night"
+        },
+        {
+          "text": "Прочитайте пары слов и выберите вариант с долгой гласной: ship / sheep; sit / seat.",
+          "answer": "sheep; seat"
+        }
+      ]
+    },
+    {
+      "statement": "Нормы произношения: долгота и краткость гласных, отсутствие оглушения звонких согласных в конце слога или слова, отсутствие смягчения согласных перед гласными. Связующее \"r\" (there is/there are)",
+      "title": "Нормы произношения английских звуков",
+      "examples": [
+        {
+          "text": "Прочитайте и определите, гласная долгая или краткая: ship, sheep, sit, seat.",
+          "answer": "краткая, долгая, краткая, долгая"
+        },
+        {
+          "text": "Прочитайте вслух предложение с неоглушённым и связующим r и запишите его правильное чтение: There is a red car.",
+          "answer": "читается с связующим r: there is a red car"
+        }
+      ]
+    },
+    {
+      "statement": "Ритмико-интонационные особенности повествовательного, побудительного и вопросительного (общий и специальный вопрос) предложений",
+      "title": "Интонация типов предложений",
+      "examples": [
+        {
+          "text": "Прочитайте предложение и поставьте знак интонации: ↑ — общий вопрос, ↗ — перечисление, → — повествование. Do you like maths?",
+          "answer": "↑"
+        },
+        {
+          "text": "Прочитайте и определите тип интонации: 1) Open the window. 2) What is your name? 3) I have a pen and a ruler.",
+          "answer": "1 — повествование, 2 — специальный вопрос, 3 — перечисление"
+        }
+      ]
+    },
+    {
+      "statement": "Различение на слух, без ошибок, ведущих к сбою в коммуникации, произнесение слов с соблюдением правильного ударения и фраз с соблюдением их ритмико-интонационных особенностей, в том числе соблюдение правила отсутствия ударения на служебных словах; интонации перечисления",
+      "title": "Ударение в словах и фразах",
+      "examples": [
+        {
+          "text": "Прочитайте и поставьте ударение в словах: about, name, teacher, apple.",
+          "answer": "abóut, náme, téacher, ápple"
+        },
+        {
+          "text": "Прочитайте фразу вслух, не делая ударения в служебных словах, и назовите ударные слова: This is my brother and he is a pupil.",
+          "answer": "ударные: my, brother, pupil"
+        }
+      ]
+    },
+    {
+      "statement": "Правила чтения: гласных в открытом и закрытом слоге в односложных словах, гласных в третьем типе слога (гласная + r); согласных; основных звукобуквенных сочетаний, в частности сложных сочетаний букв (например, tion, ight) в односложных, двусложных и многосложных словах",
+      "title": "Правила чтения",
+      "examples": [
+        {
+          "text": "Прочитайте слова, определите, открытый или закрытый слог, и выпишите пары: cat, name, dog, kite.",
+          "answer": "cat — закрытый, name — открытый, dog — закрытый, kite — открытый"
+        },
+        {
+          "text": "Прочитайте и выпишите слова со звукосочетаниями -tion и -ight: night, question, light, station.",
+          "answer": "night, light; question, station"
+        }
+      ]
+    },
+    {
+      "statement": "Выделение некоторых звукобуквенных сочетаний при анализе изученных слов",
+      "title": "Звукосочетания в словах",
+      "examples": [
+        {
+          "text": "Прочитайте и выпишите слова, в которых есть сочетание -sh: shop, fish, city, dish.",
+          "answer": "shop, fish, dish"
+        },
+        {
+          "text": "Найдите в списке слова, в которых есть сочетание -ch, и выпишите их: chair, book, teacher, school.",
+          "answer": "chair, teacher"
+        }
+      ]
+    },
+    {
+      "statement": "Чтение новых слов согласно основным правилам чтения с использованием полной или частичной транскрипции, по аналогии",
+      "title": "Чтение новых слов",
+      "examples": [
+        {
+          "text": "Прочитайте новые слова по транскрипции и выпишите их: [nɔːt] [ˈweðə] [ˈtɜːm].",
+          "answer": "note, weather, term"
+        },
+        {
+          "text": "Прочитайте слова по аналогии с изученным словом cake и выпишите их в другую колонку: lake, bike, name, make.",
+          "answer": "lake, bike, make; name"
+        }
+      ]
+    },
+    {
+      "statement": "Знаки английской транскрипции; отличие их от букв английского алфавита. Фонетически корректное озвучивание знаков транскрипции",
+      "title": "Знаки транскрипции",
+      "examples": [
+        {
+          "text": "Назовите знаки транскрипции и их названия, отметьте долгий: [iː] [e] [æ].",
+          "answer": "iː — долгий i, e — э, æ — э"
+        },
+        {
+          "text": "Прочитайте и выпишите знаки транскрипции слов: pen, bed, ship.",
+          "answer": "[pen] [bed] [ʃɪp]"
+        }
+      ]
+    },
+    {
+      "statement": "Графика, орфография и пунктуация",
+      "title": "Графика и орфография",
+      "examples": [
+        {
+          "text": "Прочитайте и выпишите слова, в которых буква w не читается: want, water, know, write.",
+          "answer": "know, write"
+        },
+        {
+          "text": "Найдите в словах заглавные буквы и запишите слова строчными: London, Russia, English, Sunday.",
+          "answer": "london, russia, english, sunday"
+        }
+      ]
+    },
+    {
+      "statement": "Правильное написание изученных слов. Правильная расстановка знаков препинания: точки, вопросительного и восклицательного знака в конце предложения; запятой при обращении и перечислении; правильное использование знака апострофа в сокращенных формах глагола-связки, вспомогательного и модального глаголов, существительных в притяжательном падеже (Possessive Case)",
+      "title": "Правописание и пунктуация",
+      "examples": [
+        {
+          "text": "Вставьте апостроф в сокращённые формы и в форму притяжательного падежа: Im Ben. the boys books. it s cold.",
+          "answer": "I'm Ben; the boy's books; it's cold"
+        },
+        {
+          "text": "Расставьте знаки препинания: Hello Ann how are you / I am fine thanks",
+          "answer": "Hello, Ann, how are you? I am fine, thanks."
+        }
+      ]
+    },
+    {
+      "statement": "Лексическая сторона речи",
+      "title": "Лексическая сторона речи",
+      "examples": [
+        {
+          "text": "Прочитайте слова и распределите их по двум колонкам «школа» и «дом»: pencil, kitchen, ruler, sofa, textbook.",
+          "answer": "школа: pencil, ruler, textbook; дом: kitchen, sofa"
+        },
+        {
+          "text": "Соотнесите слово и его русский перевод, выпишите пары: ruler — ?, apple — ?, door — ?",
+          "answer": "ruler — линейка; apple — яблоко; door — дверь"
+        }
+      ]
+    },
+    {
+      "statement": "Распознавание и употребление в устной и письменной речи не менее 500 лексических единиц (слов, словосочетаний, речевых клише), обслуживающих ситуации общения в рамках тематического содержания речи для 4 класса, включая 350 лексических единиц, усвоенных в предыдущие два года обучения",
+      "title": "Активный словарь 4 класса",
+      "examples": [
+        {
+          "text": "Прочитайте слова и выпишите те, которые относятся к теме «одежда»: coat, table, hat, milk, boots.",
+          "answer": "coat, hat, boots"
+        },
+        {
+          "text": "Прочитайте речевую клише и впишите пропущенное слово: — What's your ___? — My name is Ann.",
+          "answer": "name"
+        }
+      ]
+    },
+    {
+      "statement": "Распознавание и образование в устной и письменной речи родственных слов с использованием основных способов словообразования: аффиксации (образование существительных с помощью суффиксов -er/-or, -ist (worker, actor, artist) и конверсии (to play - a play)",
+      "title": "Словообразование: родственные слова",
+      "examples": [
+        {
+          "text": "Образуйте существительные от данных глаголов и выпишите пары: sing, act, paint.",
+          "answer": "sing — singer; act — actor; paint — painter"
+        },
+        {
+          "text": "Образуйте от данных слов форму по образцу to play — a play: to sing — ___? to dance — ___?",
+          "answer": "a song; a dance"
+        }
+      ]
+    },
+    {
+      "statement": "Использование языковой догадки для распознавания интернациональных слов (pilot, film)",
+      "title": "Интернациональные слова",
+      "examples": [
+        {
+          "text": "Прочитайте интернациональные слова и подберите русский перевод: sport, cinema, tennis, restaurant.",
+          "answer": "спорт, кино, теннис, ресторан"
+        },
+        {
+          "text": "Найдите в тексте два интернациональных слова и переведите их: My uncle is a pilot. He is a film actor too.",
+          "answer": "pilot — пилот, film — фильм"
+        }
+      ]
+    },
+    {
+      "statement": "Грамматическая сторона речи",
+      "title": "Грамматическая сторона речи",
+      "examples": [
+        {
+          "text": "Прочитайте предложения и определите время глагола (Present или Past): I go to school every day. I went to the zoo yesterday.",
+          "answer": "Present; Past"
+        },
+        {
+          "text": "Прочитайте и выпишите предложения с формой третьего лица единственного числа: She likes cats. They like dogs. He likes tennis.",
+          "answer": "She likes cats. He likes tennis."
+        }
+      ]
+    },
+    {
+      "statement": "Распознавание и употребление в устной и письменной речи изученных морфологических форм и синтаксических конструкций английского языка",
+      "title": "Грамматические конструкции языка",
+      "examples": [
+        {
+          "text": "Прочитайте и впишите форму глагола в Present Simple: He ___ (go) to school. She ___ (have) a dog.",
+          "answer": "goes; has"
+        },
+        {
+          "text": "Прочитайте и выпишите предложение с to be и предложение в Past Simple: My father is a driver. He bought a new car last week.",
+          "answer": "My father is a driver. He bought a new car."
+        }
+      ]
+    },
+    {
+      "statement": "Модальные глаголы must и have to",
+      "title": "Глаголы must и have to",
+      "examples": [
+        {
+          "text": "Прочитайте и впишите must или have to: You ___ wear a helmet at school. We ___ go to bed at nine.",
+          "answer": "must; have to"
+        },
+        {
+          "text": "Прочитайте и объясните по-русски разницу в значении: We must be at home at six. / We have to be at home at six.",
+          "answer": "must — обязанность, have to — необходимость"
+        }
+      ]
+    },
+    {
+      "statement": "Конструкция to be going to и Future Simple Tense для выражения будущего действия (I am going to have my birthday party on Saturday. Wait, I'll help you.)",
+      "title": "Будущее время to be going to",
+      "examples": [
+        {
+          "text": "Прочитайте и вставьте форму будущего времени: I ___ (have) a party on Saturday. We ___ (play) chess after school.",
+          "answer": "am going to have; are going to play"
+        },
+        {
+          "text": "Прочитайте и впишите форму to be going to или will: Look! It ___ (rain). — I ___ help you.",
+          "answer": "is going to rain; will"
+        }
+      ]
+    },
+    {
+      "statement": "Отрицательное местоимение no",
+      "title": "Отрицательное местоимение no",
+      "examples": [
+        {
+          "text": "Прочитайте и впишите no или not: There is ___ milk in the fridge. It is ___ cold today.",
+          "answer": "no; not"
+        },
+        {
+          "text": "Прочитайте и составьте отрицательные предложения с no: I have a car. There are apples in the bag.",
+          "answer": "I have no car. There are no apples in the bag."
+        }
+      ]
+    },
+    {
+      "statement": "Наречия времени",
+      "title": "Наречия времени",
+      "examples": [
+        {
+          "text": "Прочитайте и впишите наречие из списка (always, never, usually, sometimes): never — никогда; usually — ___; sometimes — ___; always — ___.",
+          "answer": "usually; sometimes; always"
+        },
+        {
+          "text": "Прочитайте и переведите наречия на русский: yesterday, today, tomorrow, always.",
+          "answer": "вчера, сегодня, завтра, всегда"
+        }
+      ]
+    },
+    {
+      "statement": "Обозначение даты и года. Обозначение времени (5 o'clock; 3 am, 2 pm)",
+      "title": "Дата и время",
+      "examples": [
+        {
+          "text": "Прочитайте и запишите время по-английски: 7:00 — ___; 12:30 — ___; 5 pm — ___.",
+          "answer": "seven o'clock; half past twelve; five p.m."
+        },
+        {
+          "text": "Прочитайте и запишите дату словами: 1 September — ___; 3 May — ___.",
+          "answer": "the first of September; the third of May"
+        }
+      ]
+    },
+    {
+      "statement": "Знание и использование некоторых социокультурных элементов речевого поведенческого этикета, принятого в стране/странах изучаемого языка, в некоторых ситуациях общения: приветствие, прощание, знакомство, выражение благодарности, извинение, поздравление с днем рождения, Новым годом, Рождеством, разговор по телефону)",
+      "title": "Культура речевого этикета",
+      "examples": [
+        {
+          "text": "Впишите вежливый ответ на благодарность: — Thank you for the present! — ___",
+          "answer": "You're welcome!"
+        },
+        {
+          "text": "Прочитайте и запишите, как принято отвечать в России и в Англии на вопрос о самочувствии: A: How are you? — ___",
+          "answer": "I'm fine, thank you. / I'm very well, thanks."
+        }
+      ]
+    },
+    {
+      "statement": "Знание произведений детского фольклора (рифмовок, стихов, песенок), персонажей детских книг",
+      "title": "Детское фольклорное наследие",
+      "examples": [
+        {
+          "text": "Прочитайте и узнайте персонажа детской сказки, выпишите его имя: A girl with long hair and a magic lamp. She flies on a carpet.",
+          "answer": "Aladdin"
+        },
+        {
+          "text": "Прочитайте одну строку и выпишите название знакомой песенки: Twinkle, twinkle, little star, how I wonder what you are.",
+          "answer": "Twinkle, Twinkle, Little Star"
+        }
+      ]
+    },
+    {
+      "statement": "Краткое представление своей страны и страны/стран изучаемого языка (названия стран и их столиц, название родного города/села; цвета национальных флагов; основные достопримечательности)",
+      "title": "Моя страна: столица и флаг",
+      "examples": [
+        {
+          "text": "Прочитайте и выпишите столицы: Russia — ___; the UK — ___; Japan — ___.",
+          "answer": "Moscow, London, Tokyo"
+        },
+        {
+          "text": "Прочитайте и выпишите цвета флагов: The Russian flag is white, blue and red. The Japanese flag is white and red.",
+          "answer": "Россия: белый, синий, красный; Япония: белый, красный"
+        }
+      ]
+    },
+    {
+      "statement": "Использование при чтении и аудировании языковой догадки (умения понять значение незнакомого слова или новое значение знакомого слова из контекста)",
+      "title": "Языковая догадка",
+      "examples": [
+        {
+          "text": "Прочитайте и определите значение незнакомого слова из контекста: We washed the car in the yard. It was dusty. — Что значит washed?",
+          "answer": "мыли, очищали водой"
+        },
+        {
+          "text": "Прочитайте и подберите значение к незнакомым словам из контекста: A terrible storm began. All the trees fell down. — storm, terrible.",
+          "answer": "storm — буря, terrible — ужасный"
+        }
+      ]
+    },
+    {
+      "statement": "Использование при формулировании собственных высказываний ключевых слов, вопросов; картинок, фотографий",
+      "title": "Ключевые слова и опоры",
+      "examples": [
+        {
+          "text": "Составьте описание по ключевым словам и картинке: house, two floors, garden, big.",
+          "answer": "It is a big house with two floors and a garden."
+        },
+        {
+          "text": "Ответьте на вопрос по ключевым словам и запишите 2–3 предложения: What do you do after school? play, homework, help, read.",
+          "answer": "I do my homework, help my mum and read books."
+        }
+      ]
+    },
+    {
+      "statement": "Прогнозирование содержание текста для чтения на основе заголовка",
+      "title": "Ожидание по заголовку",
+      "examples": [
+        {
+          "text": "Прочитайте заголовок и выберите, о чём будет текст: а — о погоде, б — о питомце, в — о школе. My New Dog.",
+          "answer": "б — о питомце"
+        },
+        {
+          "text": "Прочитайте заголовок и запишите два вопроса, ответы на которые вы ждёте от текста: A Day at the Zoo.",
+          "answer": "1) Where did they go? 2) What did they see?"
+        }
+      ]
+    },
+    {
+      "statement": "Игнорирование информации, не являющейся необходимой для понимания основного содержания прочитанного/прослушанного текста или для нахождения в тексте запрашиваемой информации",
+      "title": "Лишняя информация в тексте",
+      "examples": [
+        {
+          "text": "Прочитайте и найдите предложение, которое не относится к теме «что делал Костя вчера»: Kostya was at home. His cat is grey. He played chess and read a book.",
+          "answer": "His cat is grey."
+        },
+        {
+          "text": "Прочитайте и выпишите только информацию, отвечающую на вопрос Где Антон был?: Last Sunday Anton went to the cinema. He liked a new film. It was funny.",
+          "answer": "At the cinema."
+        }
+      ]
+    }
+  ]
+}

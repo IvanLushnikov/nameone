@@ -121,17 +121,17 @@ describe("смена браузера не выдаёт новые попытк�
     await linkUserFingerprint(db, userId, a);
     await linkUserFingerprint(db, userId, b);
 
-    // Два попадания с устройства A.
-    for (let i = 0; i < 2; i++) {
+    // Занимаем всю квоту месяца с устройства A.
+    for (let i = 0; i < FREE_TOTAL_GENERATIONS; i++) {
       const keys = await quotaOwnerKeys(db, userId, a);
       expect((await holdFreeQuotaSlot(db, `fp:${a}`, keys)).allowed).toBe(true);
     }
-    // Одно с устройства B — это ТРЕТЬЯ попытка, а не первая.
+    // С устройства B — уже нет, хотя там не потрачено ничего: счёт общий на
+    // человека, а не на браузер (ТЗ-29 квота помесячная, принцип тот же).
     const keysB = await quotaOwnerKeys(db, userId, b);
-    expect((await holdFreeQuotaSlot(db, `fp:${b}`, keysB)).allowed).toBe(true);
+    expect((await holdFreeQuotaSlot(db, `fp:${b}`, keysB)).allowed).toBe(false);
 
-    // Четвёртая — уже нет, и она пришла с устройства A, где раньше потратили
-    // только две.
+    // И с устройства A, где потрачено было всё, — тоже нет.
     const keysA = await quotaOwnerKeys(db, userId, a);
     expect((await holdFreeQuotaSlot(db, `fp:${a}`, keysA)).allowed).toBe(false);
   });

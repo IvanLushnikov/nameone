@@ -1,0 +1,565 @@
+{
+  "source": "german-11-part2",
+  "topics": [
+    {
+      "statement": "Многозначные лексические единицы. Синонимы. Антонимы. Интернациональные слова. Сокращения и аббревиатуры",
+      "title": "Синонимы, антонимы, интернациональные слова",
+      "examples": [
+        {
+          "text": "Подберите к слову «wichtig» синоним и запишите его.",
+          "answer": "bedeutsam"
+        },
+        {
+          "text": "Запишите полностью аббревиатуры: z. B., usw., BRD.",
+          "answer": "zum Beispiel, und so weiter, Bundesrepublik Deutschland"
+        }
+      ]
+    },
+    {
+      "statement": "Различные средства связи для обеспечения целостности и логичности устного/письменного высказывания",
+      "title": "Средства связности высказывания",
+      "examples": [
+        {
+          "text": "Вставьте пропущенный союз: Ich lerne Deutsch, ___ ich möchte in Deutschland arbeiten.",
+          "answer": "weil"
+        },
+        {
+          "text": "Свяжите три предложения в один текст, добавив в начале каждого средства связи (zuerst, dann, trotzdem).",
+          "answer": "zuerst, dann, trotzdem — по одному в каждом предложении"
+        }
+      ]
+    },
+    {
+      "statement": "Грамматическая сторона речи",
+      "title": "Грамматика немецкого языка",
+      "examples": [
+        {
+          "text": "Составьте предложение с глаголом в Perfekt из данных слов: ich / haben / ein Buch / lesen.",
+          "answer": "Ich habe ein Buch gelesen."
+        },
+        {
+          "text": "Раскройте скобки, выбрав нужный падеж: Wir sprechen mit (der Lehrer / dem Lehrer).",
+          "answer": "mit dem Lehrer"
+        }
+      ]
+    },
+    {
+      "statement": "Распознавание и употребление в устной и письменной речи изученных морфологических форм и синтаксических конструкций немецкого языка",
+      "title": "Морфологические формы и конструкции",
+      "examples": [
+        {
+          "text": "Определите падеж и впишите нужную форму местоимения: Ich helfe ___ Lehrerin.",
+          "answer": "der (dem Lehrer)"
+        },
+        {
+          "text": "Образуйте множественное число и запишите пары: der Lehrer — ___, die Stadt — ___, das Kind — ___.",
+          "answer": "die Lehrer, die Städte, die Kinder"
+        }
+      ]
+    },
+    {
+      "statement": "Различные коммуникативные типы предложений: повествовательные (утвердительные, отрицательные), вопросительные (общий, специальный, альтернативный вопросы), побудительные (в утвердительной и отрицательной форме)",
+      "title": "Типы предложений по цели",
+      "examples": [
+        {
+          "text": "Определите по цели тип предложения и запишите его: Möchten Sie noch einen Kaffee?",
+          "answer": "вопросительное предложение"
+        },
+        {
+          "text": "Составьте общий вопрос к утверждению: Der Unterricht beginnt um acht Uhr.",
+          "answer": "Beginnt der Unterricht um acht Uhr?"
+        }
+      ]
+    },
+    {
+      "statement": "Предложения с безличным местоимением es (Es ist 4 Uhr. Es regnet. Es ist interessant.)",
+      "title": "Безличные предложения с es",
+      "examples": [
+        {
+          "text": "Вставьте es вместо пропуска: Heute ___ sehr warm.",
+          "answer": "Es ist heute sehr warm."
+        },
+        {
+          "text": "Составьте безличное предложение с es по образцу: Es ist interessant. — ins Museum gehen.",
+          "answer": "Es ist interessant, ins Museum zu gehen."
+        }
+      ]
+    },
+    {
+      "statement": "Предложения с конструкцией es gibt (Es gibt einen Park neben der Schule.)",
+      "title": "Конструкция es gibt",
+      "examples": [
+        {
+          "text": "Составьте предложение с es gibt из данных слов: In unserem Dorf / es gibt / einen kleinen Bahnhof.",
+          "answer": "In unserem Dorf gibt es einen kleinen Bahnhof."
+        },
+        {
+          "text": "Ответьте на вопрос, используя es gibt или es gibt nicht: Gibt es hier eine Bibliothek?",
+          "answer": "Ja, es gibt hier eine Bibliothek."
+        }
+      ]
+    },
+    {
+      "statement": "Предложения с неопределенно-личным местоимением man, в том числе с модальными глаголами",
+      "title": "Неопределенно-личное местоимение man",
+      "examples": [
+        {
+          "text": "Замените страдательный залог предложением с man: Hier wird viel gearbeitet.",
+          "answer": "Hier arbeitet man viel."
+        },
+        {
+          "text": "Замените страдательный залог предложением с man и модальным глаголом müssen: Hier muss viel gearbeitet werden.",
+          "answer": "Hier muss man viel arbeiten."
+        }
+      ]
+    },
+    {
+      "statement": "Предложения с инфинитивным оборотом um ... zu",
+      "title": "Инфинитивный оборот um zu",
+      "examples": [
+        {
+          "text": "Объедините два предложения в одно с um ... zu: Ich habe keine Zeit. Ich muss arbeiten.",
+          "answer": "Ich habe keine Zeit, um zu arbeiten."
+        },
+        {
+          "text": "Составьте предложение с um ... zu по смыслу: Ich lerne Deutsch. Ich möchte in Berlin arbeiten.",
+          "answer": "Ich lerne Deutsch, um in Berlin zu arbeiten."
+        }
+      ]
+    },
+    {
+      "statement": "Предложения с глаголами, требующие употребления после них частицы zu и инфинитива",
+      "title": "Глаголы с частицей zu",
+      "examples": [
+        {
+          "text": "Вставьте zu перед инфинитивом или оставьте без него: Ich habe vor, (fahren / zu fahren).",
+          "answer": "zu fahren"
+        },
+        {
+          "text": "Раскройте скобки, выбрав нужный вариант: Ich versuche, die Aufgabe (machen / zu machen).",
+          "answer": "Ich versuche, die Aufgabe zu machen."
+        }
+      ]
+    },
+    {
+      "statement": "Сложносочиненные предложения с сочинительными союзами und, aber, oder, sondern, denn, nicht nur ... sondern auch, наречиями deshalb, darum, trotzdem",
+      "title": "Сложносочинённые предложения",
+      "examples": [
+        {
+          "text": "Вставьте подходящий союз: Ich trinke keinen Kaffee, ___ ich mag lieber Tee.",
+          "answer": "sondern"
+        },
+        {
+          "text": "Замените союз наречием, изменив предложение: Er hat keine Zeit, weil er zum Arzt muss.",
+          "answer": "Er hat keine Zeit, darum muss er zum Arzt."
+        }
+      ]
+    },
+    {
+      "statement": "Сложноподчиненные предложения: дополнительные - с союзами dass, ob и других; причины - с союзами weil, da; условия - с союзом wenn; времени - с союзами wenn, als, nachdem; цели - с союзом damit; определительные с относительными местоимениями die, der, das; уступки - с союзом obwohl",
+      "title": "Сложноподчинённые предложения",
+      "examples": [
+        {
+          "text": "Вставьте союз в придаточное предложение: Ich weiß, ___ du morgen kommst.",
+          "answer": "dass / ob"
+        },
+        {
+          "text": "Допишите придаточное предложение и назовите его тип: ..., obwohl ich müde war.",
+          "answer": "придаточное уступки"
+        }
+      ]
+    },
+    {
+      "statement": "Способы выражения косвенной речи, в том числе косвенный вопрос с союзом ob без использования сослагательного наклонения",
+      "title": "Временные наречия в тексте",
+      "examples": [
+        {
+          "text": "Расположите наречия в правильном порядке: (danach / zuerst / am Ende).",
+          "answer": "zuerst, danach, am Ende"
+        },
+        {
+          "text": "Вставьте пропущенные слова в текст: Ich stehe auf, ___ frühstücke, ___ gehe ich zur Schule.",
+          "answer": "zuerst, dann"
+        }
+      ]
+    },
+    {
+      "statement": "Средства связи в тексте для обеспечения его целостности, в том числе с помощью наречий zuerst, dann, danach, и других",
+      "title": "Косвенная речь",
+      "examples": [
+        {
+          "text": "Сделайте косвенный вопрос с союзом ob: Kommst du mit? — Er fragt: ...",
+          "answer": "Er fragt, ob ich mitkomme."
+        },
+        {
+          "text": "Сделайте предложение косвенным: Ich habe keine Zeit. — Sie sagt: ...",
+          "answer": "Sie sagt, dass sie keine Zeit hat."
+        }
+      ]
+    },
+    {
+      "statement": "Все типы вопросительных предложений (общий, специальный, альтернативный вопросы в , Perfekt, , Futur I)",
+      "title": "Вопросительные предложения",
+      "examples": [
+        {
+          "text": "Задайте общий вопрос к предложению: Der Zug fährt um zehn Uhr ab.",
+          "answer": "Fährt der Zug um zehn Uhr ab?"
+        },
+        {
+          "text": "Составьте альтернативный вопрос в Perfekt: (Du hast den Film gesehen oder nicht?)",
+          "answer": "Hast du den Film gesehen oder nicht?"
+        }
+      ]
+    },
+    {
+      "statement": "Побудительные предложения в утвердительной (Gib mir bitte eine Tasse Kaffee!) и отрицательной (Macht keinen !) форме во 2-м лице единственного числа и множественного числа и в вежливой форме",
+      "title": "Побудительные предложения",
+      "examples": [
+        {
+          "text": "Составьте вежливое побудительное предложение от глагола sprechen (вы): ( sprechen + bitte + langsam )",
+          "answer": "Sprechen Sie bitte langsamer."
+        },
+        {
+          "text": "Отрицайте побудительное предложение: Machen Sie bitte das Fenster auf! — ...",
+          "answer": "Machen Sie bitte das Fenster nicht auf."
+        }
+      ]
+    },
+    {
+      "statement": "Глаголы (слабые и сильные, с отделяемыми и неотделяемыми приставками) в видовременных формах действительного залога в изъявительном наклонении (, Perfekt, , Futur I)",
+      "title": "Глаголы в Perfekt и Futur I",
+      "examples": [
+        {
+          "text": "Образуйте Perfekt от глагола nehmen и впишите в предложение: Ich ___ den Zug nach Berlin (nehmen).",
+          "answer": "habe ... genommen"
+        },
+        {
+          "text": "Составьте предложение в Futur I из данных слов: Ich / morgen / arbeiten.",
+          "answer": "Ich werde morgen arbeiten."
+        }
+      ]
+    },
+    {
+      "statement": "Возвратные глаголы в видовременных формах действительного залога в изъявительном наклонении (, Perfekt, , Futur I)",
+      "title": "Возвратные глаголы",
+      "examples": [
+        {
+          "text": "Вставьте sich в предложение: Ich ärgere ___ über den Lärm.",
+          "answer": "Ich ärgere mich über den Lärm."
+        },
+        {
+          "text": "Составьте предложение с возвратным глаголом в Perfekt из данных слов: er / freuen / sich / über das Geschenk.",
+          "answer": "Er hat sich über das Geschenk gefreut."
+        }
+      ]
+    },
+    {
+      "statement": "Глаголы (слабые и сильные, с отделяемыми и неотделяемыми приставками) в видовременных формах страдательного залога (, )",
+      "title": "Страдательный залог",
+      "examples": [
+        {
+          "text": "Составьте предложение в страдательном залоге из данных слов: Das Buch / lesen / von allen Schülern.",
+          "answer": "Das Buch wird von allen Schülern gelesen."
+        },
+        {
+          "text": "Преобразуйте предложение в страдательный залог: Die Arbeiter bauen die Schule.",
+          "answer": "Die Schule wird gebaut."
+        }
+      ]
+    },
+    {
+      "statement": "Видовременная глагольная форма действительного залога Plusquamperfekt (при согласовании времен)",
+      "title": "Прошедшее время Plusquamperfekt",
+      "examples": [
+        {
+          "text": "Впишите форму Plusquamperfekt: Als ich ankam, ___ er schon ___ (gehen).",
+          "answer": "war ... gegangen"
+        },
+        {
+          "text": "Составьте предложение с Plusquamperfekt по смыслу: Я пришёл в школу в 7 часов, а пообедал раньше.",
+          "answer": "Als ich um 7 Uhr in die Schule kam, hatte ich schon gegessen."
+        }
+      ]
+    },
+    {
+      "statement": "Формы сослагательного наклонения от глаголов haben, sein, werden, , ; сочетания + Infinitiv для выражения вежливой просьбы, желания, в придаточных предложениях условия с wenn (Konjunktiv )",
+      "title": "Сослагательное наклонение",
+      "examples": [
+        {
+          "text": "Образуйте сослагательное наклонение II от глагола sein и впишите: Wenn ich ___ (sein) reich, würde ich viel reisen.",
+          "answer": "wäre"
+        },
+        {
+          "text": "Выразите вежливую просьбу в сослагательном наклонении: (können Sie mir bitte helfen?)",
+          "answer": "Könnten Sie mir bitte helfen?"
+        }
+      ]
+    },
+    {
+      "statement": "Модальные глаголы (, wollen, , , , sollen) в , ; неопределенная форма глагола в страдательном залоге с модальными глаголами",
+      "title": "Модальные глаголы",
+      "examples": [
+        {
+          "text": "Подберите модальный глагол по смыслу запрета и составьте предложение: Hier ___ nicht rauchen!",
+          "answer": "Hier darf man nicht rauchen."
+        },
+        {
+          "text": "Образуйте предложение с модальным глаголом и страдательным залогом: Die Regeln (müssen / beachten).",
+          "answer": "Die Regeln müssen beachtet werden."
+        }
+      ]
+    },
+    {
+      "statement": "Наиболее распространенные глаголы с управлением и местоименные наречия (worauf, wozu и тому подобных, darauf, dazu и тому подобных)",
+      "title": "Глаголы с управлением",
+      "examples": [
+        {
+          "text": "Вставьте подходящий предлог: Ich interessiere mich ___ Musik.",
+          "answer": "für"
+        },
+        {
+          "text": "Ответьте на вопрос местоименным наречием: Worauf wartest du? — Ich warte ___.",
+          "answer": "darauf (auf den Bus)"
+        }
+      ]
+    },
+    {
+      "statement": "Определенный, неопределенный и нулевой артикли",
+      "title": "Виды артиклей",
+      "examples": [
+        {
+          "text": "Вставьте нужный артикль: Ich gehe jeden Tag in ___ Schule.",
+          "answer": "die"
+        },
+        {
+          "text": "Определите, нужен ли артикль, и впишите его: Wir sprechen über ___ Umwelt.",
+          "answer": "die Umwelt"
+        }
+      ]
+    },
+    {
+      "statement": "Имена существительные во множественном числе, образованные по правилу, и исключения",
+      "title": "Множественное число существительных",
+      "examples": [
+        {
+          "text": "Образуйте множественное число по правилу: das Kind, die Stadt, der Hund.",
+          "answer": "die Kinder, die Städte, die Hunde"
+        },
+        {
+          "text": "Образуйте множественное число-исключение: der Vater, das Buch, die Mutter.",
+          "answer": "die Väter, die Bücher, die Mütter"
+        }
+      ]
+    },
+    {
+      "statement": "Склонение имен существительных в единственном и множественном числе",
+      "title": "Склонение существительных",
+      "examples": [
+        {
+          "text": "Поставьте слово в дательном падеже и впишите предложение: (mit) das Buch.",
+          "answer": "mit dem Buch"
+        },
+        {
+          "text": "Раскройте скобки, выбрав нужную форму: Der Schlüssel (des Schlüssels / dem Schlüssel).",
+          "answer": "des Schlüssels"
+        }
+      ]
+    },
+    {
+      "statement": "Имена прилагательные в положительной, сравнительной и превосходной степенях сравнения, образованные по правилу, и исключения",
+      "title": "Сравнение прилагательных",
+      "examples": [
+        {
+          "text": "Образуйте сравнительную степень прилагательных: schnell, alt, groß.",
+          "answer": "schneller, älter, größer"
+        },
+        {
+          "text": "Образуйте превосходную степень прилагательных-исключений: gut, viel.",
+          "answer": "am besten, am meisten"
+        }
+      ]
+    },
+    {
+      "statement": "Склонение имен прилагательных",
+      "title": "Склонение прилагательных",
+      "examples": [
+        {
+          "text": "Впишите окончание прилагательного: ein groß___ Haus.",
+          "answer": "großes"
+        },
+        {
+          "text": "Раскройте скобки, выбрав нужную форму: Der Film ist (interessant / interessanten).",
+          "answer": "interessant"
+        }
+      ]
+    },
+    {
+      "statement": "Наречия в сравнительной и превосходной степенях сравнения, образованные по правилу, и исключения",
+      "title": "Сравнение наречий",
+      "examples": [
+        {
+          "text": "Образуйте сравнительную степень наречий: gern, oft, bald.",
+          "answer": "lieber, öfter, eher"
+        },
+        {
+          "text": "Впишите наречие в сравнительной степени: Anna läuft schnell, ich laufe noch ___.",
+          "answer": "schneller"
+        }
+      ]
+    },
+    {
+      "statement": "Личные местоимения (в именительном, дательном и винительном падежах), указательные местоимения (dieser, jener); притяжательные местоимения; вопросительные местоимения, неопределенные местоимения (jemand, niemand, alle, viel, etwas и других)",
+      "title": "Виды местоимений",
+      "examples": [
+        {
+          "text": "Впишите форму личного местоимения: Ich sehe (ihn / ihm / es).",
+          "answer": "ihn"
+        },
+        {
+          "text": "Подберите подходящее местоимение: Im Saal sind (viel / viele) Studenten.",
+          "answer": "viele"
+        }
+      ]
+    },
+    {
+      "statement": "Способы выражения отрицания: kein, nicht, nichts, doch",
+      "title": "Отрицание в немецком языке",
+      "examples": [
+        {
+          "text": "Вставьте kein или nicht: Ich habe ___ Zeit.",
+          "answer": "keine"
+        },
+        {
+          "text": "Прочитайте предложения и выпишите те, где отрицание выражено словом nichts: Ich habe nichts. Ich arbeite nicht. Das ist nichts.",
+          "answer": "Ich habe nichts. Das ist nichts."
+        }
+      ]
+    },
+    {
+      "statement": "Количественные и порядковые числительные, числительные для обозначения дат и больших чисел",
+      "title": "Числительные и даты",
+      "examples": [
+        {
+          "text": "Напишите дату словами по образцу «am dritten Oktober»: 15. Mai.",
+          "answer": "am fünfzehnten Mai"
+        },
+        {
+          "text": "Запишите числа словами: 350 и 1 000 000.",
+          "answer": "dreihundertfünfzig; eine Million"
+        }
+      ]
+    },
+    {
+      "statement": "Предлоги места, направления, времени; предлоги, управляющие дательным падежом; предлоги, управляющие винительным падежом; предлоги, управляющие и дательным (место), и винительным (направление) падежом",
+      "title": "Предлоги в немецком языке",
+      "examples": [
+        {
+          "text": "Вставьте предлог направления: Ich gehe ___ Bahnhof.",
+          "answer": "zum"
+        },
+        {
+          "text": "Впишите предложение с правильным падежом после предлога: warten auf + ?",
+          "answer": "Ich warte auf den Bus."
+        }
+      ]
+    },
+    {
+      "statement": "Осуществление межличностного и межкультурного общения с использованием знаний о национально-культурных особенностях своей страны и страны/стран изучаемого языка и основных социокультурных элементов речевого поведенческого этикета в немецкоязычной среде в рамках тематического содержания 11 класса",
+      "title": "Межкультурное общение",
+      "examples": [
+        {
+          "text": "Запишите официальное поздравление коллеги с юбилеем по-немецки.",
+          "answer": "Ich gratuliere Ihnen zum Jubiläum."
+        },
+        {
+          "text": "Объясните по-русски, какое приветствие уместно при знакомстве с новым учителем, и выпишите его: (Hallo / Guten Tag).",
+          "answer": "Guten Tag — учитель"
+        }
+      ]
+    },
+    {
+      "statement": "Знание и использование в устной и письменной речи наиболее употребительной тематической фоновой лексики и реалий родной страны и страны/стран изучаемого языка при изучении тем: государственное устройство, система образования, страницы истории, национальные и популярные праздники, проведение досуга, этикетные особенности общения, традиции в кулинарии и так далее",
+      "title": "Реалии и тематическая лексика",
+      "examples": [
+        {
+          "text": "Назовите по-немецки ступень школьного образования, которая следует за Grundschule.",
+          "answer": "Gymnasium"
+        },
+        {
+          "text": "Опишите по-немецки в одном предложении, что люди делают на Weihnachten.",
+          "answer": "An Weihnachten schmücken die Leute den Baum."
+        }
+      ]
+    },
+    {
+      "statement": "Владение основными сведениями о социокультурном портрете и культурном наследии страны/стран, говорящих на немецком языке",
+      "title": "Культурное наследие",
+      "examples": [
+        {
+          "text": "Определите страну (Австрия или Германия) и запишите: Wien, der Rhein, das Oktoberfest.",
+          "answer": "Австрия — Wien; Германия — der Rhein; Германия — das Oktoberfest"
+        },
+        {
+          "text": "Объясните по-русски значение реалий и запишите: die Altstadt, die Weinberge, der Feierabend.",
+          "answer": "старый город; виноградники; конец рабочего дня"
+        }
+      ]
+    },
+    {
+      "statement": "Понимание речевых различий в ситуациях официального и неофициального общения в рамках тематического содержания речи и использование лексико-грамматических средств с их учетом",
+      "title": "Официальное и неформальное общение",
+      "examples": [
+        {
+          "text": "Запишите приветствие вместо «Hallo» при встрече с директором школы.",
+          "answer": "Guten Tag, Frau Direktorin!"
+        },
+        {
+          "text": "Объясните по-русски, почему «Tschüss» не подходит в деловой переписке, и запишите нейтральный вариант.",
+          "answer": "неформальное; «Mit freundlichen Grüßen»"
+        }
+      ]
+    },
+    {
+      "statement": "Развитие умения представлять родную страну/малую родину и страну/страны изучаемого языка (культурные явления и события; достопримечательности; выдающиеся люди: государственные деятели, ученые, писатели, поэты, художники, композиторы, музыканты, спортсмены, актеры и так далее)",
+      "title": "Описание страны и достопримечательностей",
+      "examples": [
+        {
+          "text": "Составьте предложение об архитектурном памятнике по образцу: der Dom — eine alte Kirche.",
+          "answer": "Der Dom in Köln ist eine alte Kirche."
+        },
+        {
+          "text": "Составьте предложение о выдающемся человеке: Goethe — ein deutscher Dichter.",
+          "answer": "Goethe war ein deutscher Dichter."
+        }
+      ]
+    },
+    {
+      "statement": "Овладение компенсаторными умениями, позволяющими в случае сбоя коммуникации, а также в условиях дефицита языковых средств использовать различные приемы переработки информации: при говорении - переспрос; при говорении и письме - описание/перифраз/толкование; при чтении и аудировании - языковую и контекстуальную догадку",
+      "title": "Компенсаторные умения в речи",
+      "examples": [
+        {
+          "text": "Толкуйте по-русски значение слова: die Gebühren.",
+          "answer": "плата, сборы (за проезд или учёбу)"
+        },
+        {
+          "text": "Составьте вопрос-переспрос, если вы не поняли предложение: «Der Unterricht fällt aus.»",
+          "answer": "Entschuldigung, meinst du, dass der Unterricht ausfällt?"
+        }
+      ]
+    },
+    {
+      "statement": "Развитие умения игнорировать информацию, не являющуюся необходимой, для понимания основного содержания, прочитанного/прослушанного текста или для нахождения в тексте запрашиваемой информации",
+      "title": "Игнорирование лишней информации",
+      "examples": [
+        {
+          "text": "Прочитайте объявление и выпишите только место и время: «Am Montag findet die Konferenz im Saal 2 um 15 Uhr statt. Bitte bringen Sie Ihre Unterlagen mit.»",
+          "answer": "в понедельник в 15:00 в зале 2"
+        },
+        {
+          "text": "Прочитайте текст и найдите ответ, пропустив лишнее: «Am Samstag öffnet das Museum um 10 Uhr. Viele Kinder besuchen es. Eintritt ist frei.» — Когда открывается музей и сколько стоит вход?",
+          "answer": "в 10 часов; вход свободный"
+        }
+      ]
+    }
+  ]
+}

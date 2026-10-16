@@ -80,6 +80,16 @@ export interface InsertPhotoCheckInput {
   byteSize?: number | null;
   /** Расчётный срок автоудаления фото (unix seconds). */
   deleteAt: number | null;
+  /**
+   * Сколько страниц в работе. Считается ОДИН раз при загрузке и дальше только
+   * читается: раньше журнал делал HEAD-запрос в R2 на каждую строку, то есть
+   * открытый журнал стоил учителю сеть даже для того, чтобы просто посмотреть
+   * список.
+   *
+   * `0` — бакет не ответил при загрузке, число неизвестно. Настоящих нулевых
+   * страниц не бывает (фото хотя бы одно), поэтому 0 свободен под маркер.
+   */
+  pages?: number | null;
   createdAt: number;
   status?: "pending" | "ok" | "partial" | "failed";
 }
@@ -100,8 +110,8 @@ export async function insertPhotoCheck(
     .prepare(
       `INSERT INTO photo_checks
          (id, user_id, worksheet_id, subject, grade, r2_key, mime_type, byte_size,
-          status, delete_at, created_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
+          status, delete_at, created_at, pages)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
     )
     .bind(
       id,
@@ -115,6 +125,7 @@ export async function insertPhotoCheck(
       input.status ?? "pending",
       input.deleteAt,
       input.createdAt,
+      input.pages ?? null,
     )
     .run();
   return id;

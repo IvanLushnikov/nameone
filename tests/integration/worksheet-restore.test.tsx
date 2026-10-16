@@ -46,7 +46,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
 import ConstructorPage from "@/app/constructor/page";
 import { addToHistory, getHistory } from "@/lib/utils/storage";
-import { getRemaining } from "@/lib/utils/limit";
+import { FREE_LIMIT, getRemaining } from "@/lib/utils/limit";
 import type { Ktp, UserHistoryItem, Worksheet } from "@/lib/types";
 import {
   flushPageTimers,
@@ -194,8 +194,9 @@ describe("восстановление листа после перезагру�
 
     const quotaBefore = getRemaining();
     const rawQuotaBefore = window.localStorage.getItem(QUOTA_KEY);
-    // Одна генерация из трёх бесплатных потрачена.
-    expect(quotaBefore).toBe(2);
+    // Одна генерация из пяти бесплатных (ТЗ-29: квота 5 листов в месяц)
+    // потрачена. Число берём из квоты, а не пишем руками.
+    expect(quotaBefore).toBe(FREE_LIMIT - 1);
     expect(rawQuotaBefore).not.toBeNull();
     // Генерация не сама принесла тост восстановления.
     expect(toastCalls.filter((t) => t.title === RESTORE_TOAST)).toHaveLength(0);
@@ -246,7 +247,7 @@ describe("восстановление листа после перезагру�
     view.unmount();
 
     expect(getRemaining()).toBe(quotaBefore);
-    expect(getRemaining()).toBe(2);
+    expect(getRemaining()).toBe(FREE_LIMIT - 1);
     expect(window.localStorage.getItem(QUOTA_KEY)).toBe(rawQuotaBefore);
     // Тост показали на КАЖДЫЙ reload (это 3 перезагрузки) — но ни одна из них
     // не списала попытку. Проверяем именно количество вызовов, а не ноль.

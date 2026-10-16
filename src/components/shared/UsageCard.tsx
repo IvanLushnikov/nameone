@@ -43,7 +43,6 @@ import {
   type PlanId,
 } from "@/lib/content/plans";
 import { syncFromServer } from "@/lib/utils/limit";
-import { quotaGenerations } from "@/lib/content/landing-seo";
 
 /** Форма ответа /api/users/usage (backend/src/routes/users.ts). */
 export interface UsagePayload {
@@ -55,6 +54,10 @@ export interface UsagePayload {
   periodEndsAt: string | null;
   worksheetsEquivalent: number;
   freeRemaining: number | null;
+  /** Сколько листов сделано в этом месяце (бэк отдаёт с ТЗ-29). */
+  freeUsed?: number | null;
+  /** Когда квота обновится: 1-е число следующего месяца, ISO. */
+  freeResetsAt?: string | null;
   requiresChallenge: boolean;
   /** Старые поля, бэк их ещё отдаёт. */
   generationsToday: number;
@@ -98,22 +101,34 @@ export function UsageCard({ usage, loading }: Props) {
     return null;
   }
 
-  // ── Бесплатный тариф: считаем в штуках генераций ──
+  // ── Бесплатный тариф: считаем в штуках листов за текущий месяц ──
+  //
+  // Формулировки — по правилу из шапки файла: никаких «исчерпано» и
+  // «заблокировано». Учитель не нарушал правило, он сделал пять листов из
+  // положенных. Сообщаем СЧЁТ и ДАТУ обновления, а решение о тарифе оставляем
+  // за ним.
   if (usage.plan === "free") {
     const left = usage.freeRemaining ?? FREE_GENERATIONS;
-    const used = FREE_GENERATIONS - left;
+    const used = usage.freeUsed ?? FREE_GENERATIONS - left;
     const done = left === 0;
+    const resetsAt = usage.freeResetsAt
+      ? new Date(usage.freeResetsAt).toLocaleDateString("ru-RU", {
+          day: "numeric",
+          month: "long",
+        })
+      : null;
     return (
       <div className="rounded-2xl border border-warm-200 bg-white p-5 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="font-semibold text-warm-900">Бесплатные генерации</h3>
+            <h3 className="font-semibold text-warm-900">Листы в этом месяце</h3>
             <p className="text-sm text-warm-500 mt-0.5">
-              {quotaGenerations()} на весь период — без сброса по суткам
+              {FREE_GENERATIONS} бесплатных листов в месяц
+              {resetsAt ? `, обновятся ${resetsAt}` : ""}
             </p>
           </div>
           <Badge tone={done ? "accent" : "brand"}>
-            {left > 0 ? `Осталось ${left} из ${FREE_GENERATIONS}` : "Исчерпано"}
+            {done ? "Листы закончились" : `сделано ${used} из ${FREE_GENERATIONS}`}
           </Badge>
         </div>
 
@@ -128,13 +143,23 @@ export function UsageCard({ usage, loading }: Props) {
           <div className="rounded-xl bg-accent-50 border border-accent-200 p-4 space-y-3">
             <div className="flex gap-2">
               <Sparkles className="w-4 h-4 text-accent-600 shrink-0 mt-0.5" />
-              <p className="text-sm text-warm-800">
-                Бесплатные генерации закончились. Подписка продолжит работу без
-                ограничения по суткам.
-              </p>
+              <div className="text-sm text-warm-800 space-y-1">
+                <p>
+                  Бесплатные листы на этот месяц закончились
+                  {resetsAt ? ` — ${resetsAt} снова ${FREE_GENERATIONS}` : ""}.
+                </p>
+                {/* Проверка по фото тратит ту же квоту — решение владельца от
+                    16.10.2026, вопреки прежнему обещанию «без ограничений».
+                    Учитель должен узнать об этом на карточке, а не упереться в
+                    отказ при попытке проверить домашку. */}
+                <p className="text-warm-600">
+                  Проверка по фото тетради и разбор ответов тратят эту же квоту.
+                  Если вы проверяете много — возьмите тариф.
+                </p>
+              </div>
             </div>
             <Button variant="primary" size="sm" onClick={() => go("/pricing")}>
-              Посмотреть тарифы
+              Пополнить
             </Button>
           </div>
         ) : null}

@@ -34,8 +34,10 @@ export type MaterialArtifactType =
   | "lesson-plan"
   | "presentation"
   | "ktp"
-  | "interactive"
-  | "image";
+  | "interactive";
+// Типа "image" здесь нет по той же причине, что и в `TaskType` (ТЗ-30 AD-4):
+// генератора картинок у нас нет, а карточка каталога обещала бы учителю
+// PNG, который конструктор не умеет собрать.
 
 export interface MaterialEntry {
   /** URL-безопасный уникальный слаг: `<транслит-заголовка>-<hash8>`. */
@@ -110,7 +112,10 @@ const PURPOSE_ARTIFACTS: Record<MaterialPurpose, MaterialArtifactType[]> = {
   explain: ["worksheet", "interactive", "worksheet"],
   engage: ["interactive", "presentation", "interactive"],
   ready: ["lesson-plan", "ktp", "lesson-plan"],
-  decorate: ["presentation", "image", "presentation"],
+  // "decorate" раньше давал и "image" — этот тип снят (ТЗ-30 AD-4), поэтому
+  // цель «Оформить» теперь полностью презентационная: иначе карточка каталога
+  // вела бы в конструктор с типом, которого там больше нет.
+  decorate: ["presentation", "presentation"],
 };
 
 /** Человеческое название типа артефакта — вставляется в тексты. */
@@ -122,7 +127,6 @@ const ARTIFACT_LABELS: Record<MaterialArtifactType, string> = {
   presentation: "Презентация",
   ktp: "Календарно-тематическое планирование",
   interactive: "Интерактивное задание",
-  image: "Набор наглядных материалов",
 };
 
 /** Тип артефакта → значение `type=` для конструктора (`DEEP_LINK_TYPES`). */
@@ -134,7 +138,6 @@ const ARTIFACT_TO_TASK_TYPE: Record<MaterialArtifactType, TaskType> = {
   presentation: "presentation",
   ktp: "ktp",
   interactive: "interactive",
-  image: "image",
 };
 
 const DIFFICULTIES: Difficulty[] = ["easy", "medium", "hard"];
@@ -338,6 +341,13 @@ export function makeMaterialSlug(title: string, seed: string): string {
 }
 
 /**
+ * Нижняя граница описания — столько символов нужно, чтобы сниппет в
+ * выдаче не обрывался на полуслове. Держится тестом в
+ * `tests/materials-catalog.test.ts`.
+ */
+const MIN_DESCRIPTION_LENGTH = 250;
+
+/**
  * Обрезает описание до 800 символов.
  *
  * Добивки до 300 символов больше НЕТ. Раньше она дописывала одну и ту же
@@ -390,8 +400,18 @@ function buildDescription(ctx: {
   // на раздел ФГОС оставались вовсе без неё — описание коротило до 170
   // символов. Привязку к разделу добавляем сверху, когда ссылка реальная.
   const parts = [format(opening), format(detail)];
-  if (fgosRef) parts.push(format(DESCRIPTION_DETAILS_FGOS[0]));
-  parts.push(format(cta));
+  const ctaText = format(cta);
+  if (fgosRef) {
+    parts.push(format(DESCRIPTION_DETAILS_FGOS[0]));
+  } else if ([...parts, ctaText].join(" ").length < MIN_DESCRIPTION_LENGTH) {
+    // У темы нет раздела ФГОС — вместо него добираем вторую деталь из
+    // набора: это те же факты о формате и содержании файла, что и у соседних
+    // карточек, просто у них их две. Без этого описание «Рабочий лист по
+    // математике, 6 класс: Пропорции» не дотягивало до 250 символов.
+    // Факты не выдумываются, набор деталей общий.
+    parts.push(format(DESCRIPTION_DETAILS[((h >>> 4) + 1) % DESCRIPTION_DETAILS.length]));
+  }
+  parts.push(ctaText);
   return fitDescription(parts.join(" "));
 }
 

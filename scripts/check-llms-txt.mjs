@@ -184,8 +184,12 @@ function checkFile() {
   // 4. Бесплатный порог — из бэкенда.
   const freeQuota = readFreeQuota();
   if (freeQuota !== null) {
-    if (!new RegExp(`${freeQuota} (бесплатн|генерац)`).test(llms)) {
-      note(`в llms.txt нет бесплатного порога ${freeQuota} генераций, который задан в usage.ts`);
+    // ТЗ-32 часть 5: раньше здесь было захардкожено «3 бесплатн». Квота давно
+    // помесячная (FREE_TOTAL_GENERATIONS = 5), и проверка требовала от текста
+    // старого числа вместо живого. Теперь ищем то число, которое задано в
+    // usage.ts, — любое другое расхождение по-прежнему падает.
+    if (!new RegExp(`${freeQuota} (бесплатн|лист|генерац)`).test(llms)) {
+      note(`в llms.txt нет бесплатного порога ${freeQuota} листов, который задан в usage.ts`);
     }
   }
 
@@ -247,16 +251,24 @@ function checkClaims() {
   const billing = readOrFail(join(ROOT, "backend/src/services/billing.ts"), "бэкенда billing.ts");
   const pricing = readOrFail(PRICING_PAGE, "страницы тарифов pricing/page.tsx");
 
+  // Число квоты — из usage.ts, а не литерал: ТЗ-32 часть 5.
+  const quota = readFreeQuota();
+  const freeQuotaInUsage = quota === null ? null : new RegExp(`FREE_TOTAL_GENERATIONS\\s*=\\s*${quota}\\b`);
+  const freeQuotaInFile =
+    quota === null ? /\b\d+\b.{0,40}(генерац|листа|лист)/i : new RegExp(`\\b${quota}\\b.{0,40}(генерац|листа|лист|бесплатн)`, "i");
+
   const claims = [
+    // ТЗ-32 часть 5: число квоты не зашивается — берётся из usage.ts, иначе
+    // проверка требовала бы старого «3» вместо живого значения.
     {
       label: "сколько бесплатных генераций",
-      inFile: /\b3\b.{0,40}(генерац|листа|лист)/i,
-      source: { text: usage, name: "usage.ts", proof: /FREE_TOTAL_GENERATIONS\s*=\s*3\b/ },
+      inFile: freeQuotaInFile,
+      source: { text: usage, name: "usage.ts", proof: freeQuotaInUsage },
     },
     {
-      label: "квота не восстанавливается",
-      inFile: /квота.{0,60}не восстанавливают/i,
-      source: { text: usage, name: "usage.ts", proof: /FREE_TOTAL_GENERATIONS/ },
+      label: "квота обновляется 1-го числа",
+      inFile: /1-го числа|обнул\w*|обновля\w* 1/i,
+      source: { text: usage, name: "usage.ts", proof: /monthKeyOf|month/ },
     },
     {
       label: "повторная генерация считается отдельно",

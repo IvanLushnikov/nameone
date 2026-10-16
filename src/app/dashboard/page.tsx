@@ -87,7 +87,6 @@ import {
   LogOut,
   Trash2,
   ArrowRight,
-  Calendar,
   Send,
   Camera,
   ClipboardList,
@@ -97,9 +96,14 @@ import {
   X,
   AlertCircle,
   RotateCcw,
+  Gamepad2,
+  MessageCircleQuestion,
 } from "lucide-react";
+import Link from "next/link";
 import { ShareFormDialog } from "@/components/teacher/ShareFormDialog";
-import { timeAgo, plural, pluralizeTasks } from "@/lib/utils/cn";
+// `timeAgo` и `plural` убраны вместе с плиткой «С нами» (ТЗ-32, D4) —
+// больше нигде в файле не используются.
+import { pluralizeTasks } from "@/lib/utils/cn";
 import { PLANS, priceShort } from "@/lib/content/plans";
 import { getSubject } from "@/lib/content/subjects";
 import { trackEvent } from "@/lib/track";
@@ -388,19 +392,10 @@ export default function DashboardPage() {
   );
   const filterActive = isFilterActive(filters) || query.trim() !== "";
 
-  /**
-   * Плитка «С нами».
-   *
-   * Раньше здесь стоял `timeAgo` от самого старого листа — то есть плитка
-   * показывала ДАТУ («2 месяца назад») вместо СРОКА, а у нового учителя с
-   * пустой историей вообще писала «только что». Обе подписи — враньё.
-   *
-   * Теперь метрика честная и простая: сколько дней прошло с первого
-   * материала учителя. Даты суток/недель/месяцев знакомы учителю, не
-   * придумывают «достижение» и остаются верными на любом устройстве.
-   * Нет ни одного материала — ставим прочерк, а не выдуманное «только что».
-   */
-  const withUs = daysWithUs(history);
+  // Плитки «С нами» больше нет (ТЗ-32, D4). Не «сегодня» и не «пока нет
+  // данных»: показывать учителю срок, который ничего не решает, незачем, а
+  // прочерк у нового посетителя читается как недогрузилось. Метрика удалена
+  // вместе с плиткой, а не спрятана под настройку.
 
   // ЗДЕСЬ БОЛЬШЕ НЕТ СТЕНЫ «ВОЙДИТЕ, ЧТОБЫ УВИДЕТЬ ИСТОРИЮ».
   //
@@ -424,7 +419,6 @@ export default function DashboardPage() {
         history={history}
         favorites={favorites}
         templates={templates}
-        withUs={withUs}
       />
 
       {/* Остаток нормы: для free — сколько осталось бесплатных генераций,
@@ -448,11 +442,11 @@ export default function DashboardPage() {
           намерения — «создать лист» и «проверить, что ученик сделал сам». */}
       <Card className="mt-4 p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-start gap-4 min-w-0">
+          <div className="flex items-start gap-4 min-w-0 flex-1">
             <div className="w-11 h-11 rounded-xl bg-accent-50 flex items-center justify-center shrink-0">
               <Camera className="w-5 h-5 text-accent-600" />
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h2 className="font-semibold text-warm-950">
                 Проверить домашку и задать вопросы
               </h2>
@@ -474,11 +468,11 @@ export default function DashboardPage() {
           проверок остаются вкладкой, которую закрыли. */}
       <Card className="mt-4 p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-start gap-4 min-w-0">
+          <div className="flex items-start gap-4 min-w-0 flex-1">
             <div className="w-11 h-11 rounded-xl bg-brand-50 flex items-center justify-center shrink-0">
               <ClipboardList className="w-5 h-5 text-brand-600" />
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h2 className="font-semibold text-warm-950">Журнал проверок</h2>
               <p className="text-sm text-warm-600 mt-1">
                 Все ранее проверенные работы с отметками — и меткой, кто их поставил: ИИ
@@ -491,6 +485,51 @@ export default function DashboardPage() {
           </Button>
         </div>
       </Card>
+
+      {/* Интерактивы. 15.10.2026.
+
+          ЗАЧЕМ ЭТА КАРТОЧКА. На главной есть блок «Лист превращается в игру»
+          со ссылкой на /dashboard/interactives, а из кабинета туда не было
+          входа вообще: ни в одной из четырёх вкладок. То есть мы сами
+          предлагали учителю кликнуть туда, куда из кабинета не попасть.
+
+          ПОЧЕМУ ОТДЕЛЬНОЙ КАРТОЧКОЙ, А НЕ ПЯТОЙ ВКЛАДКОЙ. Вкладки читаются
+          как «где лежат мои материалы». Интерактив — это не место хранения,
+          а способ работы с листом, как проверка по фото и журнал. Он должен
+          стоять рядом с ними, а не прятаться за счётчиком вкладки. */}
+      <Card className="mt-4 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-start gap-4 min-w-0 flex-1">
+            <div className="w-11 h-11 rounded-xl bg-warm-100 flex items-center justify-center shrink-0">
+              <Gamepad2 className="w-5 h-5 text-warm-700" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="font-semibold text-warm-950">
+                Игра для класса
+              </h2>
+              <p className="text-sm text-warm-600 mt-1">
+                Из готового листа собирается игра: ученик отвечает с телефона, вы видите
+                время на ответ и сводку по классу.
+              </p>
+            </div>
+          </div>
+          <Button as="link" href="/dashboard/interactives" variant="secondary" size="md">
+            Открыть игры
+          </Button>
+        </div>
+      </Card>
+
+      {/* Что кабинет умеет. 15.10.2026.
+
+          ЗАЧЕМ. Пустой кабинет показывал три счётчика в нуле и надпись
+          «История пуста». Это честно, но бесполезно: учитель не знает, что
+          кабинет вообще для чего. Главная про это рассказывает — но решение
+          на главной принимают до регистрации, а в кабинет человек приходит
+          уже с листом и хочет понять, что с ним делать дальше.
+
+          ПОКАЗЫВАЕМ ТОЛЬКО КОГДА ПУСТО. С листами этот блой — шум. Исчезает
+          сам, как только появляется первая запись. */}
+      {historyState === "empty" && <CabinetGuide />}
 
       <Tabs value={tab} onValueChange={handleTabChange} className="mt-10">
         <TabsList>
@@ -768,16 +807,8 @@ function isStorableInFavorites(a: StoredArtifact | null): a is FavoriteArtifact 
   );
 }
 
-/** Сколько дней прошло с первого материала учителя. null = материалов нет. */
-function daysWithUs(history: HistoryItem[]): number | null {
-  if (history.length === 0) return null;
-  const first = Math.min(
-    ...history.map((i) => new Date(i.createdAt).getTime()).filter((t) => !Number.isNaN(t))
-  );
-  if (!Number.isFinite(first)) return null;
-  const days = Math.floor((Date.now() - first) / 86_400_000);
-  return Math.max(0, days);
-}
+// `daysWithUs` удалён вместе с плиткой «С нами» (ТЗ-32, D4). Метрика без
+// плитки — мёртвый код, который однажды посчитает не то, что показывает.
 
 // =============== Profile ===============
 
@@ -848,12 +879,10 @@ function StatsRow({
   history,
   favorites,
   templates,
-  withUs,
 }: {
   history: HistoryItem[];
   favorites: FavoriteArtifact[];
   templates: UserTemplate[];
-  withUs: number | null;
 }) {
   const items = [
     {
@@ -874,22 +903,13 @@ function StatsRow({
       value: String(templates.length),
       color: "text-blue-600",
     },
-    {
-      // Срок, а не дата. См. объяснение рядом с `daysWithUs`.
-      icon: Calendar,
-      label: "С нами",
-      value:
-        withUs === null
-          ? "—"
-          : withUs === 0
-            ? "сегодня"
-            : `${withUs} ${plural(withUs, "день", "дня", "дней")}`,
-      color: "text-warm-700",
-    },
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
+    // Сетка на 3 колонки, а не на 4: плиток стало три, и при `sm:grid-cols-4`
+    // четвёртая ячейка осталась бы пустым провалом справа (ТЗ-32, D4).
+    // На телефоне две колонки и третья плитка встаёт в ряд сама.
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-6">
       {items.map((it) => (
         <Card key={it.label} padded={false} className="p-4 sm:p-5">
           <div className={`w-9 h-9 rounded-lg bg-warm-100 grid place-items-center mb-2 ${it.color}`}>
@@ -1353,6 +1373,62 @@ function EmptyTab({
       <h3 className="text-lg font-semibold text-warm-950">{title}</h3>
       <p className="text-sm text-warm-500 mt-1.5 max-w-sm mx-auto">{description}</p>
       {action && <div className="mt-6">{action}</div>}
+    </Card>
+  );
+}
+
+/**
+ * Что кабинет умеет с готовым листом. Показывается только при пустой истории.
+ *
+ * Тон блока — как на главной (HiddenFeatures): не «мы умеем X», а что
+ * учитель получит и куда нажмёт. Каждая карточка ведёт в рабочее место.
+ */
+function CabinetGuide() {
+  const items = [
+    {
+      href: "/dashboard?tab=forms",
+      icon: Send,
+      title: "Выдать лист классу",
+      description:
+        "Ученик заходит по ссылке или QR-коду с телефона, без регистрации. Вы видите, кто выполнил и где ошибся, ответы выгружаете в Excel.",
+    },
+    {
+      href: "/dashboard/interactives",
+      icon: Gamepad2,
+      title: "Собрать игру из листа",
+      description:
+        "Задания выходят по одному, ученик отвечает с телефона. Видно время на ответ — сразу видно, кто угадывает.",
+    },
+    {
+      href: "/constructor?photo=1",
+      icon: MessageCircleQuestion,
+      title: "Задать вопросы для беседы",
+      description:
+        "После проверки по фото собираются 3–5 вопросов по конкретным заданиям работы. Переписавший у соседа на них не ответит.",
+    },
+  ];
+
+  return (
+    <Card className="mt-4 p-5" data-testid="cabinet-guide">
+      <h2 className="font-semibold text-warm-950">Что можно сделать с листом в кабинете</h2>
+      <p className="text-sm text-warm-600 mt-1">
+        Кабинет не создаёт листы — он хранит их и доводит до учеников.
+      </p>
+      <div className="grid gap-4 sm:grid-cols-3 mt-4">
+        {items.map((it) => (
+          <Link
+            key={it.href}
+            href={it.href}
+            className="rounded-xl border border-warm-200 bg-warm-50 p-4 transition-colors hover:border-warm-300 hover:bg-warm-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+          >
+            <div className="w-9 h-9 rounded-lg bg-white text-warm-700 grid place-items-center mb-3">
+              <it.icon className="w-4 h-4" />
+            </div>
+            <div className="text-sm font-semibold text-warm-950">{it.title}</div>
+            <p className="text-xs text-warm-600 mt-1">{it.description}</p>
+          </Link>
+        ))}
+      </div>
     </Card>
   );
 }

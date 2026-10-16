@@ -79,23 +79,52 @@ ${TEXT_LATEX_RULE}
 
 БЕЗ MARKDOWN. Только один JSON-объект.`;
 
+/**
+ * Длительность ОГЭ по умолчанию — на случай, если профиля в базе нет.
+ *
+ * НЕ «значение по умолчанию, которое можно поменять», а ФАКТ, на который мы
+ * ссылаемся в ответе учителю: 235 минут — реальная длительность ОГЭ по
+ * расписанию ФИПИ. Поэтому число одно и живёт здесь, а не размазано по
+ * промпту; профиль может его переопределить, но не потерять.
+ */
+export const DEFAULT_EXAM_MINUTES = 235;
+
 export interface BuildExamPromptArgs {
   exam: "oge" | "ege";
   subject: SubjectSlug;
   variantNumber: number;
+  /**
+   * Длительность варианта в минутах — из профиля `exam_profiles`
+   * (ТЗ-30 AD-5). Без профиля передаётся `DEFAULT_EXAM_MINUTES`.
+   *
+   * Раньше здесь стояло `args.exam === "oge" ? 235 : 235` с TODO «разделить
+   * базовый/профильный позже»: и ОГЭ, и ЕГЭ объявлялись одинаковыми, хотя
+   * длительности разные, а у математики различаются ещё и по профилю.
+   * Число приходит из базы, поэтому новый профиль — это новая строка, а не
+   * релиз.
+   */
+  minutes?: number;
 }
 
 /**
  * Собрать { system, user } для генерации экзаменационного варианта.
  *
- * Дополнительно возвращаем expectedDuration — caller подмешает его в title.
+ * Дополнительно возвращаем expectedDuration — caller подмешает его в title
+ * и в `ExamVariant.duration`.
  */
 export function buildExamPrompt(args: BuildExamPromptArgs): {
   system: string;
   user: string;
   expectedDuration: number;
 } {
-  const expectedDuration = args.exam === "oge" ? 235 : 235; // TODO: разделить базовый/профильный позже
+  // Ноль, отрицательное и не-целое — это не «длительность», а мусор в базе.
+  // Молча брать дефолт опасно: профиль есть, но сломан, и мы бы тихо
+  // напечатали неверное время. Здесь это не тихо — see ссылки в buildExamProfile.
+  const minutes =
+    Number.isInteger(args.minutes) && (args.minutes as number) > 0
+      ? (args.minutes as number)
+      : DEFAULT_EXAM_MINUTES;
+  const expectedDuration = minutes;
 
   // TZ-13: явный таргет языка. Без этого LLM для не-языковых предметов
   // периодически отдаёт английские грамматические упражнения («Open the brackets: ...»).

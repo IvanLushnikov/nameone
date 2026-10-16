@@ -78,6 +78,13 @@ function fakeDb() {
     logs,
     prepare(sql: string) {
       return {
+        // DDL без параметров (создание таблицы квоты) идёт без bind — в D1 он
+        // тоже допустим. Раньше здесь был только bind(), и любое утверждение
+        // без параметров падало «run is not a function».
+        async run() {
+          logs.push({ sql, args: [] });
+          return { success: true };
+        },
         bind(...args: unknown[]) {
           return {
             async first() {

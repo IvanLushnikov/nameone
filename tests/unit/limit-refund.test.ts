@@ -52,9 +52,9 @@ afterEach(() => {
 });
 
 describe("limit — размер квоты", () => {
-  it("бесплатных генераций всего три", () => {
-    expect(FREE_LIMIT).toBe(3);
-    expect(getRemaining()).toBe(3);
+  it("бесплатных листов пять в месяц (ТЗ-29)", () => {
+    expect(FREE_LIMIT).toBe(5);
+    expect(getRemaining()).toBe(5);
     expect(canGenerate()).toBe(true);
   });
 });
@@ -62,14 +62,12 @@ describe("limit — размер квоты", () => {
 describe("limit — списание квоты", () => {
   it("успешная генерация списывает одну попытку", () => {
     expect(consume().count).toBe(1);
-    expect(getRemaining()).toBe(2);
+    expect(getRemaining()).toBe(FREE_LIMIT - 1);
     expect(canGenerate()).toBe(true);
   });
 
-  it("после трёх генераций квота кончилась", () => {
-    consume();
-    consume();
-    consume();
+  it("после пяти листов квота месяца кончилась", () => {
+    for (let i = 0; i < FREE_LIMIT; i++) consume();
 
     expect(getRemaining()).toBe(0);
     expect(canGenerate()).toBe(false);
@@ -80,22 +78,22 @@ describe("limit — refund() возвращает попытку", () => {
   it("refund() после consume() возвращает счётчик на место", () => {
     consume();
     consume();
-    expect(getRemaining()).toBe(1);
+    expect(getRemaining()).toBe(FREE_LIMIT - 2);
 
     expect(refund().count).toBe(1);
-    expect(getRemaining()).toBe(2);
+    expect(getRemaining()).toBe(FREE_LIMIT - 1);
     expect(canGenerate()).toBe(true);
   });
 
   it("два refund() подряд без consume() не уводят счётчик в минус", () => {
     // Инвариант против старой дыры: если refund() сделает count = -1, то
-    // getRemaining() вернёт 4 — учитель получит четыре генерации вместо трёх.
+    // getRemaining() вернёт 6 — учитель получит шесть листов вместо пяти.
     const first = refund();
     const second = refund();
 
     expect(first.count).toBe(0);
     expect(second.count).toBe(0);
-    expect(getRemaining()).toBe(3);
+    expect(getRemaining()).toBe(FREE_LIMIT);
   });
 
   it("refund() больше, чем списывали, тоже не даёт лишних попыток", () => {
@@ -108,11 +106,12 @@ describe("limit — refund() возвращает попытку", () => {
   });
 });
 
-describe("limit — СУТОК БОЛЬШЕ НЕТ", () => {
-  it("через сутки счётчик НЕ обнуляется — квота на весь период", () => {
-    consume();
-    consume();
-    consume();
+// ТЗ-29: суток больше нет, но МЕСЯЦ есть. Ниже — важная оговорка: локальный
+// счётчик в браузере сам не обнуляется никогда, месяц считает сервер
+// (free_usage), а клиент приводится к нему через syncFromServer.
+describe("limit — СУТОК БОЛЬШЕ НЕТ, МЕСЯЦ СЧИТАЕТ СЕРВЕР", () => {
+  it("через сутки счётчик НЕ обнуляется — месяц считает сервер", () => {
+    for (let i = 0; i < FREE_LIMIT; i++) consume();
     expect(canGenerate()).toBe(false);
 
     // Ровно следующая полночь + 12 часов: раньше здесь счётчик обнулялся.
@@ -122,20 +121,22 @@ describe("limit — СУТОК БОЛЬШЕ НЕТ", () => {
     expect(canGenerate()).toBe(false);
   });
 
-  it("через месяц — тоже не обнуляется", () => {
-    consume();
-    consume();
-    consume();
+  it("через месяц счётчик сам не обнуляется — но сервер пришлёт ноль", () => {
+    for (let i = 0; i < FREE_LIMIT; i++) consume();
 
     vi.setSystemTime(START + 31 * DAY_MS);
-
     expect(getRemaining()).toBe(0);
+
+    // 1-го числа месяца сервер отдаёт used = 0, и карточка/конструктор
+    // показывают полную квоту. Обнуления «по часам в браузере» по-прежнему нет.
+    syncFromServer(0);
+    expect(getRemaining()).toBe(FREE_LIMIT);
   });
 
   it("в пределах суток счётчик не растёт", () => {
     consume();
     vi.setSystemTime(START + 60 * 60 * 1000);
-    expect(getRemaining()).toBe(2);
+    expect(getRemaining()).toBe(FREE_LIMIT - 1);
   });
 });
 
@@ -143,19 +144,18 @@ describe("limit — сверка с сервером", () => {
   it("syncFromServer ставит счётчик к серверному", () => {
     consume();
     consume();
-    expect(getRemaining()).toBe(1);
+    expect(getRemaining()).toBe(FREE_LIMIT - 2);
 
-    // Бэк знает, что израсходовано 3 (например, генерация была в другой вкладке).
-    syncFromServer(3);
+    // Бэк знает, что израсходовано больше (например, генерация была в другой
+    // вкладке) — источник правды сервер.
+    syncFromServer(FREE_LIMIT);
     expect(getRemaining()).toBe(0);
   });
 
   it("локальный счёт ВЫШЕ серверного — обнуляется, а не берётся max", () => {
     // Так учитель, почистивший localStorage, не получит новую квоту:
     // источник правды — сервер.
-    consume();
-    consume();
-    consume();
+    for (let i = 0; i < FREE_LIMIT; i++) consume();
     expect(getRemaining()).toBe(0);
 
     syncFromServer(0);

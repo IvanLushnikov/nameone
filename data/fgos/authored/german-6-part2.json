@@ -1,0 +1,103 @@
+{
+  "source": "german-6-part2",
+  "topics": [
+    {
+      "statement": "кратко представлять Россию и страну (страны) изучаемого языка;",
+      "title": "Представление родной и изучаемой страны",
+      "examples": [
+        {
+          "text": "Прочитайте таблицу: столица России — Москва; площадь — 17 100 000 км²; язык — русский. Напишите три предложения о России, начиная их со слов «Russland ist …», «Die Hauptstadt …», «Die Sprache …».",
+          "answer": "Russland ist groß; Die Hauptstadt ist Moskau; Die Sprache ist Russisch"
+        },
+        {
+          "text": "Прочитайте предложения и выпишите только те, которые относятся к России: 1) Die Hauptstadt von Deutschland ist Berlin. 2) Russland ist das größte Land der Welt. 3) Die Donau fließt durch Deutschland. 4) In Moskau gibt es den Roten Platz. 5) Der Rhein ist ein langer Fluss.",
+          "answer": "2, 4"
+        }
+      ]
+    },
+    {
+      "statement": "кратко представлять некоторые культурные явления родной страны и страны (стран) изучаемого языка (основные национальные праздники, традиции в проведении досуга и питании), наиболее известные достопримечательности;",
+      "title": "Праздники, традиции и достопримечательности",
+      "examples": [
+        {
+          "text": "Установите соответствие между праздником и датой: 1) das Neujahr; 2) das Weihnachtsfest; 3) der Muttertag. а) 6. Mai; б) 1. Januar; в) 24. Dezember. Запишите номера рядом с буквами.",
+          "answer": "1 — б, 2 — в, 3 — а"
+        },
+        {
+          "text": "Прочитайте: «Der Eiffelturm steht in Paris. Der Kreml steht in Moskau. Der Dom steht in Köln.» Определите, в какой стране находится каждый памятник, и запишите: памятник — страна.",
+          "answer": "Eiffelturm — Frankreich, Kreml — Russland, Dom — Deutschland"
+        }
+      ]
+    },
+    {
+      "statement": "кратко рассказывать о выдающихся людях родной страны и страны (стран) изучаемого языка (ученых, писателях, поэтах)",
+      "title": "Учёные, писатели и поэты",
+      "examples": [
+        {
+          "text": "Прочитайте предложения и распределите их в два столбика: «учёные» и «писатели и поэты». 1) Mendelejew war Chemiker und Forscher. 2) Goethe ist der Autor des Romans «Faust». 3) Albert Einstein ist Physiker. 4) Puschkin ist ein berühmter russischer Dichter. 5) Schiller ist für seine Balladen bekannt.",
+          "answer": "учёные — 1, 3; писатели и поэты — 2, 4, 5"
+        },
+        {
+          "text": "Прочитайте: «Johannes Gutenberg wurde im fünfzehnten Jahrhundert berühmt. Seine Erfindung ist die Buchdruckerkunst mit beweglichen Buchstaben.» Найдите предложение с названием его изобретения и выпишите только это предложение.",
+          "answer": "Seine Erfindung ist die Buchdruckerkunst mit beweglichen Buchstaben."
+        }
+      ]
+    },
+    {
+      "statement": "Использование при чтении и аудировании языковой догадки, в том числе контекстуальной",
+      "title": "Языковая и контекстуальная догадка",
+      "examples": [
+        {
+          "text": "Вставьте пропущенное слово по смыслу: «Im ____ macht Anna ein Picknick. Sie nimmt die Brote und den Saft mit. Das Wetter ist warm und schön.»",
+          "answer": "Sommer"
+        },
+        {
+          "text": "Прочитайте предложение и определите по контексту значение слова «die See»: «Im Sommer fahren viele Familien an die See. Die Kinder schwimmen im Wasser und bauen Sandburgen.» Запишите перевод слова.",
+          "answer": "море"
+        }
+      ]
+    },
+    {
+      "statement": "Использование при формулировании собственных высказываний, ключевых слов, плана",
+      "title": "Ключевые слова и план высказывания",
+      "examples": [
+        {
+          "text": "Прочитайте: «Am Samstag besuchen wir das Museum. Wir sehen dort viele alte Gemälde. Nach dem Museum gehen wir in ein Café.» Выпишите три ключевых слова к теме «выходной в городе».",
+          "answer": "Museum, Gemälde, Café"
+        },
+        {
+          "text": "Составьте план рассказа о своём выходном дне из четырёх пунктов: где был, с кем, что делал, почему понравилось. Запишите по одному предложению к каждому пункту.",
+          "answer": "4 пункта: место — компания — дело — впечатление"
+        }
+      ]
+    },
+    {
+      "statement": "Игнорирование информации, не являющейся необходимой для понимания основного содержания, прочитанного (прослушанного) текста или для нахождения в тексте запрашиваемой информации",
+      "title": "Лишняя информация в тексте",
+      "examples": [
+        {
+          "text": "Прочитайте объявление: «Schulfest. Samstag, 14 Uhr, in der Schulhalle. Bitte bringt ein Gedicht und ein Plakat mit.» Ответьте только на вопрос: Wann und wo findet das Schulfest statt?",
+          "answer": "am Samstag, 14 Uhr, in der Schulhalle"
+        },
+        {
+          "text": "Прочитайте предложения и выпишите номера тех, которые НЕ относятся к теме «погода в Берлине»: 1) In Berlin war es kalt. 2) Der Hauptbahnhof ist sehr groß. 3) Es hat den ganzen Tag geregnet. 4) Am Bahnhof kaufe ich eine Fahrkarte. 5) Der Wind war stark.",
+          "answer": "2, 4"
+        }
+      ]
+    },
+    {
+      "statement": "Сравнение (в том числе установление основания для сравнения) объектов, явлений, процессов, их элементов и основных функций в рамках изученной тематики",
+      "title": "Сравнение по признаку",
+      "examples": [
+        {
+          "text": "Прочитайте: «Züge sind schnell, aber teuer. Busse sind billig, aber langsam.» Составьте таблицу сравнения: что общего у поезда и автобуса и в чём они различаются.",
+          "answer": "общее — возят людей; различие — скорость и цена"
+        },
+        {
+          "text": "Определите, по какому признаку сравнивают каждую пару, и запишите этот признак: 1) der Frühling und der Herbst; 2) die Suppe und der Salat; 3) die Stadt und das Dorf.",
+          "answer": "1: время года, 2: блюдо, 3: размер"
+        }
+      ]
+    }
+  ]
+}

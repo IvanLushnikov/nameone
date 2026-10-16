@@ -20,6 +20,7 @@
  * целостность «Темы недели») проверяет тот же тест.
  */
 
+import type { SubjectSlug } from "../../types";
 import type { GradeExtensions } from "./types";
 
 import { algebraExtra } from "./algebra";
@@ -28,6 +29,7 @@ import { biologyExtra } from "./biology";
 import { chemistryExtra } from "./chemistry";
 import { englishExtra } from "./english";
 import { financeExtra } from "./finance";
+import { fgosProgramExtra } from "./fgos-program";
 import { historyExtra } from "./history";
 import { geographyExtra } from "./geography";
 import { geometryExtra } from "./geometry";
@@ -45,25 +47,42 @@ import { technologyExtra } from "./technology";
 
 export type { GradeExtensions };
 
+/**
+ * Темы из федеральных рабочих программ дописываются после тем, которые уже
+ * заведены руками. Порядок важен: если у темы из программы случится тот же
+ * slug, что у ручной, `withExtensions` оставит ручную — и это правильно:
+ * написанную учителем тему нельзя вытеснить сгенерированной.
+ */
+const merge = (
+  manual: GradeExtensions[SubjectSlug],
+  fromProgram: GradeExtensions[SubjectSlug],
+): GradeExtensions[SubjectSlug] => {
+  if (!manual) return fromProgram ?? [];
+  if (!fromProgram || fromProgram.length === 0) return manual;
+  return [...manual, ...fromProgram];
+};
+
 export const GRADE_EXTENSIONS: GradeExtensions = {
-  algebra: algebraExtra,
-  art: artExtra,
-  biology: biologyExtra,
-  chemistry: chemistryExtra,
-  english: englishExtra,
-  finance: financeExtra,
-  geography: geographyExtra,
-  geometry: geometryExtra,
-  german: germanExtra,
-  history: historyExtra,
-  informatics: informaticsExtra,
-  literature: literatureExtra,
-  music: musicExtra,
-  obzh: obzhExtra,
-  okruzhaet: okruzhaetExtra,
-  pe: peExtra,
-  physics: physicsExtra,
-  russian: russianExtra,
-  social: socialExtra,
-  technology: technologyExtra,
+  algebra: merge(algebraExtra, fgosProgramExtra.algebra),
+  art: merge(artExtra, fgosProgramExtra.art),
+  biology: merge(biologyExtra, fgosProgramExtra.biology),
+  chemistry: merge(chemistryExtra, fgosProgramExtra.chemistry),
+  english: merge(englishExtra, fgosProgramExtra.english),
+  finance: merge(financeExtra, fgosProgramExtra.finance),
+  geography: merge(geographyExtra, fgosProgramExtra.geography),
+  geometry: merge(geometryExtra, fgosProgramExtra.geometry),
+  german: merge(germanExtra, fgosProgramExtra.german),
+  history: merge(historyExtra, fgosProgramExtra.history),
+  informatics: merge(informaticsExtra, fgosProgramExtra.informatics),
+  literature: merge(literatureExtra, fgosProgramExtra.literature),
+  // Математики в ручных расширениях нет — темы приходят только из программы.
+  math: fgosProgramExtra.math ?? [],
+  music: merge(musicExtra, fgosProgramExtra.music),
+  obzh: merge(obzhExtra, fgosProgramExtra.obzh),
+  okruzhaet: merge(okruzhaetExtra, fgosProgramExtra.okruzhaet),
+  pe: merge(peExtra, fgosProgramExtra.pe),
+  physics: merge(physicsExtra, fgosProgramExtra.physics),
+  russian: merge(russianExtra, fgosProgramExtra.russian),
+  social: merge(socialExtra, fgosProgramExtra.social),
+  technology: merge(technologyExtra, fgosProgramExtra.technology),
 };

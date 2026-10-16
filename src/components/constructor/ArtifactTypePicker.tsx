@@ -23,11 +23,18 @@ import type { TaskType } from "@/lib/types";
  * позиционированием отстраиваемся). Поэтому модель — группы:
  *
  *   «Каждый день» — всегда развёрнута (4 кнопки, 80% случаев)
- *   «К уроку»     — свёрнута, раскрывается кликом по заголовку-чипу
- *   «На период»   — свёрнута, раскрывается кликом по заголовку-чипу
+ *   «К уроку»     — раскрыта по умолчанию (D2, ТЗ-32 §7)
+ *   «На период»   — раскрыта по умолчанию (D2, ТЗ-32 §7)
  *
  * Раскрытое состояние — локальный `useState` ВНУТРИ компонента:
  * в глобальный state конструктора оно не выносится (там остаётся только `value`).
+ *
+ * D2 (16.10.2026): раньше «К уроку» и «На период» были свёрнуты, и задача группы
+ * была «показать учителю, что бывает». Свёрнутая группа показывает одну кнопку,
+ * то есть вторые форматы группы (презентация) не видны вообще — а именно они
+ * и есть «то, что бывает». Поэтому раскрытым ставится только ЗНАЧЕНИЕ ПО УМОЛЧАНИЮ
+ * (`collapsedByDefault`), а сама механика групп и локальная раскрытость не тронуты:
+ * заголовок остался кликабельным, учитель может свернуть обратно.
  */
 export type ArtifactGroup = "daily" | "lesson" | "period";
 
@@ -77,18 +84,34 @@ export const ARTIFACT_TYPE_OPTIONS: ArtifactTypeOption[] = [
   // над чем мы работаем, вместо того чтобы гадать, куда делся пункт меню.
   { id: "cards", label: "Карточки", icon: Layers, hint: "Короткие, для запоминания", group: "daily" },
   { id: "control", label: "Контрольная", icon: ClipboardCheck, hint: "2 варианта работы", group: "daily" },
-  // Группа «К уроку» — свёрнута по умолчанию. План урока — топ-1 тип группы.
+  // Группа «К уроку». План урока — топ-1 тип группы (виден даже свёрнутой).
   { id: "lesson-plan", label: "План урока", icon: Pencil, hint: "ФГОС-конспект на 45 мин", group: "lesson", plusOnly: true, primaryInGroup: true },
   { id: "presentation", label: "Презентация", icon: PresentationIcon, hint: "5–20 слайдов, PPTX", group: "lesson", plusOnly: true },
-  // Группа «На период» — свёрнута по умолчанию. КТП — топ-1 тип группы.
+  // Группа «На период». КТП — топ-1 тип группы.
   { id: "ktp", label: "КТП", icon: Calendar, hint: "Календарно-тематическое планирование на год", group: "period", plusOnly: true, primaryInGroup: true },
 ];
 
-/** Порядок и подписи групп. `daily` развёрнута всегда, остальные — по клику. */
-const ARTIFACT_GROUPS: Array<{ id: ArtifactGroup; label: string; collapsedByDefault: boolean }> = [
-  { id: "daily", label: "Каждый день", collapsedByDefault: false },
-  { id: "lesson", label: "К уроку", collapsedByDefault: true },
-  { id: "period", label: "На период", collapsedByDefault: true },
+/**
+ * Порядок и подписи групп.
+ *
+ * D2 (ТЗ-32 §7): все три группы раскрыты по умолчанию — задача была показать
+ * учителю, что бывает. Механика групп не сломана: `collapsible` оставляет
+ * заголовок кнопкой, поэтому учитель может свернуть группу обратно сам.
+ * Поле `collapsedByDefault` оставлено отдельным от `collapsible` именно поэтому:
+ * раньше по нему же выбиралось, рендерить ли заголовок кнопкой, и сменив
+ * значение по умолчанию, мы тихо убрали бы клик по заголовку.
+ */
+const ARTIFACT_GROUPS: Array<{
+  id: ArtifactGroup;
+  label: string;
+  collapsedByDefault: boolean;
+  /** Заголовок-чип кликабельный: раскрыть/свернуть группу. */
+  collapsible: boolean;
+}> = [
+  // `daily` — всегда развёрнута и без кнопки: сворачивать её нечем и незачем.
+  { id: "daily", label: "Каждый день", collapsedByDefault: false, collapsible: false },
+  { id: "lesson", label: "К уроку", collapsedByDefault: false, collapsible: true },
+  { id: "period", label: "На период", collapsedByDefault: false, collapsible: true },
 ];
 
 interface ArtifactTypePickerProps {
@@ -198,6 +221,10 @@ export function ArtifactTypePicker({ value, onChange, hasPlus }: ArtifactTypePic
                 </span>
               )}
               {opt.plusOnly && (
+                // AD-7 (ТЗ-32 часть 3): тариф написан НА КНОПКЕ, а не в подсказке.
+                // Раньше здесь стоял оранжевый «+», который ничего не значит без наведения,
+                // а `title` на телефоне не появляется вообще. Теперь учитель читает
+                // «План урока Плюс» прямо на экране; `title` остался дублем для мыши.
                 <span
                   className={`text-[9px] uppercase tracking-wider font-bold px-1 rounded ${
                     disabled
@@ -210,7 +237,7 @@ export function ArtifactTypePicker({ value, onChange, hasPlus }: ArtifactTypePic
                   }`}
                 >
                   {disabled && <Lock className="w-2 h-2" />}
-                  +
+                  Плюс
                 </span>
               )}
             </button>
@@ -220,8 +247,10 @@ export function ArtifactTypePicker({ value, onChange, hasPlus }: ArtifactTypePic
         return (
           <div key={group.id} data-testid={`artifact-group-${group.id}`}>
             <div className="flex items-center gap-1.5 mb-1">
-              {group.collapsedByDefault ? (
+              {group.collapsible ? (
                 // Свёрнутая группа раскрывается кликом по заголовку-чипу.
+                // Клик остаётся и при раскрытой по умолчанию группе (D2): учитель
+                // может убрать «К уроку» с экрана, если она ему не нужна.
                 <button
                   type="button"
                   aria-expanded={isOpen}

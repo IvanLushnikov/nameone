@@ -209,6 +209,9 @@ worksheetsRouter.post("/generate", async (c) => {
     userId,
     plan: plan as UsagePlan,
     fingerprint: guard.fingerprint,
+    // Письмо о третьей генерации месяца (ТЗ-29) — без почты оно не уходит.
+    email: c.get("user")?.email ?? null,
+    env: c.env,
   });
 
   return c.json({
@@ -285,6 +288,8 @@ worksheetsRouter.post("/validate", validateLimit, async (c) => {
       userId,
       plan: plan as UsagePlan,
       fingerprint: guard.fingerprint,
+      email: c.get("user")?.email ?? null,
+      env: c.env,
     });
 
     return c.json({

@@ -16,6 +16,8 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen } from "@testing-library/react";
+import { getGrade } from "@/lib/content/subjects";
+import type { SubjectSlug } from "@/lib/types";
 import {
   goToTopicStep,
   mockApi,
@@ -24,6 +26,33 @@ import {
 } from "./helpers/constructor-flow";
 
 // next/navigation — концерн jsdom: страница читает useSearchParams/useRouter.
+// Короткого класса (короче порога предпросмотра) в таксономии больше нет:
+// подключение тем из рабочих программ довело даже самый короткий до 12 тем.
+// Такие случаи проверяем на подставных данных — важно поведение списка, а не
+// наличие класса с тремя темами в боевой таксономии. Остальные предметы и
+// классы идут настоящие.
+const SHORT_GRADE = { subject: "math" as const, grade: 5, count: 3 };
+
+vi.mock("@/lib/content/subjects", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/content/subjects")>();
+  return {
+    ...actual,
+    getGrade: (subject: string, grade: number) => {
+      if (subject === SHORT_GRADE.subject && grade === SHORT_GRADE.grade) {
+        return {
+          topics: Array.from({ length: SHORT_GRADE.count }, (_, i) => ({
+            title: `Тема ${i + 1}`,
+            slug: `t${i + 1}`,
+            // Конструктор читает ещё и examples — без поля он падает на t.examples[0].
+            examples: [],
+          })),
+        };
+      }
+      return actual.getGrade(subject as never, grade as never);
+    },
+  };
+});
+
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
   usePathname: () => "/constructor/",
@@ -94,26 +123,64 @@ describe("список тем — счётчик и полоса прокрут�
     expect(screen.queryByTestId("show-all-topics")).not.toBeInTheDocument();
   });
 
-  it("короткий список (6 тем) помещается целиком и не просит «Показать все»", async () => {
+  it("короткий список помещается целиком и не просит «Показать все»", async () => {
+    const { subject, grade, count } = SHORT_GRADE;
+    expect(count, "короткий список должен быть короче порога").toBeLessThanOrEqual(
+      TOPICS_PREVIEW_COUNT,
+    );
+
     const user = await openConstructor();
-    await goToTopicStep(user, "geometry", 10);
+    await goToTopicStep(user, subject, grade);
 
     const counter = screen.getByText(/^Показано (\d+) из (\d+)$/);
     const [, shown, total] = counter.textContent!.match(/^Показано (\d+) из (\d+)$/)!;
 
-    // TOPICS_PREVIEW_COUNT = 6: список не длиннее порога — счётчик 6 из 6.
+    // Список короче порога — показан весь, кнопки раскрытия нет.
     expect(Number(shown)).toBe(Number(total));
-    expect(Number(total)).toBe(6);
-    expect(screen.getByTestId("topics-list").querySelectorAll("button")).toHaveLength(6);
+    expect(Number(total)).toBe(count);
+    expect(screen.getByTestId("topics-list").querySelectorAll("button")).toHaveLength(count);
     expect(screen.queryByTestId("show-all-topics")).not.toBeInTheDocument();
   });
 
-  it("список длиной 7 тем обрезается до 6 и честно об этом говорит", async () => {
+  it("список длиннее порога обрезается и честно об этом говорит", async () => {
+    const { subject, grade, total } = gradesByTopicCount(true);
+    expect(total, "нужен класс длиннее порога — иначе случай не проверяется").toBeGreaterThan(
+      TOPICS_PREVIEW_COUNT,
+    );
+
     const user = await openConstructor();
-    await goToTopicStep(user, "geometry", 8);
+    await goToTopicStep(user, subject, grade);
 
     // Счётчик показывает обрезание, кнопка «Показать все» есть.
-    expect(screen.getByText("Показано 6 из 7")).toBeInTheDocument();
+    expect(screen.getByText(`Показано ${TOPICS_PREVIEW_COUNT} из ${total}`)).toBeInTheDocument();
     expect(screen.getByTestId("show-all-topics")).toBeInTheDocument();
+    expect(screen.getByTestId("topics-list").querySelectorAll("button")).toHaveLength(
+      TOPICS_PREVIEW_COUNT,
+    );
   });
 });
+
+/** Порог предпросмотра продублирован из конструктора: он и есть предмет проверки. */
+const TOPICS_PREVIEW_COUNT = 6;
+
+/**
+ * Класс с наименьшим числом тем (случай «помещается целиком») и с наибольшим
+ * (случай «длиннее порога»). Зашивать конкретную пару «предмет × класс»
+ * нельзя: подключение тем из рабочих программ меняет число тем, и проверка
+ * либо перестаёт проверять нужный случай, либо требует несуществующий класс.
+ */
+function gradesByTopicCount(desc: boolean): { subject: SubjectSlug; grade: number; total: number } {
+  const subjects: SubjectSlug[] = ["math", "russian", "biology", "history", "geometry", "algebra"];
+  let best: { subject: SubjectSlug; grade: number; total: number } | null = null;
+  for (const subject of subjects) {
+    for (let grade = 1; grade <= 11; grade += 1) {
+      const g = getGrade(subject, grade);
+      if (!g || g.topics.length === 0) continue;
+      if (!best || (desc ? g.topics.length > best.total : g.topics.length < best.total)) {
+        best = { subject, grade, total: g.topics.length };
+      }
+    }
+  }
+  if (!best) throw new Error("в таксономии нет ни одной темы");
+  return best;
+}

@@ -49,6 +49,7 @@ import {
   Maximize2,
 } from "lucide-react";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
+import { ClassLinkBlock } from "@/components/lk/ClassLinkBlock";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -416,6 +417,14 @@ export function ClassRosterSection({ hasAccount, knownClassNames }: Props) {
         </div>
       ) : (
         <div className="space-y-5">
+          {/* Ссылка на класс целиком (ТЗ-28). Блок стоит ПЕРЕД чипсами классов:
+              учителю нужно одно действие — скопировать и кинуть в чат. Ссылка
+              принадлежит активному классу, а не всем сразу, поэтому код берём
+              у того, чип которого выбран. */}
+          {active?.classCode && (
+            <ClassLinkBlock code={active.classCode} className={active.name} />
+          )}
+
           {/* ── Классы: названия из «Мои классов», без второго ввода ─────── */}
           <div className="flex flex-wrap gap-2 print:hidden">
             {chips.map((name) => {

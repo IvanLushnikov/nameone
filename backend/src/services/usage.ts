@@ -39,6 +39,18 @@ import { getUserById } from "../db/queries";
 import { sendQuotaAlert } from "./alerts";
 import { logLlmEvent } from "../llm/log";
 import { MODEL_COSTS, REFERENCE_MODEL_ID } from "../llm/config";
+import {
+  monthKeyOf,
+  nextMonthStartSec,
+  readMonthGenerations,
+  readMonthHistory,
+  readMonthNoticeSent,
+  bumpMonthGenerations,
+  markMonthNoticeSent,
+  ensureFreeUsageTable,
+  type FreeUsageMonthRow,
+} from "../db/free-usage";
+import { sendFreeQuotaNoticeEmail } from "./email";
 import type { Env } from "../env";
 
 /** Курс, зашитый в MODEL_COSTS: цены там в долларах. */
@@ -86,8 +98,29 @@ export const PLAN_NORM_PER_MONTH: Record<"base" | "standard" | "plus", number> =
 /** Школа: норма на класс = 3 × базовая (ориентир до пилота с реальными школами). */
 export const SCHOOL_NORM_PER_CLASS = PLAN_NORM_PER_MONTH.base * 3;
 
-/** Норма для бесплатного тарифа — в штуках генераций, а не в токенах. */
-export const FREE_TOTAL_GENERATIONS = 3;
+/**
+ * Бесплатная квота: генераций В МЕСЯЦ, а не всего (ТЗ-29).
+ *
+ * Было 3 навсегда: учитель проверил сервис в сентябре, а в октябре ему отказали,
+ * и на «попробовать» это уже не похоже. Стало 5 в месяц со сбросом 1-го числа.
+ * Само слово «навсегда» в интерфейс не возвращаем — оно и было главным
+ * раздражителем (аудит Д-2) — теперь квота честно описана как помесячная.
+ *
+ * Счёт живёт в `free_usage` по ключу (owner_key, month): сброс — это новый
+ * месяц, а не затирание строки, поэтому история остаётся (db/free-usage.ts).
+ */
+export const FREE_TOTAL_GENERATIONS = 5;
+
+/**
+ * Номер генерации, на которой уходит письмо «сколько осталось и когда
+ * обновится».
+ *
+ * Не «на первой» (тогда письмо приходит о том, чего человек ещё не понял) и не
+ * «на последней» (тогда времени что-то сделать уже нельзя). Третья — это
+ * момент, когда учитель впервые видит, что листы заканчиваются, и ещё может
+ * доплатить до конца месяца.
+ */
+export const FREE_QUOTA_NOTICE_AT = 3;
 
 /** Среднее число out-токенов в листе-домашки — для перевода токенов в листы. */
 export const TOKENS_PER_WORKSHEET = 1_600;
@@ -141,7 +174,25 @@ export async function usageWindowFor(
     norm: null,
     months: 0,
   };
-  if (!userId || plan === "free") return never;
+  // Бесплатный тариф с аккаунтом — единственный случай, где окно У КАЛЕНДАРЯ
+  // (ТЗ-29): квота 5 листов В МЕСЯЦ, 1-го числа начинается новая.
+  //
+  // У платных окон календарных нет намеренно: оплатив 15 октября «учебный год»,
+  // учитель получает одно окно на 9 месяцев, и норма в 9 раз больше помесячной —
+  // обнулять её 1-го числа посреди года было бы подменой проданного.
+  //
+  // `norm: null` обязателен: бесплатный тариф ограничен штуками листов, а не
+  // токенами, и getUsageStatus по null-норме отдаёт нули — как раньше.
+  if (plan === "free") {
+    if (!userId) return never;
+    return {
+      windowStart: 0,
+      windowEndsAt: nextMonthStartSec(Date.now()),
+      norm: null,
+      months: 1,
+    };
+  }
+  if (!userId) return never;
 
   const sub = await getActiveSubscription(db, userId);
   if (!sub) return never;
@@ -296,41 +347,66 @@ export async function recordUsage(
 }
 
 /**
- * Бесплатная квота: N генераций ВСЕГО, без сброса.
+ * Бесплатная квота: N генераций В МЕСЯЦ, сброс 1-го числа (ТЗ-29).
  *
- * Раньше было 3 в сутки, и счётчик жил в localStorage фронта — то есть
- * обнулялся сменой системного времени браузера и не виден бэку. Сейчас счёт
- * на сервере, ключ привязан к аккаунту (или к отпечатку для анонимов), окно
- * бесконечное. Это единственное место, где бесплатный тариф ограничен жёстко.
+ * Читает `free_usage` за ТЕКУЩИЙ месяц по всем ключам человека (см.
+ * quotaOwnerKeys), поэтому «зашёл с телефона, вышел с ноутбука» не выдаёт новые
+ * листы. `nowMs` в сигнатуре — для тестов: месяц должен быть можно перевести
+ * вперёд, не дожидаясь календаря.
+ *
+ * Держать чтение на сессии `first-primary` — по той же причине, по которой это
+ * делал прежний счётчик (06.10.2026): обычный SELECT может уйти в реплику,
+ * и карточка расхода показывала бы «осталось 5» сразу после третьего листа.
  */
 export async function checkFreeQuota(
   db: D1Database,
-  ownerKey: string,
+  ownerKey: string | string[],
+  nowMs = Date.now(),
 ): Promise<{ allowed: boolean; used: number; limit: number; remaining: number }> {
-  const key = `freetotal:${ownerKey}`;
-  // Читаем через СЕССИЮ, привязанную к primary (`first-primary`).
-  //
-  // Почему (06.10.2026): обычный `SELECT` по D1 может уйти в реплику, и тогда
-  // счётчик отстаёт от только что записанного `consumeFreeQuota`. На проде это
-  // выглядело как «лимит работает через раз»: серия анонимных запросов сначала
-  // блокировалась, потом три запроса подряд проходили, потом снова блокировалась.
-  // С кодовой стороны объяснить зависимость от заголовка Origin было нечем —
-  // в отпечаток он не входит; объясняется она именно отставанием реплики.
-  //
-  // Сессия даёт последовательную согласованность: чтение счётчика видит все
-  // предыдущие записи. Цена — одно лишнее обращение к primary на проверку,
-  // что для квоты из 3 генераций на весь период приемлемо.
-  const session = db.withSession("first-primary");
-  const row = await session
-    .prepare(`SELECT count FROM rate_limits WHERE key = ?1`)
-    .bind(key)
-    .first<{ count: number }>();
-  const used = row?.count ?? 0;
+  const state = await freeQuotaState(db, ownerKey, Math.floor(nowMs / 1000));
   return {
-    allowed: used < FREE_TOTAL_GENERATIONS,
+    allowed: state.remaining > 0,
+    used: state.used,
+    limit: state.limit,
+    remaining: state.remaining,
+  };
+}
+
+/**
+ * Состояние квоты для карточки расхода: сколько сделано в этом месяце и когда
+ * обновится.
+ *
+ * Ключи собираются по всем отпечаткам человека — иначе карточка показывала бы
+ * «сделал 2» из того браузера, из которого её открыли, а квота при этом
+ * считалась бы по всем (см. quotaOwnerKeys).
+ */
+export async function freeQuotaForUser(
+  db: D1Database,
+  userId: string,
+  nowMs = Date.now(),
+): Promise<{
+  used: number;
+  limit: number;
+  remaining: number;
+  month: string;
+  /** Начало следующего месяца по Москве, unix seconds — «обновится 1-го числа». */
+  resetsAt: number;
+  history: FreeUsageMonthRow[];
+}> {
+  const keys = await quotaOwnerKeys(db, userId, null);
+  const nowSec = Math.floor(nowMs / 1000);
+  const month = monthKeyOf(nowMs);
+  const [used, history] = await Promise.all([
+    readMonthGenerations(db, keys, month),
+    readMonthHistory(db, keys, 12),
+  ]);
+  return {
     used,
     limit: FREE_TOTAL_GENERATIONS,
     remaining: Math.max(0, FREE_TOTAL_GENERATIONS - used),
+    month,
+    resetsAt: nextMonthStartSec(nowMs),
+    history,
   };
 }
 
@@ -444,9 +520,12 @@ export async function quotaOwnerKeys(
   return [...keys];
 }
 
-/** Ключ счётчика «использовано попыток». */
-const freeQuotaKey = (ownerKey: string) => `freetotal:${ownerKey}`;
-/** Префикс ключей «занятых, но ещё не подтверждённых» попыток. */
+/**
+ * Префикс ключей «занятых, но ещё не подтверждённых» попыток.
+ *
+ * Зачтённые генерации здесь больше НЕ живут: они в `free_usage` по месяцам.
+ * В `rate_limits` остались только занятия — они минутные и по TTL исчезают.
+ */
 const freeHoldPrefix = (ownerKey: string) => `freehold:${ownerKey}:`;
 /**
  * Верхняя граница диапазона по префиксу. Нужна, чтобы «занятые» попытки
@@ -472,7 +551,15 @@ export interface FreeQuotaState {
   remaining: number;
 }
 
-/** Прочитать состояние квоты: зачтённые попытки + ещё не истёкшие «занятые». */
+/**
+ * Прочитать состояние квоты: зачтённые генерации в этом месяце + ещё не
+ * истёкшие «занятые».
+ *
+ * Зачтённые лежат в `free_usage` за ТЕКУЩИЙ месяц (ТЗ-29), а не в вечном
+ * счётчике `rate_limits`: месяц выбирается ключом строки, поэтому «сброс 1-го
+ * числа» не стирает историю. «Занятые» остались в `rate_limits` — они живут
+ * минуты и по TTL исчезают сами, хранить их по месяцам незачем.
+ */
 async function freeQuotaState(
   db: D1Database,
   ownerKeys: string | string[],
@@ -481,39 +568,41 @@ async function freeQuotaState(
   // Принимаем и один ключ, и список: старые вызовы передают строку, новые —
   // набор всех отпечатков человека (см. quotaOwnerKeys).
   const keys = [...new Set(Array.isArray(ownerKeys) ? ownerKeys : [ownerKeys])];
+  const month = monthKeyOf(now * 1000);
 
-  // Первичная реплика — та же причина, что в checkFreeQuota: счётчик, который
-  // только что попросили занять, должен быть виден сразу (BL-06).
+  // Первичная реплика — та же причина, что была: счётчик, который только что
+  // попросили занять, должен быть виден сразу (BL-06), иначе карточка расхода
+  // отстаёт от того, что учитель уже сделал.
   //
   // Считаем СУММОЙ по всем ключам: смена браузера не должна выдавать новые
-  // попытки (09.10.2026). Параметры собираются динамически — их число равно
+  // листы (09.10.2026). Параметры собираются динамически — их число равно
   // числу отпечатков человека, а оно заранее неизвестно.
-  const committedMarks = keys.map((_, i) => `?${i + 1}`).join(", ");
+  await ensureFreeUsageTable(db);
   const holdClause = keys
     .map(
       (_, i) =>
-        `(key >= ?${keys.length + i * 2 + 1} AND key < ?${keys.length + i * 2 + 2})`,
+        `(key >= ?${i * 2 + 1} AND key < ?${i * 2 + 2})`,
     )
     .join(" OR ");
   const bound = [
-    ...keys.map((k) => freeQuotaKey(k)),
     ...keys.flatMap((k) => [freeHoldPrefix(k), holdRangeEnd(freeHoldPrefix(k))]),
     now - FREE_QUOTA_HOLD_TTL_SEC,
   ];
 
-  const row = await db
-    .withSession("first-primary")
-    .prepare(
-      `SELECT
-         (SELECT COALESCE(SUM(count), 0) FROM rate_limits
-          WHERE key IN (${committedMarks})) AS committed,
-         (SELECT COUNT(*) FROM rate_limits
-          WHERE (${holdClause}) AND window_start > ?${bound.length}) AS held`,
-    )
-    .bind(...bound)
-    .first<{ committed: number; held: number }>();
+  const [committed, heldCount] = await Promise.all([
+    readMonthGenerations(db, keys, month),
+    db
+      .withSession("first-primary")
+      .prepare(
+        `SELECT COUNT(*) AS held FROM rate_limits
+          WHERE (${holdClause}) AND window_start > ?${bound.length}`,
+      )
+      .bind(...bound)
+      .first<{ held: number }>(),
+  ]);
 
-  const used = Number(row?.committed ?? 0) + Number(row?.held ?? 0);
+  const held = Number(heldCount?.held ?? 0);
+  const used = committed + held;
   return {
     used,
     limit: FREE_TOTAL_GENERATIONS,
@@ -535,9 +624,18 @@ async function freeQuotaState(
  * Инкремент в SQL атомарен, но ограничен СНИЗУ, а нужен потолок СВЕРХУ.
  *
  * Теперь попытка ЗАНИМАЕТСЯ до вызова провайдера, одним оператором, условие
- * которого — «использовано + занято < 3». Параллельные запросы сериализуются
- * внутри одного оператора: трое получают занятие, четвёртый — отказ. Превысить
+ * которого — «использовано + занято < 5». Параллельные запросы сериализуются
+ * внутри одного оператора: пятеро получают занятие, шестой — отказ. Превысить
  * квоту нельзя в принципе, а не «обычно не получается».
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ПОЧЕМУ МЕСЯЦ НЕ В КЛЮЧЕ ЗАНЯТИЯ, А В УСЛОВИИ
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Занятие живёт минуты (FREE_QUOTA_HOLD_TTL_SEC) и хранится в `rate_limits`,
+ * где ключ и есть имя счётчика. Добавлять месяц в ключ занятия не нужно: его
+ * мог бы «зависнуть» на стыке месяцев, и тогда учитель, который начал
+ * генерацию 31-го в 23:50, лишился бы занятого слота без причины. Месяц стоит
+ * только в условии — там, где спрашивается зачтённое.
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * ПОЧЕМУ ЭТО НЕ «СПИСАНИЕ ПЕРЕД ГЕНЕРАЦИЕЙ»
@@ -550,15 +648,21 @@ async function freeQuotaState(
  *
  * Второй плюс этого решения: `checkLlmRateLimit` (обёртка для llm/index.ts)
  * продолжает читать ТОЛЬКО зачтённые попытки и потому не считает занятую
- * попытку дважды — иначе учитель на бесплатном тарифе получил бы 2 генерации
- * вместо трёх.
+ * попытку дважды — иначе учитель на бесплатном тарифе получил бы 4 генерации
+ * вместо пяти.
+ *
+ * `nowMs` — только для тестов: месяц должен быть можно перевести вперёд, не
+ * дожидаясь 1-го числа. Боевой код его не передаёт.
  */
 export async function holdFreeQuotaSlot(
   db: D1Database,
   ownerKey: string,
   allOwnerKeys?: string[],
+  nowMs = Date.now(),
 ): Promise<FreeQuotaState> {
-  const now = Math.floor(Date.now() / 1000);
+  const now = Math.floor(nowMs / 1000);
+  const month = monthKeyOf(nowMs);
+  await ensureFreeUsageTable(db);
   const prefix = freeHoldPrefix(ownerKey);
   // id держим КОРОТКИМ и случайным: ключ счёта в нём не нужен (он лежит в
   // `key`), а обрезка длинного `freehold:fp:<64 hex>:` обрезала бы всё
@@ -572,18 +676,28 @@ export async function holdFreeQuotaSlot(
   // Набор ключей одинаков у обоих устройств, потому что связь с пользователем
   // заведена ДО этого вызова (см. `guardGeneration`).
   const checkKeys = [...new Set(allOwnerKeys ?? [ownerKey])];
-  const committedMarks = checkKeys.map((_, i) => `?${i + 4}`).join(", ");
+  // Порядок параметров важен для читаемости и для проверки глазом:
+  //   ?1 id, ?2 key, ?3 now,
+  //   далее пары границ занятий по каждому ключу,
+  //   затем limit, TTL, месяц и, наконец, сами ключи для free_usage.
+  const holdCount = checkKeys.length * 2;
+  const limitIdx = 4 + holdCount;
+  const ttlIdx = limitIdx + 1;
+  const monthIdx = ttlIdx + 1;
+  const keyIdx = monthIdx + 1;
   const holdClause = checkKeys
-    .map((_, i) => `(key >= ?${checkKeys.length + i * 2 + 4} AND key < ?${checkKeys.length + i * 2 + 5})`)
+    .map((_, i) => `(key >= ?${4 + i * 2} AND key < ?${5 + i * 2})`)
     .join(" OR ");
+  const keyMarks = checkKeys.map((_, i) => `?${keyIdx + i}`).join(", ");
   const bound = [
     id,
     `${prefix}${nonce}`,
     now,
-    ...checkKeys.map((k) => freeQuotaKey(k)),
     ...checkKeys.flatMap((k) => [freeHoldPrefix(k), holdRangeEnd(freeHoldPrefix(k))]),
     FREE_TOTAL_GENERATIONS,
     now - FREE_QUOTA_HOLD_TTL_SEC,
+    month,
+    ...checkKeys,
   ];
 
   const held =
@@ -593,10 +707,10 @@ export async function holdFreeQuotaSlot(
           .prepare(
             `INSERT INTO rate_limits (id, key, count, window_start)
              SELECT ?1, ?2, 1, ?3
-             WHERE (SELECT COALESCE(SUM(count), 0) FROM rate_limits
-                    WHERE key IN (${committedMarks}))
+             WHERE (SELECT COALESCE(SUM(generations), 0) FROM free_usage
+                    WHERE month = ?${monthIdx} AND owner_key IN (${keyMarks}))
                  + (SELECT COUNT(*) FROM rate_limits
-                    WHERE (${holdClause}) AND window_start > ?${bound.length}) < ?${bound.length - 1}`,
+                    WHERE (${holdClause}) AND window_start > ?${ttlIdx}) < ?${limitIdx}`,
           )
           .bind(...bound)
           .run()
@@ -620,15 +734,44 @@ export async function releaseFreeQuotaHold(db: D1Database, ownerKey: string): Pr
 }
 
 /**
+ * Что списание генерации умеет помимо самого списания.
+ *
+ * Всё необязательное: существующие вызовы передают только `(db, ownerKey)` и
+ * ничего не теряют. Третий аргумент нужен там, где вызывающий знает почту
+ * учителя, — то есть в генерации залогиненного пользователя.
+ */
+export interface FreeQuotaConsumeOptions {
+  /** Аккаунт, для истории (у анонима null). */
+  userId?: string | null;
+  /** Почта для письма о квоте. Без неё письмо не отправляется. */
+  email?: string | null;
+  /** Окружение для отправки письма. Без него письмо не отправляется. */
+  env?: Env;
+  /** «Сейчас» в мс — только для тестов (перевод календаря вперёд). */
+  nowMs?: number;
+}
+
+/**
  * Зачесть занятую попытку: снять «занятое» и записать «использовано».
  *
  * Снятие и запись идут одним `batch` (D1 выполняет пачку в одной транзакции),
- * поэтому «занято + использовано» не может разъехаться. Счётчик зачтённых
- * ограничен сверху тем же `WHERE count < 3`: даже если вызвать списание лишний
- * раз, четвёртая попытка в счёт не попадёт.
+ * поэтому «занято + использовано» не может разъезаться. Запись идёт в строку
+ * ТЕКУЩЕГО МЕСЯЦА в `free_usage` и ограничена сверху тем же `generations < 5`:
+ * даже если вызвать списание лишний раз, шестая генерация в счёт не попадёт.
+ *
+ * Прошлые месяцы не трогаются — это и есть «сброс 1-го числа без потери
+ * истории»: новый месяц = новая строка.
  */
-export async function consumeFreeQuota(db: D1Database, ownerKey: string): Promise<void> {
+export async function consumeFreeQuota(
+  db: D1Database,
+  ownerKey: string,
+  options: FreeQuotaConsumeOptions = {},
+): Promise<void> {
+  const nowMs = options.nowMs ?? Date.now();
+  const nowSec = Math.floor(nowMs / 1000);
+  const month = monthKeyOf(nowMs);
   const prefix = freeHoldPrefix(ownerKey);
+  await ensureFreeUsageTable(db);
   await db.batch([
     db
       .prepare(
@@ -637,18 +780,69 @@ export async function consumeFreeQuota(db: D1Database, ownerKey: string): Promis
            ORDER BY window_start ASC LIMIT 1)`,
       )
       .bind(prefix, holdRangeEnd(prefix)),
-    db
-      .prepare(
-        `INSERT INTO rate_limits (id, key, count, window_start)
-         VALUES (?1, ?2, 1, 0)
-         ON CONFLICT(key) DO UPDATE SET count = count + 1 WHERE count < ?3`,
-      )
-      .bind(
-        `rl_free_${freeQuotaKey(ownerKey).slice(0, 40)}`,
-        freeQuotaKey(ownerKey),
-        FREE_TOTAL_GENERATIONS,
-      ),
   ]);
+  const used = await bumpMonthGenerations(db, {
+    ownerKey,
+    userId: options.userId ?? null,
+    month,
+    limit: FREE_TOTAL_GENERATIONS,
+    nowSec,
+  });
+
+  // Письмо о квоте — только когда знаем, кому писать. Вызывающий без env/email
+  // (аноним) просто ничего не отправляет: анониму писать некуда.
+  if (options.env && options.email) {
+    // Дедуп по ВСЕМ устройствам человека, а не по текущему отпечатку: квота
+    // считается по всем ключам (quotaOwnerKeys), и письмо про неё должно быть
+    // одно. Иначе учитель, сделавший два листа с телефона и один с ноутбука,
+    // получил бы два письма об одном и том же остатке.
+    const ownerKeys = options.userId
+      ? await quotaOwnerKeys(db, options.userId, ownerKey.replace(/^fp:/, ""))
+      : [ownerKey];
+    await maybeSendFreeQuotaNotice(db, {
+      env: options.env,
+      email: options.email,
+      userId: options.userId ?? null,
+      ownerKeys,
+      used,
+      nowMs,
+    });
+  }
+}
+
+/**
+ * Письмо «сколько осталось и когда обновится» — один раз в месяц.
+ *
+ * Отдельная функция, а не строчка внутри `consumeFreeQuota`, потому что решает,
+ * отправлять ли письмо. Метка ставится ДО отправки: два параллельных запроса на
+ * третьем листе не отправят два письма. Цена решения — при сбое почты письма
+ * в этом месяце не будет: повторное письмо о том же самом учителю хуже, чем
+ * отсутствие письма.
+ */
+async function maybeSendFreeQuotaNotice(
+  db: D1Database,
+  params: {
+    env: Env;
+    email: string;
+    userId: string | null;
+    ownerKeys: string[];
+    used: number;
+    nowMs: number;
+  },
+): Promise<boolean> {
+  const month = monthKeyOf(params.nowMs);
+  // Ждём ровно третью генерацию, а не «третью и дальше»: на четвёртой и пятой
+  // письмо уже было (метка стоит), а на шестой квоты нет.
+  if (params.used < FREE_QUOTA_NOTICE_AT) return false;
+  if (await readMonthNoticeSent(db, params.ownerKeys, month)) return false;
+
+  await markMonthNoticeSent(db, params.ownerKeys, month, Math.floor(params.nowMs / 1000));
+  const result = await sendFreeQuotaNoticeEmail(params.env, params.email, {
+    used: params.used,
+    limit: FREE_TOTAL_GENERATIONS,
+    resetsAtSec: nextMonthStartSec(params.nowMs),
+  });
+  return result.sent;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -811,6 +1005,17 @@ export function tokensToWorksheets(tokens: number): number {
 
 /** Цена одного взвешенного токена в рублях (эталон — выход Luna). */
 const RUB_PER_WEIGHTED_TOKEN = (REFERENCE_OUTPUT_PER_1M_USD / 1_000_000) * RUB_PER_USD;
+
+/**
+ * Себестоимость бесплатной квоты за месяц, в рублях.
+ *
+ * Считается из ТОЙ ЖЕ цены взвешенного токена, что и весь расход, поэтому
+ * поднятие цен у провайдера не останется незамеченным. Проверка в тестах: не
+ * больше 15% от 249 ₽ (расчёт выложен в docs/42-free-tier-cost-2026-10-15.md).
+ */
+export function freeTierMonthlyCostRub(generations = FREE_TOTAL_GENERATIONS): number {
+  return generations * TOKENS_PER_WORKSHEET * RUB_PER_WEIGHTED_TOKEN;
+}
 
 interface QuotaExceededArgs {
   userId: string;

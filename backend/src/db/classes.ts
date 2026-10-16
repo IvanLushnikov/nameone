@@ -321,6 +321,12 @@ export async function createClass(
     throw e;
   }
 
+  // Короткий код для входа с телефона (TZ-28). Выдаётся тут же, потому что
+  // учитель идёт к доске сразу после создания класса, а «выдать код позже»
+  // означало бы «учитель забыл». Ошибка выдачи кода созданию класса не мешает:
+  // вернуться к ней можно через getClassCode + повторную выдачу.
+  await assignClassCode(db, id);
+
   return { ok: true, value: { id, user_id: userId, name, name_key: key, created_at: now, updated_at: now } };
 }
 
@@ -659,6 +665,332 @@ export function studentAnswerInsert(
       input.scoreMax,
       input.now,
     );
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * Короткий код класса (TZ-28)
+ *
+ * Зачем он нужен рядом с персональным QR. QR на доске ученик либо не видит
+ * (это «взрослая» ссылка), либо телефон не умеет его открыть камерой без
+ * приложения. Шесть знаков с доски — самый надёжный способ сказать «это мой
+ * класс» руками, без приложения и без регистрации.
+ *
+ * Код живёт в отдельной таблице `class_codes`, а не колонкой в `classes`:
+ * причина та же, что и во всей миграции 0004 — ни один существующий INSERT
+ * в `classes` не должен из-за него поменяться.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/** Ровно 6 знаков: короче — легко угадать перебором, длиннее — не вписать на доску. */
+export const CLASS_CODE_LENGTH = 6;
+
+/**
+ * Алфавит без похожих символов.
+ *
+ * Убраны `0/O` и `1/I/L` — их различают на калькуляторе и в тетрадке на доске
+ * только по начертанию, а ученик с телефоном в руках ошибётся гарантированно.
+ * `2/Z` и `5/S` оставляем: в верхнем регистре эти пары различимы глазом, в
+ * отличие от нуля с буквой.
+ *
+ * Регистр: код всегда хранится и показывается ВЕРХНИМ. Так его можно набрать
+ * не переключая регистр на телефоне, а сравнение на сервере — регистронезависимое.
+ */
+export const CLASS_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+
+/** Сколько раз пробуем новый код, прежде чем сдаться. */
+const CLASS_CODE_ATTEMPTS = 8;
+
+/**
+ * Сгенерировать 6 знаков из «безопасного» алфавита.
+ *
+ * Отклоняемый сэмплинг: берём случайное число 0..len-1 и отбрасываем «хвост»
+ * за пределами кратного len. Иначе короткие диапазоны (остаток 33 из 36) были
+ * бы чуть вероятнее — для шести знаков это незаметно, но придумывать лишнюю
+ * статистику в коде, который читают учителя, не надо.
+ */
+export function newClassCode(): string {
+  let out = "";
+  for (let i = 0; i < CLASS_CODE_LENGTH; i += 1) {
+    const limit = 256 - (256 % CLASS_CODE_ALPHABET.length);
+    let byte: number;
+    do {
+      byte = crypto.getRandomValues(new Uint8Array(1))[0] ?? 0;
+    } while (byte >= limit);
+    out += CLASS_CODE_ALPHABET[byte % CLASS_CODE_ALPHABET.length];
+  }
+  return out;
+}
+
+/** Нормализация того, что ученик набрал на телефоне: верхний регистр, без пробелов. */
+export function normalizeClassCode(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.replace(/\s+/g, "").toUpperCase().slice(0, CLASS_CODE_LENGTH + 2);
+}
+
+/**
+ * Выдать классу код и вернуть его.
+ *
+ * Логика одна на создание класса и на дозаполнение старых записей. UNIQUE живёт
+ * в БД, поэтому «проверить, что такого нет» здесь было бы гонкой: два запроса
+ * из двух вкладок прошли бы проверку и второй упал бы на 500. Вместо этого
+ * конфликт по UNIQUE — это сигнал «придумай другой», а не ошибка.
+ *
+ * Отсутствие таблицы (база ещё без миграции 0004) — НЕ ошибка создания класса:
+ * класс создаётся, сдать работу по персональной ссылке по-прежнему можно,
+ * пропадает только короткий вход по коду. Ловим поэтому именно «нет таблицы».
+ */
+export async function assignClassCode(db: D1Database, classId_: string): Promise<string | null> {
+  for (let attempt = 0; attempt < CLASS_CODE_ATTEMPTS; attempt += 1) {
+    const code = newClassCode();
+    try {
+      await db
+        .prepare(`INSERT INTO class_codes (class_id, code, created_at) VALUES (?1, ?2, ?3)`)
+        .bind(classId_, code, nowSec())
+        .run();
+      return code;
+    } catch (e) {
+      if (isUniqueViolation(e)) continue;
+      // Таблицы ещё нет — дальше пробовать бессмысленно.
+      return null;
+    }
+  }
+  return null;
+}
+
+/** Код класса или null. Учительский список показывает `null` как «код не выдан». */
+export async function getClassCode(db: D1Database, classId_: string): Promise<string | null> {
+  try {
+    const row = await db
+      .prepare(`SELECT code FROM class_codes WHERE class_id = ?1`)
+      .bind(classId_)
+      .first<{ code: string }>();
+    return row?.code ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Коды всех классов учителя одним запросом — список классов не делает N+1. */
+export async function getClassCodes(
+  db: D1Database,
+  userId: string,
+): Promise<Map<string, string>> {
+  try {
+    const rows = await db
+      .prepare(
+        `SELECT cc.class_id, cc.code
+           FROM class_codes cc
+           JOIN classes c ON c.id = cc.class_id
+          WHERE c.user_id = ?1`,
+      )
+      .bind(userId)
+      .all<{ class_id: string; code: string }>();
+    const out = new Map<string, string>();
+    for (const r of rows.results ?? []) out.set(String(r.class_id), String(r.code));
+    return out;
+  } catch {
+    return new Map();
+  }
+}
+
+export interface ClassByCode {
+  classId: string;
+  className: string;
+  teacherId: string;
+  code: string;
+}
+
+/**
+ * Класс по короткому коду.
+ *
+ * Код несекретный — он написан на доске. Поэтому здесь нет и не должно быть
+ * проверки «этот код belongs учителю, который его выдал»: ученик приходит по
+ * коду, а не по ссылке конкретного учителя. Всё, что код открывает, и так
+ * ограничено учителем: задания его класса и его ученики.
+ */
+export async function findClassByCode(
+  db: D1Database,
+  rawCode: unknown,
+): Promise<ClassByCode | null> {
+  const code = normalizeClassCode(rawCode);
+  if (code.length !== CLASS_CODE_LENGTH) return null;
+  try {
+    const row = await db
+      .prepare(
+        `SELECT cc.code, c.id AS class_id, c.name AS class_name, c.user_id AS teacher_id
+           FROM class_codes cc
+           JOIN classes c ON c.id = cc.class_id
+          WHERE cc.code = ?1`,
+      )
+      .bind(code)
+      .first<Record<string, unknown>>();
+    if (!row) return null;
+    return {
+      classId: String(row.class_id),
+      className: String(row.class_name ?? ""),
+      teacherId: String(row.teacher_id ?? ""),
+      code: String(row.code),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export type NameMatch =
+  | { ok: true; student: StudentLink }
+  | { ok: false; reason: "not_found" | "ambiguous" };
+
+/**
+ * Найти ученика класса по фамилии и имени (TZ-28, вход без приложения).
+ *
+ * ПОЧЕМУ НЕ ТОЧНОЕ РАВЕНСТВО. Учитель в журнале пишет «Иванов И.», ученик на
+ * телефоне набирает «Иванов Иван» — точное равенство их развело бы, и ученик
+ * ушёл бы «учитель неправильно завёл класс». Поэтому сверка идёт по нормализованной
+ * фамилии, а имя — префиксом.
+ *
+ * Два ученика с одинаковой фамилией («Иванов И.» и «Иванов А.») — это НЕ ошибка:
+ * так бывает в двух параллелях одного учителя. Таких кандидатов просим уточнить
+ * («Напишите ещё и имя»), вместо того чтобы молча выбрать первого: сдать работу
+ * не тому хуже, чем не сдать вовсе.
+ *
+ * Регистр сравнения НЕ значит: ввод с автозаменой на телефоне даёт «ИВАНОВ ИВАН»
+ * так же часто, как «Иванов Иван», а различать их по регистру бессмысленно.
+ */
+export async function findStudentByName(
+  db: D1Database,
+  classId_: string,
+  teacherId: string,
+  rawName: unknown,
+): Promise<NameMatch> {
+  const typed = normalizeStudentName(rawName);
+  if (!typed) return { ok: false, reason: "not_found" };
+  const parts = typed.split(" ").filter(Boolean);
+  const surnameKey = (parts[0] ?? "").toLocaleLowerCase("ru");
+  const nameKey = (parts[1] ?? "").toLocaleLowerCase("ru");
+  if (!surnameKey) return { ok: false, reason: "not_found" };
+
+  const rows = await db
+    .prepare(
+      `SELECT s.id, s.class_id, s.token, s.name, s.position, s.removed_at,
+              s.created_at, s.updated_at,
+              c.name AS class_name, c.user_id AS teacher_id
+         FROM class_students s
+         JOIN classes c ON c.id = s.class_id
+        WHERE s.class_id = ?1 AND s.removed_at IS NULL`,
+    )
+    .bind(classId_)
+    .all<Record<string, unknown>>();
+
+  const matches: StudentLink[] = [];
+  for (const row of rows.results ?? []) {
+    const full = String(row.name);
+    const fullParts = full.split(" ").filter(Boolean);
+    const surname = (fullParts[0] ?? "").toLocaleLowerCase("ru");
+    // Имя ученика может состоять из двух слов («Анна Петрова») — берём вторую
+    // часть, а не по всему остатку строки: иначе «Иванов Иван Петрович» не найдётся.
+    const rest = (fullParts.slice(1).join(" ") || "").toLocaleLowerCase("ru");
+
+    if (surname !== surnameKey) continue;
+    if (!nameKey) {
+      // Только фамилия — годится, только если такая фамилия одна в классе.
+      matches.push(toStudentLink(row));
+      continue;
+    }
+    if (!rest.startsWith(nameKey)) continue;
+    matches.push(toStudentLink(row));
+  }
+
+  if (matches.length === 0) return { ok: false, reason: "not_found" };
+  if (matches.length > 1) return { ok: false, reason: "ambiguous" };
+  // teacherId прокидывается для единообразия с findStudentByToken и на проверку
+  // владельца класса в роуте: класс мог быть удалён между запросами.
+  const link = matches[0]!;
+  if (link.teacherId !== teacherId) return { ok: false, reason: "not_found" };
+  return { ok: true, student: link };
+}
+
+function toStudentLink(row: Record<string, unknown>): StudentLink {
+  return {
+    student: {
+      id: String(row.id),
+      class_id: String(row.class_id),
+      token: String(row.token),
+      name: String(row.name),
+      position: Number(row.position ?? 0),
+      removed_at: row.removed_at === null || row.removed_at === undefined ? null : Number(row.removed_at),
+      created_at: Number(row.created_at ?? 0),
+      updated_at: Number(row.updated_at ?? 0),
+    },
+    classId: String(row.class_id),
+    className: String(row.class_name ?? ""),
+    teacherId: String(row.teacher_id ?? ""),
+  };
+}
+
+/** Задание класса — ровно те поля, которые уже отдаёт персональная ссылка ученика. */
+export interface ClassTask {
+  formId: string;
+  token: string;
+  title: string;
+  subject: string;
+  grade: number;
+  expiresAt: number;
+  open: boolean;
+  answered: boolean;
+  answeredAt: number | null;
+  scoreTotal: number | null;
+  scoreMax: number | null;
+}
+
+/**
+ * Задания класса для ученика (TZ-28).
+ *
+ * Формы в системе не привязаны к классу — привязка живёт в ответах учеников
+ * (`class_student_answers`). Поэтому список = работы учителя класса, которые
+ * ещё открыты ИЛИ которые этот ученик уже сдавал. Второе условие нужно, чтобы
+ * после закрытия работы ученик видел свой балл, а не пустой экран.
+ *
+ * ОДИН запрос, а не два. «Задания + отметка, что сдавал именно этот ученик» —
+ * на телефоне это две последовательные загрузки, а страница показывает ученику
+ * список одним экраном.
+ */
+export async function listClassTasks(
+  db: D1Database,
+  teacherId: string,
+  studentId: string | null,
+): Promise<ClassTask[]> {
+  const rows = await db
+    .prepare(
+      `SELECT f.id AS form_id, f.token, f.title, f.subject, f.grade, f.expires_at, f.status,
+              a.submitted_at AS answered_at, a.score_total, a.score_max
+         FROM forms f
+         LEFT JOIN class_student_answers a
+           ON a.form_id = f.id AND a.student_id = ?2
+        WHERE f.user_id = ?1
+          AND (f.status = 'open' OR a.id IS NOT NULL)
+        ORDER BY COALESCE(a.submitted_at, 0) DESC, f.expires_at ASC`,
+    )
+    .bind(teacherId, studentId ?? "")
+    .all<Record<string, unknown>>();
+
+  const now = nowSec();
+  const out: ClassTask[] = [];
+  for (const r of rows.results ?? []) {
+    const answeredAt = r.answered_at === null || r.answered_at === undefined ? null : Number(r.answered_at);
+    out.push({
+      formId: String(r.form_id),
+      token: String(r.token),
+      title: String(r.title ?? ""),
+      subject: String(r.subject ?? ""),
+      grade: Number(r.grade ?? 0),
+      expiresAt: Number(r.expires_at ?? 0),
+      open: String(r.status ?? "open") === "open" && Number(r.expires_at ?? 0) > now,
+      answered: answeredAt !== null,
+      answeredAt,
+      scoreTotal: r.score_total === null || r.score_total === undefined ? null : Number(r.score_total),
+      scoreMax: r.score_max === null || r.score_max === undefined ? null : Number(r.score_max),
+    });
+  }
+  return out;
 }
 
 /* ───────────────────────────────────────────────────────────────────────────

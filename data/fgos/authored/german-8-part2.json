@@ -1,0 +1,145 @@
+{
+ "source": "german-8-part2",
+ "topics": [
+  {
+   "statement": "Знание социокультурного портрета родной страны и страны (стран) изучаемого языка: символики, достопримечательностей, культурных особенностей (национальные праздники, традиции), образцы поэзии и прозы, доступные в языковом отношении",
+   "title": "Социокультурный портрет страны",
+   "examples": [
+    {
+     "text": "Прочитайте: «Berlin ist die Hauptstadt von Deutschland. Der Bär im Wappen erinnert an den Namen der Stadt». Напишите по-немецки столицу Германии и переведите на русский слово Wappen.",
+     "answer": "Berlin; герб"
+    },
+    {
+     "text": "Назовите по-немецки два национальных праздника Германии и объясните по-русски, почему их отмечают.",
+     "answer": "Weihnachten — Рождество, Oktoberfest — Октоберфест"
+    }
+   ]
+  },
+  {
+   "statement": "кратко представлять Россию и страну (страны) изучаемого языка",
+   "title": "Рассказ о родной и изучаемой стране",
+   "examples": [
+    {
+     "text": "Прочитайте текст и выпишите три факта о стране, а затем передайте их по-немецки одним предложением: «Russland ist das größte Land Europas. Es liegt in zwei Teilen: in Europa und in Asien. Die Hauptstadt ist Moskau.»",
+     "answer": "größtes Land Europas; liegt in Europa und Asien; Hauptstadt Moskau"
+    },
+    {
+     "text": "Напишите по-немецки 5–6 предложений о России для гостя из Германии: где находится страна, какая столица, когда лучше приезжать.",
+     "answer": "Russland liegt in Europa, Hauptstadt Moskau, Klima, Sommer."
+    }
+   ]
+  },
+  {
+   "statement": "кратко представлять некоторые культурные явления родной страны и страны (стран) изучаемого языка;",
+   "title": "Культурные явления двух стран",
+   "examples": [
+    {
+     "text": "Соотнесите явление и страну: Teezeremonie, Bolshoi-Theater, Oktoberfest, Maslenica. Напишите номера в ответе в виде: 1 — …, 2 — …, 3 — …, 4 — …",
+     "answer": "1 — Deutschland, 2 — Russland, 3 — Deutschland, 4 — Russland"
+    },
+    {
+     "text": "Прочитайте описание и назовите это явление по-немецки: «В городе пекут блины, провожают зиму, люди надевают традиционные костюмы». Возможные ответы: Fasching, Oktoberfest, Maslenica.",
+     "answer": "Maslenica (Масленица)"
+    }
+   ]
+  },
+  {
+   "statement": "кратко рассказывать о некоторых выдающихся людях родной страны и страны (стран) изучаемого языка (ученых, писателях, поэтах, художниках, музыкантах, спортсменах)",
+   "title": "Выдающиеся люди родной страны",
+   "examples": [
+    {
+     "text": "Прочитайте предложение и ответьте по-русски: «Johann Sebastian Bach wurde 1685 in Eisenach geboren und lebte viele Jahre in Leipzig». Назовите профессию и два города.",
+     "answer": "композитор; Эйзенах и Лейпциг"
+    },
+    {
+     "text": "Выберите одного российского учёного или писателя и запишите о нём по-немецки 4 предложения: имя, годы жизни, профессия, главное достижение.",
+     "answer": "например: Ломоносов, 1711–1765, учёный, основал Московский университет"
+    }
+   ]
+  },
+  {
+   "statement": "оказывать помощь иностранным гостям в ситуациях повседневного общения (объяснить местонахождение объекта, сообщить возможный маршрут и другое)",
+   "title": "Помощь иностранному гостю",
+   "examples": [
+    {
+     "text": "Выберите подходящее слово из списка: Entschuldigung, Gute Reise, Danke schön. Впишите его: «___, wo ist der Hauptbahnhof?» «Geradeaus, dann links.»",
+     "answer": "Entschuldigung"
+    },
+    {
+     "text": "Переведите и объясните маршрут по-немецки: «Сначала идите прямо, потом поверните направо, музей будет напротив почты».",
+     "answer": "Gehen Sie geradeaus, dann rechts. Das Museum ist gegenüber der Post."
+    }
+   ]
+  },
+  {
+   "statement": "Использование при чтении и аудировании языковой, в том числе контекстуальной, догадки, использовать при говорении и письме перифраз (толкование), синонимические средства, описание предмета вместо его названия, при непосредственном общении догадываться о значении незнакомых слов с помощью используемых собеседником жестов и мимики",
+   "title": "Догадки по контексту и перифраз",
+   "examples": [
+    {
+     "text": "Определите по контексту значение слова и переведите его: «Nachdem die Wolken sich verzogen, kam die Sonne zum Vorschein». Что значит zum Vorschein kommen?",
+     "answer": "показываться, появляться"
+    },
+    {
+     "text": "Замените слово описанием вместо названия: «Das ist ___, eine Stadt mit einer großen Kirche am Markt». Впишите немецкое слово.",
+     "answer": "Stadt"
+    }
+   ]
+  },
+  {
+   "statement": "Переспрашивать, просить повторить, уточняя значения незнакомых слов",
+   "title": "Уточнение значения слов",
+   "examples": [
+    {
+     "text": "Вставьте пропущенные слова в диалог: «— ___, ich habe das nicht verstanden. — Kein Problem. — Können Sie das bitte __?»",
+     "answer": "Entschuldigung, wiederholen"
+    },
+    {
+     "text": "Составьте мини-диалог из трёх реплик: спросить значение слова, попросить повторить, поблагодарить.",
+     "answer": "Was bedeutet das Wort? — Können Sie das wiederholen? — Danke schön!"
+    }
+   ]
+  },
+  {
+   "statement": "Использование при формулировании собственных высказываний, ключевых слов, плана",
+   "title": "Ключевые слова и план",
+   "examples": [
+    {
+     "text": "Выпишите ключевые слова к теме «Reise» по-немецки и переведите их: Sehenswürdigkeiten, Unterkunft, Verkehrsmittel.",
+     "answer": "достопримечательности, жильё, транспорт"
+    },
+    {
+     "text": "Составьте план рассказа по-немецки о выходных из трёх пунктов: где вы были, что делали, что понравилось.",
+     "answer": "Wo? — Was? — Wie hat es dir gefallen?"
+    }
+   ]
+  },
+  {
+   "statement": "Игнорирование информации, не являющейся необходимой для понимания основного содержания, прочитанного (прослушанного) текста или для нахождения в тексте запрашиваемой информации",
+   "title": "Отсев лишней информации",
+   "examples": [
+    {
+     "text": "Прочитайте объявление и выпишите только то, что нужно, чтобы узнать, где и когда состоится концерт: «Am Samstag, den 12. Oktober, findet in der Stadthalle ein Konzert statt. Karten kosten 15 Euro. Anfangen ist um 19 Uhr. Die Band heißt „Nordlicht“. Parken ist nicht möglich.»",
+     "answer": "Samstag, 12. Oktober, 19 Uhr, Stadthalle"
+    },
+    {
+     "text": "Прочитайте текст и выпишите три ключевых факта о герое, не пересказывая всё подряд: «Anton hat am Samstag mit seinem Freund am Fluss geangelt. Er hat drei Fische gefangen. Abends hat seine Schwester das Essen gekocht. Beim Angeln hat er eine Jacke verloren.»",
+     "answer": "Samstag, am Fluss, mit dem Freund, drei Fische"
+    }
+   ]
+  },
+  {
+   "statement": "Сравнение (в том числе установление основания для сравнения) объектов, явлений, процессов, их элементов и основных функций в рамках изученной тематики",
+   "title": "Сравнение объектов и явлений",
+   "examples": [
+    {
+     "text": "Сравните столицы двух стран по-немецки по образцу: «Berlin ist die Hauptstadt von Deutschland». Напишите два предложения: об одном сходстве и об одном различии.",
+     "answer": "Beide Städte sind groß. Moskau ist kälter, Berlin wärmer."
+    },
+    {
+     "text": "Прочитайте два предложения и напишите по-русски основание для сравнения: «Die Schweiz ist klein. Liechtenstein ist noch kleiner.»",
+     "answer": "Обе страны маленькие — общий признак: размер территории."
+    }
+   ]
+  }
+ ]
+}

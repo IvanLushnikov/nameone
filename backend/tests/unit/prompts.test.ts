@@ -73,10 +73,11 @@ describe("pickModel", () => {
     expect(decision.fallbacks[0]?.model).toBe("qwen3-embedding-8b");
   });
 
-  it("image-gen -> null (not implemented)", () => {
-    const decision = pickModel("image-gen", envBase);
-    expect(decision.primary).toBe(null);
-  });
+  // ТЗ-30 AD-4: тест на `image-gen` удалён вместе с типом артефакта
+  // «картинки». Провайдера генерации изображений нет, роут отдавал 503, а
+  // использования в боевой базе нет (см. комментарий в router.ts).
+  // Отсутствие ветки в роутере проверяет tests/integration/plans-price-sources.test.ts
+  // на фронте — там есть fs, здесь workerd его не даёт.
 
   it("bez POLZA_API_KEY -> primary null (routes fallbackat na mok)", () => {
     const env = { ...envBase };

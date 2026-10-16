@@ -338,6 +338,14 @@ export interface ClassReportCell {
   autoTasks: number;
   /** Машина оценила, учитель не подтвердил. Отметкой учителя это не считаем. */
   unconfirmedByTeacher: boolean;
+  /**
+   * Фото, приложенное учеником к ответам на эту работу. null — не приложил.
+   *
+   * `checkId` открывается ТЕМ ЖЕ доступом, что и работа по фото тетради
+   * (`/journal?check=…` → `GET /api/assignments/photo-checks/:id`), поэтому
+   * клиенту не нужен и не должен появляться второй способ ходить в фотографии.
+   */
+  photo: { checkId: string; pages: number | null } | null;
 }
 
 export interface ClassReportStudent {
@@ -370,6 +378,15 @@ export interface ClassReport {
   class: { id: string; name: string };
   works: ClassReportWork[];
   students: ClassReportStudent[];
+  /**
+   * Разрез «тем, где просели» — те же строки, что отдаёт
+   * `GET /api/journal/classes/:id/skills`, поэтому форма одна и та же
+   * (`ClassSkillRow`) и расхождение двух экранов невозможно по построению.
+   *
+   * Пустой массив — норма для класса, где меток нет: листы, созданные до
+   * ТЗ-27, меток не имеют, и ведомость должна выглядеть как раньше.
+   */
+  skills?: ClassSkillRow[];
   summary: ClassReportSummary;
   /** Сколько работ учителя подошло под класс всего — показываем, если обрезали. */
   worksTotal: number;
@@ -471,4 +488,66 @@ export async function fetchClassReportCsv(classId: string): Promise<ClassReportC
     text: await res.text(),
     filename: csvFilename(res.headers.get("Content-Disposition"), "vedomost.csv"),
   };
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// Разбор по темам (ТЗ-27)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Строка блока «Темы, где просели».
+ *
+ * `percent` приезжает с сервера готовым: браузер ничего не складывает сам
+ * (AD-3 ТЗ-27) — иначе на двух устройствах числа разошлись бы, а расхождение
+ * в ведомости стоит учителю доверия ко всей таблице.
+ */
+export interface ClassSkillRow {
+  skill: string;
+  correct: number;
+  total: number;
+  /** Сколько попыток по теме всего. */
+  attempts: number;
+  /** null — оценивать было нечего. Не «0%»: это другое высказывание. */
+  percent: number | null;
+  lastCheckedAt: number;
+}
+
+/** Одна проверка в карточке темы. */
+export interface SkillRecentCheck {
+  formId: string;
+  title: string;
+  checkedAt: number;
+  percent: number | null;
+}
+
+/**
+ * Ученик, ошибающийся в теме две последние проверки подряд.
+ *
+ * Это УЧИТЕЛЬСКИЙ список «позвать поговорить», а не оценка. Поэтому здесь
+ * нет ни процентов, ни баллов: только фамилия и две даты. Любое число здесь
+ * превращало бы приглашение в вывод об ученике.
+ */
+export interface StrugglingStudent {
+  studentId: string;
+  studentName: string;
+  /** Даты `ГГГГ-ММ-ДД`, по которым это видно. */
+  dates: string[];
+}
+
+/** Задание темы в блоке «разбор по заданиям». */
+export interface SkillTaskRow {
+  formId: string;
+  taskNumber: number;
+  prompt: string;
+  correct: number;
+  total: number;
+}
+
+/** Карточка темы целиком. */
+export interface SkillDetailData {
+  skill: string;
+  recent: SkillRecentCheck[];
+  struggling: StrugglingStudent[];
+  tasks: SkillTaskRow[];
+  /** null — сравнивать не с чем. Стрелки без второй проверки рисуют правду. */
+  trend: { previous: number; latest: number; percent: number } | null;
 }

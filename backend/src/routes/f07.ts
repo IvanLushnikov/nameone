@@ -27,6 +27,7 @@ import { requireAuth } from "../middleware/auth";
 import { BadRequestError, NotFoundError } from "../lib/errors";
 import { formId as makeFormId, formToken } from "../lib/shortid";
 import { detectCheckMode } from "../services/formGrading";
+import { recomputeFormSkillAttempts } from "../db/skill-attempts";
 
 const f07Router = new Hono<AppEnv>();
 
@@ -252,6 +253,11 @@ const TaskSnapshot = z.object({
   answer: z.string().max(4000).optional(),
   explanation: z.string().max(4000).optional(),
   points: z.number().int().nonnegative().max(100),
+  // Метка темы (ТЗ-27). Поле БЫЛО в листе, но терялось ровно здесь: zod
+  // выкидывает из объекта всё, чего в схеме нет, и `skill` в схеме не было.
+  // Форма без меток молчит в разбозе «тем, где просели», поэтому метка должна
+  // доехать до `payload_json` — оттуда её и читает `readTaskSkills`.
+  skill: z.string().max(120).optional(),
 });
 
 const CreateFormBody = z.object({
@@ -600,6 +606,12 @@ f07Router.patch("/forms/:id", async (c) => {
 
   let token = form.token;
   let expiresAt = form.expires_at;
+  // ТЗ-27: попытки по темам пересчитываются по КАЖДОМУ действию, а не только по
+  // правке отметки. «Проверка завершена» для учителя — это и закрытая работа:
+  // после неё ответы больше не придут, а числа в ведомости должны быть теми же,
+  // что он только что видел. При close это заодно единственный момент, когда
+  // пересчёт ловит ВСЕ работы класса сразу.
+  const recorded = await recomputeFormSkillAttempts(c.env.DB, user.id, form.id);
 
   switch (body.action) {
     case "close":
@@ -655,6 +667,9 @@ f07Router.patch("/forms/:id", async (c) => {
     url: buildFormUrl(c.env, token),
     status: body.action === "close" ? "closed" : "open",
     expiresAt,
+    // Сколько строк попыток по темам пересчитано (см. ТЗ-27). Ноль — норма для
+    // листа без меток тем.
+    skillAttemptsRecorded: recorded,
   });
 });
 
@@ -765,6 +780,16 @@ f07Router.patch("/forms/:id/responses/:rid/answers/:taskNumber", async (c) => {
     .bind(c.req.param("rid"))
     .first<{ score_total: number }>();
 
+  // ТЗ-27: учитель поставил отметку — работа проверена, значит разрез по темам
+  // обязан пересчитаться ЗДЕСЬ.
+  //
+  // Раньше этот путь попытки не трогал: пересчёт жил только в журнале
+  // (`journal.ts`) и по отдельной кнопке, а `PATCH answers` — это и есть
+  // основной путь проверки из интерфейса (`FormSummary.tsx`). В итоге учитель
+  // правил отметку, видел её исправленной, а «тем, где просели» продолжало
+  // показывать старый процент — ведомость расходилась сама с собой.
+  const recorded = await recomputeFormSkillAttempts(c.env.DB, user.id, form.id);
+
   return c.json({
     ok: true,
     answer: {
@@ -777,6 +802,9 @@ f07Router.patch("/forms/:id/responses/:rid/answers/:taskNumber", async (c) => {
       teacherComment: body.comment ?? null,
     },
     scoreTotal: updated?.score_total ?? 0,
+    // Сколько строк попыток по темам пересчитано. Учителю это число ничего не
+    // говорит — оно нужно для проверки, что пересчёт действительно отработал.
+    skillAttemptsRecorded: recorded,
   });
 });
 

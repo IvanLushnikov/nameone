@@ -268,7 +268,9 @@ const DEEP_LINK_TYPES = [
   "materials",
   "lesson-bundle",
   "interactive",
-  "image",
+  // Типа "image" здесь нет и не будет: генератора картинок у нас нет
+  // (ТЗ-30 AD-4). В списке он означал, что учитель доходит до кнопки
+  // «Создать» и получает отказ — обещание, которое продукт не держит.
 ] as const satisfies readonly TaskType[];
 
 /**
@@ -287,20 +289,11 @@ const DEEP_LINK_TYPES = [
  * со своими превью. Типы из Этапов 4–7 отдают `null`: артефакта для них
  * пока нет, и UI показывает placeholder, а не чужой результат.
  */
-/**
- * Типы без генератора (TZ-16 Этапы 6–7). Попасть в них можно только по
- * deep-link вида `?type=image`: в пикере их пока нет.
- * Нужен, чтобы `generate()` отвечал честным «скоро будет», а не сообщением
- * «не получилось, попробуйте ещё раз», в котором повтор бессмысленен.
- *
- * Лист 4.1.1 (14.10.2026): «interactive» УБРАН из множества — движок готов
- * (`POST /api/interactives`, ранклер на бэке, шесть форматов, страница
- * `/play/?t=`), сборка идёт в `buildInteractive()` и рисуется панелью
- * `InteractivePreview`. Раньше учитель, выбравший тип, доходил до кнопки и
- * получал «этот формат ещё в работе» — при готовом движке это была ложь.
- * «Картинка» остаётся: у неё другой лист работ и свой провайдер.
- */
-const NOT_YET_IMPLEMENTED_TYPES: ReadonlySet<TaskType> = new Set<TaskType>(["image"]);
+// Множества «типов без генератора» больше нет: последним в нём был «image»,
+// а он снят с продукта (ТЗ-30 AD-4) — провайдера генерации картинок нет,
+// а обещание «скоро будет» учителю ничего не объясняет. Все оставшиеся типы
+// умеют генерироваться, и пустой список-заглушка был бы мёртвым кодом,
+// мёртвым кодом, который в следующий раз притворялся бы проверкой.
 
 function resultKindForType(type: TaskType): ResultKind | null {
   switch (type) {
@@ -328,9 +321,6 @@ function resultKindForType(type: TaskType): ResultKind | null {
     // скачать, зато есть ссылка и QR. Этими словами занят `InteractivePreview`.
     case "interactive":
       return "interactive";
-    // TZ-16 Этапы 6–7: мок/превью/экспорт появятся позже.
-    case "image":
-      return null;
   }
 }
 
@@ -857,8 +847,10 @@ export default function ConstructorPage() {
       if (d && ["easy", "medium", "hard"].includes(d)) setDifficulty(d);
       if (!Number.isNaN(c) && c >= 5 && c <= 30) setCount(c);
       // TZ-16: whitelist расширен на 4 новых типа из TaskType. Deep-link
-      // `?type=materials` (и lesson-bundle / interactive / image) больше не
-      // игнорируется молча. Сами артефакты придут в Этапах 2–7.
+      // `?type=materials` (и lesson-bundle / interactive) больше не
+      // игнорируется молча. Тип `image` из whitelist убран (ТЗ-30 AD-4):
+      // ссылка с таким `type=` молча уводила учителя на тип по умолчанию,
+      // то есть обещала картинку, а рисовала рабочий лист.
       if (ty && DEEP_LINK_TYPES.includes(ty)) setType(ty);
       // Deep-link → перескакиваем максимально далеко.
       // UMK больше не отдельный шаг — оно inline в TopicStep (если опций > 1) или auto-pick (если 1).
@@ -981,6 +973,32 @@ export default function ConstructorPage() {
     // прочитал бы из базы чужие задания.
     setSavedWorksheetId(null);
   }, []);
+
+  /**
+   * Смена типа материала на шаге 1 (блок «Что делаем»).
+   *
+   * Отличие от `handleArtifactTypeChange`: снимает выбранный сценарий.
+   * Сценарий фиксирует тип (`typeFixedByPreset = Boolean(selectedPresetId)`),
+   * и учитель, выбравший сценарий и потом ткнувший другой тип на первом шаге,
+   * увидел бы, что тип не меняется, — без единого объяснения. Здесь явный
+   * выбор типа и означает «сценарий больше не задан», поэтому возвращаем
+   * параметры к значениям по умолчанию и снимаем блокировку.
+   */
+  const handleStep1TypeChange = React.useCallback(
+    (next: TaskType) => {
+      handleArtifactTypeChange(next);
+      setCustomType(next);
+      if (selectedPresetId) {
+        setSelectedPresetId(null);
+        setPresetMode("template");
+        setDifficulty("medium");
+        setCount(10);
+        setWithAnswers(true);
+        setWithExplanations(true);
+      }
+    },
+    [handleArtifactTypeChange, selectedPresetId]
+  );
 
   /** F-04-C: переключение режима wizard. Доступно на любом шаге. */
   const handleModeChange = (next: Mode) => {
@@ -1237,20 +1255,6 @@ export default function ConstructorPage() {
       return;
     }
 
-    // TZ-16 Этапы 6–7: картинка объявлена в TaskType и входит в
-    // DEEP_LINK_TYPES, но генератора для неё ещё нет. Без этой проверки
-    // учитель, пришедший по ссылке `?type=image`, доходил до кнопки
-    // «Создать» и получал «Не получилось, попробуйте ещё раз» — а повтор
-    // не помог бы никогда. Показываем честное «скоро», ничего не списав с квоты.
-    if (NOT_YET_IMPLEMENTED_TYPES.has(type)) {
-      toast({
-        tone: "info",
-        title: "Этот формат ещё в работе",
-        description: "Пока доступны рабочий лист, тест, контрольная, карточки, план урока, презентация, КТП, материалы и урок целиком",
-      });
-      return;
-    }
-
     trackEvent("constructor_generate_click", {
       mode,
       subject,
@@ -1447,10 +1451,6 @@ export default function ConstructorPage() {
               variants: r.variants,
             };
           }
-          // TZ-16 Этапы 6–7: генератора для картинки нет. Явная ошибка
-          // вместо тихой подмены.
-          case "image":
-            throw new Error(`[generate] тип "${type}" ещё не реализован (TZ-16, Этапы 6–7)`);
           default: {
             // Exhaustiveness: если в TaskType добавят новый тип и забудут case
             // выше, `type` здесь перестанет быть `never` и сборка упадёт.
@@ -2069,6 +2069,64 @@ export default function ConstructorPage() {
             />
 
             {/* ====== Topic-mode шаги (компактный 3-шаговый flow) ====== */}
+
+            {/* Шаг 1, блок «Что делаем». 15.10.2026.
+
+                ЗАЧЕМ. Тип материала был виден только на шаге 3 («Параметры»),
+                а на первом шаге — три значения (Лист/Тест/Карточки) и то за
+                переключателем «Свой вариант». Учитель, которому нужен план
+                урока или КТП, не мог узнать, что они есть: он обязан был
+                пройти путь рабочего листа до последнего шага.
+
+                ПОЧЕМУ ЗДЕМ, А НЕ В САМОМ SelectStep. SelectStep исчезает, как
+                только выбраны предмет и класс, а блок ниже (сценарий) —
+                появляется. Тип должен быть виден и до, и после этого выбора,
+                иначе он снова спрячется. Отдельная карточка над обоими
+                блоками — единственное место, которое живёт весь шаг 1.
+
+                Повтор на шаге «Параметры» НЕ убран: там тип меняют вплотную к
+                настройкам, и это привычный ход. Два входа в одну настройку
+                лучше одного невидимого. */}
+            {mode === "topic" && step === "select" && (
+              <Card className="mb-4">
+                <div className="flex items-baseline justify-between gap-3 mb-3">
+                  <h1 className="text-lg font-semibold text-warm-950">Что делаем</h1>
+                  <span className="text-xs text-warm-500 shrink-0">
+                    {/* ТЗ-32 B7. Раньше здесь стояло голое «8 форматов», и оно
+                        вводило в заблуждение: план урока, презентация и КТП
+                        доступны только в тарифе «Плюс», то есть из восьми на
+                        бесплатном тарифе доступно пять. Число оставляем —
+                        оно правдивое, — но добавляем вторую часть, чтобы
+                        учитель не обежал покупать подписку ради рабочего листа
+                        и не потерял три формата в конце списка. */}
+                    {ARTIFACT_TYPE_OPTIONS.length + 1} форматов, три — в тарифе «Плюс»
+                  </span>
+                </div>
+                <ArtifactTypePicker
+                  value={type}
+                  onChange={handleStep1TypeChange}
+                  hasPlus={serverUsage?.plan === "plus"}
+                />
+                {/* Интерактив — рабочий тип, но живёт вне ARTIFACT_TYPE_OPTIONS
+                    (см. комментарий в ConfigureStep): на шаге 1 он тоже должен
+                    быть виден, иначе игра снова останется секретом. */}
+                <button
+                  type="button"
+                  onClick={() => handleStep1TypeChange("interactive")}
+                  aria-pressed={type === "interactive"}
+                  data-testid="pick-type-interactive-step1"
+                  className={`mt-1.5 w-full h-10 px-3 rounded-lg text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 flex items-center gap-2 ${
+                    type === "interactive"
+                      ? "bg-brand-700 text-white"
+                      : "border border-warm-200 bg-white text-warm-900 hover:border-warm-300 hover:bg-warm-50"
+                  }`}
+                >
+                  <span aria-hidden>🎮</span>
+                  <span>Интерактив</span>
+                </button>
+              </Card>
+            )}
+
             {mode === "topic" && step === "select" && (!subject || grade === null) && (
               <SelectStep
                 subject={subject}
@@ -2755,7 +2813,7 @@ export default function ConstructorPage() {
                               // платного тарифа считается за период подписки, не за сутки.
                               return `Осталось ${left} из ${serverUsage.generationsLimit}. ${PLANS_TEXT}`;
                             }
-                            return `Осталось ${remaining} из ${FREE_GENERATIONS} — всего, счёт не сбрасывается. ${PLANS_TEXT}`;
+                            return `Осталось ${remaining} из ${FREE_GENERATIONS} — счёт общий, обновится 1-го числа. ${PLANS_TEXT}`;
                           })()}
                         </p>
                         <div className="mt-2 h-1.5 bg-white rounded-full overflow-hidden">
@@ -3345,7 +3403,6 @@ function ConfigureStep({
       case "materials": return "Материалы";
       case "lesson-bundle": return "Урок целиком";
       case "interactive": return "Интерактив";
-      case "image": return "Картинка";
     }
   })();
 
@@ -3536,7 +3593,7 @@ function ConfigureStep({
             rightIcon={remaining === 0 ? <Lock className="w-4 h-4" /> : undefined}
           >
             {remaining === 0
-              ? "Лимит исчерпан — оформить подписку"
+              ? "Листы на этот месяц закончились — оформить подписку"
               : generating
                 ? "Генерируем…"
                 : "Создать рабочий лист"}
@@ -3697,10 +3754,6 @@ function EmptyPreview({
     interactive: {
       label: "Интерактив",
       desc: "Форма с вопросами по теме, которую ученики заполняют сами.",
-    },
-    image: {
-      label: "Картинка",
-      desc: "Иллюстрация к заданию: плакат, схема или наглядное пособие. PNG.",
     },
   };
   const preview = TYPE_PREVIEW[type] ?? TYPE_PREVIEW.worksheet;

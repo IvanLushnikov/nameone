@@ -59,7 +59,10 @@ export function Footer() {
           <div className="col-span-2">
             <Logo />
             <p className="mt-4 text-sm text-warm-600 max-w-xs leading-relaxed">
-              ИИ-генератор рабочих листов, КТП и презентаций по&nbsp;ФГОС для учителей 1–11&nbsp;классов. PDF и&nbsp;DOCX с&nbsp;ответами — за&nbsp;30&nbsp;секунд.
+              ИИ-генератор рабочих листов по&nbsp;ФГОС для учителей 1–11&nbsp;классов.
+              PDF и&nbsp;DOCX: лист&nbsp;— за&nbsp;30&nbsp;секунд, сверка
+              ответов&nbsp;— 1–3&nbsp;минуты.
+              План урока, презентация и&nbsp;КТП&nbsp;— в&nbsp;тарифе «Плюс».
             </p>
             <div className="mt-5 flex gap-2">
               <a

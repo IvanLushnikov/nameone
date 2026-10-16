@@ -17,8 +17,13 @@ import { PROFILE_CHANGED_EVENT } from "@/lib/events";
  * Аудит 11.10, Д-3: здесь был пункт «Кабинет», и рядом с ним — кнопка входа.
  * Два входа в одно место с одинаковым весом: гость видел «Кабинет» (которого у
  * него нет) рядом с «Войти», а залогиненный — «Кабинет» в меню и ещё одну
- * кнопку входа справа. Кабинет убран из списка: теперь ровно одна точка входа,
- * и она зависит от состояния — гость видит «Войти», залогиненный «Кабинет».
+ * кнопку входа справа. Кабинет убран из списка меню.
+ *
+ * Возвращён 16.10.2026 как кнопка в шапке (ТЗ-32, D5), потому что с тех пор
+ * кабинет стал открытым гостю: он читает материалы с устройства и входа не
+ * требует. Правило прежнее — одна кнопка на состояние — не отменено: в списке
+ * меню пункта «Кабинет» по-прежнему нет, и рядом с «Войти» гостя стоит не
+ * второй вход, а ссылка на место, куда вход ведёт.
  */
 const nav = [
   { href: "/constructor", label: "Генератор", icon: Sparkles },
@@ -115,6 +120,16 @@ export function Header() {
             {/* Одна кнопка на состояние: гость — «Войти», свой кабинет —
                 «Кабинет». Имя рядом с надписью оставлено намеренно: учителю
                 полезно видеть, под кем он вошёл. */}
+            {/* Правило шапки — одна кнопка на состояние. Залогиненному: «Кабинет»
+                с именем, отдельного «Войти» нет. Гостю (ТЗ-32, D5): «Кабинет»
+                РЯДОМ с «Войти», потому что это две разные вещи, а не два входа в
+                одно место. Кабинету вход не нужен — он читает историю, избранное
+                и шаблоны с устройства и гостю показывает пустые вкладки с
+                действиями, а не требование зарегистрироваться. Проверено по коду
+                (`src/app/dashboard/page.tsx`): стены входа нет, редиректа на
+                `/login` нет, middleware для `/dashboard` не настроен.
+                Порядок: «Войти» — вход, «Кабинет» — место, куда вход ведёт.
+                Обратный порядок читался бы как «войди, чтобы увидеть кабинет». */}
             {profile ? (
               <Button
                 as="link"
@@ -128,19 +143,34 @@ export function Header() {
                 <span>Кабинет</span>
               </Button>
             ) : (
-              <Button
-                as="link"
-                href="/login"
-                variant="ghost"
-                size="md"
-                aria-current={pathname === "/login" ? "page" : undefined}
-                className={cn(
-                  pathname === "/login" &&
-                    "bg-brand-50 text-brand-800 hover:bg-brand-50 hover:text-brand-800"
-                )}
-              >
-                Войти
-              </Button>
+              <>
+                <Button
+                  as="link"
+                  href="/login"
+                  variant="ghost"
+                  size="md"
+                  aria-current={pathname === "/login" ? "page" : undefined}
+                  className={cn(
+                    pathname === "/login" &&
+                      "bg-brand-50 text-brand-800 hover:bg-brand-50 hover:text-brand-800"
+                  )}
+                >
+                  Войти
+                </Button>
+                <Button
+                  as="link"
+                  href="/dashboard"
+                  variant="ghost"
+                  size="md"
+                  aria-current={pathname === "/dashboard" ? "page" : undefined}
+                  className={cn(
+                    pathname === "/dashboard" &&
+                      "bg-brand-50 text-brand-800 hover:bg-brand-50 hover:text-brand-800"
+                  )}
+                >
+                  Кабинет
+                </Button>
+              </>
             )}
             {!pathname.startsWith("/constructor") && (
               <Button as="link" href="/constructor" variant="primary" size="md" leftIcon={<Sparkles className="w-4 h-4" />}>
@@ -183,7 +213,12 @@ export function Header() {
                 </Link>
               );
             })}
-            <div className="grid grid-cols-2 gap-2 pt-2">
+            {/* Гость видит три кнопки, поэтому сетка на 3 колонки, а не на 2:
+                иначе «Кабинет» и «Создать лист» оказались бы в одной ячейке
+                второго ряда и разъехались по ширине (ТЗ-32, D5). Залогиненному
+                кнопок две, и они занимают первые две колонки из трёх — ряд
+                остаётся ровным в обоих состояниях. */}
+            <div className="grid grid-cols-3 gap-2 pt-2">
               {profile ? (
                 <Button
                   as="link"
@@ -196,20 +231,32 @@ export function Header() {
                   Кабинет
                 </Button>
               ) : (
-                <Button
-                  as="link"
-                  href="/login"
-                  variant="secondary"
-                  size="md"
-                  fullWidth
-                  aria-current={pathname === "/login" ? "page" : undefined}
-                  className={cn(
-                    pathname === "/login" &&
-                      "bg-brand-500 text-white border-brand-500 hover:bg-brand-600 hover:border-brand-600"
-                  )}
-                >
-                  Войти
-                </Button>
+                <>
+                  <Button
+                    as="link"
+                    href="/login"
+                    variant="secondary"
+                    size="md"
+                    fullWidth
+                    aria-current={pathname === "/login" ? "page" : undefined}
+                    className={cn(
+                      pathname === "/login" &&
+                        "bg-brand-500 text-white border-brand-500 hover:bg-brand-600 hover:border-brand-600"
+                    )}
+                  >
+                    Войти
+                  </Button>
+                  <Button
+                    as="link"
+                    href="/dashboard"
+                    variant="secondary"
+                    size="md"
+                    fullWidth
+                    aria-current={pathname === "/dashboard" ? "page" : undefined}
+                  >
+                    Кабинет
+                  </Button>
+                </>
               )}
               <Button as="link" href="/constructor" variant="primary" size="md" fullWidth>
                 Создать лист

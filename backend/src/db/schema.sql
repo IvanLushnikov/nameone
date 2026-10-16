@@ -990,6 +990,52 @@ CREATE INDEX IF NOT EXISTS idx_csa_student_form ON class_student_answers(student
 CREATE INDEX IF NOT EXISTS idx_csa_form ON class_student_answers(form_id, submitted_at DESC);
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- ПОПЫТКИ ПО ТЕМАМ (ТЗ-27, кусок C, миграция 0008_skill_attempts.ts)
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Единственное определение таблицы в файле. Раньше их было ДВА (второе —
+-- копия из соседней правки), и это не было безобидно: `CREATE TABLE IF NOT
+-- EXISTS` тихо оставляет ПЕРВУЮ, поэтому вторая половина таблицы никогда не
+-- появлялась, а её индексы — появлялись, и схема в разных сборках отличалась
+-- набором индексов при одинаковых колонках.
+--
+-- Строка = «этот ученик на этой работе ошибся в этой теме (столько-то раз из
+-- стольких)». Из этих строк считаются «три последние проверки по теме» и
+-- «кто ошибается два раза подряд» — оба вопроса выборкой по ВСЕМ работам
+-- класса, поэтому считать их при каждом открытии ведомости дорого, а делать
+-- один раз при завершении проверки — дёшево (AD-2 ТЗ-27).
+--
+-- Метка навыка хранится НЕ здесь, а в листе: править её надо в одном месте, а
+-- две копии на запись рассинхронизируются (AD-1). Здесь она снимком.
+
+CREATE TABLE IF NOT EXISTS skill_attempts (
+  id           TEXT PRIMARY KEY,               -- ska_<12>
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  class_id     TEXT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  skill        TEXT NOT NULL,
+  form_id      TEXT NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
+  response_id  TEXT NOT NULL,
+  student_id   TEXT REFERENCES class_students(id) ON DELETE CASCADE,
+  checked_at   INTEGER NOT NULL,               -- unix seconds
+  correct      INTEGER NOT NULL,
+  total        INTEGER NOT NULL,
+  created_at   INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sa_response_skill
+  ON skill_attempts(response_id, skill);
+CREATE INDEX IF NOT EXISTS idx_sa_class_skill_time
+  ON skill_attempts(class_id, skill, checked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sa_student_skill_time
+  ON skill_attempts(student_id, skill, checked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sa_form ON skill_attempts(form_id);
+-- Отчёт класса и блок «Темы, где просели» идут по `user_id` ПЕРВЫМ условием:
+-- чужой учитель не должен увидеть чужой срез даже по чужому class_id. Поэтому
+-- индекс ведёт с user_id, а не с class_id — иначе база читала бы чужие строки
+-- и отбрасывала их уже в памяти. Набор колонок совпадает с миграцией 0008.
+CREATE INDEX IF NOT EXISTS idx_sa_user_class_skill_time
+  ON skill_attempts(user_id, class_id, skill, checked_at DESC);
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- МАТЕРИАЛЫ УЧИТЕЛЯ (лист 5.1.1, миграция 0003_user_materials.ts)
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Продублировано из миграции ДОСЛОВНО. Расхождение «schema.sql ↔ миграция»
@@ -1031,3 +1077,66 @@ CREATE TABLE IF NOT EXISTS user_material_downloads (
 );
 
 CREATE INDEX IF NOT EXISTS idx_umd_material ON user_material_downloads(material_id, created_at DESC);
+
+-- ── ТЗ-28: короткий код класса и фото-работы ученика ────────────────────────
+-- class_codes — 6-значный код, по которому ученик открывает класс с телефона.
+-- Отдельная таблица, а не колонка в classes: таблицу пишут десятки INSERT с
+-- явным списком колонок, колонка потребовала бы правки каждого из них.
+CREATE TABLE IF NOT EXISTS class_codes (
+  class_id   TEXT PRIMARY KEY REFERENCES classes(id) ON DELETE CASCADE,
+  code       TEXT NOT NULL UNIQUE,   -- вводится руками с доски, поэтому UNIQUE
+  created_at INTEGER NOT NULL
+);
+
+-- form_answer_photos — привязка «ответ на задание N» ↔ «загруженное фото».
+-- Срок хранения delete_at — 7 дней, тот же, что у фото тетради учителя.
+CREATE TABLE IF NOT EXISTS form_answer_photos (
+  id             TEXT PRIMARY KEY,
+  response_id    TEXT NOT NULL REFERENCES form_responses(id) ON DELETE CASCADE,
+  task_number    INTEGER NOT NULL,
+  photo_check_id TEXT NOT NULL,
+  r2_key         TEXT NOT NULL,
+  delete_at      INTEGER NOT NULL,
+  created_at     INTEGER NOT NULL
+);
+
+-- Один ответ = одно фото: пересъёмка заменяет старую строку, а не добавляет
+-- вторую, иначе в ведомости было бы по две строки на один и тот же ответ.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fap_response_task
+  ON form_answer_photos(response_id, task_number);
+CREATE INDEX IF NOT EXISTS idx_fap_check
+  ON form_answer_photos(photo_check_id);
+
+-- ── ТЗ-30: профили экзамена ─────────────────────────────────────────────────
+-- Длительность экзамена раньше была литералом 235 минут в промпте. У ОГЭ и ЕГЭ
+-- она своя, и профиль — единственное место, где это значение можно задать.
+CREATE TABLE IF NOT EXISTS exam_profiles (
+  slug         TEXT PRIMARY KEY,                 -- 'oge', 'ege', 'ege-math-profile'
+  subject      TEXT NOT NULL,
+  minutes      INTEGER NOT NULL CHECK (minutes > 0),
+  fgos_profile TEXT,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_exam_profiles_subject ON exam_profiles(subject);
+
+-- ── ТЗ-29: месячная квота бесплатного тарифа ────────────────────────────────
+-- Счётчик уехал из вечного rate_limits сюда: «сброс» = новая строка с новым
+-- месяцем, а прошлый месяц остаётся в истории. owner_key — тот же вид ключа,
+-- что в rate_limits (fp:<отпечаток> или usr:<id>), потому что у анонима
+-- аккаунта нет, а у вошедшего квота общая с его устройствами.
+CREATE TABLE IF NOT EXISTS free_usage (
+  owner_key     TEXT NOT NULL,
+  month         TEXT NOT NULL,                  -- YYYY-MM по Москве
+  generations   INTEGER NOT NULL DEFAULT 0,
+  user_id       TEXT,                           -- у анонима NULL
+  notice_sent_at INTEGER,                       -- 0/NULL — письмо ещё не уходило
+  updated_at    INTEGER NOT NULL,
+  PRIMARY KEY (owner_key, month)
+);
+
+-- Отвечает на вопрос владельца «сколько людей дошли до конца квоты за месяц».
+CREATE INDEX IF NOT EXISTS idx_free_usage_month ON free_usage(month, generations);
+

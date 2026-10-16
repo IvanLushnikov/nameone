@@ -1,0 +1,1055 @@
+{
+ "source": "german-7-part1",
+ "topics": [
+  {
+   "statement": "Формирование умения общаться в устной и письменной форме, используя рецептивные и продуктивные виды речевой деятельности в рамках тематического содержания речи",
+   "title": "Виды речевой деятельности",
+   "examples": [
+    {
+     "text": "Разделите задания на рецептивные и продуктивные: 1) выслушать объявление; 2) написать письмо другу; 3) прочитать меню; 4) задать вопрос другу.",
+     "answer": "рецептивные: 1, 3; продуктивные: 2, 4"
+    },
+    {
+     "text": "Прочитайте объявление и выпишите из него день, время и место занятий: Deutschkurs. Montag und Mittwoch, 17 Uhr, Raum 12.",
+     "answer": "Montag und Mittwoch, 17 Uhr, Raum 12"
+    }
+   ]
+  },
+  {
+   "statement": "Взаимоотношения в семье и с друзьями. Семейные праздники. Обязанности по дому",
+   "title": "Семья, друзья и обязанности",
+   "examples": [
+    {
+     "text": "Составьте предложения в Perfekt: 1) Ich / das Zimmer / aufräumen; 2) wir / die Blumen / gießen.",
+     "answer": "Ich habe das Zimmer aufgeräumt. Wir haben die Blumen gegossen."
+    },
+    {
+     "text": "Прочитайте письмо и выпишите из него три домашние обязанности: Ich mache mein Bett. Meine Schwester kocht das Essen. Wir gehen am Abend spazieren.",
+     "answer": "macht das Bett, kocht das Essen, gehen spazieren"
+    }
+   ]
+  },
+  {
+   "statement": "Внешность и характер человека (литературного персонажа)",
+   "title": "Внешность и характер человека",
+   "examples": [
+    {
+     "text": "Образуйте сравнительную и превосходную степень: alt, jung, groß.",
+     "answer": "älter, jünger, größer; am ältesten, am jüngsten, am größten"
+    },
+    {
+     "text": "Прочитайте описание и выпишите три прилагательных о внешности: Die Schriftstellerin ist klein. Sie hat lange Haare und trägt eine Brille.",
+     "answer": "klein, lange Haare, Brille"
+    }
+   ]
+  },
+  {
+   "statement": "Досуг и увлечения (хобби) современного подростка (чтение, кино, театр, музей, спорт, музыка)",
+   "title": "Досуг и увлечения подростка",
+   "examples": [
+    {
+     "text": "Впишите возвратное местоимение в нужной форме: 1) Ich interessiere __ (für Musik). 2) Er ruht __ (aus).",
+     "answer": "mich, sich"
+    },
+    {
+     "text": "Прочитайте текст и выпишите из него два хобби героини: Meine Freundin spielt Theater und geht gern ins Museum.",
+     "answer": "spielt Theater, geht ins Museum"
+    }
+   ]
+  },
+  {
+   "statement": "Здоровый образ жизни: режим труда и отдыха, фитнес, сбалансированное питание. Посещение врача",
+   "title": "Здоровье и режим дня",
+   "examples": [
+    {
+     "text": "Составьте предложение из слов: müssen / du / wie oft / zum Arzt / gehen.",
+     "answer": "Wie oft musst du zum Arzt gehen?"
+    },
+    {
+     "text": "Прочитайте совет врача и выпишите его на немецком: Trink viel Wasser, schlafe acht Stunden und iss kein Fastfood.",
+     "answer": "Trink viel Wasser, schlafe acht Stunden, iss kein Fastfood"
+    }
+   ]
+  },
+  {
+   "statement": "Покупки: продукты питания",
+   "title": "Покупки продуктов питания",
+   "examples": [
+    {
+     "text": "Впишите артикль в винительном падеже: Ich kaufe __ Brot, __ Milch und __ Käse.",
+     "answer": "ein, die, den"
+    },
+    {
+     "text": "Прочитайте список покупок и посчитайте общую сумму: 1 kg Kartoffeln 2 Euro, 1 Liter Milch 1,20 Euro, Käse 4,80 Euro.",
+     "answer": "8 Euro"
+    }
+   ]
+  },
+  {
+   "statement": "Школа, школьная жизнь, изучаемые предметы, любимый предмет, правила поведения в школе. Переписка с иностранными сверстниками",
+   "title": "Школа и школьная жизнь",
+   "examples": [
+    {
+     "text": "Поставьте слова в правильном порядке: auch / ich / Deutsch / lerne / gern.",
+     "answer": "Ich lerne auch gern Deutsch"
+    },
+    {
+     "text": "Напишите три предложения о своём школьном дне по образцу: Ich stehe um 7 Uhr auf und gehe um 8 Uhr in die Schule. Was machst du morgen?",
+     "answer": "три предложения о реальных действиях"
+    }
+   ]
+  },
+  {
+   "statement": "Каникулы в различное время года. Виды отдыха. Путешествия по России и иностранным странам",
+   "title": "Каникулы и путешествия",
+   "examples": [
+    {
+     "text": "Вставьте глагол в Perfekt и выберите sein или haben: 1) Wir __ (fahren) im Sommer nach Moskau. 2) Ich __ (sehen) dort viel Interessantes.",
+     "answer": "sind gefahren, habe gesehen"
+    },
+    {
+     "text": "Составьте условное предложение из слов с wenn: im Sommer / wir / reisen / Zeit haben.",
+     "answer": "Wenn wir Zeit haben, reisen wir im Sommer."
+    }
+   ]
+  },
+  {
+   "statement": "Природа: дикие и домашние животные. Проблемы экологии. Климат, погода",
+   "title": "Природа, экология и погода",
+   "examples": [
+    {
+     "text": "Образуйте предложения со сравнительной и превосходной степенью: Es ist heute __ (kalt) als gestern. Der Juli ist der __ (heiß) Monat im Jahr.",
+     "answer": "kälter, heißeste"
+    },
+    {
+     "text": "Прочитайте прогноз погоды и выпишите, что будет завтра: Morgen regnet es den ganzen Tag, die Temperatur beträgt 12 Grad.",
+     "answer": "regnet es den ganzen Tag, 12 Grad"
+    }
+   ]
+  },
+  {
+   "statement": "Жизнь в городе и сельской местности. Описание родного города (села). Транспорт",
+   "title": "Город и транспорт",
+   "examples": [
+    {
+     "text": "Вставьте глаголы в Perfekt: 1) Ich __ (fahren) gestern mit dem Bus. 2) Wir __ (gehen) zu Fuß.",
+     "answer": "bin gefahren, sind gegangen"
+    },
+    {
+     "text": "Прочитайте текст и выпишите две достопримечательности города: Unsere Altstadt ist sehr schön. Wir haben den alten Dom besucht.",
+     "answer": "unsere Altstadt, den alten Dom"
+    }
+   ]
+  },
+  {
+   "statement": "Средства массовой информации (телевидение, журналы, Интернет)",
+   "title": "Средства массовой информации",
+   "examples": [
+    {
+     "text": "Прочитайте анонс и ответьте на вопрос: Wann läuft die Sendung? — Kinderprogramm, Dienstag, 15 Uhr, Kanal 3.",
+     "answer": "am Dienstag um 15 Uhr"
+    },
+    {
+     "text": "Распределите заголовки по двум рубрикам газеты: Wetterbericht / Das Wochenende der Schüler.",
+     "answer": "Wetterbericht — Wetter und Temperatur"
+    }
+   ]
+  },
+  {
+   "statement": "Родная страна и страна (страны) изучаемого языка. Их географическое положение, столицы, население, официальные языки, достопримечательности, культурные особенности (национальные праздники, традиции, обычаи)",
+   "title": "Германия и родная страна",
+   "examples": [
+    {
+     "text": "Впишите столицы стран: Deutschland — __; Österreich — __.",
+     "answer": "Berlin, Wien"
+    },
+    {
+     "text": "Прочитайте текст и выпишите два факта о Германии: Deutschland liegt in Mitteleuropa. Die Hauptstadt ist Berlin. Die Amtssprache ist Deutsch.",
+     "answer": "die Hauptstadt ist Berlin, die Amtssprache ist Deutsch"
+    }
+   ]
+  },
+  {
+   "statement": "Выдающиеся люди родной страны и страны (стран) изучаемого языка: ученые, писатели, поэты, спортсмены",
+   "title": "Выдающиеся люди страны",
+   "examples": [
+    {
+     "text": "Вставьте правильный артикль: __ Goethe war ein berühmter Dichter. __ Anna Seghers schrieb viele Bücher.",
+     "answer": "Der, Die"
+    },
+    {
+     "text": "Прочитайте и выпишите, чем занимался учёный: Albert Einstein hat Physik studiert und viele Jahre an der Universität gearbeitet.",
+     "answer": "studierte Physik, arbeitete an der Universität"
+    }
+   ]
+  },
+  {
+   "statement": "диалог этикетного характера - начинать, поддерживать и заканчивать разговор, вежливо переспрашивать, поздравлять с праздником, выражать пожелания и вежливо реагировать на поздравление, выражать благодарность, вежливо соглашаться на предложение и отказываться от предложения собеседника;",
+   "title": "Этикетный диалог",
+   "examples": [
+    {
+     "text": "Впишите вежливый ответ на реплику собеседника: — Vielen Dank für deine Hilfe! — __",
+     "answer": "Bitte schön! / Kein Problem!"
+    },
+    {
+     "text": "Поставьте слова в правильном порядке: ich / Sie / entschuldigen / mich / bitte.",
+     "answer": "Ich entschuldige mich bitte."
+    }
+   ]
+  },
+  {
+   "statement": "диалог-побуждение к действию - обращаться с просьбой, вежливо соглашаться (не соглашаться) выполнить просьбу, приглашать собеседника к совместной деятельности, вежливо соглашаться (не соглашаться) на предложение собеседника, объясняя причину своего решения;",
+   "title": "Диалог-побуждение к действию",
+   "examples": [
+    {
+     "text": "Составьте вежливую просьбу из слов: Sie / das Fenster / bitte / öffnen / können.",
+     "answer": "Können Sie bitte das Fenster öffnen?"
+    },
+    {
+     "text": "Ответьте отказом с объяснением причины на приглашение: — Kommst du heute mit ins Kino? — Nein, danke, __",
+     "answer": "ich habe heute viele Hausaufgaben"
+    }
+   ]
+  },
+  {
+   "statement": "диалог-расспрос - сообщать фактическую информацию, отвечая на вопросы разных видов, выражать свое отношение к обсуждаемым фактам и событиям, запрашивать интересующую информацию, переходить с позиции спрашивающего на позицию отвечающего и наоборот",
+   "title": "Диалог-расспрос и вопросы",
+   "examples": [
+    {
+     "text": "Задайте вопрос к выделенному слову, начиная с вопросительного слова: Lena geht am Samstag ins Schwimmbad.",
+     "answer": "Wann geht Lena ins Schwimmbad?"
+    },
+    {
+     "text": "Допишите ответы в интервью: — Wie alt bist du? — Ich bin __. — Was machst du gern? — Ich __ gern Klavier.",
+     "answer": "dreizehn Jahre alt, spiele"
+    }
+   ]
+  },
+  {
+   "statement": "Данные умения монологической речи развиваются в стандартных ситуациях неофициального общения в рамках тематического содержания речи с использованием ключевых слов, плана, вопросов и (или) иллюстраций, фотографий, таблиц",
+   "title": "Монологическая речь",
+   "examples": [
+    {
+     "text": "Подберите ключевые слова к плану рассказа о выходных: время — Samstag, место — Zoo, действие — gefallen.",
+     "answer": "Samstag, Zoo, gefallen"
+    },
+    {
+     "text": "Составьте по плану пять высказываний о выходных: 1) когда; 2) с кем; 3) куда пошли; 4) что делали; 5) понравилось или нет.",
+     "answer": "пять предложений по плану"
+    }
+   ]
+  },
+  {
+   "statement": "Объем диалога - до 6 реплик со стороны каждого собеседника",
+   "title": "Объём диалога до 6 реплик",
+   "examples": [
+    {
+     "text": "Посчитайте реплики в диалоге и выпишите число: — Hallo! — Grüß Gott! — Wie geht es dir? — Danke, gut. — Tschüss!",
+     "answer": "4 реплики"
+    },
+    {
+     "text": "Составьте диалог из 6 реплик по теме «Beim Arzt»: поздоровайтесь, назовите проблему, узнайте время приёма, поблагодарите.",
+     "answer": "6 реплик: вопросы и ответы"
+    }
+   ]
+  },
+  {
+   "statement": "описание (предмета, местности, внешности и одежды человека), в том числе характеристика (черты характера реального человека или литературного персонажа);",
+   "title": "Описание и характеристика",
+   "examples": [
+    {
+     "text": "Поставьте слова в правильном порядке, помня, что подлежащее может стоять в конце: heute / von Lea / das Zimmer / geputzt / werden.",
+     "answer": "Das Zimmer wird heute von Lea geputzt."
+    },
+    {
+     "text": "Составьте предложение с Passiv по образцу: Man repariert die Tür. — Die Tür __",
+     "answer": "wird repariert"
+    }
+   ]
+  },
+  {
+   "statement": "повествование или сообщение;",
+   "title": "Повествование и сообщение",
+   "examples": [
+    {
+     "text": "Вставьте глаголы в Perfekt: Heute __ wir (fahren) in den Tierpark. Dort __ wir (sich freuen).",
+     "answer": "sind gefahren, haben sich gefreut"
+    },
+    {
+     "text": "Прочитайте рассказ и выпишите три события: Am Montag haben wir einen Test geschrieben. Am Dienstag hat der Lehrer die Hefte zurückgegeben. Am Freitag haben wir einen Film gesehen.",
+     "answer": "Test geschrieben, Hefte zurückgegeben, Film gesehen"
+    }
+   ]
+  },
+  {
+   "statement": "изложение (пересказ) основного содержания, прочитанного (прослушанного) текста;",
+   "title": "Изложение текста",
+   "examples": [
+    {
+     "text": "Прочитайте текст и составьте план пересказа из трёх пунктов: Der Hund lief über die Straße. Ein Auto kam. Der Hund rettete das Kind.",
+     "answer": "Hund läuft auf die Straße; Auto kommt; Hund rettet das Kind"
+    },
+    {
+     "text": "Расскажите в Perfekt, что произошло: Der Junge spielt im Hof. Er sieht eine Katze. Er bringt ihr Milch.",
+     "answer": "три предложения в Perfekt: gespielt, gesehen, gebracht"
+    }
+   ]
+  },
+  {
+   "statement": "краткое изложение результатов выполненной проектной работы",
+   "title": "Проектная работа",
+   "examples": [
+    {
+     "text": "Прочитайте карточку проекта и выпишите три результата: Name: Umwelt. Wir haben Flaschen gesammelt. Wir haben einen Bericht geschrieben. Wir haben Plakate gemacht.",
+     "answer": "Flaschen gesammelt, Bericht geschrieben, Plakate gemacht"
+    },
+    {
+     "text": "Закончите итог проекта по образцу: Unsere Gruppe hat Flaschen gesammelt und __ gemacht.",
+     "answer": "eine Sache in Perfekt: Plakate / einen Bericht"
+    }
+   ]
+  },
+  {
+   "statement": "Объем монологического высказывания - 8 - 9 фраз",
+   "title": "Объём высказывания 8–9 фраз",
+   "examples": [
+    {
+     "text": "Посчитайте количество фраз и выпишите число: Heute war ein guter Tag. Ich war mit meiner Freundin im Park. Wir haben gespielt. Danach sind wir nach Hause gegangen.",
+     "answer": "4"
+    },
+    {
+     "text": "Допишите текст до 8–9 фраз по плану: вчерашний день; погода; дорога; что делали; что понравилось.",
+     "answer": "8–9 фраз по плану"
+    }
+   ]
+  },
+  {
+   "statement": "При непосредственном общении: понимание на слух речи учителя и одноклассников и вербальная (невербальная) реакция на услышанное",
+   "title": "Реакция на услышанное",
+   "examples": [
+    {
+     "text": "Впишите подходящую реакцию: — Du hast heute sehr gut gearbeitet! — __",
+     "answer": "Danke schön!"
+    },
+    {
+     "text": "Вставьте слово в реакцию: — Ich habe heute eine schlechte Note bekommen. — Das __ leid!",
+     "answer": "tut mir"
+    }
+   ]
+  },
+  {
+   "statement": "При опосредованном общении: дальнейшее развитие восприятия и понимания на слух несложных аутентичных текстов, содержащих отдельные незнакомые слова, с разной глубиной проникновения в их содержание в зависимости от поставленной коммуникативной задачи: с пониманием основного содержания, с пониманием запрашиваемой информации",
+   "title": "Аудирование аутентичных текстов",
+   "examples": [
+    {
+     "text": "Перед прослушиванием сформулируйте две разные задачи: 1) о чём этот текст? 2) во сколько начинается концерт?",
+     "answer": "общая тема; конкретная деталь"
+    },
+    {
+     "text": "После прослушивания выпишите слова, которые не помешали понять основное содержание: Die Kinder spielten im Garten, während ihre Eltern einen Kaffee tranken.",
+     "answer": "während, tranken"
+    }
+   ]
+  },
+  {
+   "statement": "Аудирование с пониманием основного содержания текста предполагает умение определять основную тему (идею) и главные факты (события) в воспринимаемом на слух тексте, игнорировать незнакомые слова, не существенные для понимания основного содержания",
+   "title": "Главная тема и факты",
+   "examples": [
+    {
+     "text": "Прослушайте диалог и определите его основную тему: — Wann fängt der Film an? — Um 19 Uhr. — Wo treffen wir uns? — Am Kino.",
+     "answer": "встреча и просмотр фильма"
+    },
+    {
+     "text": "Прослушайте и выпишите два главных факта: Wir fahren am Samstag mit dem Zug nach Dresden. Die Fahrt dauert drei Stunden.",
+     "answer": "am Samstag mit dem Zug, drei Stunden"
+    }
+   ]
+  },
+  {
+   "statement": "Аудирование с пониманием запрашиваемой информации, предполагает умение выделять запрашиваемую информацию, представленную в эксплицитной (явной) форме, в воспринимаемом на слух тексте",
+   "title": "Запрос факта на слух",
+   "examples": [
+    {
+     "text": "Прослушайте анонс и ответьте на вопрос: Wann findet das Konzert statt? — Konzert am Samstag, 18 Uhr, in der Stadthalle.",
+     "answer": "am Samstag um 18 Uhr"
+    },
+    {
+     "text": "Прослушайте диалог и выпишите только запрошенный факт: — Wann schließt das Museum? — Um 17 Uhr.",
+     "answer": "um 17 Uhr"
+    }
+   ]
+  },
+  {
+   "statement": "Тексты для аудирования: диалог (беседа), высказывания собеседников в ситуациях повседневного общения, рассказ, сообщение информационного характера",
+   "title": "Виды текстов для аудирования",
+   "examples": [
+    {
+     "text": "Определите вид текста: 1) разговор в магазине; 2) рассказ о поездке; 3) объявление о концерте.",
+     "answer": "1 — диалог, 2 — рассказ, 3 — сообщение"
+    },
+    {
+     "text": "Подберите задание к виду текста: рассказ — 1) где, когда, что случилось; интервью — 1) что думает автор.",
+     "answer": "рассказ — факты, интервью — мнение"
+    }
+   ]
+  },
+  {
+   "statement": "Время звучания текста (текстов) для аудирования - до 1,5 минуты",
+   "title": "Время звучания аудиотекста",
+   "examples": [
+    {
+     "text": "Подберите объём текста для аудирования 1,5 минут: 1) три предложения; 2) пятнадцать — восемнадцать предложений.",
+     "answer": "2"
+    },
+    {
+     "text": "Определите, сколько предложений звучат примерно одну минуту при спокойном темпе чтения.",
+     "answer": "около 10–12 предложений"
+    }
+   ]
+  },
+  {
+   "statement": "Смысловое чтение",
+   "title": "Смысловое чтение",
+   "examples": [
+    {
+     "text": "Прочитайте абзац и сформулируйте его главную мысль: Der Sommer ist meine Lieblingszeit. Ich schwimme im See, esse Eis und fahre Rad mit meinen Freunden.",
+     "answer": "Летом я отдыхаю с друзьями"
+    },
+    {
+     "text": "Подберите заголовок к тексту из трёх вариантов: «Meine Schultasche», «Mein Wochenende», «Meine Stadt».",
+     "answer": "Mein Wochenende"
+    }
+   ]
+  },
+  {
+   "statement": "Развитие умения читать про себя и понимать несложные аутентичные тексты разных жанров и стилей, содержащие отдельные незнакомые слова, с различной глубиной проникновения в их содержание в зависимости от поставленной коммуникативной задачи: с пониманием основного содержания, с пониманием нужной (запрашиваемой) информации, с полным пониманием содержания текста",
+   "title": "Виды чтения и понимания",
+   "examples": [
+    {
+     "text": "Определите глубину понимания для каждой задачи: 1) о чём текст? 2) сколько стоит билет? 3) переведите последнее предложение.",
+     "answer": "1 — общее, 2 — нужная информация, 3 — полное"
+    },
+    {
+     "text": "Прочитайте текст и выпишите слова, значение которых понятно по контексту: Der Zug nach Köln fährt um halb drei vom Gleis neun.",
+     "answer": "Gleis neun, halb drei"
+    }
+   ]
+  },
+  {
+   "statement": "Чтение с пониманием основного содержания текста предполагает умение определять тему (основную мысль), главные факты (события), прогнозировать содержание текста по заголовку (началу текста), последовательность главных фактов (событий), умение игнорировать незнакомые слова, несущественные для понимания основного содержания, понимать интернациональные слова",
+   "title": "Чтение с пониманием основного содержания",
+   "examples": [
+    {
+     "text": "Прочитайте и выпишите три главные факта: Im Sommer arbeitet Familie Klein im Garten. Sie bauen Tomaten und Erdbeeren an. Die Kinder helfen dabei.",
+     "answer": "arbeiten im Garten, bauen Gemüse an, Kinder helfen"
+    },
+    {
+     "text": "По заголовку «Ein Ausflug in den Wald» запишите, какие три факта вы ждёте узнать в тексте, затем проверьте себя.",
+     "answer": "три ожидаемых факта о прогулке в лесу"
+    }
+   ]
+  },
+  {
+   "statement": "Чтение с пониманием нужной (запрашиваемой) информации предполагает умение находить в прочитанном тексте и понимать запрашиваемую информацию",
+   "title": "Поиск нужной информации в тексте",
+   "examples": [
+    {
+     "text": "Найдите в тексте ответ на вопрос «Was kostet die Karte?»: Für Kinder kostet die Karte vier Euro, für Erwachsene acht Euro.",
+     "answer": "vier Euro (für Kinder)"
+    },
+    {
+     "text": "Прочитайте письмо и выпишите дату и место встречи: Lieber Tim, am 15. Juli treffen wir uns am Hauptbahnhof um 10 Uhr.",
+     "answer": "am 15. Juli, Hauptbahnhof, um 10 Uhr"
+    }
+   ]
+  },
+  {
+   "statement": "Чтение с полным пониманием предполагает полное и точное понимание информации, представленной в тексте в эксплицитной (явной) форме",
+   "title": "Чтение с полным пониманием",
+   "examples": [
+    {
+     "text": "Прочитайте текст и ответьте на все вопросы: где живёт Анна, с кем она гуляла, что несла домой? Annas Familie wohnt seit einem Jahr in Regensburg. Gestern ist sie mit ihrem Hund in den Wald gegangen.",
+     "answer": "в Регенсбурге; с собакой; подарок для подруги"
+    },
+    {
+     "text": "Прочитайте и переведите предложение на русский: Ich habe die Eintrittskarte online gekauft.",
+     "answer": "Я купил билет онлайн"
+    }
+   ]
+  },
+  {
+   "statement": "Чтение несплошных текстов (таблиц, диаграмм) и понимание представленной в них информации",
+   "title": "Чтение таблиц и диаграмм",
+   "examples": [
+    {
+     "text": "Прочитайте таблицу и определите, в какой день занятий больше всего учеников: Montag 12, Dienstag 15, Mittwoch 9, Donnerstag 18.",
+     "answer": "Donnerstag, 18 учеников"
+    },
+    {
+     "text": "Прочитайте диаграмму и выпишите два самых популярных занятия: Theater 20, Fußball 25, Schwimmen 15, Musik 10.",
+     "answer": "Fußball (25), Theater (20)"
+    }
+   ]
+  },
+  {
+   "statement": "Тексты для чтения: интервью, диалог (беседа), отрывок из художественного произведения, в том числе рассказа, отрывок из статьи научно-популярного характера, сообщение информационного характера, объявление, кулинарный рецепт, сообщение личного характера, стихотворение, несплошной текст (таблица, диаграмма)",
+   "title": "Виды текстов для чтения",
+   "examples": [
+    {
+     "text": "Определите вид текста: 1) продукты с шагами приготовления; 2) вопросы известному человеку; 3) стихотворение.",
+     "answer": "1 — рецепт, 2 — интервью, 3 — стихотворение"
+    },
+    {
+     "text": "Подберите задание к виду текста: объявление — 1) кто и когда придёт; кулинарный рецепт — 1) какие продукты нужны.",
+     "answer": "объявление — кто и когда; рецепт — продукты"
+    }
+   ]
+  },
+  {
+   "statement": "Объем текста (текстов) для чтения - до 350 слов",
+   "title": "Объём текста для чтения",
+   "examples": [
+    {
+     "text": "Определите, укладывается ли текст в 350 слов: 1) короткий рассказ на 100 слов; 2) словарь на 400 слов.",
+     "answer": "1 — да, 2 — нет"
+    },
+    {
+     "text": "Подберите материал объёмом около 300 слов для задания «прочитать и пересказать»: 1) две статьи по 150 слов; 2) одна статья на 900 слов.",
+     "answer": "1"
+    }
+   ]
+  },
+  {
+   "statement": "Письменная речь",
+   "title": "Письменная речь",
+   "examples": [
+    {
+     "text": "Выберите задачу, которая требует письменной речи: 1) выписать из текста слова; 2) написать письмо другу.",
+     "answer": "2"
+    },
+    {
+     "text": "Составьте письмо другу по плану: обращение, приветствие, два предложения о выходных, прощание.",
+     "answer": "обращение, приветствие, 2 предложения, прощание"
+    }
+   ]
+  },
+  {
+   "statement": "списывание текста и выписывание из него слов, словосочетаний, предложений в соответствии с решаемой коммуникативной задачей, составление плана прочитанного текста;",
+   "title": "Выписывание и план текста",
+   "examples": [
+    {
+     "text": "Прочитайте текст и выпишите из него три словосочетания к теме «Urlaub»: Letzten Sommer sind wir mit dem Auto an die Ostsee gefahren.",
+     "answer": "mit dem Auto, an die Ostsee, Letzten Sommer"
+    },
+    {
+     "text": "Составьте план текста из трёх пунктов: что пишет автор, что предлагает, что отвечает друг.",
+     "answer": "три пункта плана по тексту письма"
+    }
+   ]
+  },
+  {
+   "statement": "заполнение анкет и формуляров: сообщать о себе основные сведения (имя, фамилия, пол, возраст, гражданство, адрес, увлечения) в соответствии с нормами, принятыми в стране (странах) изучаемого языка;",
+   "title": "Заполнение анкеты",
+   "examples": [
+    {
+     "text": "Заполните анкету по данным ученика (Иван Петров, 13 лет, Москва, футбол): Name, Alter, Wohnort, Hobby.",
+     "answer": "Name: Iwan Petrow; Alter: 13; Wohnort: Moskau; Hobby: Fußball"
+    },
+    {
+     "text": "Заполните строку анкеты о семье по данным: у меня есть брат, его зовут Максим, ему 10 лет.",
+     "answer": "Ich habe einen Bruder. Er heißt Maxim und ist zehn Jahre alt."
+    }
+   ]
+  },
+  {
+   "statement": "написание электронного сообщения личного характера в соответствии с нормами неофициального общения, принятыми в стране (странах) изучаемого языка. Объем письма - до 90 слов;",
+   "title": "Электронное сообщение",
+   "examples": [
+    {
+     "text": "Напишите личное сообщение другу по образцу: Lieber Jens, wie geht es dir? Am Samstag war ich im Kino. Viele Grüße, Tom",
+     "answer": "обращение, вопрос, рассказ, «Viele Grüße»"
+    },
+    {
+     "text": "Впишите приветствие для друга и для учителя: друг (du) — __; учитель (Sie) — __.",
+     "answer": "Hallo Tom! / Guten Tag, Frau Berger!"
+    }
+   ]
+  },
+  {
+   "statement": "создание небольшого письменного высказывания с использованием образца, плана, таблицы. Объем письменного высказывания - до 90 слов",
+   "title": "Письменное высказывание",
+   "examples": [
+    {
+     "text": "Напишите текст до 90 слов по плану о выходных, использовав не менее трёх предложений в Perfekt.",
+     "answer": "до 90 слов, три предложения в Perfekt"
+    },
+    {
+     "text": "Спишите образец, заменив время и место на свои и сохранив четыре предложения: Letztes Wochenende bin ich mit meiner Familie in den Zoo gegangen. Dort haben wir die Tiere gefüttert. Danach sind wir nach Hause gegangen. Es war ein schöner Tag.",
+     "answer": "четыре предложения, порядок слов сохранён"
+    }
+   ]
+  },
+  {
+   "statement": "Фонетическая сторона речи",
+   "title": "Фонетическая сторона речи",
+   "examples": [
+    {
+     "text": "Определите по транскрипции, как читается слово: [ˈplaːnən]",
+     "answer": "planen"
+    },
+    {
+     "text": "Расставьте знак ударения в словах: schön, Musik, über.",
+     "answer": "schön, Musik, über"
+    }
+   ]
+  },
+  {
+   "statement": "Различение на слух, без фонематических ошибок, ведущих к сбою в коммуникации, произнесение слов с соблюдением правильного ударения и фраз с соблюдением их ритмико-интонационных особенностей, в том числе отсутствия фразового ударения на служебных словах, чтение новых слов согласно основным правилам чтения",
+   "title": "Ударение и интонация",
+   "examples": [
+    {
+     "text": "Определите по интонации тип предложения: 1) Kommst du mit? 2) Das ist toll! 3) Ich habe Zeit.",
+     "answer": "1 — вопрос, 2 — восклицание, 3 — утверждение"
+    },
+    {
+     "text": "Найдите в предложении слово, которое произносится без фразового ударения: Ich gehe heute ins Kino.",
+     "answer": "heute, ins"
+    }
+   ]
+  },
+  {
+   "statement": "Чтение вслух небольших аутентичных текстов, построенных на изученном языковом материале, с соблюдением правил чтения и соответствующей интонации, демонстрирующих понимание текста",
+   "title": "Чтение вслух",
+   "examples": [
+    {
+     "text": "Прочитайте вслух, соблюдая ударение и интонацию: Ich habe meinen Freund lange nicht gesehen.",
+     "answer": "Freund, nicht, gesehen"
+    },
+    {
+     "text": "Прочитайте вслух диалог, следя за интонацией вопроса и ответа: — Wie geht es dir? — Danke, mir geht es gut.",
+     "answer": "вопрос повышенным тоном, ответ ниже"
+    }
+   ]
+  },
+  {
+   "statement": "Тексты для чтения вслух: диалог (беседа), рассказ, сообщение информационного характера, отрывок из статьи научно-популярного характера",
+   "title": "Виды текстов для чтения вслух",
+   "examples": [
+    {
+     "text": "Подберите текст, который удобно читать вслух: 1) диалог из четырёх реплик; 2) список телефонных номеров.",
+     "answer": "1"
+    },
+    {
+     "text": "Определите, какой текст подойдёт для выступления перед классом: 1) рассказ о поездке; 2) инструкция к прибору.",
+     "answer": "1"
+    }
+   ]
+  },
+  {
+   "statement": "Объем текста для чтения вслух - до 100 слов",
+   "title": "Объём текста для чтения вслух",
+   "examples": [
+    {
+     "text": "Определите, какой текст подходит для чтения вслух: 1) 80 слов; 2) 180 слов.",
+     "answer": "1"
+    },
+    {
+     "text": "Подберите текст, который можно прочитать вслух за три минуты: 1) 150 слов; 2) 60 слов.",
+     "answer": "1"
+    }
+   ]
+  },
+  {
+   "statement": "Орфография и пунктуация",
+   "title": "Орфография и пунктуация",
+   "examples": [
+    {
+     "text": "Найдите в тексте три ошибки и исправьте: Ich wohn ein Berlin. Ich habe ein hund. Meine mutter arbeitet viel.",
+     "answer": "wohne, einen Hund, Mutter"
+    },
+    {
+     "text": "Напишите с большой буквы названия месяцев и стран: am «dezember» in «deutschland».",
+     "answer": "Dezember, Deutschland"
+    }
+   ]
+  },
+  {
+   "statement": "Правильное написание изученных слов",
+   "title": "Написание изученных слов",
+   "examples": [
+    {
+     "text": "Впишите пропущенные буквы и запишите слова: sch__n, H__s, B__ch, Fu__ball.",
+     "answer": "schön, Haus, Bach, Fußball"
+    },
+    {
+     "text": "Выпишите из списка четыре слова с буквой ß: heißen, groß, Fuß, weiß.",
+     "answer": "heißen, groß, Fuß, weiß"
+    }
+   ]
+  },
+  {
+   "statement": "Правильное использование знаков препинания: точки, вопросительного и восклицательного знаков в конце предложения; запятой при перечислении",
+   "title": "Знаки препинания",
+   "examples": [
+    {
+     "text": "Впишите знак препинания в скобки: ( Wie heißen Sie? ) ( Ich wohne in Moskau. ) ( Das ist toll! )",
+     "answer": "?, ., !"
+    },
+    {
+     "text": "Расставьте запятую при перечислении: Ich koche Brot Suppe und Fisch.",
+     "answer": "Ich koche Brot, Suppe und Fisch."
+    }
+   ]
+  },
+  {
+   "statement": "Пунктуационно правильное, в соответствии с нормами речевого этикета, принятыми в стране (странах) изучаемого языка, оформление электронного сообщения личного характера",
+   "title": "Пунктуация личного письма",
+   "examples": [
+    {
+     "text": "Впишите знаки в письме другу: «Liebe Anna __ / Ich habe dich lange nicht gesehen __ / Wie geht es dir __ / Viele Grüße, deine Lena».",
+     "answer": "!, ., ?, !"
+    },
+    {
+     "text": "Подпишите письмо, соблюдая порядок слов: «Mit freundlichen Grüßen / deine / Lena».",
+     "answer": "Mit freundlichen Grüßen deine Lena"
+    }
+   ]
+  },
+  {
+   "statement": "Лексическая сторона речи",
+   "title": "Лексическая сторона речи",
+   "examples": [
+    {
+     "text": "Впишите в таблицу речевые клише: извинение — __; приветствие — __; приглашение — __.",
+     "answer": "Entschuldigung, Guten Tag, Komm mit!"
+    },
+    {
+     "text": "Найдите лишнее слово в тематическом ряду и выпишите его: Schule, Unterricht, Freund, Heft, Tafel.",
+     "answer": "Freund"
+    }
+   ]
+  },
+  {
+   "statement": "Распознавание и употребление в устной и письменной речи лексических единиц (слов, словосочетаний, речевых клише), обслуживающих ситуации общения в рамках тематического содержания речи, с соблюдением существующей в немецком языке нормы лексической сочетаемости",
+   "title": "Лексическая сочетаемость",
+   "examples": [
+    {
+     "text": "Впишите слово в скобки, соблюдая лексическую сочетаемость: sich (freuen / interessieren) über; (kein / nicht) Hunger haben.",
+     "answer": "freuen, keinen"
+    },
+    {
+     "text": "Подберите подходящий глагол: eine Frage __; einen Film __; ein Lied __.",
+     "answer": "stellen, sehen, singen"
+    }
+   ]
+  },
+  {
+   "statement": "Объем - 900 лексических единиц для продуктивного использования (включая 750 лексических единиц, изученных ранее) и 1000 лексических единиц для рецептивного усвоения (включая 900 лексических единиц продуктивного минимума)",
+   "title": "Объём лексического запаса",
+   "examples": [
+    {
+     "text": "Посчитайте, сколько новых слов нужно выучить продуктивно, если ранее было изучено 750, а всего нужно 900.",
+     "answer": "150 слов"
+    },
+    {
+     "text": "Посчитайте, сколько слов остаётся только для понимания, если продуктивных нужно 900, а рецептивных 1000.",
+     "answer": "100 слов"
+    }
+   ]
+  },
+  {
+   "statement": "образование глаголов при помощи суффикса -ieren (interessieren);",
+   "title": "Глаголы с суффиксом -ieren",
+   "examples": [
+    {
+     "text": "Образуйте глаголы с суффиксом -ieren от существительных: das Interesse → __; die Diskussion → __.",
+     "answer": "interessieren, diskutieren"
+    },
+    {
+     "text": "Впишите глагол в предложение: Meine Eltern __ (der Sport) sich sehr.",
+     "answer": "interessieren"
+    }
+   ]
+  },
+  {
+   "statement": "образование имен существительных при помощи суффиксов -schaft (die Freundschaft), -tion (die Organisation), префикса un- (das );",
+   "title": "Суффиксы -schaft, -tion и un-",
+   "examples": [
+    {
+     "text": "Образуйте существительные с суффиксами -schaft и -tion: freundlich → __; der Informant → __.",
+     "answer": "die Freundschaft, die Information"
+    },
+    {
+     "text": "Подберите прилагательное с префиксом un-: das Glück — __.",
+     "answer": "unglücklich"
+    }
+   ]
+  },
+  {
+   "statement": "конверсия: имен существительных от прилагательных (das );",
+   "title": "Существительные от прилагательных",
+   "examples": [
+    {
+     "text": "Образуйте существительные от прилагательных с артиклем: groß → __; sprechend → __.",
+     "answer": "die Größe, der Sprechende"
+    },
+    {
+     "text": "Найдите в списке существительные, образованные от прилагательных: sportlich, freundlich, glücklich.",
+     "answer": "der Sportler, die Freundschaft, das Glück"
+    }
+   ]
+  },
+  {
+   "statement": "словосложение: образование сложных существительных путем соединения прилагательного и существительного (die Kleinstadt)",
+   "title": "Сложные существительные",
+   "examples": [
+    {
+     "text": "Образуйте сложные существительные и впишите артикль: klein + Stadt → __; viel + Verkehr → __.",
+     "answer": "die Kleinstadt, der Vielverkehr"
+    },
+    {
+     "text": "Выпишите сложные существительные из предложения: Am Montag beginnt in Berlin die große Sportveranstaltung.",
+     "answer": "Montag, Sportveranstaltung"
+    }
+   ]
+  },
+  {
+   "statement": "Многозначные лексические единицы. Синонимы. Антонимы",
+   "title": "Синонимы и антонимы",
+   "examples": [
+    {
+     "text": "Подберите синонимы: groß — __; alt — __.",
+     "answer": "weit, jung"
+    },
+    {
+     "text": "Подберите антонимы: froh — __; heiß — __.",
+     "answer": "traurig, kalt"
+    }
+   ]
+  },
+  {
+   "statement": "Различные средства связи в тексте для обеспечения его целостности (zuerst, denn, zum Schluss usw)",
+   "title": "Средства связи в тексте",
+   "examples": [
+    {
+     "text": "Впишите слово: Ich lerne viel, ___ ich mag Deutsch.",
+     "answer": "denn"
+    },
+    {
+     "text": "Расположите средства связи по порядку: zum Schluss, zuerst, dann, und.",
+     "answer": "zuerst, dann, und, zum Schluss"
+    }
+   ]
+  },
+  {
+   "statement": "Грамматическая сторона речи",
+   "title": "Грамматическая сторона речи",
+   "examples": [
+    {
+     "text": "Укажите, что изучается в 7 классе: 1) глаголы в Perfekt; 2) глаголы в Konjunktiv II.",
+     "answer": "1 — да, 2 — нет"
+    },
+    {
+     "text": "Определите конструкцию в предложении: Wenn es regnet, bleiben wir zu Hause.",
+     "answer": "условное предложение с wenn"
+    }
+   ]
+  },
+  {
+   "statement": "Распознавание и употребление в устной и письменной речи изученных морфологических форм и синтаксических конструкций немецкого языка",
+   "title": "Морфологические и синтаксические формы",
+   "examples": [
+    {
+     "text": "Укажите в предложении обстоятельство и сказуемое: Am Montag habe ich meine Hausaufgaben gemacht.",
+     "answer": "Am Montag — обстоятельство, habe gemacht — сказуемое"
+    },
+    {
+     "text": "Найдите в предложении сказуемое: Meine Schwester und ihr Freund haben das Museum besucht.",
+     "answer": "haben das Museum besucht"
+    }
+   ]
+  },
+  {
+   "statement": "Различные коммуникативные типы предложений: повествовательные (утвердительные, отрицательные), вопросительные (общий, специальный вопросы), побудительные (в утвердительной и отрицательной форме)",
+   "title": "Типы предложений",
+   "examples": [
+    {
+     "text": "Определите тип предложения: 1) Wo wohnst du? 2) Ich wohne in Moskau. 3) Komm mit!",
+     "answer": "1 — специальный вопрос, 2 — утверждение, 3 — побуждение"
+    },
+    {
+     "text": "Составьте отрицательное предложение: Ich mag Kaffee. → Ich __ Kaffee.",
+     "answer": "trinke keinen"
+    }
+   ]
+  },
+  {
+   "statement": "Сложносочиненные предложения с наречием darum",
+   "title": "Союз и наречие darum",
+   "examples": [
+    {
+     "text": "Составьте предложение с darum: Ich lerne Deutsch. Ich möchte in Deutschland arbeiten.",
+     "answer": "Ich lerne Deutsch, darum möchte ich dort arbeiten."
+    },
+    {
+     "text": "Составьте предложение с darum: Das Wetter ist schön. Ich fahre mit dem Rad.",
+     "answer": "Das Wetter ist schön, darum fahre ich mit dem Rad."
+    }
+   ]
+  },
+  {
+   "statement": "Сложноподчиненные предложения: дополнительные (с союзом dass), причины (с союзом weil), условия (с союзом wenn)",
+   "title": "Придаточные с dass, weil, wenn",
+   "examples": [
+    {
+     "text": "Определите тип придаточного: 1) Ich weiß, dass er kommt. 2) Ich komme, weil es regnet. 3) Wenn ich Zeit habe, gehe ich.",
+     "answer": "1 — дополнительное, 2 — причины, 3 — условия"
+    },
+    {
+     "text": "Соедините предложения в одно условное: Ich lerne Deutsch. / Ich habe Zeit.",
+     "answer": "Wenn ich Zeit habe, lerne ich Deutsch."
+    }
+   ]
+  },
+  {
+   "statement": "Предложения с глаголами, требующими употребления после них частицы zu и инфинитива",
+   "title": "Частица zu и инфинитив",
+   "examples": [
+    {
+     "text": "Вставьте zu или ничего: Ich habe vor, __ mehr zu lesen. Ich habe Lust, __ schwimmen.",
+     "answer": "zu, schwimmen"
+    },
+    {
+     "text": "Найдите ошибку и исправьте: Ich habe Spaß, dass machen.",
+     "answer": "Ich habe Spaß, etwas zu machen."
+    }
+   ]
+  },
+  {
+   "statement": "Предложения с неопределенно-личным местоимением man, в том числе с модальными глаголами (Man spricht Deutsch. Man darf hier Ball spielen.)",
+   "title": "Неопределённо-личное man",
+   "examples": [
+    {
+     "text": "Поставьте слова в правильном порядке: hier / man / sprechen / Deutsch / kann.",
+     "answer": "Man kann hier Deutsch sprechen."
+    },
+    {
+     "text": "Как переводится предложение с man на русский: Man isst um zwölf Uhr zu Mittag.",
+     "answer": "в русском безлично: обедают в 12 часов"
+    }
+   ]
+  },
+  {
+   "statement": "Модальные глаголы в ",
+   "title": "Модальные глаголы",
+   "examples": [
+    {
+     "text": "Вставьте модальный глагол в нужной форме: 1) Du __ (müssen) dein Zimmer aufräumen. 2) Hier __ wir (dürfen) nicht parken.",
+     "answer": "musst, dürfen"
+    },
+    {
+     "text": "Поставьте слова в правильном порядке: du / früh / müssen / aufstehen.",
+     "answer": "Du musst früh aufstehen."
+    }
+   ]
+  },
+  {
+   "statement": "Отрицания kein, nicht, doch",
+   "title": "Отрицания kein, nicht, doch",
+   "examples": [
+    {
+     "text": "Впишите kein, nicht или doch: Ich habe __ Zeit. Ich gehe __ mit.",
+     "answer": "keine, nicht"
+    },
+    {
+     "text": "Укажите, где стоит отрицание: 1) Ich trinke keinen Kaffee. 2) Ich fahre nicht nach Berlin.",
+     "answer": "1 — перед существительным, 2 — перед глаголом"
+    }
+   ]
+  },
+  {
+   "statement": "Числительные для обозначения дат и больших чисел (до 1 000 000)",
+   "title": "Числительные: даты и числа",
+   "examples": [
+    {
+     "text": "Напишите числа по-немецки: 45, 1998, 1 000 000.",
+     "answer": "fünfundvierzig, neunzehnhundertachtundneunzig, eine Million"
+    },
+    {
+     "text": "Запишите по-немецки дату и ответьте на вопрос «Wann?»: 3 Oktober.",
+     "answer": "Am dritten Oktober"
+    }
+   ]
+  },
+  {
+   "statement": "Знание и использование отдельных социокультурных элементов речевого поведенческого этикета в стране (странах) изучаемого языка в рамках тематического содержания (в ситуациях общения, в том числе \"В городе\", \"Проведение досуга\", \"Во время путешествия\")",
+   "title": "Речевой этикет в Германии",
+   "examples": [
+    {
+     "text": "Выберите уместную реплику в ситуации «в городе»: 1) Entschuldigung, wo ist der Bahnhof? 2) Das Wetter ist heute schön.",
+     "answer": "1"
+    },
+    {
+     "text": "Выберите вежливую форму: 1) Kannst du mir helfen? (друг) 2) Können Sie mir helfen? (незнакомый человек).",
+     "answer": "2 — «Können Sie mir helfen?»"
+    }
+   ]
+  },
+  {
+   "statement": "Знание и использование в устной и письменной речи наиболее употребительной тематической фоновой лексики в рамках отобранного тематического содержания (основные национальные праздники, традиции в питании и проведении досуга, система образования)",
+   "title": "Тематическая фоновая лексика",
+   "examples": [
+    {
+     "text": "Впишите немецкие названия праздников: Weihnachten — __; Silvester — __; Ostern — __.",
+     "answer": "Dezember, Dezember, Frühling"
+    },
+    {
+     "text": "Впишите слово о системе образования: das Gymnasium, die Grundschule, __.",
+     "answer": "die Universität"
+    }
+   ]
+  },
+  {
+   "statement": "Социокультурный портрет родной страны и страны (стран) изучаемого языка: знакомство с традициями проведения основных национальных праздников (Рождества, Нового года, Дня матери и других праздников), с особенностями образа жизни и культуры страны (стран) изучаемого языка (известными достопримечательностями, некоторыми выдающимися людьми), с доступными в языковом отношении образцами поэзии и прозы для подростков на немецком языке",
+   "title": "Праздники и культура Германии",
+   "examples": [
+    {
+     "text": "Прочитайте и выпишите, когда в Германии отмечают Рождество: Die Familien feiern Weihnachten. Die Kinder bekommen die Geschenke am 24. Dezember.",
+     "answer": "am 24. Dezember"
+    },
+    {
+     "text": "Прочитайте и выпишите три традиции: In Deutschland schmücken die Familien den Baum und backen Plätzchen. Am Heiligen Abend essen viele Familien zusammen mit der Familie.",
+     "answer": "украшение ёлки, рождественское печенье, ужин с семьёй"
+    }
+   ]
+  },
+  {
+   "statement": "писать свое имя и фамилию, а также имена и фамилии своих родственников и друзей на немецком языке;",
+   "title": "Имя и фамилия на немецком",
+   "examples": [
+    {
+     "text": "Запишите имя и фамилию по-немецки: Иван Петров.",
+     "answer": "Iwan Petrow"
+    },
+    {
+     "text": "Впишите имя в предложение: Der Name meiner Freundin ist __. Der Name meines Bruders ist __.",
+     "answer": "Lena, Anton"
+    }
+   ]
+  },
+  {
+   "statement": "правильно оформлять свой адрес на немецком языке (в анкете);",
+   "title": "Оформление адреса",
+   "examples": [
+    {
+     "text": "Запишите адрес по-немецкому образцу: улица Лесная, дом 12, Москва, индекс 101000.",
+     "answer": "Lesnajastraße 12, Moskau 101000"
+    },
+    {
+     "text": "Заполните строку анкеты: Straße, Hausnummer, Postleitzahl, Ort. Данные: Главная, 5, 105000, Казань.",
+     "answer": "Hauptstraße, 5, 105000, Kazan"
+    }
+   ]
+  }
+ ]
+}

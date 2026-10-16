@@ -25,7 +25,7 @@ import { UnauthorizedError, BadRequestError, NotFoundError } from "../lib/errors
 import { getUserById, incrementUserGenerations } from "../db/queries";
 import {
   getUsageStatus,
-  checkFreeQuota,
+  freeQuotaForUser,
   tokensToWorksheets,
   FREE_TOTAL_GENERATIONS,
 } from "../services/usage";
@@ -236,11 +236,17 @@ usersRouter.get("/usage", async (c) => {
   const plan = user.plan as "free" | "base" | "standard" | "plus";
   const status = await getUsageStatus(c.env.DB, user.id, plan);
 
-  // Бесплатная квота — в штуках генераций, а не в токенах.
+  // Бесплатная квота — в штуках генераций за ТЕКУЩИЙ МЕСЯЦ, а не в токенах
+  // (ТЗ-29). Считаем по всем ключам человека: карточка расхода и квота должны
+  // показывать одно и то же число, а не «сколько сделал из этого браузера».
   let freeRemaining: number | null = null;
+  let freeUsed: number | null = null;
+  let freeResetsAt: string | null = null;
   if (plan === "free") {
-    const quota = await checkFreeQuota(c.env.DB, user.id);
+    const quota = await freeQuotaForUser(c.env.DB, user.id);
     freeRemaining = quota.remaining;
+    freeUsed = quota.used;
+    freeResetsAt = new Date(quota.resetsAt * 1000).toISOString();
   }
 
   // Требуется ли капча: считаем отпечаток, смотрим сигналы. Проверка здесь
@@ -269,6 +275,10 @@ usersRouter.get("/usage", async (c) => {
     // а «≈ 80 листов» читается сразу — см. риск 1 в docs/04-pricing-economics-v2.md.
     worksheetsEquivalent: tokensToWorksheets(status.used),
     freeRemaining,
+    // Сколько сделано в этом месяце — из этих двух чисел карточка рисует
+    // «сделано 3 из 5» и дату «обновится 1-го числа» (ТЗ-29).
+    freeUsed,
+    freeResetsAt,
     requiresChallenge: verdict.requiresChallenge,
     // ── старое, оставлено для совместимости текущего UI ──
     generationsToday: user.generations_today,

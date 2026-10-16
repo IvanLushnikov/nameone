@@ -12,11 +12,11 @@
  *    сколько бесплатного трафика отдаём и сколько разных посетителей его
  *    получили. Откат этого свойства — тихая дыра в расходах.
  *
- * 2) ЖЁСТКИЙ ПРЕДЕЛ. Решение владельца (07.10.2026): анонимным ровно 3
- *    бесплатные попытки. Проверка лимита и списание были двумя разными
- *    обращениями, и два параллельных запроса с одного отпечатка оба проходили
- *    проверку — счётчик уезжал на 4+. Тест ниже гоняет параллельные попытки и
- *    требует, чтобы четвёртая генерация была невозможна.
+ * 2) ЖЁСТКИЙ ПРЕДЕЛ. Решение владельца (07.10.2026), уточнено ТЗ-29: анонимным
+ *    ровно 5 бесплатных листов В МЕСЯЦ. Проверка лимита и списание были двумя
+ *    разными обращениями, и два параллельных запроса с одного отпечатка оба
+ *    проходили проверку — счётчик уезжал за предел. Тест ниже гоняет
+ *    параллельные попытки и требует, чтобы шестая генерация была невозможна.
  *
  * 3) КАПЧА НЕ ОБХОДИТ ЛИМИТ. Раньше условие было `!allowed && !challengePassed`:
  *    ответив на капчу, посетитель получал генерации сверх трёх. Это прямое
@@ -104,35 +104,36 @@ async function committedQuota(ownerKey: string): Promise<number> {
   return quota.used;
 }
 
-describe("бесплатная квота: ровно три попытки", () => {
-  it("три анонимные генерации проходят, четвёртая — отказ 429", async () => {
+describe("бесплатная квота: ровно пять попыток в месяц", () => {
+  // ТЗ-29: было три навсегда, стало пять в месяц. Число нигде не зашито —
+  // тест берёт его из константы, чтобы смена квоты не требовала правки тестов.
+  it("пять анонимных генераций проходят, шестая — отказ 429", async () => {
     const ip = "198.51.100.10";
-    await generateAnon(ip);
-    await generateAnon(ip);
-    await generateAnon(ip);
+    for (let i = 0; i < FREE_TOTAL_GENERATIONS; i++) await generateAnon(ip);
 
-    // Четвёртая попытка с ТОГО ЖЕ отпечатка обязана быть отклонена.
+    // Попытка сверх квоты с ТОГО ЖЕ отпечатка обязана быть отклонена.
     await expect(generateAnon(ip)).rejects.toMatchObject({
       status: 429,
       code: "RATE_LIMIT",
     });
   });
 
-  it("в отказе видно те же числа, что и раньше: limit 3, used 3", async () => {
+  it("в отказе видно те же числа, что и раньше: limit 5, used 5", async () => {
     const owner = freeQuotaOwnerKey(null, "unknown-owner-for-shape");
-    await consumeFreeQuota(db, owner);
-    await consumeFreeQuota(db, owner);
-    await consumeFreeQuota(db, owner);
+    for (let i = 0; i < FREE_TOTAL_GENERATIONS; i++) await consumeFreeQuota(db, owner);
 
     const quota = await checkFreeQuota(db, owner);
-    expect(quota).toMatchObject({ allowed: false, used: 3, limit: 3, remaining: 0 });
+    expect(quota).toMatchObject({
+      allowed: false,
+      used: FREE_TOTAL_GENERATIONS,
+      limit: FREE_TOTAL_GENERATIONS,
+      remaining: 0,
+    });
   });
 
-  it("капча не открывает генерации сверх трёх", async () => {
+  it("капча не открывает генерации сверх квоты", async () => {
     const ip = "198.51.100.30";
-    await generateAnon(ip);
-    await generateAnon(ip);
-    await generateAnon(ip);
+    for (let i = 0; i < FREE_TOTAL_GENERATIONS; i++) await generateAnon(ip);
 
     // Тот же отпечаток, ответ на капчу: лимит это не подозрение.
     await expect(
@@ -169,33 +170,34 @@ describe("бесплатная квота: ровно три попытки", ()
 });
 
 describe("гонка: параллельные запросы с одного отпечатка", () => {
-  it("шесть одновременных попыток дают ровно три генерации, а не шесть", async () => {
+  it("восемь одновременных попыток дают ровно пять генераций, а не восемь", async () => {
     const ip = "203.0.113.77";
     const results = await Promise.allSettled(
-      Array.from({ length: 6 }, () => generateAnon(ip)),
+      Array.from({ length: FREE_TOTAL_GENERATIONS + 3 }, () => generateAnon(ip)),
     );
 
     const granted = results.filter((r) => r.status === "fulfilled").length;
     expect(granted).toBe(FREE_TOTAL_GENERATIONS);
 
-    // Счётчик зачтённых попыток — ровно 3. Четвёртой генерации не было.
+    // Зачтено ровно столько, сколько квота. Шестой генерации не было.
     const owner = freeQuotaOwnerKey(null, await fingerprintHash({ ip, userAgent: UA }, SALT));
     expect(await committedQuota(owner)).toBe(FREE_TOTAL_GENERATIONS);
   });
 
-  it("занятые попытки тоже входят в предел: 2 использованы + 6 параллельных = 1", async () => {
+  it("занятые попытки тоже входят в предел: половина квоты занята + 6 параллельных", async () => {
     const ip = "203.0.113.78";
-    await generateAnon(ip);
-    await generateAnon(ip);
+    const alreadyUsed = FREE_TOTAL_GENERATIONS - 2;
+    for (let i = 0; i < alreadyUsed; i++) await generateAnon(ip);
 
     const owner = freeQuotaOwnerKey(null, await fingerprintHash({ ip, userAgent: UA }, SALT));
     const holds = await Promise.all(
       Array.from({ length: 6 }, () => holdFreeQuotaSlot(db, owner)),
     );
-    // Из шести параллельных попыток заняться может ровно одна: третья уже
-    // использована, а четвёртая была бы лишней.
-    expect(holds.filter((h) => h.allowed)).toHaveLength(1);
+    // Из шести параллельных попыток заняться могут ровно две: две уже заняты
+    // генерацией, а третья лишняя — её быть не должно.
+    expect(holds.filter((h) => h.allowed)).toHaveLength(2);
 
+    await consumeFreeQuota(db, owner);
     await consumeFreeQuota(db, owner);
     expect(await committedQuota(owner)).toBe(FREE_TOTAL_GENERATIONS);
   });
@@ -215,9 +217,9 @@ describe("гонка: параллельные запросы с одного о
     expect((await checkFreeQuota(db, owner)).used).toBe(1);
   });
 
-  it("повторное списание не выводит счётчик за 3", async () => {
+  it("повторное списание не выводит счётчик за квоту месяца", async () => {
     const owner = freeQuotaOwnerKey(null, "double-spend-owner");
-    for (let i = 0; i < 5; i += 1) {
+    for (let i = 0; i < FREE_TOTAL_GENERATIONS + 2; i += 1) {
       await consumeFreeQuota(db, owner);
     }
     expect((await checkFreeQuota(db, owner)).used).toBe(FREE_TOTAL_GENERATIONS);

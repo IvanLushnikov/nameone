@@ -27,11 +27,15 @@
  */
 
 import { Hono } from "hono";
+import type { D1Database } from "@cloudflare/workers-types";
 import type { AppEnv } from "../types";
 import { ForbiddenError, BadRequestError } from "../lib/errors";
 import { requireAuth } from "../middleware/auth";
 import { rateLimitMiddleware } from "../middleware/ratelimit";
 import { getUsageStatus, PLAN_NORM_PER_MONTH } from "../services/usage";
+// Канон цен живёт здесь (ТЗ-30 AD-1). Админка импортирует, а не знает числа:
+// после следующего снижения прайса здесь нечего будет менять вручную.
+import { PRICES } from "../services/billing";
 import { listAdminUsers, getUserById, setUserAdmin } from "../db/queries";
 import { z } from "zod";
 import {
@@ -47,19 +51,72 @@ import {
 
 const adminRouter = new Hono<AppEnv>();
 
-/** Выручка тарифа в копейках за месяц — из billing, чтобы не расходилось. */
-const MONTHLY_REVENUE_RUB: Record<string, number> = {
-  base: 500,
-  // Тариф «Оптимальный» (ТЗ-21 п.4). Без него предохранитель COGS считал бы
-  // выручку по платящему пользователю равной нулю и поднимал ложную тревогу.
-  standard: 990,
-  plus: 1_500,
-  school: 3_000,
-  free: 0,
-};
-
-/** Доля COGS от выручки, выше которой пользователя стоит посмотреть. */
+/**
+ * Доля COGS от выручки, выше которой пользователя стоит посмотреть. */
 const COST_ALERT_RATIO = 0.25;
+
+/**
+ * Текущая цена тарифа в рублях — из `services/billing.ts`, единственного
+ * канона (ТЗ-30 AD-1).
+ *
+ * Зачем это в админке, если выручка считается по платежам: чтобы рядом с
+ * фактом было видно, сколько тариф стоит СЕЙЧАС. Разница между этими двумя
+ * числами и есть снижение 12.10 — ровно то, что владелец проверяет, не
+ * переписывая лишний раз прайс руками. Само число приходит из billing, и
+ * поэтому таблицы цен в этом файле больше нет.
+ */
+function currentPriceRub(plan: string): number | null {
+  if (plan === "free") return 0;
+  const price = PRICES[plan as keyof typeof PRICES]?.monthly;
+  // monthly в billing — копейки, здесь админке нужны рубли.
+  return price == null ? null : price / 100;
+}
+
+/**
+ * Выручка конкретного пользователя за месяц — ТОЛЬКО из его платежей.
+ *
+ * ─── ПОЧЕМУ НЕ ПО ТАРИФУ ──────────────────────────────────────────────────
+ * До 15.10.2026 здесь стояла таблица `MONTHLY_REVENUE_RUB` с ценами ДО
+ * снижения 12.10 — это цены старого прайса, и после снижения прайса таблица
+ * осталась старой навсегда. Владелец смотрел на «средний чек 1 240 ₽» при
+ * тарифе 249–999 ₽ и принимал по этой цифре решение «хватает ли денег».
+ *
+ * Теперь число берётся из таблицы `payments`: сумма платежей пользователя за
+ * месяц. Это ровно то, что пришло на счёт, и никакой другой источник для
+ * «сколько он заплатил» не существует.
+ *
+ * ─── ПОЧЕМУ ЭТО ВАЖНО ДЛЯ ИСТОРИИ ─────────────────────────────────────────
+ * Платёж, сделанный до 12.10, попадает в выручку по СВОЕЙ сумме (по цене
+ * того дня), а не по нынешнему прайсу. Иначе история за месяцы переписалась
+ * бы задним числом, и любое сравнение «было/стало» было бы бессмысленным.
+ *
+ * ─── ЧТО ЭТО НЕ ЛОМАЕТ ────────────────────────────────────────────────────
+ * У платящего раз в год пользователя в месяце без платежа выручка покажет 0.
+ * Это правда, а не ошибка: годовая выручка видна, если смотреть период шире
+ * (та же оговорка про годовую оплату стоит в services/admin-stats.ts).
+ * В `users[]` рядом отдаётся `hasPayment`, чтобы администратор видел, что
+ * нулевого числа может не быть, а не искал ошибку в счётчике.
+ */
+async function revenueByUser(
+  db: D1Database,
+  from: number,
+  to: number,
+): Promise<Map<string, number>> {
+  const rows = await db
+    .prepare(
+      `SELECT user_id, SUM(amount_rub) AS rub FROM payments
+       WHERE status = 'succeeded' AND user_id IS NOT NULL
+         AND created_at >= ?1 AND created_at < ?2
+       GROUP BY user_id`,
+    )
+    .bind(from, to)
+    .all<{ user_id: string; rub: number }>();
+  // `amount_rub` хранит КОПЕЙКИ — так его пишет `billing.ts` при создании
+  // платежа (`amountKopecks`). Имя колонки про рубли, значение про копейки, и
+  // на этом уже ошибались: без `/100` платёж 249 ₽ показывался как 24 900 ₽.
+  // Поэтому делим здесь, один раз, в том месте, где сумма становится рублём.
+  return new Map(rows.results.map((r) => [r.user_id, r.rub / 100]));
+}
 
 function requireAdmin(c: Parameters<typeof requireAuth>[0]) {
   const user = requireAuth(c);
@@ -152,9 +209,12 @@ adminRouter.get("/usage", async (c) => {
     .bind(range.from, range.to)
     .all<{ task: string; calls: number; costUsd: number }>();
 
+  // Выручка — по фактическим платежам месяца (см. revenueByUser).
+  const revenueByUserMap = await revenueByUser(c.env.DB, range.from, range.to);
+
   const users = rows.results.map((r) => {
-    const plan = (r.plan ?? "free") as keyof typeof MONTHLY_REVENUE_RUB;
-    const revenue = MONTHLY_REVENUE_RUB[plan] ?? 0;
+    const plan = r.plan ?? "free";
+    const revenue = r.userId ? (revenueByUserMap.get(r.userId) ?? 0) : 0;
     const cost = r.costUsd * rubToUsd;
     const norm = PLAN_NORM_PER_MONTH[plan as "base" | "standard" | "plus"];
     return {
@@ -169,6 +229,11 @@ adminRouter.get("/usage", async (c) => {
       cachedCalls: r.cached,
       cacheRate: r.calls > 0 ? Math.round((r.cached / r.calls) * 100) : 0,
       normPerMonth: norm ?? null,
+      // Платёж в этом месяце есть или нет. Нулевая выручка при true —
+      // годовая оплата или неоплаченный платёж, и это не поломка счётчика.
+      hasPayment: revenue > 0,
+      // Цена тарифа сейчас, из billing. Никогда не подставляется в выручку.
+      listPriceRub: currentPriceRub(plan),
     };
   });
 
@@ -324,7 +389,12 @@ adminRouter.get("/money", adminRateLimit, async (c) => {
     getTopups(c.env.DB, range.from, range.to),
     c.env.DB
       .prepare(
-        `SELECT id, user_id, plan, amount_rub, status, created_at
+        // Тот же случай, что и в revenueByUser выше: `payments.amount_rub`
+        // хранит КОПЕЙКИ. Делим в SQL, чтобы на фронте (`/superpower/money`,
+        // таблица «Платежи») число было рублём — там formatRub умеет только
+        // форматировать, но не переводить. Псевдоним оставлен тем же, чтобы
+        // контракт ответа не менялся.
+        `SELECT id, user_id, plan, amount_rub / 100 AS amount_rub, status, created_at
          FROM payments WHERE created_at >= ?1 AND created_at < ?2
          ORDER BY created_at DESC LIMIT 100`,
       )

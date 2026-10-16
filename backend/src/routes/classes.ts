@@ -43,21 +43,32 @@
  */
 
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { z } from "zod";
-import type { D1Database } from "@cloudflare/workers-types";
+import { getCookie, setCookie } from "hono/cookie";
+import type { D1Database, R2Bucket } from "@cloudflare/workers-types";
 import type { AppEnv, WorksheetTask } from "../types";
 import { requireAuth } from "../middleware/auth";
 import { rateLimitMiddleware, djb2 } from "../middleware/ratelimit";
 import { throwApiError } from "../lib/errors";
 import { answerId as makeAnswerId, responseId as makeResponseId } from "../lib/shortid";
 import { gradeSubmission, parseCheckMeta, type StudentValue } from "../services/formGrading";
+import { PHOTO_RETENTION_SECONDS } from "../services/photoCheckGrading";
+import { insertPhotoCheck } from "../db/photoChecks";
+import { buildSkillBreakdown, listSkillAttempts, recomputeFormSkillAttempts } from "../db/skill-attempts";
 import {
   MAX_STUDENTS_PER_IMPORT,
   addStudents,
   createClass,
   deleteClass,
+  findClassByCode,
+  findStudentByName,
   findStudentByToken,
+  getClassCode,
+  getClassCodes,
+  listClassTasks,
   listRemovedStudents,
+  normalizeClassCode,
   listRoster,
   loadOwnClass,
   studentAnswerInsert,
@@ -68,6 +79,19 @@ import {
   type ClassResultCode,
   type StudentLink,
 } from "../db/classes";
+// Число страниц фото работы считается тем же кодом, что и у работы по фото
+// тетради: свои правила «как выглядит вторая страница» в ведомости завели бы
+// второй источник правды, и через месяц они разошлись бы с журналом.
+import { countPhotoPages } from "./f06";
+
+/** Число страниц или 0 («не удалось определить») вместо исключения наружу. */
+async function countPhotoPagesSafely(bucket: R2Bucket, key: string): Promise<number> {
+  try {
+    return await countPhotoPages(bucket, key);
+  } catch {
+    return 0;
+  }
+}
 
 const classesRouter = new Hono<AppEnv>();
 const publicClassLinksRouter = new Hono<AppEnv>();
@@ -122,9 +146,12 @@ const StudentsBody = z.union([
 
 classesRouter.get("/", async (c) => {
   const user = requireAuth(c);
-  const [classes, removed] = await Promise.all([
+  const [classes, removed, codes] = await Promise.all([
     listRoster(c.env.DB, user.id),
     listRemovedStudents(c.env.DB, user.id),
+    // Коды классов — одним запросом на весь список (N+1 на 6 параллелях
+    // учителя означал бы шесть лишних походов в D1 при открытии настроек).
+    getClassCodes(c.env.DB, user.id),
   ]);
 
   return c.json({
@@ -134,6 +161,9 @@ classesRouter.get("/", async (c) => {
     classes: classes.map((cl) => ({
       id: cl.id,
       name: cl.name,
+      // Короткий код для входа с телефона (TZ-28). null = база без миграции
+      // или код ещё не выдан; фронт в этом случае просто не рисует ссылку.
+      classCode: codes.get(cl.id) ?? null,
       createdAt: cl.created_at,
       students: cl.students.map(toStudentView),
     })),
@@ -153,8 +183,20 @@ classesRouter.post("/", async (c) => {
   const result = await createClass(c.env.DB, user.id, body.name);
   if (!result.ok) fail(result);
 
+  // Код отдаём сразу: учитель идёт писать его на доске (TZ-28, сценарий 2).
+  const classCode = await getClassCode(c.env.DB, result.value.id);
+
   return c.json(
-    { ok: true, class: { id: result.value.id, name: result.value.name, createdAt: result.value.created_at, students: [] } },
+    {
+      ok: true,
+      class: {
+        id: result.value.id,
+        name: result.value.name,
+        classCode,
+        createdAt: result.value.created_at,
+        students: [],
+      },
+    },
     201,
   );
 });
@@ -302,6 +344,33 @@ interface ReportCell {
   autoTasks: number;
   /** Машина оценила, учитель не подтвердил: его оценкой это НЕ считается. */
   unconfirmedByTeacher: boolean;
+  /**
+   * Фото, которое ученик приложил к ответам на эту работу. null — не приложил.
+   *
+   * Объект, а не флаг: учителю нужно не «было ли фото», а само фото, и ключ к
+   * нему — это готовая запись в `photo_checks`, по которой фото работы
+   * тетради учитель уже открывает.
+   */
+  photo: ReportCellPhoto | null;
+}
+
+/**
+ * Фото одной сданной работы.
+ *
+ * `checkId` — не «ссылка на фото», а идентификатор проверки: разбор фото ученика
+ * уже лежит в той же таблице `photo_checks`, что и разбор фото тетради, и
+ * владельцем записан владелец формы. Поэтому учитель открывает его тем же
+ * доступом (`GET /api/assignments/photo-checks/:id`), какой уже есть, —
+ * второй способ доступа к ученическим фотографиям означал бы вторую дыру.
+ */
+interface ReportCellPhoto {
+  checkId: string;
+  /**
+   * Сколько страниц в работе. null — ЧИСЛА НЕТ: бакет не ответил или фотографии
+   * уже удалены. Правдоподобная единица молча солгала бы учителю, что он видит
+   * всю работу, а он увидел бы обрывок.
+   */
+  pages: number | null;
 }
 
 interface ReportStudent {
@@ -314,10 +383,36 @@ interface ReportStudent {
 /** Почему ведомость пустая. null — ведомость не пустая. */
 type ReportEmptyReason = "no_students" | "no_works" | "no_answers";
 
+/**
+ * Строка разреза «тем, где просели» внутри отчёта класса (ТЗ-27, ПРОБЕЛ 5).
+ *
+ * Повторяет форму ответа `GET /api/journal/classes/:id/skills`, чтобы клиенту
+ * не пришлось собирать одно и то же из двух разных ответов: процент по теме —
+ * это одно и то же число, и разные значения в двух эндпоинтах означали бы,
+ * что один из них врёт. `percent` — null при нулевом `total`, а не 0: «считать
+ * не по чему» и «ноль процентов» — разные вещи.
+ */
+interface ReportSkill {
+  skill: string;
+  correct: number;
+  total: number;
+  attempts: number;
+  percent: number | null;
+  lastCheckedAt: number;
+}
+
 interface ClassReportData {
   class: { id: string; name: string };
   works: ReportWork[];
   students: ReportStudent[];
+  /**
+   * Разрез по темам, худшая сверху.
+   *
+   * Пустой массив — норма для класса, где меток нет: старые листы созданы до
+   * ТЗ-27, и пустой разрез должен выглядеть как раньше, а не как ошибка (см.
+   * гейт «у листа без меток ведомость выглядит как раньше»).
+   */
+  skills: ReportSkill[];
   summary: {
     studentsTotal: number;
     studentsSubmitted: number;
@@ -396,6 +491,86 @@ interface TaskTally {
 }
 
 /**
+ * Сколько страниц одной фотографии работы — с честным «не знаю».
+ *
+ * Отдельная функция ради одного правила: БАКЕТ МОЖЕТ НЕ ОТВЕТИТЬ. Тогда число
+ * страниц неизвестно, и мы обязаны сказать об этом (`null`), а не подставить
+ * единицу: правдоподобное число без источника — это выдумка, на которую потом
+ * опирается учитель, решивший, что посмотрел работу целиком.
+ *
+ * Ноль из бакета — тоже «не знаю», а не «ноль страниц»: снимка по базовому
+ * ключу нет, то есть он либо удалён по семи дням, либо не дожил до бакета.
+ * Число «0» учитель прочитал бы как «работа пустая».
+ */
+export async function countReportPhotoPages(
+  bucket: R2Bucket,
+  r2Key: string,
+): Promise<number | null> {
+  try {
+    const count = await countPhotoPages(bucket, r2Key);
+    return count > 0 ? count : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Фото ответов по сданным работам: `response_id` → фото для ведомости.
+ *
+ * Ответов МОЖЕТ БЫТЬ НЕТ вовсе, и это не ошибка — ученик просто приложил фото не
+ * ко всем работам. Поэтому пустой результат — обычный ответ, а не «ничего не
+ * нашлось, проверьте настройки».
+ */
+async function loadAnswerPhotos(
+  db: D1Database,
+  bucket: R2Bucket,
+  responseIds: string[],
+): Promise<Map<string, ReportCellPhoto>> {
+  const result = new Map<string, ReportCellPhoto>();
+  if (responseIds.length === 0) return result;
+
+  for (let i = 0; i < responseIds.length; i += MAX_BOUND_PARAMS) {
+    const chunk = responseIds.slice(i, i + MAX_BOUND_PARAMS);
+    const rows = await db
+      .prepare(
+        `SELECT response_id, photo_check_id, r2_key
+           FROM form_answer_photos
+          WHERE response_id IN (${placeholders(chunk.length, 1)})`,
+      )
+      .bind(...chunk)
+      .all<{ response_id: string; photo_check_id: string; r2_key: string }>();
+
+    // Один ответ — одно фото (уникальный индекс по «ответ + задание»), но
+    // заданий у работы несколько. На ведомости показываем одно фото работы:
+    // несколько ссылок в одной ячейке учитель всё равно не откроет, зато
+    // строка перестанет помещаться в колонку.
+    const firstPerResponse = new Map<string, { checkId: string; r2Key: string }>();
+    for (const row of rows.results ?? []) {
+      const key = String(row.response_id);
+      if (firstPerResponse.has(key)) continue;
+      firstPerResponse.set(key, {
+        checkId: String(row.photo_check_id),
+        r2Key: String(row.r2_key),
+      });
+    }
+
+    // Считаем страницы по нескольку сразу: страницы одной работы лежат рядом,
+    // и по одному sequentially мы бы превращали открытие ведомости в паузу,
+    // которой учитель ждёт на каждом уроке.
+    await Promise.all(
+      Array.from(firstPerResponse.entries()).map(async ([responseId, photo]) => {
+        result.set(responseId, {
+          checkId: photo.checkId,
+          pages: await countReportPhotoPages(bucket, photo.r2Key),
+        });
+      }),
+    );
+  }
+
+  return result;
+}
+
+/**
  * Собрать сводку по классу. Один раз — и для экрана, и для CSV.
  *
  * ПОРЯДОК, КОТОРЫЙ НЕЛЬЗЯ ЛОМАТЬ:
@@ -406,9 +581,11 @@ interface TaskTally {
  *   3. Работы — только учителя, и только те, что ещё открыты или куда этот
  *      класс что-то сдавал.
  *   4. Ответы — по работам из п.3, ученикам из п.2.
+ *   5. Фото ответов — по тем же ответам, что попали в ведомость.
  */
 async function loadClassReport(
   db: D1Database,
+  bucket: R2Bucket,
   userId: string,
   classId: string,
 ): Promise<ClassReportData> {
@@ -427,6 +604,10 @@ async function loadClassReport(
     class: { id: owned.value.id, name: owned.value.name },
     works: [],
     students: roster.map((s) => ({ ...s, works: [] })),
+    // У пустого класса попыток по темам не бывает: никто ничего не сдавал.
+    // Явный пустой массив, а не `undefined` — иначе клиенту пришлось бы гадать,
+    // «не пришло» это или «пришёл пустым».
+    skills: [],
     summary: {
       studentsTotal: roster.length,
       studentsSubmitted: 0,
@@ -615,6 +796,8 @@ async function loadClassReport(
     pendingTasks: 0,
   };
 
+  const photosByResponse = await loadAnswerPhotos(db, bucket, responseIds);
+
   const cellsByStudent = new Map<string, ReportCell[]>(students.map((s) => [s.id, s.works]));
   const cells: ReportCell[] = [];
   for (const row of latest.values()) {
@@ -642,6 +825,8 @@ async function loadClassReport(
       autoTasks: tally.autoTasks,
       // Машинный вердикт без единого шага учителя — это НЕ его отметка.
       unconfirmedByTeacher: tally.modelTasks > 0 && tally.teacherTasks === 0,
+      // Фото сдал этот ответ, а не «ученик вообще когда-то присылал».
+      photo: photosByResponse.get(String(row.response_id)) ?? null,
     };
     cells.push(cell);
     cellsByStudent.get(String(row.student_id))?.push(cell);
@@ -683,10 +868,33 @@ async function loadClassReport(
 
   const studentsSubmitted = students.filter((s) => s.works.length > 0).length;
 
+  // ТЗ-27, ПРОБЕЛ 5: разрез по темам едет в том же ответе, что и ведомость.
+  //
+  // Раньше разрез жил в отдельном эндпоинте журнала, и это работало, но только
+  // для экрана «Темы, где просели». Всё, что читает отчёт класса (страница,
+  // выгрузка, мобильный вид), получало ведомость БЕЗ тем, и учитель в одном
+  // месте видел проценты по работам, а в другом — ни слова о том, где провал.
+  //
+  // Считаем здесь тем же кодом и по тем же строкам, что и эндпоинт журнала
+  // (`buildSkillBreakdown`): две реализации одного расхождения дали бы два
+  // разных числа в двух местах, и «какой из них врёт» было бы невозможно решить.
+  // `listSkillAttempts` уже фильтрует по `user_id` ПЕРВЫМ условием, поэтому
+  // строки чужого учителя сюда не попадают вовсе, даже при переборе class_id.
+  const skillAttempts = await listSkillAttempts(db, userId, owned.value.id);
+  const skills: ReportSkill[] = buildSkillBreakdown(skillAttempts).map((row) => ({
+    skill: row.skill,
+    correct: row.correct,
+    total: row.total,
+    attempts: row.attempts,
+    percent: row.total > 0 ? Math.round((row.correct / row.total) * 100) : null,
+    lastCheckedAt: row.lastCheckedAt,
+  }));
+
   return {
     class: { id: owned.value.id, name: owned.value.name },
     works,
     students,
+    skills,
     summary: {
       studentsTotal: students.length,
       studentsSubmitted,
@@ -708,7 +916,7 @@ async function loadClassReport(
 /** GET /api/classes/:id/report — сводка по классу для экрана. */
 classesRouter.get("/:id/report", async (c) => {
   const user = requireAuth(c);
-  const report = await loadClassReport(c.env.DB, user.id, c.req.param("id"));
+  const report = await loadClassReport(c.env.DB, c.env.PDFS, user.id, c.req.param("id"));
 
   return c.json({ ok: true, report });
 });
@@ -765,6 +973,13 @@ function reportCsvCellValue(cell: ReportCell | undefined): string {
   const parts = [cell.max > 0 ? `${cell.score} из ${cell.max}` : `${cell.score}`];
   parts.push(reportSourceWord(cell));
   if (cell.pendingTasks > 0) parts.push(`ждёт вас: ${cell.pendingTasks}`);
+  // Фото попадает в файл тем же кодом, что и на экран: классному руководителю
+  // ведомость без слов о снимке не скажет, что работа была сфотографирована.
+  if (cell.photo) {
+    parts.push(
+      cell.photo.pages === null ? "фото работы, страниц не видно" : `фото работы, страниц: ${cell.photo.pages}`,
+    );
+  }
   return parts.join(" · ");
 }
 
@@ -801,7 +1016,7 @@ function isoDate(nowSec: number): string {
  */
 classesRouter.get("/:id/report.csv", async (c) => {
   const user = requireAuth(c);
-  const report = await loadClassReport(c.env.DB, user.id, c.req.param("id"));
+  const report = await loadClassReport(c.env.DB, c.env.PDFS, user.id, c.req.param("id"));
   // Дата одна и та же в шапке и в имени файла: два разных формата дали бы
   // учителю «сформировано 14.10» в файле «2026-10-15».
   const date = isoDate(Math.floor(Date.now() / 1000));
@@ -914,6 +1129,113 @@ classesRouter.get("/:id/report.csv", async (c) => {
  * ПУТЬ УЧЕНИКА
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/** Те же лимиты, что у общей ссылки: 120/мин на IP. */
+const linkGetLimit = rateLimitMiddleware({
+  limit: 120,
+  windowSec: 60,
+  bucket: "form-get",
+  keyFn: (c) => `ip:${djb2(c.get("ip") ?? "0.0.0.0")}`,
+});
+
+/**
+ * Имя cookie с токеном ученика для КОДА класса.
+ *
+ * Ключ включает сам код: у учителя с шестью параллелями на доске может стоять
+ * шесть кодов, и телефон ученика должен помнить все шесть, а не последний.
+ * Побочный плюс: чужой код на этом телефоне просто не найдёт своей cookie.
+ */
+function studentCookieName(code: string): string {
+  return `class_student_${code}`;
+}
+
+/** Полгода — урок длится минуты, а пазл складывается между уроками и днями. */
+const STUDENT_COOKIE_MAX_AGE = 60 * 60 * 24 * 180;
+
+const LoginBody = z.object({ name: z.string().min(1).max(120) });
+
+/**
+ * GET /api/classes/code/:code/tasks — что сегодня сдавать (TZ-28).
+ *
+ * Без входа по коду отдаём `{ needName: true }`: класс существует, но личность
+ * ещё не подтверждена. Класс при этом НЕ раскрывается по имени учеников —
+ * код может знать кто угодно из класса.
+ *
+ * С cookie отдаём имя ученика и его задания. Cookie ставит `POST .../login`,
+ * то есть сервер решает, кто это, а не клиент.
+ */
+classesRouter.get("/code/:code/tasks", linkGetLimit, async (c) => {
+  const cls = await findClassByCode(c.env.DB, c.req.param("code"));
+  if (!cls) {
+    throwApiError(404, "CLASS_CODE_NOT_FOUND", "Код не подошёл. Проверьте буквы и цифры с доски");
+  }
+
+  const token = getCookie(c, studentCookieName(cls.code));
+  const link = token ? await findStudentByToken(c.env.DB, token) : null;
+
+  if (!link || link.classId !== cls.classId) {
+    return c.json({ ok: true, needName: true as const });
+  }
+
+  const tasks = await listClassTasks(c.env.DB, cls.teacherId, link.student.id);
+  return c.json({
+    ok: true,
+    needName: false as const,
+    className: cls.className,
+    studentName: link.student.name,
+    tasks: tasks.map((t) => ({
+      token: t.token,
+      title: t.title,
+      subject: t.subject,
+      grade: t.grade,
+      open: t.open,
+      answered: t.answered,
+      answeredAt: t.answeredAt,
+      scoreTotal: t.scoreTotal,
+      scoreMax: t.scoreMax,
+    })),
+  });
+});
+
+/**
+ * POST /api/classes/code/:code/login — «вход» ученика по фамилии (TZ-28).
+ *
+ * Это НЕ авторизация в смысле пароля: кода класса нет ни в телефоне ученика, ни
+ * в его голове до урока. Защита здесь — закрытый список класса: фамилия должна
+ * совпасть с кем-то из живых учеников, иначе 404 с текстом для учителя, а не
+ * «счётчик ошибок» (пятая попытка перебора должна выглядеть для бота так же, как
+ * первая).
+ */
+classesRouter.post("/code/:code/login", linkGetLimit, async (c) => {
+  const cls = await findClassByCode(c.env.DB, c.req.param("code"));
+  if (!cls) {
+    throwApiError(404, "CLASS_CODE_NOT_FOUND", "Код не подошёл. Проверьте буквы и цифры с доски");
+  }
+
+  const body = LoginBody.parse(await readJson(c));
+  const match = await findStudentByName(c.env.DB, cls.classId, cls.teacherId, body.name);
+
+  if (!match.ok) {
+    if (match.reason === "ambiguous") {
+      throwApiError(404, "STUDENT_NAME_AMBIGUOUS", "В классе несколько учеников с такой фамилией — напишите ещё и имя");
+    }
+    throwApiError(404, "STUDENT_NOT_FOUND", "Такого ученика в классе нет. Проверьте написание или попросите учителя");
+  }
+
+  const link = match.student;
+  setCookie(c, studentCookieName(cls.code), link.student.token, {
+    // Cookie ставим сюда и намеренно на весь домен: фронт лежит на статике, API —
+    // на своём поддомене, и cookie без Domain не переживёт переход «/k/… → /form/?…»
+    // между ними.
+    maxAge: STUDENT_COOKIE_MAX_AGE,
+    path: "/",
+    httpOnly: true,
+    sameSite: "Lax",
+    secure: true,
+  });
+
+  return c.json({ ok: true, studentName: link.student.name, className: cls.className });
+});
+
 /** Строка формы в том виде, в каком её читает этот файл. */
 interface LinkFormRow {
   id: string;
@@ -983,14 +1305,6 @@ function formTokenFromRequest(c: { req: { param(key: string): string | undefined
   const last = segments[segments.length - 1] ?? "";
   return last === "submit" ? (segments[segments.length - 2] ?? "unknown") : last;
 }
-
-/** Те же лимиты, что у общей ссылки: 120/мин на IP. */
-const linkGetLimit = rateLimitMiddleware({
-  limit: 120,
-  windowSec: 60,
-  bucket: "form-get",
-  keyFn: (c) => `ip:${djb2(c.get("ip") ?? "0.0.0.0")}`,
-});
 
 /**
  * 60/час на ПАРУ «форма + IP» — тот же bucket и тот же ключ, что у общей ссылки.
@@ -1065,6 +1379,9 @@ async function loadLinkForm(
 }
 
 publicClassLinksRouter.get("/:st/forms/:t", linkGetLimit, async (c) => {
+  // Имя ученика здесь намеренно НЕ отдаём (тест S3: по своей ссылке нельзя
+  // узнать своё имя). На финальном экране имя берётся из того, что ученик сам
+  // ввёл на странице класса — это его собственное имя на своём же телефоне.
   const { form } = await loadLinkForm(c.env.DB, c.req.param("st"), c.req.param("t"));
 
   const tasks = parseTasks(form.payload_json);
@@ -1094,15 +1411,164 @@ const LinkSubmitBody = z.object({
       z.object({
         taskNumber: z.number().int().positive(),
         value: z.union([z.string().max(4000), z.number(), z.array(z.string().max(200)).max(20)]),
+        // Ключ уже загруженного фото (TZ-28). Обязателен ТОЛЬКО для заданий,
+        // где ученик сфотографировал тетрадь вместо ввода ответа.
+        photoR2Key: z.string().max(300).optional(),
       }),
     )
     .max(100),
 });
 
+/**
+ * Токен ученика для ключа лимита загрузки фото.
+ *
+ * Middleware-обработчик может не видеть `c.req.param()`, поэтому берём сегмент
+ * пути: `/api/public/class-links/<st>/forms/<t>/photo` → индекс 3.
+ */
+function studentTokenFromRequest(c: { req: { param(key: string): string | undefined; path: string } }): string {
+  const fromParam = c.req.param("st");
+  if (fromParam) return fromParam;
+  const segments = c.req.path.split("/").filter(Boolean);
+  return segments[3] ?? "unknown";
+}
+
+/**
+ * Загрузка фото: 40/час на ученика.
+ *
+ * Свой бакет и свой ключ, потому что это НЕ отправка работы: учительский
+ * лимит отправок (60/час на пару «форма + IP») про сдачу работы, а фотографий
+ * в классе всегда больше, чем работ. Общий потолок отправок мы не трогаем —
+ * фото на него не попадает.
+ */
+const linkPhotoLimit = rateLimitMiddleware({
+  limit: 40,
+  windowSec: 3600,
+  bucket: "student-photo",
+  keyFn: (c) => `student:${studentTokenFromRequest(c)}`,
+});
+
+/** Потолок на файл. Ровно как у загрузки фото тетради: 8 МБ. */
+const MAX_STUDENT_PHOTO_BYTES = 8 * 1024 * 1024;
+
+/** Форматы, которые умеет показать и модель, и учитель в браузере. */
+const STUDENT_PHOTO_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+
+/**
+ * Ключ в R2 для фото ученика.
+ *
+ * ПРЕФИКС ОБЯЗАН С ТОКЕНОМ УЧЕНИКА, и это не косметика. По `photoR2Key` приходит
+ * от клиента, поэтому без привязки к `st` ученик подставил бы чужой ключ и
+ * приклеил к своей работе чужое фото. Сервер проверяет префикс — подделать
+ * чужой ключ можно только зная чужой токен, а он и есть пропуск к чужой ссылке.
+ */
+function studentPhotoKeyPrefix(studentToken: string, formToken: string): string {
+  return `student/${studentToken}/${formToken}/`;
+}
+
+/**
+ * POST /api/public/class-links/:st/forms/:t/photo — фото тетради с телефона.
+ *
+ * Фото кладётся в ТОТ ЖЕ бакет PDFS и с ТЕМ ЖЕ сроком, что и работа, загруженная
+ * учителем (`PHOTO_RETENTION_SECONDS`, один импорт из `photoCheckGrading`).
+ * Второго бакета и второго таймера удаления здесь намеренно нет: персональные
+ * данные ученика должны исчезать по тому же правилу, что и остальные фото, иначе
+ * через полгода всплывёт вопрос «а кто это удаляет».
+ *
+ * Запись в `photo_checks` — та же, что у учительской загрузки, поэтому разбор
+ * фото учителем (кнопка в его кабинете) работает тем же кодом, а retention-скрипт
+ * удаляет фото ученика тем же запуском.
+ */
+publicClassLinksRouter.post("/:st/forms/:t/photo", linkPhotoLimit, async (c) => {
+  const now = Math.floor(Date.now() / 1000);
+  const { link, form } = await loadLinkForm(c.env.DB, c.req.param("st"), c.req.param("t"));
+  return uploadStudentPhoto(c, link, form, now);
+});
+
+/**
+ * Тело загрузки фото и запись в R2. Вынесено отдельно, потому что один и тот же
+ * код нужен двум входам: по персональной ссылке учителя и по cookie страницы
+ * ученика (см. `/api/classes/code/:code/forms/:t/photo`). Дублировать загрузку
+ * означало бы завести второй путь, где когда-нибудь поменяется только один из них.
+ */
+async function uploadStudentPhoto(
+  c: Context<AppEnv>,
+  link: StudentLink,
+  form: LinkFormRow,
+  now: number,
+): Promise<Response> {
+  const declared = Number(c.req.header("content-length") ?? "0");
+  if (declared > MAX_STUDENT_PHOTO_BYTES) {
+    throwApiError(413, "PHOTO_TOO_LARGE", "Фото слишком большое — снимите его ещё раз");
+  }
+
+  let file: File | null = null;
+  try {
+    const formData = await c.req.formData();
+    const value = formData.get("photo");
+    if (value instanceof File) file = value;
+  } catch {
+    throwApiError(400, "BAD_REQUEST", "Не удалось прочитать фото. Снимите его ещё раз");
+  }
+  if (!file) {
+    throwApiError(400, "PHOTO_REQUIRED", "Фото не пришло");
+  }
+  if (file.size === 0) {
+    throwApiError(400, "PHOTO_EMPTY", "Фото получилось пустым — снимите его ещё раз");
+  }
+  if (file.size > MAX_STUDENT_PHOTO_BYTES) {
+    throwApiError(413, "PHOTO_TOO_LARGE", "Фото слишком большое — снимите его ещё раз");
+  }
+  const mime = (file.type || "image/jpeg").toLowerCase();
+  if (!STUDENT_PHOTO_TYPES.has(mime)) {
+    throwApiError(415, "PHOTO_TYPE_UNSUPPORTED", "Пришлите фотографию или картинку");
+  }
+
+  const key = `${studentPhotoKeyPrefix(link.student.token, form.token)}${makeAnswerId()}.jpg`;
+  await c.env.PDFS.put(key, await file.arrayBuffer(), {
+    httpMetadata: { contentType: "image/jpeg" },
+  });
+
+  const deleteAt = now + PHOTO_RETENTION_SECONDS;
+  const checkId = await insertPhotoCheck(c.env.DB, {
+    // Учитель-владелец формы: разбор фото он делает из своего кабинета, и в
+    // его списке это его ученик, а не чужой снимок из ниоткуда.
+    userId: form.user_id,
+    subject: form.subject,
+    grade: form.grade,
+    r2Key: key,
+    mimeType: mime,
+    byteSize: file.size,
+    deleteAt,
+    createdAt: now,
+    // Фото ученика — одна страница по определению, но честнее посчитать тем же
+    // кодом, что и работа учителя: неизвестное значение = 0, а не выдуманное 1.
+    pages: await countPhotoPagesSafely(c.env.PDFS, key),
+  });
+
+  return c.json({ ok: true, photoR2Key: key, photoCheckId: checkId, deleteAt }, 201);
+}
+
 publicClassLinksRouter.post("/:st/forms/:t/submit", linkSubmitLimit, linkSubmitIpLimit, async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const { link, form } = await loadLinkForm(c.env.DB, c.req.param("st"), c.req.param("t"));
+  return submitLinkAnswer(c, link, form, now);
+});
 
+/**
+ * Приём работы по персональной ссылке.
+ *
+ * Один обработчик на два входа: `class-links/:st/...` (ссылка учителя) и
+ * `classes/code/:code/...` (cookie страницы ученика, TZ-28). Различаются они
+ * ТОЛЬКО тем, как найден ученик; всё остальное — валидация, сверка, запись
+ * ответа и фото — обязано быть одно. Иначе через полгода эти два пути разойдутся,
+ * и «по ссылке работа не сдаётся» станет загадкой без следа.
+ */
+async function submitLinkAnswer(
+  c: Context<AppEnv>,
+  link: StudentLink,
+  form: LinkFormRow,
+  now: number,
+): Promise<Response> {
   const rawBody = await readJson(c);
   const body = LinkSubmitBody.parse(rawBody);
 
@@ -1124,6 +1590,38 @@ publicClassLinksRouter.post("/:st/forms/:t/submit", linkSubmitLimit, linkSubmitI
   const startedAt = body.startedAt ?? null;
   const durationSec =
     startedAt && startedAt < now ? Math.min(86400, Math.max(0, now - startedAt)) : null;
+
+  // Фото к ответам (TZ-28). Ключ приходит от клиента, поэтому проверяем, что он
+  // загружен ИМЕННО этим учеником и ИМЕННО для этой формы, а потом находим
+  // запись о проверке, из которой берём тот же срок удаления.
+  const photoPrefix = studentPhotoKeyPrefix(link.student.token, form.token);
+  const photoInserts: D1PreparedStatement[] = [];
+  for (const a of body.answers) {
+    if (!a.photoR2Key || !taskByNumber.has(a.taskNumber)) continue;
+    if (!a.photoR2Key.startsWith(photoPrefix)) continue;
+    const check = await c.env.DB
+      .prepare(`SELECT id, delete_at FROM photo_checks WHERE r2_key = ?1`)
+      .bind(a.photoR2Key)
+      .first<{ id: string; delete_at: number | null }>();
+    if (!check) continue;
+    photoInserts.push(
+      c.env.DB
+        .prepare(
+          `INSERT INTO form_answer_photos
+             (id, response_id, task_number, photo_check_id, r2_key, delete_at, created_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
+        )
+        .bind(
+          makeAnswerId(),
+          responseId,
+          a.taskNumber,
+          String(check.id),
+          a.photoR2Key,
+          Number(check.delete_at ?? now + PHOTO_RETENTION_SECONDS),
+          now,
+        ),
+    );
+  }
 
   const answerInserts = graded.perTask.map((p) =>
     c.env.DB
@@ -1187,8 +1685,20 @@ publicClassLinksRouter.post("/:st/forms/:t/submit", linkSubmitLimit, linkSubmitI
       scoreMax: graded.scoreMax,
       now,
     }),
+    // Фото — в той же транзакции, что и ответ. Иначе между ними есть окно, в
+    // котором ведомость покажет ответ без пометки о фото.
+    ...photoInserts,
   ];
   await c.env.DB.batch(batch);
+
+  // ТЗ-27: ответ проверен автосверкой сразу при сдаче, и раньше эта проверка
+  // попытки по темам НЕ писала. Здесь у нас точно есть ученик (`link.student`)
+  // и его класс — то есть строка может быть полноценной, с `student_id`.
+  // Именно этот путь и даёт основную массу строк: персональные ссылки.
+  //
+  // Ждём пересчёт, а не шлём в фон: учитель открывает разрез сразу после
+  // того, как ученик сдал, и «почти сразу» тут читается как «не сработало».
+  await recomputeFormSkillAttempts(c.env.DB, link.teacherId, form.id);
 
   const perTask = graded.perTask.map((p) => ({
     taskNumber: p.taskNumber,
@@ -1196,8 +1706,99 @@ publicClassLinksRouter.post("/:st/forms/:t/submit", linkSubmitLimit, linkSubmitI
     ...(form.show_answers === 1 ? { answer: taskByNumber.get(p.taskNumber)?.answer ?? null } : {}),
   }));
 
-  return c.json({ ok: true, responseId, scoreTotal: graded.scoreTotal, scoreMax: graded.scoreMax, perTask }, 201);
+  return c.json(
+    {
+      ok: true,
+      responseId,
+      scoreTotal: graded.scoreTotal,
+      scoreMax: graded.scoreMax,
+      perTask,
+      // Сколько заданий сдано фотографией — экран «Готово» показывает это явно,
+      // чтобы ученик не гадал, ушло фото или потерялось на плохом Wi-Fi.
+      photosSaved: photoInserts.length,
+    },
+    201,
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * СТРАНИЦА УЧЕНИКА ПО КОДУ: /api/classes/code/:code/forms/:t…
+ *
+ * ─── ЗАЧЕМ ВТОРОЙ ВХОД, ЕСЛИ ЕСТЬ ПЕРСОНАЛЬНАЯ ССЫЛКА ───────────────────────
+ * Персональная ссылка кладёт токен ученика В URL. Для страницы учителя это
+ * нормально: QR на доске. Для страницы ученика — нет: адрес с токеном попадает в
+ * историю браузера, в «поделиться ссылкой» и в скриншот у соседа по парте. Здесь
+ * ученик узнаётся по httpOnly-cookie, поставленной при входе по фамилии, и
+ * токен не покидает сервер вообще.
+ *
+ * Лимиты — ТЕ ЖЕ бакеты и ТЕ ЖЕ числа, что у персональной ссылки: новый вход не
+ * должен стать вторым карманом (см. шапку файла).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Ученик по коду класса и cookie. Нет cookie или код чужой → 404. */
+async function loadCookieLink(
+  db: D1Database,
+  code: string,
+  formToken: string,
+  readToken: () => string | undefined,
+): Promise<{ link: StudentLink; form: LinkFormRow }> {
+  const cls = await findClassByCode(db, code);
+  const token = readToken();
+  if (!cls || !token) {
+    throwApiError(404, "CLASS_CODE_NOT_FOUND", "Код не подошёл. Проверьте буквы и цифры с доски");
+  }
+  const { link, form } = await loadLinkForm(db, token, formToken);
+  if (link.classId !== cls.classId) {
+    throwApiError(404, "CLASS_CODE_NOT_FOUND", "Код не подошёл. Проверьте буквы и цифры с доски");
+  }
+  return { link, form };
+}
+
+classesRouter.get("/code/:code/forms/:t", linkGetLimit, async (c) => {
+  const code = c.req.param("code");
+  const { form } = await loadCookieLink(c.env.DB, code, c.req.param("t"), () =>
+    getCookie(c, studentCookieName(normalizeClassCode(code))),
+  );
+
+  const tasks = parseTasks(form.payload_json);
+  return c.json({
+    ok: true,
+    form: {
+      title: form.title,
+      subject: form.subject,
+      grade: form.grade,
+      teacherLabel: "",
+      // ← Whitelist. Ни answer, ни explanation здесь быть не может.
+      tasks: tasks.map(toPublicTask),
+      expiresAt: form.expires_at,
+      // Код класса уже введён — второй раз его спрашивать незачем.
+      needsCode: false,
+    },
+  });
 });
+
+classesRouter.post("/code/:code/forms/:t/photo", linkPhotoLimit, async (c) => {
+  const now = Math.floor(Date.now() / 1000);
+  const code = c.req.param("code");
+  const { link, form } = await loadCookieLink(c.env.DB, code, c.req.param("t"), () =>
+    getCookie(c, studentCookieName(normalizeClassCode(code))),
+  );
+  return uploadStudentPhoto(c, link, form, now);
+});
+
+classesRouter.post(
+  "/code/:code/forms/:t/submit",
+  linkSubmitLimit,
+  linkSubmitIpLimit,
+  async (c) => {
+    const now = Math.floor(Date.now() / 1000);
+    const code = c.req.param("code");
+    const { link, form } = await loadCookieLink(c.env.DB, code, c.req.param("t"), () =>
+      getCookie(c, studentCookieName(normalizeClassCode(code))),
+    );
+    return submitLinkAnswer(c, link, form, now);
+  },
+);
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Общие мелочи

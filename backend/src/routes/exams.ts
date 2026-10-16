@@ -20,6 +20,7 @@ import {
   releaseFreeQuotaForGeneration,
 } from "../llm/ratelimit";
 import { checkExamAnswers, saveExamAttempt } from "../services/exam";
+import { getExamMinutes } from "../db/examProfiles";
 import { BadRequestError, ForbiddenError, PaymentRequiredError } from "../lib/errors";
 import type { AppEnv, SubjectSlug, CheckExamRequest } from "../types";
 
@@ -93,11 +94,29 @@ examsRouter.post("/generate", async (c) => {
       userId,
       plan: plan as UsagePlan,
       fingerprint: guard.fingerprint,
+      email: c.get("user")?.email ?? null,
+      env: c.env,
     });
+
+    // ТЗ-30 AD-5: длительность варианта — из профиля `exam_profiles`, а не из
+    // литерала в промпте. У ОГЭ и ЕГЭ она разная, а у математики различается
+    // ещё и по профилю, поэтому число приходит из базы.
+    //
+    // ПРОФИЛЬ ЧИТАЕТСЯ ДО ВЫЗОВА LLM, а длительность подставляется в ответ
+    // здесь, потому что `generateExam` живёт в чужом файле `llm/index.ts`
+    // (см. требование к правке в отчёте по ТЗ-30). Ответ учителю от этого
+    // правильный: `duration` в варианте совпадает с профилем.
+    const profile = await getExamMinutes(c.env.DB, { exam: body.exam, subject: body.subject });
+    const variant = { ...result.variant, duration: profile.minutes };
 
     return c.json({
       ok: true,
-      variant: result.variant,
+      variant,
+      // Откуда взялось время: `profile` — из таблицы, `default` — профиля нет.
+      // Учитель и владелец видят, что за объявленное время отвечает профиль,
+      // а не константа в коде.
+      durationSource: profile.source,
+      examProfile: profile.profileSlug,
       // ТЗ-25 разрыв 5: потери ОГЭ/ЕГЭ — в ответе, не только в логе. Для
       // экзамена это особенно важно: задания считают по баллам, и укороченный
       // вариант учитель обнаруживает уже на проверке работ.

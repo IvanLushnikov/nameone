@@ -76,6 +76,8 @@ import {
   type RawTask,
 } from "./validation/quality-filter";
 import { variantsDiffer, missingTaskCount } from "./validation/variant-check";
+import { numberSheetForDelivery } from "./validation/task-numbering";
+import { assignTopicSkills } from "./validation/skill-labels";
 import { buildPlanPrompt, normalizePlan } from "./prompts/plan-gen";
 
 /**
@@ -299,6 +301,15 @@ function summarizeLoss(
   deliveredTotal: number,
   /** Сколько пар дублей осталось в выдаче ПОСЛЕ чистки. */
   repeatedSkills = 0,
+  /**
+   * Сколько заданий уехало учителю БЕЗ ключа (ТЗ-32, AD-4).
+   *
+   * Считается по финальному списку заданий, поэтому ловит и оба пути
+   * `quality-filter.ts`: обнулённый ответ-заглушку (задание осталось) и
+   * откат фильтра на исходный набор. При `withAnswers = false` ноль: там
+   * отсутствие ответа — то, что просил учитель.
+   */
+  tasksWithoutAnswer = 0,
 ): QualityLossInfo {
   const droppedPatternRef: number[] = [];
   const droppedForeignMath: number[] = [];
@@ -332,6 +343,7 @@ function summarizeLoss(
     // Считается ПОСЛЕ чистки, на том, что реально уедет учителю. Ноль — значит
     // повторов в выдаче нет, независимо от того, сколько их было до чистки.
     repeatedSkills,
+    tasksWithoutAnswer,
   };
 }
 
@@ -1282,6 +1294,53 @@ export async function generateWorksheet(
     generation: resultFinal.generation as GenerateWorksheetMeta["generation"],
   };
 
+  // ТЗ-27: метка темы у каждого задания. Ставим ПОСЛЕ всех фильтров и добива
+  // количества — раньше номера позиций ещё менялись, и навык из плана съезжал
+  // бы на другое задание. Метка от модели приоритетнее плана, тема — последний
+  // рубеж (почему так, см. `validation/skill-labels.ts`).
+  assignTopicSkills(worksheet.tasks, sheetPlan?.items ?? null, request.topic);
+  // Второй вариант контрольной с планом по позициям не сопоставляется: план —
+  // один на лист, а вариантов два. Поэтому у него берётся только то, что уже
+  // есть в задании, и тема запроса. Разрез по теме увидит обе попытки, а вот
+  // назвать навык варианта 2 точнее плана нельзя — он проверяет ту же программу.
+  if (secondVariant) {
+    assignTopicSkills(secondVariant.tasks, null, request.topic);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ТЗ-32, AD-1/AD-2/AD-3: НОМЕР ЗАДАЁТ СЕРВЕР
+  //
+  // Место выбрано жёстко: ПОСЛЕ всех фильтров, дозапроса, замены дублей и
+  // проставления навыков. Только здесь состав листа окончательный, и номер
+  // равен позиции по-настоящему. Нумерация до фильтра оставила бы пропуски
+  // («1, 2, 4») — учитель прочитает их как потерянные задания.
+  //
+  // Расхождение с номером модели НЕ чинится молча (AD-3): исходные номера и
+  // позиции, где они разошлись, идут в лог. По логу видно, что модель не
+  // понимает формат нумерации, и это дешёвая правка промпта; при молчаливом
+  // ремонте этого знания не появится никогда.
+  // ─────────────────────────────────────────────────────────────────────────────
+  const numberedPrimary = numberSheetForDelivery(
+    worksheet.tasks as unknown as Record<string, unknown>[],
+    { subject: request.subject, stage: "primary", withAnswers: request.withAnswers },
+  );
+  worksheet = { ...worksheet, tasks: numberedPrimary.tasks as unknown as Worksheet["tasks"] };
+  // ТЗ-32, AD-4: пустой ключ не проходит молча. Число едет в ответе API и
+  // превращается у учителя в строку ДО печати. Ноль молчит: банкер «всё в
+  // порядке» — та же тишина, только с текстом.
+  let tasksWithoutAnswer = numberedPrimary.withoutAnswer;
+  if (secondVariant) {
+    const numberedSecond = numberSheetForDelivery(
+      secondVariant.tasks as unknown as Record<string, unknown>[],
+      { subject: request.subject, stage: "variant2", withAnswers: request.withAnswers },
+    );
+    secondVariant = {
+      ...secondVariant,
+      tasks: numberedSecond.tasks as unknown as Worksheet["tasks"],
+    };
+    tasksWithoutAnswer += numberedSecond.withoutAnswer;
+  }
+
   // Log — ПО КАЖДОМУ вызову провайдера (AD-5).
   for (const call of calls) {
     await logLlmCall(db, {
@@ -1320,6 +1379,9 @@ export async function generateWorksheet(
     // виден весь лист, а не один вариант.
     countRemainingDupes(worksheet.tasks as unknown as CleanTask[]) +
       countRemainingDupes((secondVariant?.tasks ?? []) as unknown as CleanTask[]),
+    // ТЗ-32, AD-4: сколько заданий уедет без ключа. Считается по обоим
+    // вариантам — лист учитель печатает целиком, а не один его фрагмент.
+    tasksWithoutAnswer,
   );
 
   const variantsInfo = buildVariantStatus(isControl ? 2 : 1, secondVariant ? 2 : 1, {

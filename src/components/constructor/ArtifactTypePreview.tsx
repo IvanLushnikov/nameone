@@ -81,8 +81,6 @@ function renderForType(type: TaskType): React.ReactNode {
       return <LessonBundlePreview_ />;
     case "interactive":
       return <InteractivePreview_ />;
-    case "image":
-      return <ImagePreview_ />;
     default:
       return <WorksheetPreview_ />;
   }
@@ -620,22 +618,4 @@ function InteractivePreview_() {
   );
 }
 
-// ───────────────────── Image: холст иллюстрации с рамкой и подписью ─────────────────────
 
-function ImagePreview_() {
-  return (
-    <g>
-      <rect x={12} y={8} width={110} height={6} rx={2} fill="#1F1B16" />
-      <rect x={12} y={20} width={64} height={3} rx={1.5} fill="#A8A29E" />
-      {/* Холст A4 (landscape-миниатюра) */}
-      <rect x={12} y={30} width={W - 24} height={54} rx={3} fill="white" stroke="#E7E5E0" strokeWidth={1} />
-      {/* Импровизированная схема: заголовок + узлы со связями */}
-      <rect x={24} y={38} width={70} height={4} rx={1.5} fill="#1F1B16" opacity={0.75} />
-      <path d="M52 50 L52 62 M52 62 L32 76 M52 62 L72 76 M52 62 L112 76" stroke="#A8A29E" strokeWidth={1.2} fill="none" />
-      <rect x={42} y={50} width={20} height={12} rx={2} fill="#22B37C" opacity={0.85} />
-      <rect x={22} y={76} width={20} height={6} rx={2} fill="#E7E5E0" />
-      <rect x={62} y={76} width={20} height={6} rx={2} fill="#E7E5E0" />
-      <rect x={102} y={76} width={20} height={6} rx={2} fill="#FF5E2E" opacity={0.7} />
-    </g>
-  );
-}

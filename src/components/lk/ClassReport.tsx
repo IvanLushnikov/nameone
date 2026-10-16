@@ -35,6 +35,7 @@ import * as React from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { SkillBreakdown } from "@/components/lk/SkillBreakdown";
 import { explainError, loadRoster, type RosterClass } from "@/lib/lk/classes-api";
 import {
   fetchClassReportCsv,
@@ -46,6 +47,8 @@ import {
   type ClassReportStudent,
 } from "@/lib/journal/types";
 import { plural } from "@/lib/utils/cn";
+import { generateReportXlsx, reportXlsxFilename } from "@/lib/utils/report-xlsx";
+import { downloadBlob } from "@/lib/utils/docx";
 
 type State =
   | { kind: "loading" }
@@ -169,6 +172,32 @@ export function ClassReportSection() {
     void load(classId);
   }, [classId, load]);
 
+  /**
+   * Выгрузка в XLSX (ТЗ-27, ПРОБЕЛ 4).
+   *
+   * Файл собирается в браузере из ведомости, которая УЖЕ лежит на экране:
+   * значит в файл не может попасть число, которого учитель не видел, и
+   * выгрузка не требует второго запроса на сервер. Собирается вручную
+   * (JSZip + SpreadsheetML), потому что библиотеки XLSX тянут Node-модули и
+   * ломают статическую сборку — см. шапку `src/lib/utils/report-xlsx.ts`.
+   */
+  const exportXlsx = async () => {
+    if (state.kind !== "ready" || busy) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      const blob = await generateReportXlsx(state.report);
+      downloadBlob(blob, reportXlsxFilename(state.report, Date.now()));
+    } catch {
+      // Причина одна и та же: файл не собрался. Слова «Excel» в сообщении
+      // нужны, потому что учитель поймёт по слову, что делать дальше.
+      setNote("Не получилось собрать файл Excel. Попробуйте скачать CSV — он открывается в Excel таблицей.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** CSV остаётся вторым файлом: его открывают там, где xlsx почему-то не открывается. */
   const exportCsv = async () => {
     if (!classId || busy) return;
     setBusy(true);
@@ -262,7 +291,13 @@ export function ClassReportSection() {
           </Button>
         </Card>
       ) : (
-        <ReportBody report={report} busy={busy} note={note} onExport={() => void exportCsv()} />
+        <ReportBody
+          report={report}
+          busy={busy}
+          note={note}
+          onExport={() => void exportXlsx()}
+          onExportCsv={() => void exportCsv()}
+        />
       )}
     </section>
   );
@@ -274,11 +309,13 @@ function ReportBody({
   busy,
   note,
   onExport,
+  onExportCsv,
 }: {
   report: ClassReport;
   busy: boolean;
   note: string | null;
   onExport: () => void;
+  onExportCsv: () => void;
 }) {
   const { summary, works, students } = report;
 
@@ -336,8 +373,13 @@ function ReportBody({
             Ученики и QR
           </Button>
         </div>
+        {/* CSV оставлен второй кнопкой, а не вместо xlsx: учителю, у которого
+            xlsx не открылся, нужен файл, который откроется. Подпись подсказывает
+            разницу, иначе «Скачать в Excel» и «Скачать CSV» читаются как одно и
+            то же. */}
         <p className="mt-2 text-xs text-warm-500">
-          Файл открывается в Excel таблицей: разделитель «точка с запятой», русские имена не ломаются.
+          Excel-файл открывается двойным щелчком: два листа — «Класс» и «Темы» (темы,
+          где просели). Без Excel есть <button type="button" onClick={onExportCsv} className="underline hover:no-underline">CSV</button>.
         </p>
 
         {note && (
@@ -363,6 +405,21 @@ function ReportBody({
         )}
       </Card>
 
+      {/* ТЗ-27: «Темы, где просели». Блок стоит ДО таблицы учеников, а не
+          после: учитель открывает ведомость с вопроса «какая тема провалилась»,
+          и ответ на этот вопрос должен быть раньше фамилий. Предмет и класс
+          берём у той работы, которую учитель проверял последней, — в конструктор
+          они уходят вместе с темой, иначе учителю пришлось бы вводить их
+          заново при каждой проверочной. */}
+      {works.length > 0 && (
+        <SkillBreakdown
+          classId={report.class.id}
+          className={report.class.name}
+          subject={works[0].subject}
+          grade={works[0].grade}
+        />
+      )}
+
       {/* Таблица шириной во весь класс: на телефоне она прокручивается по
           горизонтали, а не сжимает колонки до нечитаемых. */}
       <Card padded={false} className="overflow-hidden">
@@ -387,10 +444,22 @@ function ReportBody({
             <tbody>
               {students.map((student, index) => {
                 const percent = studentPercent(student);
+                // Сколько работ этого ученика сданы с фотографией. Рядом с фамилией,
+                // а не в отдельной колонке: учитель ищет фото по ученику, и «фото:
+                // 2» отвечает на этот вопрос раньше, чем он дойдёт до ячеек.
+                const photoWorks = student.works.filter((w) => w.photo).length;
                 return (
                   <tr key={student.id} className="border-b border-warm-50 last:border-0 align-top">
                     <td className="px-3 py-2 text-warm-500">{index + 1}</td>
-                    <td className="px-3 py-2 font-medium text-warm-950">{student.name}</td>
+                    <td className="px-3 py-2 font-medium text-warm-950">
+                      {student.name}
+                      {photoWorks > 0 && (
+                        <span className="block text-xs font-normal text-warm-600">
+                          фото: {photoWorks}{" "}
+                          {plural(photoWorks, "работа", "работы", "работ")}
+                        </span>
+                      )}
+                    </td>
                     {works.map((work) => {
                       const cell = student.works.find((w) => w.formId === work.id);
                       return (
@@ -432,7 +501,34 @@ function WorkCell({ cell }: { cell: ClassReportCell }) {
           ждёт вас: {cell.pendingTasks}
         </span>
       )}
+      {cell.photo && <PhotoLink photo={cell.photo} />}
     </div>
+  );
+}
+
+/**
+ * Ссылка на фото работы — та же страница проверки, что и у работы по фото
+ * тетради (`/journal?check=…`).
+ *
+ * Отдельную страницу «фото ученика» заводить НЕЛЬЗЯ: разбор фото идёт тем же
+ * кодом, доступ к нему — тем же, а вторая точка входа рано или поздно получит
+ * свои правила и перестанет совпадать с журналом.
+ *
+ * `pages === null` — числа страниц нет (хранилище не ответило или снимки уже
+ * удалены). Пишем это СЛОВАМИ и ссылку всё равно оставляем: снимок мог
+ * получиться, а вот число страниц мы не смогли узнать.
+ */
+function PhotoLink({ photo }: { photo: NonNullable<ClassReportCell["photo"]> }) {
+  return (
+    <a
+      href={`/journal?check=${encodeURIComponent(photo.checkId)}`}
+      className="text-xs font-medium text-brand-700 underline underline-offset-2 hover:text-brand-800"
+      data-testid="class-report-photo"
+    >
+      {photo.pages === null
+        ? "фото работы — число страниц не удалось определить"
+        : `фото работы — ${photo.pages} ${plural(photo.pages, "страница", "страницы", "страниц")}`}
+    </a>
   );
 }
 

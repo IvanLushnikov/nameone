@@ -219,10 +219,16 @@ async function seed() {
     .run();
 
   // Выручка: 249 ₽ успешной + 500 ₽ висящей (статус не 'succeeded').
+  //
+  // В КОПЕЙКАХ. Колонка называется amount_rub, но billing.ts сверяет её с
+  // expectedKopecks (см. :605), то есть хранит копейки; приводит к рублям
+  // ровно одно место — kopecksToRub в admin-stats.ts. Фикстура раньше клала
+  // рубли, и тогда деление на 100 молча давало 2.49 ₽ вместо 249 ₽ — именно
+  // тот баг, который показывал экран «Деньги» владельцу.
   await env.DB.prepare(
     `INSERT INTO payments (id, user_id, plan, period, amount_rub, status, created_at, completed_at)
-     VALUES ('pay_ok', 'u_teacher', 'base', 'monthly', 249, 'succeeded', ?1, ?1),
-            ('pay_pending', 'u_teacher', 'plus', 'monthly', 500, 'pending', ?1, NULL)`,
+     VALUES ('pay_ok', 'u_teacher', 'base', 'monthly', 24900, 'succeeded', ?1, ?1),
+            ('pay_pending', 'u_teacher', 'plus', 'monthly', 50000, 'pending', ?1, NULL)`,
   )
     .bind(NOW)
     .run();
@@ -271,15 +277,20 @@ async function seed() {
 }
 
 /** Независимая перепроверка: выручка считается здесь, а не берётся из ответа. */
+/**
+ * Независимая выручка для сверки. Сумма берётся из таблицы, а приводится к
+ * рублям здесь — тест не должен звать ту же функцию, что и прод-код, иначе он
+ * проверяет сам себя и не поймает баг с копейками, который и поймал.
+ */
 async function expectedRevenue(): Promise<number> {
   const row = await env.DB
     .prepare(
-      `SELECT COALESCE(SUM(amount_rub), 0) AS rub FROM payments
+      `SELECT COALESCE(SUM(amount_rub), 0) AS kopecks FROM payments
        WHERE status = 'succeeded' AND created_at >= ?1`,
     )
     .bind(monthStart())
-    .first<{ rub: number }>();
-  return row?.rub ?? 0;
+    .first<{ kopecks: number }>();
+  return (row?.kopecks ?? 0) / 100;
 }
 
 async function expectedActualCost(): Promise<number> {

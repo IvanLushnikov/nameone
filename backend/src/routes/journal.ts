@@ -6,6 +6,11 @@
  * даже автоматических. Теперь у учителя есть список: дата, предмет, класс,
  * отметка и — главное — кто эту отметку поставил: машина или он сам.
  *
+ *   Разбор по темам (ТЗ-27):
+ *     GET  /api/journal/classes/:id/skills        — «Темы, где просели»
+ *     GET  /api/journal/classes/:id/skills/:skill — карточка темы
+ *     POST /api/journal/forms/:id/recheck        — пересчёт после правки отметок
+ *
  * Монтируется в `index.ts` как `app.route("/api/journal", journalRouter)`.
  * Само монтирование — за оркестратором, этот файл только экспортирует роутер.
  *
@@ -23,7 +28,8 @@
  * Строка ленты отдаёт ещё `pages` — сколько страниц в работе. Учитель видит
  * это, не открывая саму работу: две страницы вместо четырёх — это не «две
  * страницы», а половина работы, и узнать об этом после разбора поздно.
- * Число не хранится, а считается по бакету — см. `countPagesForJournal`.
+ * Число страниц хранится в `photo_checks.pages` и считается один раз при
+ * загрузке работы — см. `countPagesForJournal`.
  */
 
 import { Hono } from "hono";
@@ -32,7 +38,16 @@ import type { D1Database } from "@cloudflare/workers-types";
 import { requireAuth } from "../middleware/auth";
 import { BadRequestError, NotFoundError } from "../lib/errors";
 import { listJournalEntries } from "../db/journal";
-import { countPhotoPages } from "./f06";
+import {
+  buildRecentChecks,
+  buildSkillBreakdown,
+  buildTaskBreakdown,
+  findStrugglingStudents,
+  listSkillAttempts,
+  listTaskStats,
+  recomputeFormSkillAttempts,
+  trendPercent,
+} from "../db/skill-attempts";
 import {
   applyTeacherOverride,
   buildCheckMeta,
@@ -87,6 +102,11 @@ interface PhotoPagesRow {
   id: string;
   r2_key: string | null;
   deleted_at: number | null;
+  /**
+   * Посчитанное при загрузке число страниц. null — при загрузке бакет не
+   * ответил, и это правда, а не ноль страниц.
+   */
+  pages: number | null;
 }
 
 /**
@@ -95,7 +115,6 @@ interface PhotoPagesRow {
  */
 async function countPagesForJournal(
   db: D1Database,
-  bucket: R2Bucket,
   checkIds: string[],
 ): Promise<Map<string, number | null>> {
   const result = new Map<string, number | null>();
@@ -104,34 +123,20 @@ async function countPagesForJournal(
   const placeholders = checkIds.map((_, i) => `?${i + 1}`).join(", ");
   const photos = await db
     .prepare(
-      `SELECT id, r2_key, deleted_at FROM photo_checks WHERE id IN (${placeholders})`,
+      `SELECT id, r2_key, deleted_at, pages FROM photo_checks WHERE id IN (${placeholders})`,
     )
     .bind(...checkIds)
     .all<PhotoPagesRow>();
 
   const byId = new Map(photos.results.map((p) => [p.id, p]));
-  // Строки без живой проверки — честный null, а не пропуск поля.
-  const todo = checkIds.filter((id) => {
+  for (const id of checkIds) {
     const row = byId.get(id);
-    const alive = row && row.deleted_at === null && row.r2_key !== null;
-    if (!alive) result.set(id, null);
-    return Boolean(alive);
-  });
-
-  for (let i = 0; i < todo.length; i += PAGES_CHUNK) {
-    const chunk = todo.slice(i, i + PAGES_CHUNK);
-    await Promise.all(
-      chunk.map(async (id) => {
-        try {
-          result.set(id, await countPhotoPages(bucket, byId.get(id)!.r2_key!));
-        } catch {
-          // Бакет не ответил: число неизвестно, причина неизвестна. Ключ не
-          // ставим — строка не покажет ни числа, ни выдуманной причины.
-        }
-      }),
-    );
+    if (!row || row.deleted_at !== null || row.r2_key === null) {
+      result.set(id, null);
+      continue;
+    }
+    result.set(id, row.pages);
   }
-
   return result;
 }
 
@@ -156,7 +161,6 @@ journalRouter.get("/", async (c) => {
   const rows = await listJournalEntries(c.env.DB, { userId: user.id, limit, before });
   const pages = await countPagesForJournal(
     c.env.DB,
-    c.env.PDFS,
     rows.map((r) => r.check_id),
   );
 
@@ -464,14 +468,14 @@ journalRouter.post("/answers/:id/override", async (c) => {
     .prepare(
       `SELECT a.id, a.response_id, a.task_number, a.task_type, a.student_answer, a.is_correct,
               a.points_awarded, a.points_max, a.needs_review, a.check_method, a.check_meta_json,
-              f.user_id AS form_user_id
+              f.id AS form_id, f.user_id AS form_user_id
        FROM form_answers a
        JOIN form_responses r ON r.id = a.response_id
        JOIN forms f ON f.id = r.form_id
        WHERE a.id = ?1`,
     )
     .bind(c.req.param("id"))
-    .first<AnswerRow & { form_user_id: string }>();
+    .first<AnswerRow & { form_id: string; form_user_id: string }>();
   if (!answer) throw new NotFoundError("Ответ не найден");
   if (answer.form_user_id !== user.id) throw new NotFoundError("Ответ не найден");
 
@@ -519,6 +523,14 @@ journalRouter.post("/answers/:id/override", async (c) => {
     .bind(answer.response_id)
     .run();
 
+  // Пересчёт попыток по темам делаем ЗДЕСЬ, а не только по отдельной кнопке.
+//
+// Учитель закрыл эссе и поставил «2» — это и есть момент, когда работа
+// «проверена». Если не пересчитать сейчас, разрез по темам продолжит показывать
+// процент, который учитель уже видел исправленным в журнале, и ведомость
+// разойдётся сама с собой.
+  const recorded = await recomputeFormSkillAttempts(c.env.DB, user.id, answer.form_id);
+
   return c.json({
     ok: true,
     answer: {
@@ -548,7 +560,116 @@ journalRouter.post("/answers/:id/override", async (c) => {
       llmChecked: meta.llmChecked === true,
       decidedAt: now,
     },
+    // Сколько строк попыток по темам пересчитано. Учителю это число ничего не
+    // говорит — оно нужно для проверки, что пересчёт действительно отработал.
+    skillAttemptsRecorded: recorded,
   });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Разбор по темам (ТЗ-27)
+//
+// Эндпоинты живут здесь, а не в `routes/classes.ts`, потому что этот файл —
+// единственный в листе, куда у разбора есть доступ к журналу проверок, а
+// `classes.ts` на момент написания занят соседней работой. Смысл от этого не
+// меняется: числа считает сервер (AD-3 ТЗ-27), владение проверяется до чтения,
+// а чужой класс — 404, а не 403.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Проверить владение классом ДО чтения попыток.
+ *
+ * 404, а не 403 — ровно как в `loadOwnForm` выше: по коду ответа перебором
+ * лезть не должен никто. Пустой массив попыток у своего класса — валидный ответ
+ * («тем с метками ещё нет»), а не ошибка.
+ */
+async function loadOwnClassForSkills(
+  db: D1Database,
+  userId: string,
+  classId: string,
+): Promise<{ id: string; name: string }> {
+  const row = await db
+    .prepare(`SELECT id, name FROM classes WHERE id = ?1 AND user_id = ?2`)
+    .bind(classId, userId)
+    .first<{ id: string; name: string }>();
+  if (!row) throw new NotFoundError("Класс не найден");
+  return { id: String(row.id), name: String(row.name) };
+}
+
+/**
+ * GET /api/journal/classes/:id/skills — блок «Темы, где просели».
+ *
+ * Сортировка по доле верных — на сервере (AD-3): худшая тема сверху, иначе
+ * учителю пришлось бы переставлять список глазами перед каждым уроком.
+ */
+journalRouter.get("/classes/:id/skills", async (c) => {
+  const user = requireAuth(c);
+  const classId = c.req.param("id");
+  await loadOwnClassForSkills(c.env.DB, user.id, classId);
+
+  const attempts = await listSkillAttempts(c.env.DB, user.id, classId);
+
+  return c.json({
+    ok: true,
+    skills: buildSkillBreakdown(attempts).map((row) => ({
+      skill: row.skill,
+      correct: row.correct,
+      total: row.total,
+      attempts: row.attempts,
+      percent: row.total > 0 ? Math.round((row.correct / row.total) * 100) : null,
+      lastCheckedAt: row.lastCheckedAt,
+    })),
+  });
+});
+
+/**
+ * GET /api/journal/classes/:id/skills/:skill — карточка темы.
+ *
+ * Четыре блока из ТЗ-27 §3: три последние проверки, кто ошибается два раза
+ * подряд, разбор по заданиям. Название темы идёт в путь целиком — русские
+ * буквы и пробелы закодирует клиент, а не эндпоинт.
+ */
+journalRouter.get("/classes/:id/skills/:skill", async (c) => {
+  const user = requireAuth(c);
+  const classId = c.req.param("id");
+  const skill = c.req.param("skill").trim();
+  await loadOwnClassForSkills(c.env.DB, user.id, classId);
+
+  // Пустая тема в адресе — это битая ссылка, а не «тема без названия»: по
+  // пустой строке искать нечего, и молча вернуть пустой разбор значило бы
+  // показать учителю «здесь ничего не провалилось».
+  if (!skill) throw new BadRequestError("Не указано название темы");
+
+  const attempts = await listSkillAttempts(c.env.DB, user.id, classId, skill);
+  const stats = await listTaskStats(c.env.DB, user.id, classId, skill);
+  const recent = buildRecentChecks(attempts);
+
+  return c.json({
+    ok: true,
+    skill,
+    recent,
+    struggling: findStrugglingStudents(attempts),
+    tasks: buildTaskBreakdown(stats, skill),
+    trend: trendPercent(recent),
+  });
+});
+
+/**
+ * POST /api/journal/forms/:id/recheck — повторный пересчёт попыток по темам.
+ *
+ * Зачем учителю такая ручка: он поправил отметки в журнале, и разрез по темам
+ * обязан показать новые числа. Пересчёт идёт по данным, а не по сохранённым
+ * итогам, — иначе ведомость продолжала бы врать о том, что учитель уже изменил.
+ *
+ * Форма без меток даёт `recorded: 0` — это норма, а не ошибка: старые листы
+ * должны вести себя как раньше.
+ */
+journalRouter.post("/forms/:id/recheck", async (c) => {
+  const user = requireAuth(c);
+  const form = await loadOwnForm(c.env.DB, c.req.param("id"), user.id);
+
+  const recorded = await recomputeFormSkillAttempts(c.env.DB, user.id, form.id);
+  return c.json({ ok: true, formId: form.id, recorded });
 });
 
 export { journalRouter };

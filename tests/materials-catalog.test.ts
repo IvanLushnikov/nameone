@@ -38,7 +38,6 @@ const CONSTRUCTOR_DEEP_LINK_TYPES = [
   "materials",
   "lesson-bundle",
   "interactive",
-  "image",
 ];
 
 const ARTIFACT_TYPES: MaterialArtifactType[] = [
@@ -49,7 +48,6 @@ const ARTIFACT_TYPES: MaterialArtifactType[] = [
   "presentation",
   "ktp",
   "interactive",
-  "image",
 ];
 
 /** Предметы, которые ТЗ-15 называет обязательными (§8 + ТЗ-15 §12). */

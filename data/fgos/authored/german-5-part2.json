@@ -1,0 +1,61 @@
+{
+  "source": "german-5-part2",
+  "topics": [
+    {
+      "statement": "Использование при чтении и аудировании языковой, в том числе контекстуальной, догадки",
+      "title": "Догадка по контексту",
+      "examples": [
+        {
+          "text": "Прочитайте предложения и определите по контексту, что означает выделенное слово. Запишите его значение по-русски: Am Samstag helfen die Kinder der Mutter in der Küche. Sie tragen die Teller und waschen das Geschirr.",
+          "answer": "tragen — носить"
+        },
+        {
+          "text": "Вставьте вместо пропуска одно слово из списка (Brot, Hund, Schule), чтобы предложение было понятно: Jetzt mache ich die Hausaufgaben. Danach gehe ich in die ... und lerne neue Wörter.",
+          "answer": "Schule"
+        }
+      ]
+    },
+    {
+      "statement": "Использование при формулировании собственных высказываний, ключевых слов, плана",
+      "title": "Ключевые слова и план",
+      "examples": [
+        {
+          "text": "Прочитайте текст и выпишите пять ключевых слов, по которым его можно пересказать: Unser Klassenzimmer ist groß. Wir lernen hier Deutsch und schreiben viele Übungen. Nach dem Unterricht spielen wir auf dem Hof. In der Pause trinken die Schüler Wasser.",
+          "answer": "Klassenzimmer, groß, lernen, spielen, Pause"
+        },
+        {
+          "text": "Составьте 5-6 фраз о своём выходном дне по плану и подчёркнутым ключевым словам: 1) Am Samstag... 2) Ich... 3) Meine Familie... 4) Dann... 5) Ich mag... 6) Das war schön. Ключевые слова: Haus, spielen, Freund.",
+          "answer": "5-6 фраз по плану с ключевыми словами Haus, spielen, Freund"
+        }
+      ]
+    },
+    {
+      "statement": "Игнорирование информации, не являющейся необходимой для понимания основного содержания, прочитанного (прослушанного) текста или для нахождения в тексте запрашиваемой информации",
+      "title": "Игнорирование лишней информации",
+      "examples": [
+        {
+          "text": "Прочитайте текст и выпишите только то предложение, которое отвечает на вопрос «Wo lernt Tom?» Tom wohnt in einer kleinen Stadt. Seine Schule ist neu und groß. Er lernt dort Deutsch und Englisch. Am Nachmittag spielt er Fußball.",
+          "answer": "Er lernt dort Deutsch und Englisch."
+        },
+        {
+          "text": "Прочитайте текст, опустите подробности и запишите по-русски одним предложением, что Анна делает в субботу: Am Samstag hilft Anna ihrer Mutter im Garten. Sie pflanzen Tomaten und Kräuter. Nach dem Gießen machen die beiden ein Foto vom Beet.",
+          "answer": "Анна помогает маме в саду"
+        }
+      ]
+    },
+    {
+      "statement": "Сравнение (в том числе установление основания для сравнения) объектов, явлений, процессов, их элементов и основных функций в рамках изученной тематики",
+      "title": "Сравнение объектов и явлений",
+      "examples": [
+        {
+          "text": "Прочитайте пары предложений и укажите по-русски, по какому признаку сравниваются предметы: Der Apfel ist süßer als die Birne. Das Klassenzimmer ist größer als das Wohnzimmer. Der Sommer ist wärmer als der Winter.",
+          "answer": "1 — вкус; 2 — размер; 3 — температура"
+        },
+        {
+          "text": "Сравните два школьных предмета по двум признакам: что труднее и что интереснее. Составьте 4 предложения по образцу «Sport ist interessanter als Deutsch» и запишите их в тетрадь.",
+          "answer": "4 предложения с конструкцией «интереснее / труднее ... als»"
+        }
+      ]
+    }
+  ]
+}

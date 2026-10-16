@@ -38,6 +38,20 @@ import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import type { WorksheetTask } from "../../src/types";
 
 const SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS skill_attempts (
+  id           TEXT PRIMARY KEY,               -- ska_<12>
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  class_id     TEXT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  skill        TEXT NOT NULL,
+  form_id      TEXT NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
+  response_id  TEXT NOT NULL,
+  student_id   TEXT REFERENCES class_students(id) ON DELETE CASCADE,
+  checked_at   INTEGER NOT NULL,               -- unix seconds
+  correct      INTEGER NOT NULL,
+  total        INTEGER NOT NULL,
+  created_at   INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS users (
   id                  TEXT PRIMARY KEY,
   email               TEXT NOT NULL UNIQUE,
@@ -159,6 +173,47 @@ CREATE TABLE IF NOT EXISTS class_student_answers (
 );
 CREATE INDEX IF NOT EXISTS idx_csa_student_form ON class_student_answers(student_id, form_id, submitted_at DESC);
 CREATE INDEX IF NOT EXISTS idx_csa_form ON class_student_answers(form_id, submitted_at DESC);
+
+CREATE TABLE IF NOT EXISTS photo_checks (
+  id             TEXT PRIMARY KEY,
+  user_id        TEXT REFERENCES users(id) ON DELETE SET NULL,
+  worksheet_id   TEXT,
+  subject        TEXT,
+  grade          INTEGER,
+  r2_key         TEXT,
+  mime_type      TEXT,
+  byte_size      INTEGER,
+  source_kind    TEXT NOT NULL DEFAULT 'single',
+  pages          INTEGER NOT NULL DEFAULT 1,
+  consent_version INTEGER NOT NULL DEFAULT 1,
+  status         TEXT NOT NULL DEFAULT 'pending',
+  total_points   INTEGER NOT NULL DEFAULT 0,
+  earned_points  INTEGER NOT NULL DEFAULT 0,
+  percentage     INTEGER,
+  grade_mark     TEXT,
+  needs_review   INTEGER NOT NULL DEFAULT 0,
+  model          TEXT,
+  provider       TEXT,
+  cost_usd       REAL NOT NULL DEFAULT 0,
+  latency_ms     INTEGER,
+  error_code     TEXT,
+  deleted_at     INTEGER,
+  delete_at      INTEGER,
+  created_at     INTEGER NOT NULL,
+  completed_at   INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS form_answer_photos (
+  id             TEXT PRIMARY KEY,
+  response_id    TEXT NOT NULL REFERENCES form_responses(id) ON DELETE CASCADE,
+  task_number    INTEGER NOT NULL,
+  photo_check_id TEXT NOT NULL,
+  r2_key         TEXT NOT NULL,
+  delete_at      INTEGER NOT NULL,
+  created_at     INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fap_response_task ON form_answer_photos(response_id, task_number);
+CREATE INDEX IF NOT EXISTS idx_fap_check ON form_answer_photos(photo_check_id);
 `;
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -175,6 +230,7 @@ function auth(session: string): Record<string, string> {
 }
 
 /** Что ждёт клиент от сводки. Ничего не выдумываем: ровно поля ответа. */
+/** Ответ ученика как его видит ведомость. */
 interface ReportCellView {
   formId: string;
   score: number;
@@ -184,6 +240,8 @@ interface ReportCellView {
   modelTasks: number;
   teacherTasks: number;
   unconfirmedByTeacher: boolean;
+  /** null — фото не прикладывали. Иначе — ключ проверки и число страниц. */
+  photo: { checkId: string; pages: number | null } | null;
 }
 
 interface ReportView {
@@ -371,6 +429,54 @@ async function responseIdOf(studentId: string, formId: string): Promise<string> 
 }
 
 /**
+ * Ответ, к которому ученик приложил фото.
+ *
+ * Записывается ровно то, что пишет настоящий путь сдачи: строка в
+ * `photo_checks` (владелец — учитель формы, поэтому разбор фото он делает из
+ * своего кабинета) и привязка «ответ на задание ↔ этот снимок». Сами снимки
+ * кладём в бакет — сколько страниц лежит, ведомость обязана считать по бакету,
+ * а не по записи в базе.
+ */
+async function seedAnswerPhoto(
+  opts: { responseId: string; taskNumber: number; ownerId: string; pages: number },
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const seq = `${now}_${Math.floor(now % 9973)}_${opts.taskNumber}`;
+  const r2Key = `pc/report/${seq}.jpg`;
+  const checkId = `pc_report${seq}`;
+
+  await env.DB
+    .prepare(
+      `INSERT INTO photo_checks
+         (id, user_id, worksheet_id, subject, grade, r2_key, mime_type, byte_size,
+          source_kind, pages, consent_version, status, needs_review, cost_usd,
+          delete_at, created_at)
+       VALUES (?1, ?2, NULL, 'math', 5, ?3, 'image/jpeg', 1024, 'single', ?4, 2,
+               'pending', 0, 0, ?5, ?6)`,
+    )
+    .bind(checkId, opts.ownerId, r2Key, opts.pages, now + 7 * 86400, now)
+    .run();
+
+  await env.DB
+    .prepare(
+      `INSERT INTO form_answer_photos
+         (id, response_id, task_number, photo_check_id, r2_key, delete_at, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
+    )
+    .bind(`fap_${seq}`, opts.responseId, opts.taskNumber, checkId, r2Key, now + 7 * 86400, now)
+    .run();
+
+  for (let page = 1; page <= opts.pages; page += 1) {
+    // Первая страница лежит на базовом ключе, остальные — с суффиксом `-N`.
+    // Ровно то же правило, что у работы по фото тетради (f06.ts).
+    const key = page <= 1 ? r2Key : r2Key.replace(/\.jpg$/u, `-${page}.jpg`);
+    await env.PDFS.put(key, new Uint8Array([1, 2, 3]), { httpMetadata: { contentType: "image/jpeg" } });
+  }
+
+  return checkId;
+}
+
+/**
  * Посчитать ячейки в строке CSV с кавычками.
  *
  * Наивный `split(";")` считал бы разделителем точку с запятой ВНУТРИ кавычек и
@@ -404,7 +510,14 @@ describe("ведомость по классу (лист 3.1.3)", () => {
   // Теперь соседние тесты делят базу, и ведомость включала чужие работы.
   // Учителей из beforeAll не трогаем — они нужны каждому тесту.
   beforeEach(async () => {
-    for (const table of ["class_student_answers", "form_answers", "form_responses", "forms"]) {
+    for (const table of [
+      "form_answer_photos",
+      "photo_checks",
+      "class_student_answers",
+      "form_answers",
+      "form_responses",
+      "forms",
+    ]) {
       await env.DB.prepare(`DELETE FROM ${table}`).run();
     }
   });
@@ -851,5 +964,70 @@ describe("ведомость по классу (лист 3.1.3)", () => {
     expect(report.works).toHaveLength(12);
     // Обрезание объявлено: молчаливая «полная» ведомость была бы выдумкой.
     expect(report.worksTruncated).toBe(true);
+  });
+
+  // ── R9. Фото сданной работы доходит до учителя (ТЗ-28) ───────────────────
+  //
+  // ДЕФЕКТ, КОТОРЫЙ ЭТОТ ТЕСТ ЗАКРЫВАЕТ: ученик приложил фото к ответу, снимок
+  // принят и лежит в `form_answer_photos` — а ведомость о нём не знала ни
+  // словом. Учитель отдал работу, ученик её сдал «по фото» и ждал разбора, а
+  // разбора не существовало ни на экране, ни в выгрузке.
+  it("R9: фото сданной работы видно в ведомости и открывается по ключу проверки", async () => {
+    const classId = await createClass(SESSION_A, "9А");
+    const students = await addStudents(SESSION_A, classId, ["Петрова Мария"]);
+    const form = await seedForm(TEACHER, { title: "Работа с фото" });
+    await submitPersonal(students[0]!.token, form.token, correctAnswers, "10.9.0.9");
+
+    const responseId = await responseIdOf(students[0]!.id, form.id);
+    // Владелец проверки — учитель, чья это форма: ровно так пишет настоящий
+    // приём фото от ученика, и именно поэтому ключ годится для открытия.
+    const checkId = await seedAnswerPhoto({
+      responseId,
+      taskNumber: 1,
+      ownerId: TEACHER,
+      pages: 2,
+    });
+
+    const report = await readReport(SESSION_A, classId);
+    const cell = report.students[0]!.works[0]!;
+    expect(cell.photo).toEqual({ checkId, pages: 2 });
+
+    // И в выгрузке то же самое словами: классному руководителю ведомость без
+    // упоминания снимка ничего не сказала бы о том, что работа сфотографирована.
+    const csv = await (await fetchCsv(SESSION_A, classId)).text();
+    expect(csv).toContain("фото работы, страниц: 2");
+  });
+
+  it("R9b: при недоступном хранилище ведомость отдаётся и говорит, что число страниц неизвестно", async () => {
+    const classId = await createClass(SESSION_A, "9Б");
+    const students = await addStudents(SESSION_A, classId, ["Сидоров Пётр"]);
+    const form = await seedForm(TEACHER, { title: "Работа с фото" });
+    await submitPersonal(students[0]!.token, form.token, correctAnswers, "10.9.0.10");
+
+    const responseId = await responseIdOf(students[0]!.id, form.id);
+    await seedAnswerPhoto({ responseId, taskNumber: 1, ownerId: TEACHER, pages: 1 });
+
+    // Бакет лежит. Подменяем биндинг на падающий — ровно то, что делает
+    // недоступное хранилище в бою.
+    const realBucket = env.PDFS;
+    (env as unknown as { PDFS: unknown }).PDFS = {
+      head: () => {
+        throw new Error("R2 недоступен");
+      },
+    };
+    try {
+      const res = await fetchReport(SESSION_A, classId);
+      // Ведомость обязана ОТДАТЬСЯ: пустая таблица из-за нашего хранилища —
+      // это потерянная работа всего класса, а «не смогли посчитать страницы» —
+      // честное и мелкое ограничение.
+      expect(res.status, "ведомость при упавшем бакете").toBe(200);
+      const body = (await res.json()) as { report: ReportView };
+      const cell = body.report.students[0]!.works[0]!;
+      // Помета о фото остаётся — она из базы. Не знаем только числа страниц.
+      expect(cell.photo).not.toBeNull();
+      expect(cell.photo?.pages).toBeNull();
+    } finally {
+      (env as unknown as { PDFS: unknown }).PDFS = realBucket;
+    }
   });
 });

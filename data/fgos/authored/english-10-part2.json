@@ -1,0 +1,621 @@
+{
+ "source": "english-10-part2",
+ "topics": [
+  {
+   "statement": "Многозначные лексические единицы. Синонимы. Антонимы. Интернациональные слова. Наиболее частотные фразовые глаголы. Сокращения и аббревиатуры",
+   "title": "Синонимы, антонимы, фразовые глаголы",
+   "examples": [
+    {
+     "text": "Подберите синоним к слову в скобках: She looks (after) the puppy every day. — His answer was quite (rare).",
+     "answer": "cares for, unusual"
+    },
+    {
+     "text": "Расшифруйте сокращения: the UN, the BBC, the USA.",
+     "answer": "United Nations, British Broadcasting Corporation, United States"
+    }
+   ]
+  },
+  {
+   "statement": "Различные средства связи для обеспечения целостности и логичности устного/письменного высказывания",
+   "title": "Средства связи в тексте",
+   "examples": [
+    {
+     "text": "Вставьте however или therefore: The task was difficult, __ she finished it on time. He was very tired, __ he went to bed early.",
+     "answer": "however, therefore"
+    },
+    {
+     "text": "Свяжите предложения в один текст, поставив в начало каждого First, Besides, Finally: We got up. / The weather was fine. / We went out.",
+     "answer": "First we got up. Besides, it was fine. Finally, we went out."
+    }
+   ]
+  },
+  {
+   "statement": "Грамматическая сторона речи",
+   "title": "Грамматическая сторона речи",
+   "examples": [
+    {
+     "text": "Укажите часть речи выделенных слов: She opened the window (1) and read the book (2).",
+     "answer": "opened — глагол, book — существительное"
+    },
+    {
+     "text": "Составьте по одному предложению со словом help в роли существительного и в роли глагола.",
+     "answer": "His help was useful. Could you help me?"
+    }
+   ]
+  },
+  {
+   "statement": "Распознавание и употребление в устной и письменной речи изученных морфологических форм и синтаксических конструкций английского языка",
+   "title": "Морфологические формы в речи",
+   "examples": [
+    {
+     "text": "Раскройте скобки, выбрав нужную форму глагола: She (go) to the theatre last week. — They (be) students now.",
+     "answer": "went, are"
+    },
+    {
+     "text": "Выпишите глаголы из предложений и укажите время и залог: He goes to school. He went to school. He has gone to school.",
+     "answer": "present simple, past simple, present perfect"
+    }
+   ]
+  },
+  {
+   "statement": "Различные коммуникативные типы предложений: повествовательные (утвердительные, отрицательные), вопросительные (общий, специальный, альтернативный, разделительный вопросы), побудительные (в утвердительной и отрицательной форме)",
+   "title": "Типы предложений",
+   "examples": [
+    {
+     "text": "Определите тип предложения и запишите его: Do you like music? — She doesn't play the guitar. — Let's go home.",
+     "answer": "общий вопрос, отрицание, побуждение"
+    },
+    {
+     "text": "Задайте вопрос к выделенной части, не меняя остальных слов: I met him at the station yesterday (at the station).",
+     "answer": "Where did you meet him?"
+    }
+   ]
+  },
+  {
+   "statement": "Нераспространенные и распространенные простые предложения, в том числе с несколькими обстоятельствами, следующими в определенном порядке (We moved to a new house last year.)",
+   "title": "Простые предложения и обстоятельства",
+   "examples": [
+    {
+     "text": "Раскройте скобки: My parents (be) from Moscow, and my brother (live) in Kazan.",
+     "answer": "are, lives"
+    },
+    {
+     "text": "Составьте предложение с обстоятельствами места и времени по образцу: We moved to a new house last year. — (buy a new car, in May, last year)",
+     "answer": "We bought a new car in May last year."
+    }
+   ]
+  },
+  {
+   "statement": "Предложения с начальным It",
+   "title": "Предложения с началом It",
+   "examples": [
+    {
+     "text": "Вставьте It: __ is cold today. __ took me two hours to get there.",
+     "answer": "It, It"
+    },
+    {
+     "text": "Переведите на английский, используя It: Погода сегодня холодная. / У меня есть вопрос.",
+     "answer": "It is cold today. I have a question."
+    }
+   ]
+  },
+  {
+   "statement": "Предложения с начальным There + to be",
+   "title": "Предложения с There",
+   "examples": [
+    {
+     "text": "Вставьте there или it: __ is a book on the desk. __ is cold today.",
+     "answer": "there, it"
+    },
+    {
+     "text": "Раскройте скобки, выбрав форму глагола: There (be) two rooms in the flat. There (be) a sofa and two chairs in the living room.",
+     "answer": "are, is"
+    }
+   ]
+  },
+  {
+   "statement": "Предложения с глагольными конструкциями, содержащими глаголы-связки to be, to look, to seem, to feel (He looks/seems/feels happy.)",
+   "title": "Глаголы-связки to be, look, feel",
+   "examples": [
+    {
+     "text": "Вставьте один из глаголов is, look, seem, feels: The children __ happy. The sky __ grey. He __ tired. The film __ interesting.",
+     "answer": "look, seems, feels, seems"
+    },
+    {
+     "text": "Составьте по одному предложению с to be, to look и to feel о погоде.",
+     "answer": "The weather is cold. It looks rainy. I feel tired."
+    }
+   ]
+  },
+  {
+   "statement": "Предложения со сложным дополнением - Complex Object (I want you to help me. I saw her cross/crossing the road. I want to have my hair cut.)",
+   "title": "Сложное дополнение",
+   "examples": [
+    {
+     "text": "Вставьте to, если оно нужно: I want you __ (help) me. She saw him __ (run) across the road.",
+     "answer": "to help, run — без to"
+    },
+    {
+     "text": "Поставьте глаголы в скобки в нужную форму: We heard him __ (sing). I saw a man __ (cross) the road. She wants __ (cut) her hair.",
+     "answer": "sing, crossing, to be cut"
+    }
+   ]
+  },
+  {
+   "statement": "Сложносочиненные предложения с сочинительными союзами and, but, or",
+   "title": "Сложносочинённые предложения",
+   "examples": [
+    {
+     "text": "Вставьте and, but или or: She was ill, __ she went to school. I like tea __ coffee.",
+     "answer": "but, and"
+    },
+    {
+     "text": "Составьте сложносочинённое предложение с or из двух частей: Shall we walk / take a bus.",
+     "answer": "Shall we walk or take a bus?"
+    }
+   ]
+  },
+  {
+   "statement": "Сложноподчиненные предложения с союзами и союзными словами because, if, when, where, what, why, how",
+   "title": "Сложноподчинённые предложения",
+   "examples": [
+    {
+     "text": "Вставьте because, if, when или where: I was tired __ I had been working all day. __ it rains, we stay at home.",
+     "answer": "because, If"
+    },
+    {
+     "text": "Задайте вопрос к выделенной части, начиная с How или What: He explained how the machine works. — I don't know what he wants.",
+     "answer": "How does the machine work? What does he want?"
+    }
+   ]
+  },
+  {
+   "statement": "Сложноподчиненные предложения с союзными словами whoever, whatever, however, whenever",
+   "title": "Союзные слова whoever, whatever",
+   "examples": [
+    {
+     "text": "Вставьте whoever, whatever, however или whenever: I'll help you __ you need me. __ hard it is, she never gives up.",
+     "answer": "whenever, However"
+    },
+    {
+     "text": "Соедините две части предложением с however: It was raining hard. We went for a walk.",
+     "answer": "However, we went for a walk."
+    }
+   ]
+  },
+  {
+   "statement": "Условные предложения с глаголами в изъявительном наклонении (Conditional 0, Conditional I) и с глаголами в сослагательном наклонении (Conditional II)",
+   "title": "Условные предложения",
+   "examples": [
+    {
+     "text": "Раскройте скобки в условных предложениях: If it (rain) tomorrow, we (stay) at home. If I (be) you, I would take this job.",
+     "answer": "rains, will stay, were"
+    },
+    {
+     "text": "Переведите на английский: Если бы у меня было время, я бы выучил этот текст.",
+     "answer": "If I had more time, I would learn this text."
+    }
+   ]
+  },
+  {
+   "statement": "Все типы вопросительных предложений (общий, специальный, альтернативный, разделительный вопросы в Present/Past/Future Simple Tense, Present/Past Continuous Tense, Present/Past Perfect Tense, Present Perfect Continuous Tense)",
+   "title": "Вопросы к разным временам",
+   "examples": [
+    {
+     "text": "Задайте вопрос к выделенному слову: She wrote the letter yesterday. — They are playing tennis now.",
+     "answer": "What did she write? What are they playing?"
+    },
+    {
+     "text": "Задайте разделительный вопрос с or к предложению: He is a doctor, and she is a teacher.",
+     "answer": "Is he a doctor or is she a teacher?"
+    }
+   ]
+  },
+  {
+   "statement": "Повествовательные, вопросительные и побудительные предложения в косвенной речи в настоящем и прошедшем времени, согласование времен в рамках сложного предложения",
+   "title": "Косвенная речь",
+   "examples": [
+    {
+     "text": "Переведите в косвенную речь: He said, 'I am busy now.' — She said, 'I have finished my work.'",
+     "answer": "He said he was busy. She said she had finished her work."
+    },
+    {
+     "text": "Передайте просьбу в косвенной речи: 'Please close the door,' she said to me.",
+     "answer": "She asked me to close the door."
+    }
+   ]
+  },
+  {
+   "statement": "Модальные глаголы в косвенной речи в настоящем и прошедшем времени",
+   "title": "Модальные глаголы в косвенной речи",
+   "examples": [
+    {
+     "text": "Переведите в косвенную речь: 'I can swim,' said the boy. — 'She must be at home,' he thought.",
+     "answer": "He said he could swim. He thought she must be at home."
+    },
+    {
+     "text": "Составьте два предложения в косвенной речи: собеседник должен прийти раньше / он сможет помочь.",
+     "answer": "He said he should come earlier. He said he could help."
+    }
+   ]
+  },
+  {
+   "statement": "Предложения с конструкциями as ... as, not so ... as, both ... and ..., either ... or, neither ... nor",
+   "title": "Конструкции as, both, either, neither",
+   "examples": [
+    {
+     "text": "Вставьте as, not so, both или neither: This film is __ interesting as that one. He speaks neither German __ French.",
+     "answer": "as, nor"
+    },
+    {
+     "text": "Раскройте скобки, выбрав нужную форму: This box is twice as __ (heavy) as that one. — He is not __ (tall) as his brother.",
+     "answer": "heavy, tall"
+    }
+   ]
+  },
+  {
+   "statement": "Предложения с I wish..",
+   "title": "Конструкция I wish",
+   "examples": [
+    {
+     "text": "Вставьте was или were: I wish my father __ (be) at home. I wish I __ (have) more time.",
+     "answer": "was, had"
+    },
+    {
+     "text": "Переведите на английский, выразив желание: Жаль, что я не умею плавать.",
+     "answer": "I wish I could swim."
+    }
+   ]
+  },
+  {
+   "statement": "Конструкции с глаголами на -ing: to love/hate doing smth",
+   "title": "Глаголы love и hate с -ing",
+   "examples": [
+    {
+     "text": "Раскройте скобки, выбрав форму глагола: My sister loves __ (swim). They hate __ (wait) in queues.",
+     "answer": "swimming, waiting"
+    },
+    {
+     "text": "Составьте предложения с love doing и hate doing, опираясь на подсказки: cook / get up early.",
+     "answer": "I love cooking. I hate getting up early."
+    }
+   ]
+  },
+  {
+   "statement": "Конструкции с глаголами to stop, to remember, to forget (разница в значении to stop doing smth и to stop to do smth)",
+   "title": "Конструкции to stop, to remember",
+   "examples": [
+    {
+     "text": "Вставьте to, если оно нужно: He stopped __ work at six. — He stopped __ talk to his friend.",
+     "answer": "to work, talking"
+    },
+    {
+     "text": "Переведите на английский, различая значение глагола: Я помню, что закрыл окно. / Не забудьте закрыть окно.",
+     "answer": "I remember closing the window. Don't forget to close the window."
+    }
+   ]
+  },
+  {
+   "statement": "Конструкция It takes me ... to do smth",
+   "title": "Конструкция It takes me",
+   "examples": [
+    {
+     "text": "Переведите на английский: Мне обычно нужен час, чтобы добраться до работы.",
+     "answer": "It usually takes me an hour to get to work."
+    },
+    {
+     "text": "Составьте предложение по образцу: It takes her two hours to learn new words. — (I, ten minutes, wash the car)",
+     "answer": "It takes me ten minutes to wash the car."
+    }
+   ]
+  },
+  {
+   "statement": "Конструкция used to + инфинитив глагола",
+   "title": "Конструкция used to",
+   "examples": [
+    {
+     "text": "Раскройте скобки: He used __ (live) in London. — She used __ play the piano every day.",
+     "answer": "to live, to play"
+    },
+    {
+     "text": "Замените глагол в скобках конструкцией used to: My father (smoke) when he was young. — I (play) football when I was a child.",
+     "answer": "used to smoke, used to play"
+    }
+   ]
+  },
+  {
+   "statement": "Конструкции be/get used to smth, be/get used to doing smth",
+   "title": "Конструкция be used to",
+   "examples": [
+    {
+     "text": "Вставьте форму: I am used to __ (get) up early. — He isn't used to __ (work) at night.",
+     "answer": "getting, working"
+    },
+    {
+     "text": "Составьте по одному предложению с be used to doing и get used to doing, опираясь на подсказки: drink tea / ride a bike (это было для него новостью).",
+     "answer": "I'm used to drinking tea. I got used to riding a bike."
+    }
+   ]
+  },
+  {
+   "statement": "Конструкции I prefer, I'd prefer, I'd rather prefer, выражающие предпочтение, а также конструкции I'd rather, You'd better",
+   "title": "Конструкции I prefer и I'd rather",
+   "examples": [
+    {
+     "text": "Вставьте I'd rather или You'd better: __ you go now, or you'll miss the train. — __ you ask her for help.",
+     "answer": "You'd better, You'd better"
+    },
+    {
+     "text": "Составьте предложения по подсказкам, выразив предпочтение: пить чай вместо кофе / смотреть фильм сейчас.",
+     "answer": "I'd rather drink tea than coffee. I'd rather watch a film now."
+    }
+   ]
+  },
+  {
+   "statement": "Подлежащее, выраженное собирательным существительным (family, police), и его согласование со сказуемым",
+   "title": "Согласование сказуемого с подлежащим",
+   "examples": [
+    {
+     "text": "Раскройте скобки, выбрав нужную форму глагола: My family (be) very kind. — The police (be) looking for the thief.",
+     "answer": "is, are"
+    },
+    {
+     "text": "Переведите на английский, обратив внимание на согласование: Моя семья живёт в Москве.",
+     "answer": "My family lives in Moscow."
+    }
+   ]
+  },
+  {
+   "statement": "Глаголы (правильные и неправильные) в видовременных формах действительного залога в изъявительном наклонении (Present/Past/Future Simple Tense, Present/Past Continuous Tense, Present/Past Perfect Tense, Present Perfect Continuous Tense, Future-in-the-Past Tense) и наиболее употребительных формах страдательного залога (Present/Past Simple Passive, Present Perfect Passive)",
+   "title": "Времена и страдательный залог",
+   "examples": [
+    {
+     "text": "Раскройте скобки, выбрав форму глагола: She (write) the letter yesterday. — The window (break) by the boys.",
+     "answer": "wrote, was broken"
+    },
+    {
+     "text": "Поставьте глаголы в скобки в страдательном залоге: They clean the office every day. — Somebody has stolen my bike.",
+     "answer": "is cleaned, has been stolen"
+    }
+   ]
+  },
+  {
+   "statement": "Конструкция to be going to, формы Future Simple Tense и Present Continuous Tense для выражения будущего действия",
+   "title": "Выражение будущего времени",
+   "examples": [
+    {
+     "text": "Вставьте am/is/are going to, will или am/is/are doing: Look! It __ (rain). — I think it __ (snow) tomorrow.",
+     "answer": "is raining, will snow"
+    },
+    {
+     "text": "Составьте предложения о планах на вечер, используя going to или will: (посмотреть фильм / позвонить другу в девять)",
+     "answer": "I'm going to watch a film. I'll call my friend at nine."
+    }
+   ]
+  },
+  {
+   "statement": "Определенный, неопределенный и нулевой артикли",
+   "title": "Артикли a, an, the",
+   "examples": [
+    {
+     "text": "Вставьте a, an или не вставляйте ничего: She is __ engineer. __ sun rises in the east. I have __ apple.",
+     "answer": "an, The, an"
+    },
+    {
+     "text": "Найдите и исправьте ошибку в употреблении артикля: She is a best student of the class. He plays the football very well.",
+     "answer": "the best student; plays football"
+    }
+   ]
+  },
+  {
+   "statement": "Имена существительные во множественном числе, образованные по правилу, и исключения",
+   "title": "Множественное число существительных",
+   "examples": [
+    {
+     "text": "Образуйте множественное число: city, box, child, foot, knife.",
+     "answer": "cities, boxes, children, feet, knives"
+    },
+    {
+     "text": "Вставьте форму множественного числа: There are three __ (tomato) and two __ (loaf) on the table.",
+     "answer": "tomatoes, loaves"
+    }
+   ]
+  },
+  {
+   "statement": "Неисчисляемые имена существительные, имеющие форму только множественного числа",
+   "title": "Слова только во множественном числе",
+   "examples": [
+    {
+     "text": "Вставьте форму: We bought some __ (furniture) and some new __ (clothes). — Give me some __ (information) about the trip.",
+     "answer": "furniture, clothes, information"
+    },
+    {
+     "text": "Составьте предложения, в которых слова news, advice и luggage выступают как неисчисляемые.",
+     "answer": "The news is good. His advice was useful. My luggage is heavy."
+    }
+   ]
+  },
+  {
+   "statement": "Притяжательный падеж имен существительных",
+   "title": "Притяжательный падеж",
+   "examples": [
+    {
+     "text": "Вставьте апостроф в нужном месте: The boys __ room is next door. — This is my sister __ books.",
+     "answer": "boys', sister's"
+    },
+    {
+     "text": "Переведите на английский, указав принадлежность: Это книга Анны. / Это сумка Лизы.",
+     "answer": "This is Ann's book. This is Liza's bag."
+    }
+   ]
+  },
+  {
+   "statement": "Имена прилагательные и наречия в положительной, сравнительной и превосходной степенях, образованные по правилу, и исключения",
+   "title": "Степени сравнения",
+   "examples": [
+    {
+     "text": "Образуйте сравнительную степень: tall, interesting, good, bad.",
+     "answer": "taller, more interesting, better, worse"
+    },
+    {
+     "text": "Вставьте форму сравнительной или превосходной степени: This box is __ (heavy) than that one. — London is one of the __ (beautiful) cities in Europe.",
+     "answer": "heavier, most beautiful"
+    }
+   ]
+  },
+  {
+   "statement": "Слова, выражающие количество (many/much, little/a little, few/a few, a lot of)",
+   "title": "Слова количества many, much, few",
+   "examples": [
+    {
+     "text": "Вставьте подходящее слово: How __ sugar do you need? — There is very __ milk in the fridge.",
+     "answer": "much, little"
+    },
+    {
+     "text": "Переведите на английский, используя few и little: У меня мало друзей. / У меня есть немного времени.",
+     "answer": "I have few friends. I have a little time."
+    }
+   ]
+  },
+  {
+   "statement": "Личные местоимения в именительном и объектном падежах, притяжательные местоимения (в том числе в абсолютной форме), возвратные, указательные, вопросительные местоимения, неопределенные местоимения и их производные, отрицательные местоимения none, no и производные последнего (nobody, nothing и другие)",
+   "title": "Виды местоимений",
+   "examples": [
+    {
+     "text": "Вставьте нужную форму местоимения: This book is __ (I). — Give __ (he) this letter.",
+     "answer": "mine, him"
+    },
+    {
+     "text": "Вставьте притяжательное местоимение в скобки: (they) children, (we) books.",
+     "answer": "their, our"
+    }
+   ]
+  },
+  {
+   "statement": "Количественные и порядковые числительные",
+   "title": "Количественные и порядковые числительные",
+   "examples": [
+    {
+     "text": "Впишите числительное в скобки: He is my __ brother (third). — __ people came to the party (five).",
+     "answer": "third, Five"
+    },
+    {
+     "text": "Переведите на английский, правильно выбрав числительное: Это мой второй ребёнок. / Это пятый этаж.",
+     "answer": "This is my second baby. This is the fifth floor."
+    }
+   ]
+  },
+  {
+   "statement": "Предлоги места, времени, направления, предлоги, употребляемые с глаголами в страдательном залоге",
+   "title": "Предлоги места и времени",
+   "examples": [
+    {
+     "text": "Вставьте предлог: The keys are __ the table. — We arrived __ Moscow __ Friday.",
+     "answer": "on, in, on"
+    },
+    {
+     "text": "Вставьте предлог by или with: The letter was signed __ the manager. — The window was broken __ a stone.",
+     "answer": "by, with"
+    }
+   ]
+  },
+  {
+   "statement": "Осуществление межличностного и межкультурного общения с использованием знаний о национально-культурных особенностях своей страны и страны/стран изучаемого языка и основных социокультурных элементов речевого поведенческого этикета в англоязычной среде в рамках тематического содержания 10 класса",
+   "title": "Межкультурное общение и этикет",
+   "examples": [
+    {
+     "text": "Составьте две вежливые реплики для ситуации приглашения: благодарность за приглашение и отказ с извинением.",
+     "answer": "Thank you for the invitation. I'm sorry, but I can't come."
+    },
+    {
+     "text": "Напишите, как принято поздравлять друга с днём рождения в Великобритании и в России.",
+     "answer": "Happy birthday! / С днём рождения!"
+    }
+   ]
+  },
+  {
+   "statement": "Знание и использование в устной и письменной речи наиболее употребительной тематической фоновой лексики и реалий родной страны и страны/стран изучаемого языка при изучении тем: государственное устройство, система образования, страницы истории, национальные и популярные праздники, проведение досуга, этикетные особенности общения, традиции в кулинарии и другие",
+   "title": "Тематическая лексика и реалии",
+   "examples": [
+    {
+     "text": "Подберите английское слово к каждому определению: ночь перед Новым годом; государственное устройство страны; традиционное блюдо из капусты (щи).",
+     "answer": "New Year's Eve, government, traditional cabbage soup"
+    },
+    {
+     "text": "Переведите на английский, используя фоновую лексику: выборы; система образования; праздник, который отмечают в России 9 мая.",
+     "answer": "elections, education system, Victory Day"
+    }
+   ]
+  },
+  {
+   "statement": "Владение основными сведениями о социокультурном портрете и культурном наследии страны/стран, говорящих на английском языке",
+   "title": "Культурное наследие стран",
+   "examples": [
+    {
+     "text": "Напишите страну, к которой относится объект: The Tower of London — __; The Colosseum — __; The Hermitage — __.",
+     "answer": "the UK, Italy, Russia"
+    },
+    {
+     "text": "Назовите по-английски писателя и его произведение: автор романа о мальчике-сироте.",
+     "answer": "Charles Dickens — Oliver Twist"
+    }
+   ]
+  },
+  {
+   "statement": "Понимание речевых различий в ситуациях официального и неофициального общения в рамках тематического содержания речи и использование лексико-грамматических средств с их учетом",
+   "title": "Официальный и неофициальный стиль",
+   "examples": [
+    {
+     "text": "Замените разговорное слово или выражение на официальное: kids — __; stuff — __; gonna — __.",
+     "answer": "children, things, going to"
+    },
+    {
+     "text": "Перепишите предложение в официальном стиле: I need to talk to you about our plans.",
+     "answer": "I would like to discuss our plans with you."
+    }
+   ]
+  },
+  {
+   "statement": "Развитие умения представлять родную страну/малую родину и страну/страны изучаемого языка (культурные явления и события, достопримечательности, выдающиеся люди: государственные деятели, ученые, писатели, поэты, художники, композиторы, музыканты, спортсмены, актеры и другие)",
+   "title": "Презентация страны и её людей",
+   "examples": [
+    {
+     "text": "Напишите по-английски одно предложение о писателе и одно — об учёном вашей страны.",
+     "answer": "Dostoevsky was a Russian writer. Lomonosov was a Russian scientist."
+    },
+    {
+     "text": "Составьте одно предложение об экскурсионном объекте: The Hermitage / the British Museum / the Tower of London.",
+     "answer": "We visited the Hermitage and saw many famous paintings."
+    }
+   ]
+  },
+  {
+   "statement": "Овладение компенсаторными умениями, позволяющими в случае сбоя коммуникации, а также в условиях дефицита языковых средств использовать различные приемы переработки информации: при говорении - переспрос, при говорении и письме - описание/перифраз/толкование, при чтении и аудировании - языковую и контекстуальную догадку",
+   "title": "Переспрос и языковая догадка",
+   "examples": [
+    {
+     "text": "Напишите вопрос для переспроса, если вы не расслышали, когда начинается концерт.",
+     "answer": "Sorry, when does the concert start?"
+    },
+    {
+     "text": "Замените выделенное слово более простым, сохранив смысл: It was scorching hot, so we stayed in the shade.",
+     "answer": "It was very hot, so we stayed in the shade."
+    }
+   ]
+  },
+  {
+   "statement": "Развитие умения игнорировать информацию, не являющуюся необходимой для понимания основного содержания, прочитанного/прослушанного текста или для нахождения в тексте запрашиваемой информации",
+   "title": "Поиск нужной информации в тексте",
+   "examples": [
+    {
+     "text": "Прочитайте текст и ответьте на вопрос, не обращая внимания на лишние сведения: Next week the school will hold a science festival in the school hall. Students will present their projects. The festival will begin at ten o'clock. — When and where will the festival begin?",
+     "answer": "At ten o'clock, in the school hall."
+    },
+    {
+     "text": "Прочитайте текст и выпишите только строку, которая отвечает на вопрос: The train leaves at 6:15 from platform 3. Tickets cost 20 dollars. The journey takes two hours. — How much does a ticket cost?",
+     "answer": "Tickets cost 20 dollars."
+    }
+   ]
+  }
+ ]
+}

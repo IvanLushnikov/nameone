@@ -388,27 +388,40 @@ describe("Остальные вкладки кабинета", () => {
   });
 });
 
-/* ─── Плитка «С нами» и настройки ─────────────────────────────────────────── */
+/* ─── Плитка «С нами» удалена (ТЗ-32, D4) ─────────────────────────────────── */
 
 describe("Прочее", () => {
-  it("«С нами» у пустой истории показывает прочерк, а не «только что»", async () => {
+  // Плитки «С нами» больше нет (ТЗ-32, D4). Проверяем отрицанием: раньше эти
+  // два теста закрепляли её поведение — прочерк у пустой истории и срок в днях.
+  // Владелец решил убрать плитку совсем, а не заменить на «сегодня» или «пока
+  // нет данных», поэтому поведение удалено вместе с ней.
+  it("плитки «С нами» нет ни при пустой истории, ни при заполненной", async () => {
     render(<DashboardPage />);
     await waitFor(() => expect(screen.getByText("История пуста")).toBeInTheDocument());
 
-    const tile = screen.getByText("С нами").closest("div")?.parentElement;
-    expect(within(tile as HTMLElement).getByText("—")).toBeInTheDocument();
-    expect(within(tile as HTMLElement).queryByText("только что")).toBeNull();
-  });
+    expect(screen.queryByText("С нами")).toBeNull();
+    // Прочерк был её собственным значением — он не должен вернуться в другие
+    // счётчики, где читался бы как недогрузилось.
+    expect(screen.queryByText("—")).toBeNull();
 
-  it("«С нами» показывает число дней, а не дату", async () => {
     seedHistoryDevice(1);
     render(<DashboardPage />);
     await screen.findByText("Лист w0");
+    expect(screen.queryByText("С нами")).toBeNull();
+  });
 
-    const tile = screen.getByText("С нами").closest("div")?.parentElement;
-    const text = (tile as HTMLElement).textContent ?? "";
-    expect(text).toMatch(/сегодня|дн/);
-    expect(text).not.toMatch(/назад/);
+  it("после удаления плитки осталось три счётчика, сетка — на три колонки", async () => {
+    const { container } = render(<DashboardPage />);
+    await waitFor(() => expect(screen.getByText("История пуста")).toBeInTheDocument());
+
+    for (const label of ["Сгенерировано", "В избранном", "Шаблонов"]) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+    // Четвёртая ячейка при `sm:grid-cols-4` осталась бы пустым провалом —
+    // ровно то, чего ТЗ просит не допустить.
+    const grid = container.querySelector('[class*="grid-cols-"]');
+    expect(grid?.className ?? "").toContain("grid-cols-3");
+    expect(grid?.className ?? "").not.toContain("grid-cols-4");
   });
 
   it("есть кнопка «Настройки» со ссылкой на страницу настроек", async () => {

@@ -23,7 +23,10 @@ export const ENV_KEYS = {
 
 export interface ModelInfo {
   id: string;
-  role: 'generator' | 'boost' | 'premium' | 'validator' | 'embeddings' | 'image';
+  // Роли "image" здесь нет намеренно: провайдера генерации картинок у нас
+  // нет, и роль без единой модели была бы местом, где снова появится
+  // обещание «картинки будут» (ТЗ-30 AD-4).
+  role: 'generator' | 'boost' | 'premium' | 'validator' | 'embeddings';
   provider: 'openai' | 'anthropic' | 'deepseek' | 'dashscope' | 'polza' | 'replicate' | 'inception';
   inputPricePer1M: number;
   outputPricePer1M: number;

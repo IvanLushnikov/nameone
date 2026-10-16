@@ -41,6 +41,7 @@ import {
   releaseFreeQuotaHold,
   type UsagePlan,
 } from "../services/usage";
+import type { AppEnv } from "../types";
 import {
   decideFraud,
   fingerprintHash,
@@ -156,7 +157,7 @@ export async function guardGeneration(
       // через «а я человек» делал бы лимит бессмысленным (раньше именно так и
       // было: `!quota.allowed && !challengePassed`).
       throw new RateLimitError(
-        `Бесплатные генерации закончились (${quota.limit} на весь период). Оформите подписку, чтобы продолжить.`,
+        `Бесплатные генерации на этот месяц закончились (${quota.limit}). 1-го числа счёт обновится. Оформите подписку, чтобы продолжить.`,
         { limit: quota.limit, used: quota.used, kind: "free_total" },
       );
     }
@@ -255,11 +256,27 @@ export async function releaseFreeQuotaForGeneration(
 
 export async function consumeGenerationQuota(
   db: D1Database,
-  params: { userId: string | null; plan: UsagePlan; fingerprint: string },
+  params: {
+    userId: string | null;
+    plan: UsagePlan;
+    fingerprint: string;
+    /**
+     * Почта и окружение нужны только для письма о третьей генерации месяца
+     * (ТЗ-29). Без них квота списывается как раньше, письмо просто не уходит —
+     * поэтому у всех существующих вызовов эти поля опциональны и ни один из них
+     * не пришлось переписывать.
+     */
+    email?: string | null;
+    env?: AppEnv["Bindings"];
+  },
 ): Promise<void> {
   if (params.plan === "free") {
     const owner = freeQuotaOwnerKey(params.userId, params.fingerprint);
-    await consumeFreeQuota(db, owner);
+    await consumeFreeQuota(db, owner, {
+      userId: params.userId,
+      email: params.email ?? null,
+      env: params.env,
+    });
     if (!params.userId) {
       // BL-07: бесплатный доступ анониму виден в учёте по отпечатку, а не
       // «где-то там». Кто именно получил бесплатную генерацию — вопрос, на
@@ -297,7 +314,7 @@ export async function checkLlmRateLimit(
     const quota = await checkFreeQuota(db, owner);
     if (!quota.allowed) {
       throw new RateLimitError(
-        `Бесплатные генерации закончились (${quota.limit} на весь период). Оформите подписку, чтобы продолжить.`,
+        `Бесплатные генерации на этот месяц закончились (${quota.limit}). 1-го числа счёт обновится. Оформите подписку, чтобы продолжить.`,
         { limit: quota.limit, used: quota.used, kind: "free_total" },
       );
     }

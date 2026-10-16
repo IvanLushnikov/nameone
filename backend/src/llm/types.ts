@@ -137,7 +137,7 @@ export interface Provider {
  * ПРОМЫШЛЕННО РАЗДЕЛЕНО НА ДВА УРОВНЯ (2026-10-02):
  *   * `worksheet-gen` / `exam-gen` / … — продуктовые задачи. По ним роутер
  *     выбирает модель ПО СЛОЖНОСТИ (router.ts).
- *   * `validate` / `embed` / `photo-check` / `image-gen` — служебные вызовы,
+ *   * `validate` / `embed` / `photo-check` — служебные вызовы,
  *     у каждого своя фиксированная модель, тариф на них не влияет.
  */
 export type GenerationKind =
@@ -160,8 +160,10 @@ export type GenerationKind =
   // Схема графика для задания (лист 2.1.8). Служебный вызов: короткий, дешёвый,
   // и только когда задание текстом просит картинку — на остальных листах он
   // не вызывается вовсе и токенов не стоит.
-  | "svg-graph-gen"
-  | "image-gen"; // генерация картинок (заглушка на старте)
+  | "svg-graph-gen";
+// ТЗ-30 AD-4: `image-gen` убран. Провайдера генерации изображений нет, роут
+// отдавал 503, а кнопка в конструкторе обещала картинку. Использования в
+// боевой базе нет (см. комментарий в router.ts, ARTIFACT_TASK).
 
 /**
  * Продуктовый тип артефакта — зеркало фронтового `TaskType`
@@ -183,8 +185,8 @@ export type ArtifactType =
   | "ege"
   | "materials"
   | "lesson-bundle"
-  | "interactive"
-  | "image";
+  | "interactive";
+// ТЗ-30 AD-4: тип `image` убран — см. ARTIFACT_TASK в router.ts.
 
 /** Тариф юзера. Влияет на НОРМУ и на право на премиум-типы, но НЕ на выбор модели. */
 export type Plan = "free" | "base" | "standard" | "plus";
@@ -196,7 +198,7 @@ export interface ProviderPick {
 }
 
 export interface RoutingDecision {
-  primary: ProviderPick | null; // null = ничего не подключено (например, image-gen)
+  primary: ProviderPick | null; // null = ничего не подключено (например, провайдер выключен)
   fallbacks: ProviderPick[];
   generation: "primary" | "boost" | "premium";
 }

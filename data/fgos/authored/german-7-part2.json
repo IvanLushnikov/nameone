@@ -1,0 +1,131 @@
+{
+  "source": "german-7-part2",
+  "topics": [
+    {
+      "statement": "правильно оформлять электронное сообщение личного характера в соответствии с нормами неофициального общения, принятыми в стране (странах) изучаемого языка;",
+      "title": "Электронное сообщение личного характера",
+      "examples": [
+        {
+          "text": "Вставьте в личное сообщение пропущенные слова: «___ Tim! Wie war ___ Urlaub? ___».",
+          "answer": "Hallo, dein, Liebe Grüße"
+        },
+        {
+          "text": "Выберите обращение для неофициального сообщения другу: «Sehr geehrter Herr Schneider» или «Liebe Anna». Объясните выбор в одном предложении.",
+          "answer": "Liebe Anna — обращение к другу, без официальных слов"
+        }
+      ]
+    },
+    {
+      "statement": "кратко представлять Россию и страну (страны) изучаемого языка;",
+      "title": "Представление России и Германии",
+      "examples": [
+        {
+          "text": "Составьте по плану (столица, язык, четыре времени года) четыре предложения о России и четыре — о Германии.",
+          "answer": "Россия: Moskau, Russisch, vier Jahreszeiten; Германия: Berlin, Deutsch, vier Jahreszeiten"
+        },
+        {
+          "text": "Прочитайте текст и выпишите три факта, которые можно рассказать о стране: «Berlin ist die Hauptstadt von Deutschland. Die Sprache ist Deutsch. Hier sprechen 90 Millionen Menschen.»",
+          "answer": "Hauptstadt, Sprache, Einwohnerzahl"
+        }
+      ]
+    },
+    {
+      "statement": "кратко представлять некоторые культурные явления родной страны и страны (стран) изучаемого языка (основные национальные праздники, традиции в проведении досуга и питании), наиболее известные достопримечательности;",
+      "title": "Праздники и достопримечательности стран",
+      "examples": [
+        {
+          "text": "Прочитайте предложение и выпишите праздник и его дату: «Das Weihnachtsfest fängt am 24. Dezember an.»",
+          "answer": "Weihnachten, 24. Dezember"
+        },
+        {
+          "text": "Соотнесите достопримечательность с городом: Brandenburger Tor, Kolosseum, Taj Mahal.",
+          "answer": "Berlin, Rom, Agra"
+        }
+      ]
+    },
+    {
+      "statement": "кратко рассказывать о выдающихся людях родной страны и страны (стран) изучаемого языка (ученых, писателях, поэтах, спортсменах)",
+      "title": "Выдающиеся люди России и Германии",
+      "examples": [
+        {
+          "text": "Составьте предложение о Гёте по плану (профессия, страна, что создавал) из слов: Dichter / Deutschland / Gedichte.",
+          "answer": "Goethe war ein Dichter aus Deutschland, er schrieb Gedichte."
+        },
+        {
+          "text": "Найдите в тексте о спортсмене вид спорта и страну: «Michael Schumacher war ein berühmter deutscher Autorennfahrer.»",
+          "answer": "Autorennennen, Deutschland"
+        }
+      ]
+    },
+    {
+      "statement": "Использование при чтении и аудировании языковой, в том числе контекстуальной, догадки, при непосредственном общении догадываться о значении незнакомых слов с помощью используемых собеседником жестов и мимики",
+      "title": "Догадка по контексту и жестам",
+      "examples": [
+        {
+          "text": "Определите по контексту, как переводится слово «die Kirsche», и запишите перевод: «Im Garten wachsen viele Kirschen. Wir sammeln sie im Sommer.»",
+          "answer": "вишня"
+        },
+        {
+          "text": "Продавец показывает рукой горло и говорит, что товар закончился. Вставьте слово: «Der Artikel ist ___.»",
+          "answer": "ausverkauft"
+        }
+      ]
+    },
+    {
+      "statement": "Переспрашивание, просьба повторить, уточняя значение незнакомых слов",
+      "title": "Переспрашивание и уточнение значения",
+      "examples": [
+        {
+          "text": "Составьте вежливый вопрос с уточнением значения слова «die Bahn» и запишите его.",
+          "answer": "Was meinst du mit «die Bahn»?"
+        },
+        {
+          "text": "Выберите вежливую просьбу повторить сказанное: «Sagst du das noch einmal?» или «Ich habe nichts verstanden, wiederholen Sie bitte!»",
+          "answer": "Sagst du das noch einmal?"
+        }
+      ]
+    },
+    {
+      "statement": "Использование при формулировании собственных высказываний, ключевых слов, плана",
+      "title": "Ключевые слова и план высказывания",
+      "examples": [
+        {
+          "text": "Выпишите из текста четыре ключевых слова о поездке класса: «Unsere Klasse fuhr nach Berlin. Wir besichtigten den Fernsehturm und den Tiergarten. Am Abend aßen wir im Restaurant.»",
+          "answer": "Berlin, Fernsehturm, Tiergarten, Klasse"
+        },
+        {
+          "text": "Составьте план рассказа о выходных из трёх пунктов: etwas vorbereiten / mit Freunden treffen / etwas kaufen, используя zuerst, dann, danach.",
+          "answer": "zuerst — vorbereiten, dann — mit Freunden treffen, danach — etwas kaufen"
+        }
+      ]
+    },
+    {
+      "statement": "Игнорирование информации, не являющейся необходимой для понимания основного содержания прочитанного (прослушанного) текста или для нахождения в тексте запрашиваемой информации",
+      "title": "Игнорирование лишней информации",
+      "examples": [
+        {
+          "text": "Прочитайте текст и ответьте на вопрос, не записывая лишнего: «Die Sommerferien beginnen am 1. Juli. Meine Familie fährt ans Meer. Ich trage eine neue Jacke.» Wohin fährt die Familie?",
+          "answer": "ans Meer"
+        },
+        {
+          "text": "В объявлении о кружке есть лишние строки. Выпишите только день, время и место занятий: «Der Malclub ist toll. Die Kinder malen gern. Dienstag, 16 Uhr, Raum 3. Kommt gern!»",
+          "answer": "Dienstag, 16 Uhr, Raum 3"
+        }
+      ]
+    },
+    {
+      "statement": "Сравнение (в том числе установление основания для сравнения) объектов, явлений, процессов, их элементов и основных функций в рамках изученной тематики",
+      "title": "Сравнение объектов и явлений",
+      "examples": [
+        {
+          "text": "Составьте таблицу сравнения России и Германии зимой по двум признакам, опираясь на текст: «In Deutschland ist der Winter mild, in Russland ist er kalt und Schneefall.»",
+          "answer": "погода: Deutschland — mild, Russland — kalt; одежда: Russland — dicke Kleidung, Deutschland — leichtere"
+        },
+        {
+          "text": "Найдите два сходства и одно различие по тексту: «Berlin hat 3,7 Millionen Einwohner, Moskau hat 13 Millionen. In beiden Städten gibt es Museen und Theater.»",
+          "answer": "сходства — Museen, Theater; различие — 3,7 и 13 Millionen Einwohner"
+        }
+      ]
+    }
+  ]
+}

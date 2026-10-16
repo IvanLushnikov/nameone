@@ -30,7 +30,7 @@ import { absoluteUrl, ogImages, twitterCard } from "@/lib/seo/metadata";
 export const metadata: Metadata = {
   title: "Генератор рабочих листов по ФГОС",
   description:
-    "Генератор рабочих листов, тестов, карточек и планов урока по ФГОС. Любой предмет, 1–11 класс. Первые 3 листа — без карты и без регистрации.",
+    "Генератор рабочих листов, тестов, карточек и планов урока по ФГОС. Любой предмет, 1–11 класс. 5 листов в месяц — без карты и без регистрации.",
   alternates: { canonical: absoluteUrl("/constructor") },
   openGraph: {
     title: "Генератор рабочих листов по ФГОС",

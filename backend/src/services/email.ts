@@ -506,3 +506,82 @@ export async function sendEmailChangeEmail(
     return { sent: false, reason: "provider_error", error: msg };
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Письмо о бесплатной квоте (ТЗ-29)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Уходит ОДИН раз в месяц — на третьей генерации (см. FREE_QUOTA_NOTICE_AT).
+ *
+ * ─── ПОЧЕМУ ИМЕННО ТАКОЕ ПИСЬМО, А НЕ «ЛИМИТ ИСЧЕРПАН» ───────────────────────
+ * В интерфейсе нет слов «лимит исчерпан» и «доступ заблокирован» (шапка
+ * UsageCard.tsx), и в письме их тоже быть не должно: учитель не нарушил
+ * правило, он воспользовался тем, что ему дали. Поэтому письмо говорит о
+ * СЧЁТЕ И ДАТЕ — «осталось столько-то, обновится 1-го числа», — и это всё,
+ * что правда.
+ *
+ * ─── ПОЧЕМУ НЕ СЛОВО «НАВСЕГДА» ─────────────────────────────────────────────
+ * Квота теперь месячная (ТЗ-29). «Навсегда» в письме осталось бы от старой
+ * модели и было бы прямой неправдой.
+ */
+const FREE_QUOTA_SUBJECT = "Сколько листов осталось в этом месяце";
+
+export interface FreeQuotaNoticeResult {
+  sent: boolean;
+  reason?: "not_configured" | "provider_error";
+  error?: string;
+}
+
+export async function sendFreeQuotaNoticeEmail(
+  env: Env,
+  to: string,
+  params: { used: number; limit: number; resetsAtSec: number },
+): Promise<FreeQuotaNoticeResult> {
+  const remaining = Math.max(0, params.limit - params.used);
+  const resetsAt = new Date(params.resetsAtSec * 1000);
+  const dateText = new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "long",
+    timeZone: "Europe/Moscow",
+  }).format(resetsAt);
+
+  if (!env.RESEND_API_KEY) return { sent: false, reason: "not_configured" };
+
+  const resend = new Resend(env.RESEND_API_KEY);
+  const text =
+    `Вы сделали ${params.used} из ${params.limit} бесплатных листов в этом месяце. ` +
+    `Осталось ${remaining}. ${dateText} счёт обновится — и снова ${params.limit} листов. ` +
+    `Проверка по фото тетради и разбор ответов тратят эту же квоту: каждый разбор — это лист.`;
+
+  const html =
+    `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px">` +
+    `<h2 style="margin:0 0 12px">Сколько листов осталось в этом месяце</h2>` +
+    `<p style="margin:0 0 12px">Вы сделали ${params.used} из ${params.limit} бесплатных листов. Осталось ${remaining}.</p>` +
+    `<p style="margin:0 0 12px">${escapeHtml(dateText)} счёт обновится — и снова ${params.limit} листов. ` +
+    `Если нужен больший запас, можно перейти на тариф.</p>` +
+    `<p style="margin:0;color:#666;font-size:13px">Проверка по фото тетради и разбор ответов тратят эту же квоту: каждый разбор — это лист.</p>` +
+    `</div>`;
+
+  try {
+    const { data, error } = await resend.emails.send({
+      from: FROM,
+      to,
+      subject: FREE_QUOTA_SUBJECT,
+      html,
+      text,
+    });
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.warn(`[email] квота: Resend не принял письмо to=${to} error=${JSON.stringify(error)}`);
+      return { sent: false, reason: "provider_error", error: error.message };
+    }
+    if (!data?.id) return { sent: false, reason: "provider_error", error: "resend вернул ответ без id" };
+    return { sent: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // eslint-disable-next-line no-console
+    console.warn(`[email] квота: исключение to=${to} error=${msg}`);
+    return { sent: false, reason: "provider_error", error: msg };
+  }
+}

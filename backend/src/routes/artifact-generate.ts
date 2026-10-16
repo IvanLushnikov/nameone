@@ -169,6 +169,9 @@ export interface PreparedGeneration {
   ip: string;
   /** Результат антифрод-проверки — нужен для списания квоты. */
   fingerprint: string;
+  /** Почта и окружение — для письма о третьей генерации месяца (ТЗ-29). */
+  email: string | null;
+  env: AppEnv["Bindings"];
 }
 
 /**
@@ -226,6 +229,10 @@ export async function prepareArtifactGeneration(
     userId,
     ip,
     fingerprint: guard.fingerprint,
+    // Письмо о третьей генерации месяца (ТЗ-29) уходит только владельцу
+    // аккаунта: у анонима почты нет, и слать ему некуда.
+    email: c.get("user")?.email ?? null,
+    env: c.env,
   };
 }
 
@@ -238,11 +245,13 @@ export async function prepareArtifactGeneration(
  */
 export async function consumeFreeQuota(
   c: Context<AppEnv>,
-  prepared: Pick<PreparedGeneration, "plan" | "userId" | "fingerprint">,
+  prepared: Pick<PreparedGeneration, "plan" | "userId" | "fingerprint" | "email" | "env">,
 ): Promise<void> {
   await consumeGenerationQuota(c.env.DB, {
     userId: prepared.userId,
     plan: prepared.plan,
     fingerprint: prepared.fingerprint,
+    email: prepared.email ?? null,
+    env: prepared.env,
   });
 }

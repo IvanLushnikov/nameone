@@ -178,7 +178,7 @@ function HeroMockup() {
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           </div>
           <div>
-            <div className="text-xs font-semibold text-warm-950">Готово примерно за минуту</div>
+            <div className="text-xs font-semibold text-warm-950">Готово примерно за 30 секунд</div>
             <div className="text-[10px] text-warm-500">Ответы внутри</div>
           </div>
         </div>
@@ -242,7 +242,7 @@ function HeroMockup() {
               <span className="text-xs text-warm-500">Генерация</span>
               <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Готово примерно за минуту
+                Готово примерно за 30 секунд
               </span>
             </div>
             <div className="text-sm font-semibold text-warm-950">5 заданий · со&nbsp;сложностью средняя</div>

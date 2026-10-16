@@ -33,6 +33,7 @@ import {
   type StudentValue,
 } from "../services/formGrading";
 import { gradeShortAnswerWithLlm } from "../llm/shortAnswerCheck";
+import { recomputeFormSkillAttempts } from "../db/skill-attempts";
 
 const publicFormsRouter = new Hono<AppEnv>();
 
@@ -43,6 +44,13 @@ const publicFormsRouter = new Hono<AppEnv>();
 interface PublicFormRow {
   id: string;
   token: string;
+  /**
+   * Владелец формы. Нужен пересчёту попыток по темам (ТЗ-27): ответы с общей
+   * ссылки привязать к ученику нельзя, но класс там, где учитель выдал работу
+   * персональными ссылками, — есть, и строки должны там появиться сразу, а не
+   * после ручного пересчёта учителем.
+   */
+  user_id: string;
   title: string;
   subject: string;
   grade: number;
@@ -178,7 +186,7 @@ const formSubmitIpLimit = rateLimitMiddleware({
 async function loadFormByToken(db: D1Database, token: string): Promise<PublicFormRow> {
   const row = await db
     .prepare(
-      `SELECT id, token, title, subject, grade, payload_json, status, access_code,
+      `SELECT id, token, user_id, title, subject, grade, payload_json, status, access_code,
               expires_at, show_answers
        FROM forms WHERE token = ?1`,
     )
@@ -263,7 +271,7 @@ publicFormsRouter.get("/:token/status", formGetLimit, async (c) => {
 
   const form = await c.env.DB
     .prepare(
-      `SELECT id, token, title, subject, grade, payload_json, status, access_code,
+      `SELECT id, token, user_id, title, subject, grade, payload_json, status, access_code,
               expires_at, show_answers
        FROM forms WHERE token = ?1`,
     )
@@ -440,6 +448,17 @@ publicFormsRouter.post(
         ),
       ...answerInserts,
     ]);
+
+    // ТЗ-27: ответ проверен МАШИНОЙ (сверка эталона + LLM по развёрнутым
+    // ответам), и раньше этот вердикт попытки НЕ записывал вообще. Учитель
+    // закрывал работу, смотрел «тем, где просели» и не видел ни одной строки:
+    // разрез наполнялся только после ручной правки отметок в журнале, то есть
+    // по тому, что учитель ещё не проверил.
+    //
+    // Пересчёт пересобирает попытки формы целиком (`recordSkillAttempts` удаляет
+    // прежние строки этой формы и пишет заново), поэтому повторный вызов на
+    // каждой сдаче безопасен: пересчёт идемпотентен.
+    await recomputeFormSkillAttempts(c.env.DB, form.user_id, form.id);
 
     // Ученику отдаём только вердикты, без эталонов. Сам эталон — только если
     // учитель явно разрешил show_answers (для контрольной это выключено).

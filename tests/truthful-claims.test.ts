@@ -43,7 +43,7 @@ vi.mock("next/navigation", () => ({
 
 import { Header } from "@/components/layout/Header";
 import { setProfile } from "@/lib/utils/storage";
-import { PLANS, priceFor } from "@/lib/content/plans";
+import { FREE_GENERATIONS, PLANS, priceFor } from "@/lib/content/plans";
 import type { UserProfile } from "@/lib/types";
 
 /** Читаем файл из репозитория: vitest запускается из его корня. */
@@ -112,6 +112,9 @@ describe("Д-1 — про точность не обещают", () => {
   });
 });
 
+// ТЗ-29 (15.10.2026): квота бесплатного тарифа стала 5 листов В МЕСЯЦ со
+// сбросом 1-го числа. Проверки ниже обновлены под это, а слово «навсегда» по-
+// прежнему запрещено: обещание «навсегда» было главной претензией учителя.
 describe("Д-2 — бесплатный тариф не обещает «навсегда»", () => {
   it("у нулевой цены нет unit «навсегда» ни в одном периоде", () => {
     expect(PLANS.free.prices.academicYear?.amount).toBe(0);
@@ -124,17 +127,37 @@ describe("Д-2 — бесплатный тариф не обещает «нав�
     expect(userText("src/lib/content/plans.ts")).not.toMatch(/unit:\s*"навсегда"/);
   });
 
-  it("тариф честно называет, сколько это генераций и зачем", () => {
-    // 3 генерации — это константа FREE_GENERATIONS, текст собран из неё же.
-    expect(PLANS.free.description).toContain("3 бесплатные генерации");
-    expect(PLANS.free.description).toMatch(/подходит ли/i);
-    expect(PLANS.free.features.join(" ")).toMatch(/не пополняется/i);
+  it("тариф честно называет, сколько это листов и когда они обновятся (ТЗ-29)", () => {
+    // Число не пишем руками: обещание собирается из той же константы
+    // FREE_GENERATIONS, что считает бэкенд.
+    expect(PLANS.free.description).toContain(`${FREE_GENERATIONS} листов в месяц`);
+    expect(PLANS.free.description).toContain("Обновляется 1-го числа");
+    // Квота месячная: «не пополняется — это N листа на всё время» больше не
+    // правда, и проверка на «навсегда» выше это ловит.
+    expect(PLANS.free.features.join(" ")).not.toMatch(/на всё время/i);
+    // Второе обещание тарифа. Раньше оно было «проверка по фото — без
+    // ограничений», но код считал каждую проверку листом (решение владельца
+    // от 07.10, подтверждено 16.10). Текст обязан совпадать с поведением,
+    // поэтому проверяем, что обещания «без ограничений» здесь больше нет.
+    expect(PLANS.free.features.join(" ")).toMatch(/Проверка по фото/);
+    expect(PLANS.free.features.join(" ")).toMatch(/из той же квоты/i);
+    expect(PLANS.free.features.join(" ")).not.toMatch(/без ограничений/i);
   });
 
   it("на странице тарифов бесплатная квота описана без слова «навсегда»", () => {
     const pricing = userText("src/app/pricing/page.tsx");
     expect(pricing).not.toMatch(/навсегда/i);
+    // Слово «Квота общая» осталось правдой: счёт по-прежнему один на все типы
+    // материалов. Проверка прежняя — она про «общий», а не про вечность.
     expect(pricing).toMatch(/Квота общая/);
+  });
+
+  it("в карточке расхода нет слов про исчерпание и блокировку", () => {
+    // Правило из шапки UsageCard.tsx. ТЗ-29 к нему не отступает: месячная
+    // квота не делает слова «исчерпано» менее обидными.
+    const card = userText("src/components/shared/UsageCard.tsx");
+    expect(card).not.toMatch(/исчерпан/i);
+    expect(card).not.toMatch(/заблокирован/i);
   });
 });
 
@@ -165,10 +188,16 @@ describe("Д-3 — в шапке одна кнопка на состояние",
     expect(navArray).not.toMatch(/Кабинет/);
   });
 
-  it("гость видит «Войти» и не видит «Кабинет»", () => {
+  it("гость видит «Войти» и «Кабинет» рядом (ТЗ-32, D5)", () => {
+    // Раньше здесь стояло обратное утверждение: гость не видит «Кабинет».
+    // Владелец 16.10.2026 решил другое (ТЗ-32, D5): кабинет открыт гостю без
+    // входа, поэтому ссылка на него в шапке нужна. Проверяем главное —
+    // «Войти» на месте и «Кабинет» ведёт именно в кабинет, а не в /login.
     render(createElement(Header));
     expect(screen.getByText(/^Войти$/)).toBeInTheDocument();
-    expect(screen.queryByText(/^Кабинет$/)).not.toBeInTheDocument();
+    const cabinet = screen.getByText(/^Кабинет$/);
+    expect(cabinet).toBeInTheDocument();
+    expect(cabinet.closest("a")?.getAttribute("href")).toBe("/dashboard");
   });
 
   it("залогиненный видит «Кабинет» и не видит «Войти»", () => {

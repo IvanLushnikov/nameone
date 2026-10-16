@@ -10,7 +10,28 @@
 import { describe, it, expect } from "vitest";
 import { generateKtp, computeWeekDates } from "@/lib/mock/ktp";
 import { getGrade } from "@/lib/content/subjects";
+import type { SubjectSlug } from "@/lib/types";
 import type { GenerationRequest } from "@/lib/types";
+
+/**
+ * Класс, где тем МЕНЬШЕ, чем записей в плане (34) — единственный случай, в
+ * котором цикл обхода тем замыкается. Ищем по данным, а не хардкодим: число
+ * тем в классе меняется, когда таксономию дополняют (подключение тем ФГОС
+ * добавило в 1 класс русского 62 темы), и зашитый класс однажды перестал быть
+ * нужным.
+ */
+function findCyclingGrade(): { subject: SubjectSlug; grade: number; topic: string; topicCount: number } {
+  for (let grade = 1; grade <= 11; grade += 1) {
+    const g = getGrade("russian", grade);
+    if (!g) continue;
+    const topics = g.topics;
+    if (topics.length >= 2 && topics.length < 34) {
+      return { subject: "russian", grade, topic: topics[0]!.slug, topicCount: topics.length };
+    }
+  }
+  throw new Error("нет класса, где тем меньше 34");
+}
+
 
 function req(partial: Partial<GenerationRequest>): GenerationRequest {
   return {
@@ -65,29 +86,63 @@ describe("generateKtp — 5 кл русский (happy-path, 68 ч)", () => {
 });
 
 describe("generateKtp — edge-case: циклический обход тем", () => {
-  it("5 кл русский: 7 тем закольцованы на 34 записи (распределение по индексам 0..6)", async () => {
+  // ЧТО ИЗМЕНИЛОСЬ 16.10.2026. Тест брал 5 класс русского и утверждал, что
+  // там 7 тем, закольцованные на 34 записи. После подключения тем из
+  // федеральных рабочих программ в этом классе их стало 122 — цикл там
+  // больше не замыкается, и класс перестал быть примером edge-case.
+  // Проверять формулу `(num - 1) % topics.length` на данных, где она не
+  // срабатывает, бессмысленно. Поэтому ниже два честных случая:
+  //   1) класс, где тем больше, чем записей — темы идут подряд, без повторов;
+  //   2) класс, где тем меньше, чем записей — реальное закольцовывание.
+  // Формула одна и та же, и она проверяется на обоих.
+
+  it("класс, где тем больше, чем записей: темы идут подряд, без повторов", async () => {
     const ktp = await generateKtp(req({}));
     const allEntries = ktp.weeks.flatMap((w) => w.entries);
     expect(allEntries.length).toBe(34);
-    // Проверяем, что entry num=N получает тему topics[(N-1) % 7].
-    // topics[0] для русского 5 кл — "Чередующиеся гласные в корне".
-    const grade = getGrade("russian", 5);
-    expect(grade).toBeDefined();
-    const topics = grade!.topics;
-    expect(topics.length).toBeGreaterThan(0);
-    expect(topics.length).toBeLessThan(allEntries.length); // условие edge-case
-    for (let n = 1; n <= 34; n++) {
+    const topics = getGrade("russian", 5)!.topics;
+    expect(topics.length).toBeGreaterThan(allEntries.length); // условие этого случая
+    for (let n = 1; n <= allEntries.length; n++) {
       const entry = allEntries.find((e) => e.num === n);
-      const expectedTopic = topics[(n - 1) % topics.length];
       expect(entry).toBeDefined();
-      expect(entry!.topic).toBe(expectedTopic.title);
+      expect(entry!.topic).toBe(topics[n - 1].title);
     }
+    // Повторов нет: каждая запись — своя тема.
+    expect(new Set(allEntries.map((e) => e.topic)).size).toBe(allEntries.length);
+  });
+
+  it("класс, где тем меньше, чем записей: темы закольцованы, каждая попала в план", async () => {
+    // Класс берём из данных: цикл замыкается только там, где тем меньше, чем
+    // записей, а конкретный такой класс меняется при каждом расширении
+    // таксономии.
+    const found = findCyclingGrade();
+    const ktp = await generateKtp(req({ subject: found.subject, grade: found.grade, topic: found.topic }));
+    const allEntries = ktp.weeks.flatMap((w) => w.entries);
+    // Длину плана берём из данных, а не константой: она тоже меняется вместе
+    // с таксономией, и зашитое число однажды опровергает само себя.
+    expect(allEntries.length).toBeGreaterThan(0);
+    const topics = getGrade(found.subject, found.grade)!.topics;
+    expect(topics.length).toBeGreaterThan(0);
+    // Условие edge-case проверяется по факту, а не по предположению о данных:
+    // цикл замыкается только когда тем меньше, чем записей.
+    const cycles = Math.floor(allEntries.length / topics.length);
+    expect(cycles, "цикл должен закрыться хотя бы раз — иначе это не тот случай").toBeGreaterThan(1);
+    for (let n = 1; n <= allEntries.length; n++) {
+      const entry = allEntries.find((e) => e.num === n);
+      expect(entry).toBeDefined();
+      expect(entry!.topic).toBe(topics[(n - 1) % topics.length].title);
+    }
+    // Ни одна тема класса не выпала из плана, и каждая встречалась.
+    expect(new Set(allEntries.map((e) => e.topic))).toEqual(
+      new Set(topics.map((t) => t.title)),
+    );
   });
 
   it("entry № 1 имеет fgosRef первой темы, следующий цикл — той же первой темы", async () => {
-    const ktp = await generateKtp(req({}));
+    const found = findCyclingGrade();
+    const ktp = await generateKtp(req({ subject: found.subject, grade: found.grade, topic: found.topic }));
     const allEntries = ktp.weeks.flatMap((w) => w.entries);
-    const topics = getGrade("russian", 5)!.topics;
+    const topics = getGrade(found.subject, found.grade)!.topics;
     // Число тем класса меняется при переносе тем между классами, поэтому
     // длину цикла берём из данных, а не из константы.
     const cycleEntry = topics.length + 1;

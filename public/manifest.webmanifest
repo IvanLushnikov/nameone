@@ -1,0 +1,33 @@
+{
+  "name": "УчЛист — задания класса",
+  "short_name": "УчЛист",
+  "description": "Сдача работы с телефона: откройте по коду класса, ответьте на задания или сфотографируйте тетрадь.",
+  "lang": "ru",
+  "dir": "ltr",
+  "start_url": "/k/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#22B37C",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

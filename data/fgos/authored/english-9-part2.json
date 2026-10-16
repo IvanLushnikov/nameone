@@ -1,0 +1,355 @@
+{
+ "source": "english-9-part2",
+ "topics": [
+  {
+   "statement": "Грамматическая сторона речи",
+   "title": "Грамматическая сторона речи",
+   "examples": [
+    {
+     "text": "Выберите верный вариант: She __ (write) emails every day.",
+     "answer": "She writes"
+    },
+    {
+     "text": "Раскройте скобки, выбрав нужную форму: We (not / see) each other since 2015.",
+     "answer": "haven't seen"
+    }
+   ]
+  },
+  {
+   "statement": "Распознавание и употребление в устной и письменной речи изученных морфологических форм и синтаксических конструкций английского языка",
+   "title": "Распознавание грамматических форм",
+   "examples": [
+    {
+     "text": "Найдите в тексте по одному предложению с Present Perfect и с Past Continuous и выпишите их.",
+     "answer": "Present Perfect: I have lived here for five years. Past Continuous: It was raining when we met."
+    },
+    {
+     "text": "Определите тип конструкции в каждом предложении: 1) I want you to wait. 2) She said that she was busy.",
+     "answer": "1) сложное дополнение, 2) сложноподчинённое с придаточным"
+    }
+   ]
+  },
+  {
+   "statement": "Предложения со сложным дополнением (Complex Object) (I want to have my hair cut.)",
+   "title": "Сложное дополнение (Complex Object)",
+   "examples": [
+    {
+     "text": "Вставьте слова в предложение, чтобы получилось сложное дополнение: I want __ (you / to help) me with the bags.",
+     "answer": "you to help"
+    },
+    {
+     "text": "Составьте предложение со сложным дополнением из слов: want / your sister / to / come / with us",
+     "answer": "I want your sister to come with us."
+    }
+   ]
+  },
+  {
+   "statement": "Конструкции для выражения предпочтения I prefer .../I'dprefer .../I'drather ...",
+   "title": "Выражение предпочтения",
+   "examples": [
+    {
+     "text": "Впишите форму в скобках в предложение о предпочтении: I prefer __ (watch) films at home. — I would rather __ (watch) them at the cinema.",
+     "answer": "watching; watch"
+    },
+    {
+     "text": "Переведите на английский: Я бы предпочла пойти в кино, а не в театр.",
+     "answer": "I'd rather go to the cinema than to the theatre."
+    }
+   ]
+  },
+  {
+   "statement": "Конструкция I wish ..",
+   "title": "Конструкция I wish",
+   "examples": [
+    {
+     "text": "Допишите предложение: I wish I __ (know) the answer to this question.",
+     "answer": "knew"
+    },
+    {
+     "text": "Переведите на английский, используя wish: Жаль, что я не знаю этого слова.",
+     "answer": "I wish I knew that word."
+    }
+   ]
+  },
+  {
+   "statement": "Предложения с конструкцией either ... or, neither ... nor",
+   "title": "Конструкции either и neither",
+   "examples": [
+    {
+     "text": "Впишите either или neither вместе с or или nor: I like __ tea __ coffee. __ he __ I knew the way home.",
+     "answer": "either ... or; neither ... nor"
+    },
+    {
+     "text": "Составьте отрицательное предложение с neither ... nor из слов: neither / like / he / I / this film",
+     "answer": "Neither he nor I like this film."
+    }
+   ]
+  },
+  {
+   "statement": "Глаголы в видовременных формах действительного залога в изъявительном наклонении (Present/Past/Future Simple Tense, Present/Past Perfect Tense, Present/Past Continuous Tense, Future-in-the-Past) и наиболее употребительных формах страдательного залога (Present/Past Simple Passive, Present Perfect Passive)",
+   "title": "Видовременные формы глагола",
+   "examples": [
+    {
+     "text": "Поставьте глагол в скобках в Past Perfect: By the time we came, the film (already / finish).",
+     "answer": "had already finished"
+    },
+    {
+     "text": "Поставьте глагол в Present Perfect Passive: This book __ (write) by a young Scottish writer.",
+     "answer": "has been written"
+    }
+   ]
+  },
+  {
+   "statement": "Порядок следования имен прилагательных (nice long blond hair)",
+   "title": "Порядок следования прилагательных",
+   "examples": [
+    {
+     "text": "Расположите прилагательные в принятом в английском языке порядке: blond / long / nice.",
+     "answer": "nice long blond"
+    },
+    {
+     "text": "Составьте описание по образцу, соблюдая порядок прилагательных: an / leather / brown / old / bag",
+     "answer": "an old brown leather bag"
+    }
+   ]
+  },
+  {
+   "statement": "Осуществление межличностного и межкультурного общения с использованием знаний о национально-культурных особенностях своей страны и страны (стран) изучаемого языка, основных социокультурных элементов речевого поведенческого этикета в англоязычной среде, знание и использование в устной и письменной речи наиболее употребительной тематической фоновой лексики в рамках отобранного тематического содержания (основные национальные праздники, традиции, обычаи, традиции в питании и проведении досуга, система образования)",
+   "title": "Тематическая фоновая лексика",
+   "examples": [
+    {
+     "text": "Подберите английское слово к русскому понятию: праздник — __, традиция — __, обычай — __, досуг — __.",
+     "answer": "holiday, tradition, custom, leisure"
+    },
+    {
+     "text": "Выпишите из текста слова по двум темам — «питание» и «досуг»: 'British people enjoy fish and chips and they often play football or go camping at weekends.'",
+     "answer": "fish and chips; football, camping"
+    }
+   ]
+  },
+  {
+   "statement": "Знание социокультурного портрета родной страны и страны (стран) изучаемого языка: знакомство с традициями проведения основных национальных праздников (Рождества, Нового года, Дня матери, Дня благодарения и других праздников), с особенностями образа жизни и культуры страны (стран) изучаемого языка (известными достопримечательностями; некоторыми выдающимися людьми), с доступными в языковом отношении образцами поэзии и прозы для подростков на английском языке",
+   "title": "Социокультурный портрет страны",
+   "examples": [
+    {
+     "text": "Назовите британские реалии по описанию: собрание всей семьи в рождественское утро; вырезание тыквы в конце октября; праздник в честь первых поселенцев.",
+     "answer": "Christmas, Halloween, Thanksgiving"
+    },
+    {
+     "text": "Выпишите из текста страну и её столицу: 'London is the capital of England and Edinburgh is the capital of Scotland.'",
+     "answer": "England — London; Scotland — Edinburgh"
+    }
+   ]
+  },
+  {
+   "statement": "Формирование элементарного представление о различных вариантах английского языка",
+   "title": "Варианты английского языка",
+   "examples": [
+    {
+     "text": "Определите, британский или американский это вариант: truck, colour, lift, autumn.",
+     "answer": "американский, британский, британский, британский"
+    },
+    {
+     "text": "Перепишите предложение из британского варианта в американский: 'Take the lift to the second floor and turn left.'",
+     "answer": "Take the elevator to the second floor and turn left."
+    }
+   ]
+  },
+  {
+   "statement": "Осуществление межличностного и межкультурного общения с использованием знаний о национально-культурных особенностях своей страны и страны (стран) изучаемого языка",
+   "title": "Межкультурное общение",
+   "examples": [
+    {
+     "text": "В двух предложениях напишите, чем русский Новый год отличается от британского Рождества: Россия — 1 января и празднуют всю ночь, Британия — 25 декабря и в кругу семьи.",
+     "answer": "Russia celebrates New Year on January 1; Britain celebrates Christmas on December 25 with the family."
+    },
+    {
+     "text": "Переведите на английский: Русские зовут гостей на дачу, а англичане — на чай.",
+     "answer": "Russians invite guests to their country house, the British — for tea."
+    }
+   ]
+  },
+  {
+   "statement": "Соблюдение норм вежливости в межкультурном общении",
+   "title": "Вежливость в общении",
+   "examples": [
+    {
+     "text": "Замените резкий отказ на вежливый: No! I don't want to help you! — __",
+     "answer": "I'm afraid I can't help you today."
+    },
+    {
+     "text": "Допишите вежливые формулы для гостя из другой страны: приглашение — __, вежливый отказ — __.",
+     "answer": "Would you like to join us? — I'm sorry, I can't come."
+    }
+   ]
+  },
+  {
+   "statement": "писать свои имя и фамилию, а также имена и фамилии своих родственников и друзей на английском языке;",
+   "title": "Имя и фамилия на английском",
+   "examples": [
+    {
+     "text": "Напишите по-английски имя и фамилию: Анна Иванова и Николай Петров.",
+     "answer": "Anna Ivanova; Nikolay Petrov"
+    },
+    {
+     "text": "Подпишите короткое поздравление другу Тому Уокеру: С днём рождения!",
+     "answer": "Happy birthday, Tom Walker!"
+    }
+   ]
+  },
+  {
+   "statement": "правильно оформлять свой адрес на английском языке (в анкете);",
+   "title": "Оформление адреса в анкете",
+   "examples": [
+    {
+     "text": "Запишите по-английски адрес для анкеты: улица Лесная, дом 12, квартира 5, город Москва, индекс 101000.",
+     "answer": "12 Lesnaya Street, flat 5, Moscow, 101000"
+    },
+    {
+     "text": "В анкете указано: Flat 4, 27 Green Street, Manchester, M14 5RW. Выпишите из адреса только почтовый индекс.",
+     "answer": "M14 5RW"
+    }
+   ]
+  },
+  {
+   "statement": "правильно оформлять электронное сообщение личного характера в соответствии с нормами неофициального общения, принятыми в стране (странах) изучаемого языка;",
+   "title": "Электронное сообщение другу",
+   "examples": [
+    {
+     "text": "Расположите части личного сообщения в правильном порядке: 1) See you at school on Monday, 2) Hi Ann, 3) Write soon, Tom.",
+     "answer": "Hi Ann, See you at school on Monday. Write soon, Tom"
+    },
+    {
+     "text": "Замените официальные формулы в письме на принятые в неформальном общении: 'Dear Mr Brown. Yours sincerely.' — __",
+     "answer": "Hi Mr Brown. Write soon."
+    }
+   ]
+  },
+  {
+   "statement": "кратко представлять Россию и страну (страны) изучаемого языка;",
+   "title": "Своя страна и страна изучения",
+   "examples": [
+    {
+     "text": "Подготовьте короткое представление России в шести предложениях: страна, столица, язык, праздник, достопримечательность, природа.",
+     "answer": "6 предложений: Russia, Moscow, Russian, New Year, the Kremlin, rivers and forests"
+    },
+    {
+     "text": "Ответьте на два вопроса о своей стране в Present Simple: Where do you live? What do you do at weekends?",
+     "answer": "I live in Moscow. At weekends I play football."
+    }
+   ]
+  },
+  {
+   "statement": "кратко представлять некоторые культурные явления родной страны и страны (стран) изучаемого языка (основные национальные праздники, традиции в проведении досуга и питании, достопримечательности);",
+   "title": "Культурные явления и традиции",
+   "examples": [
+    {
+     "text": "Соотнесите культурное явление и страну: суши — __, танец фламенко — __, чай с молоком и йоркширский пудинг — __.",
+     "answer": "Japan, Spain, Britain"
+    },
+    {
+     "text": "Составьте три предложения о традициях питания в стране изучаемого языка: что едят, в какое время, что пьют.",
+     "answer": "They eat fish and chips; at lunchtime; they drink tea."
+    }
+   ]
+  },
+  {
+   "statement": "кратко представлять некоторых выдающихся людей родной страны и страны (стран) изучаемого языка (ученых, писателей, поэтов, художников, композиторов, музыкантов, спортсменов и других людей);",
+   "title": "Выдающиеся люди страны",
+   "examples": [
+    {
+     "text": "Соотнесите фамилию и род деятельности: Ломоносов — __, Тёрнер — __, Месси — __.",
+     "answer": "a scientist, a painter, a footballer"
+    },
+    {
+     "text": "Исправьте ошибку в употреблении времени: 'Pushkin writes many poems and he dies in 1837.'",
+     "answer": "Pushkin wrote many poems and he died in 1837."
+    }
+   ]
+  },
+  {
+   "statement": "оказывать помощь иностранным гостям в ситуациях повседневного общения (объяснить местонахождение объекта, сообщить возможный маршрут, уточнить часы работы и другие ситуации)",
+   "title": "Помощь гостю в городе",
+   "examples": [
+    {
+     "text": "Уточните у иностранного гостя, открыт ли сегодня музей: The museum __ open today?",
+     "answer": "Is the museum open today?"
+    },
+    {
+     "text": "Объясните гостю маршрут в двух предложениях: идите прямо, потом поверните направо, вход рядом с банком.",
+     "answer": "Go straight, then turn right. The entrance is next to the bank."
+    }
+   ]
+  },
+  {
+   "statement": "Использование при чтении и аудировании языковой, в том числе контекстуальной, догадки; при говорении и письме - перифраза (толкования), синонимических средств, описание предмета вместо его названия, при непосредственном общении догадываться о значении незнакомых слов с помощью используемых собеседником жестов и мимики",
+   "title": "Языковая догадка и перифраза",
+   "examples": [
+    {
+     "text": "Определите по контексту значение слова give up в предложении 'Don't give up! You are close to the finish.'",
+     "answer": "сдаться, бросить"
+    },
+    {
+     "text": "Замените название описанием: a person who cuts hair — __",
+     "answer": "a hairdresser"
+    }
+   ]
+  },
+  {
+   "statement": "Переспрашивать, просить повторить, уточняя значение незнакомых слов",
+   "title": "Переспрашивание и уточнение",
+   "examples": [
+    {
+     "text": "Впишите вопрос уточнения значения слова: Sorry, what do you __ (mean) by 'borrow'?",
+     "answer": "mean"
+    },
+    {
+     "text": "Переведите на английский: Не могли бы вы повторить, пожалуйста?",
+     "answer": "Could you repeat that, please?"
+    }
+   ]
+  },
+  {
+   "statement": "Использование при формулировании собственных высказываний, ключевых слов, плана",
+   "title": "План высказывания и ключевые слова",
+   "examples": [
+    {
+     "text": "Выпишите из текста пять ключевых слов по теме «здоровый образ жизни»: 'I go swimming twice a week, I eat vegetables and fruit every day and I sleep eight hours.'",
+     "answer": "swimming, vegetables, fruit, sleep, eight hours"
+    },
+    {
+     "text": "Составьте план ответа на вопрос What makes you happy? из трёх пунктов.",
+     "answer": "1) hobbies 2) family 3) holidays"
+    }
+   ]
+  },
+  {
+   "statement": "Игнорирование информации, не являющейся необходимой, для понимания основного содержания, прочитанного (прослушанного) текста или для нахождения в тексте запрашиваемой информации",
+   "title": "Отбор нужной информации",
+   "examples": [
+    {
+     "text": "Прочитайте и выпишите только то, что отвечает на вопрос How did they get to London? 'My family moved to London in 2019. We travelled by train. Before that we lived in Leeds.'",
+     "answer": "They travelled by train."
+    },
+    {
+     "text": "Прочитайте и выпишите предложение, которое НЕ отвечает на вопрос When is the exam? 'Our English exam starts at ten o'clock on Friday. It lasts two hours. Students should bring two pens.'",
+     "answer": "It lasts two hours."
+    }
+   ]
+  },
+  {
+   "statement": "Сравнение (в том числе установление основания для сравнения) объектов, явлений, процессов, их элементов и основных функций в рамках изученной тематики",
+   "title": "Сравнение и его основание",
+   "examples": [
+    {
+     "text": "Сравните погоду и время отдыха в России и в Великобритании и назовите два основания для сравнения.",
+     "answer": "погода, время отдыха, длина дня"
+    },
+    {
+     "text": "Впишите сравнительную конструкцию: My city is __ (big) than yours. My school is __ (old) as yours.",
+     "answer": "bigger; as old as"
+    }
+   ]
+  }
+ ]
+}

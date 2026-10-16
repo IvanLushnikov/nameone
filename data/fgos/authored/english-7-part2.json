@@ -1,0 +1,145 @@
+{
+ "source": "english-7-part2",
+ "topics": [
+  {
+   "statement": "правильно оформлять свой адрес на английском языке (в анкете);",
+   "title": "Оформление адреса в анкете",
+   "examples": [
+    {
+     "text": "Расположите данные анкеты в порядке английского адреса: London; 12 Baker Street; Flat 5; United Kingdom. Запишите готовый адрес одной строкой.",
+     "answer": "Flat 5, 12 Baker Street, London, United Kingdom"
+    },
+    {
+     "text": "Прочитайте британский адрес в анкете и выпишите из него название города и почтовый индекс: 25 Park Road, Manchester M14 6HR.",
+     "answer": "Manchester, M14 6HR"
+    }
+   ]
+  },
+  {
+   "statement": "правильно оформлять электронное сообщение личного характера в соответствии с нормами неофициального общения, принятыми в стране (странах) изучаемого языка;",
+   "title": "Личное сообщение в мессенджере",
+   "examples": [
+    {
+     "text": "Напишите личное сообщение другу в мессенджере: приветствие, вопрос о планах на субботу, пожелание хорошего дня и прощание.",
+     "answer": "приветствие, вопрос о планах, пожелание, прощание"
+    },
+    {
+     "text": "Впишите заглавные буквы и знаки препинания в сообщение: 'hey sam, what are you doing on saturday?'",
+     "answer": "Hey Sam, what are you doing on Saturday?"
+    }
+   ]
+  },
+  {
+   "statement": "кратко представлять Россию и страну (страны) изучаемого языка;",
+   "title": "Представление России и страны",
+   "examples": [
+    {
+     "text": "Прочитайте два текста и выпишите по два факта о каждой стране: 1) The Volga is the longest river in Russia. Moscow is the capital of Russia. 2) Wales is a part of Great Britain. Cardiff is its capital.",
+     "answer": "Россия: Волга, Москва; Уэльс: часть Великобритании, Кардифф"
+    },
+    {
+     "text": "Составьте по плану четыре предложения о своей стране: столица, одна река, один вид транспорта, одно блюдо.",
+     "answer": "столица, река, транспорт, блюдо — четыре предложения"
+    }
+   ]
+  },
+  {
+   "statement": "кратко представлять некоторые культурные явления родной страны и страны (стран) изучаемого языка (основные национальные праздники, традиции в проведении досуга и питании), наиболее известные достопримечательности;",
+   "title": "Праздники, традиции, достопримечательности",
+   "examples": [
+    {
+     "text": "Прочитайте описание и напишите, о каком национальном празднике идёт речь: people give presents and decorate a tree in December.",
+     "answer": "Christmas"
+    },
+    {
+     "text": "Соотнесите достопримечательность со страной и запишите три пары: 1) the Colosseum; 2) Red Square; 3) Tower Bridge.",
+     "answer": "1 — Italy, 2 — Russia, 3 — Great Britain"
+    }
+   ]
+  },
+  {
+   "statement": "кратко рассказывать о выдающихся людях родной страны и страны (стран) изучаемого языка (ученых, писателях, поэтах, спортсменах)",
+   "title": "Учёные, писатели и спортсмены",
+   "examples": [
+    {
+     "text": "Прочитайте предложения и выпишите из них профессии людей: He writes novels about the sea. She runs 800 metres and wins medals.",
+     "answer": "a writer, a runner"
+    },
+    {
+     "text": "Подберите глагол к каждому человеку и запишите три пары: a chemist, a poet, a footballer — discover, write, play.",
+     "answer": "a chemist discovers, a poet writes, a footballer plays"
+    }
+   ]
+  },
+  {
+   "statement": "Использование при чтении и аудировании языковой, в том числе контекстуальной, догадки, при непосредственном общении догадываться о значении незнакомых слов с помощью используемых собеседником жестов и мимики",
+   "title": "Языковая догадка",
+   "examples": [
+    {
+     "text": "Догадайтесь о значении выделенного слова по контексту и напишите его перевод: Our team has improved a lot this season.",
+     "answer": "улучшился, стал лучше"
+    },
+    {
+     "text": "Опишите по-английски и переведите ситуацию: мальчик качает головой и закрывает уши, когда слышит громкий звук.",
+     "answer": "не хочет слышать громкий звук"
+    }
+   ]
+  },
+  {
+   "statement": "Переспрашивать, просить повторить, уточняя значение незнакомых слов",
+   "title": "Уточнение значения незнакомых слов",
+   "examples": [
+    {
+     "text": "Впишите вопрос, уточняющий значение слова: — I like this jacket. — __ is it? — Twenty pounds.",
+     "answer": "How much is it?"
+    },
+    {
+     "text": "Найдите в диалоге две реплики с просьбой повторить или уточнить сказанное и выпишите их: — My phone number is 2-0-7. — Sorry, could you repeat that? — Could you spell your name? — Kevin, K-V-I-N.",
+     "answer": "Sorry, could you repeat that? Could you spell your name?"
+    }
+   ]
+  },
+  {
+   "statement": "Использование при формулировании собственных высказываний, ключевых слов, плана",
+   "title": "Ключевые слова и план",
+   "examples": [
+    {
+     "text": "Прочитайте текст и выпишите четыре ключевых слова к нему: Our school festival will be held in the hall on Friday. Students will sing and dance. After the concert there will be a school meal.",
+     "answer": "school festival, Friday, sing and dance, school meal"
+    },
+    {
+     "text": "Составьте план из трёх пунктов по тексту и выпишите его: We went to London in July. We visited the Tower of London and went on a boat ride on the Thames. In the evening we ate fish and chips.",
+     "answer": "поездка — достопримечательности и река — еда"
+    }
+   ]
+  },
+  {
+   "statement": "Игнорирование информации, не являющейся необходимой для понимания основного содержания, прочитанного (прослушанного) текста или для нахождения в тексте запрашиваемой информации",
+   "title": "Игнорирование лишней информации",
+   "examples": [
+    {
+     "text": "Прочитайте объявление библиотеки и выпишите только нужное посетителю, пропустив лишнее: The library is closed on Mondays. Summer holidays start on July 1st. Please bring your card. The reading room has 50 seats.",
+     "answer": "reading room, card"
+    },
+    {
+     "text": "Прочитайте информацию о школе и выпишите только ответ на вопрос «Во сколько начинаются уроки?», пропустив остальное: The school was built in 1985. Lessons start at 8:15. There are 30 pupils in every class. The library opens on weekdays.",
+     "answer": "8:15"
+    }
+   ]
+  },
+  {
+   "statement": "Сравнение (в том числе установление основания для сравнения) объектов, явлений, процессов, их элементов и основных функций в рамках изученной тематики",
+   "title": "Сравнение и сопоставление",
+   "examples": [
+    {
+     "text": "Сравните транспорт по двум признакам и запишите по одному выводу: the bus — slow, cheap; the train — fast, expensive. Чем дешевле, тем что?",
+     "answer": "bus дешевле, train быстрее"
+    },
+    {
+     "text": "Прочитайте предложение и выпишите два сравнительных прилагательных: Shanghai is bigger than Brussels, but smaller than Beijing.",
+     "answer": "bigger, smaller"
+    }
+   ]
+  }
+ ]
+}

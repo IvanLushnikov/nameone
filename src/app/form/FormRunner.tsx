@@ -8,6 +8,16 @@
  * нет: токен читается из `window.location.search` в useEffect, и страница сразу
  * рисует скелетон загрузки, а не fallback на весь экран.
  *
+ * ─── ДВА РЕЖИМА, ОДНА СТРАНИЦА (ТЗ-28) ─────────────────────────────────────
+ *   ?t=<токен формы>            — общая ссылка (как раньше): имя и код вводит
+ *                                  сам ученик, ответ уходит под написанным именем;
+ *   ?t=<токен>&c=<код класса>   — вход по коду с доски (страница /k/): личность
+ *                                  подтверждена cookie, имя подставляет сервер,
+ *                                  доступна съёмка фото и сохраняется черновик.
+ *
+ * Режим выбирается по наличию `c` в адресе. Никаких новых маршрутов: фронт
+ * собирается как статика, страница одна (см. page.tsx).
+ *
  * Состояния (ТЗ §4.4, таблица файлов):
  *   loading    — скелетон «Загружаем задания…» (статика + клиентский фетч).
  *   needCode   — учитель задал код класса: сначала код, потом имя.
@@ -30,8 +40,12 @@ import { Input } from "@/components/ui/Input";
 import { TaskInput } from "@/components/form/TaskInput";
 import { ProgressBar } from "@/components/form/ProgressBar";
 import { loadPublicForm, submitPublicForm } from "@/lib/forms/api";
+import { loadCodeForm, submitCodeForm, uploadTaskPhoto } from "@/components/student/api";
+import { PhotoCapture } from "@/components/student/PhotoCapture";
+import { clearDraft, loadDraft, saveDraft } from "@/components/student/draft";
 import {
   FORM_ERROR_MESSAGE,
+  type FormTask,
   type PublicForm,
   type SubmitFormOk,
 } from "@/lib/forms/types";
@@ -45,9 +59,14 @@ export function FormRunner() {
   // отсутствующего параметра, и такой токен обязан дать ошибку «Ссылка
   // неполная», а не крутить вечную загрузку.
   const [token, setToken] = React.useState<string | undefined>(undefined);
+  // Код класса приходит со страницы /k/. Пустой → обычная общая ссылка,
+  // всё поведение остаётся ровно прежним.
+  const [classCode, setClassCode] = React.useState<string | undefined>(undefined);
 
   React.useEffect(() => {
-    setToken(new URLSearchParams(window.location.search).get("t") ?? "");
+    const params = new URLSearchParams(window.location.search);
+    setToken(params.get("t") ?? "");
+    setClassCode(params.get("c") ?? "");
   }, []);
 
   const [phase, setPhase] = React.useState<Phase>("loading");
@@ -56,11 +75,18 @@ export function FormRunner() {
   const [errorMessage, setErrorMessage] = React.useState("");
 
   const [name, setName] = React.useState("");
+  /** Имя из черновика — на финальном экране в режиме кода. */
+  const [studentName, setStudentName] = React.useState("");
+  const [draftRestored, setDraftRestored] = React.useState(false);
+
+
   const [code, setCode] = React.useState("");
   const [nameError, setNameError] = React.useState<string | null>(null);
   const [codeError, setCodeError] = React.useState<string | null>(null);
   const [answers, setAnswers] = React.useState<Record<number, string>>({});
   const [submitting, setSubmitting] = React.useState(false);
+  /** Номер задания → ключ загруженного фото (только режим кода класса). */
+  const [photos, setPhotos] = React.useState<Record<number, string>>({});
   /** Ошибка отправки, не выкидывающая ученика с заполненного листа. */
   const [submitError, setSubmitError] = React.useState<string | null>(null);
 
@@ -75,6 +101,30 @@ export function FormRunner() {
     }
     setPhase("loading");
     setErrorMessage("");
+
+    if (classCode) {
+      // Режим кода класса: cookie уже сказала серверу, кто этот ученик.
+      const res = await loadCodeForm(classCode, token);
+      if (!res.ok) {
+        setErrorMessage(
+          res.error === "network"
+            ? "Нет связи с сервером. Проверьте интернет и попробуйте ещё раз"
+            : "Задания не открылись. Откройте ссылку заново или попросите учителя",
+        );
+        setPhase("error");
+        return;
+      }
+      setForm({
+        ...res.form,
+        tasks: res.form.tasks.map((t) => ({ ...t, type: t.type as FormTask["type"] })),
+        expiresAt: 0,
+        needsCode: false,
+      });
+      restoreDraft(res.form.tasks.map((t) => t.number));
+      setPhase("answering");
+      return;
+    }
+
     const res = await loadPublicForm(token);
     if (!res.ok) {
       setErrorMessage(FORM_ERROR_MESSAGE[res.error]);
@@ -83,7 +133,7 @@ export function FormRunner() {
     }
     setForm(res.form);
     setPhase(res.form.needsCode ? "needCode" : "needName");
-  }, [token]);
+  }, [token, classCode]);
 
   React.useEffect(() => {
     void load();
@@ -95,8 +145,83 @@ export function FormRunner() {
   }, [form, answers]);
 
   const handleSetAnswer = React.useCallback((number: number, value: string) => {
-    setAnswers((prev) => ({ ...prev, [number]: value }));
-  }, []);
+    setAnswers((prev) => {
+      const next = { ...prev, [number]: value };
+      persistDraft(next, photos);
+      return next;
+    });
+  }, [photos, classCode]);
+
+  /**
+   * Восстановить черновик после загрузки заданий (ТЗ-28, сценарий 4).
+   *
+   * Имя для финального экрана берём тоже из черновика: сервер его не отдаёт
+   * (по ссылке нельзя узнать своё имя), а ученик его только что ввёл сам.
+   */
+  const restoreDraft = React.useCallback((taskNumbers: number[]) => {
+    if (!classCode) return;
+    const draft = loadDraft(classCode);
+    if (!draft) return;
+    setStudentName(draft.studentName);
+    // Ответы, которых больше нет в листе, НЕ восстанавливаем: они относились
+    // к другой версии работы и только сбивали бы счётчик прогресса.
+    const restored: Record<number, string> = {};
+    for (const n of taskNumbers) {
+      const value = draft.answers[String(n)];
+      if (typeof value === "string" && value.trim() !== "") restored[n] = value;
+    }
+    if (Object.keys(restored).length > 0) {
+      setAnswers(restored);
+      setDraftRestored(true);
+    }
+  }, [classCode]);
+
+  /** Сохранить черновик. Вне режима кода класса черновика нет — это его фича. */
+  const persistDraft = React.useCallback(
+    (nextAnswers: Record<number, string>, nextPhotos: Record<number, string>) => {
+      if (!classCode) return;
+      const draft = loadDraft(classCode);
+      // Имя для финального экрана: пока ученик его не вводил, берём то, что
+      // уже лежит в черновике (значит, он входил по коду раньше).
+      const knownName = draft?.studentName ?? "";
+      const answers: Record<string, string> = {};
+      for (const [n, v] of Object.entries(nextAnswers)) {
+        if (v.trim() !== "") answers[n] = v;
+      }
+      const photoMap: Record<string, string> = {};
+      for (const [n, key] of Object.entries(nextPhotos)) photoMap[n] = key;
+      saveDraft({
+        code: classCode,
+        studentName: knownName,
+        answers,
+        photos: photoMap,
+        updatedAt: Date.now(),
+      });
+    },
+    [classCode],
+  );
+
+  /**
+   * Загрузить фото задания (ТЗ-28).
+   *
+   * Фото уходит СРАЗУ отдельным запросом, а не внутри отправки работы: так
+   * обрыв связи на 4 МБ не приводит к потере уже набранных ответов.
+   */
+  const handlePhotoUpload = React.useCallback(
+    async (taskNumber: number, blob: Blob) => {
+      if (!classCode || !token) return { ok: false as const };
+      const res = await uploadTaskPhoto(classCode, token, blob);
+      if (!res.ok) return { ok: false as const };
+      setPhotos((prev) => {
+        const next = { ...prev, [taskNumber]: res.photoR2Key };
+        persistDraft(answers, next);
+        return next;
+      });
+      return { ok: true as const, photoR2Key: res.photoR2Key };
+    },
+    // answers нужен, чтобы положить в черновик весь набор, а не одно задание.
+    [classCode, token, answers, persistDraft],
+  );
 
   const handleStart = () => {
     const trimmed = name.trim();
@@ -125,6 +250,38 @@ export function FormRunner() {
     if (!token || !form || submitting) return;
     setSubmitting(true);
     setSubmitError(null);
+
+    if (classCode) {
+      // Режим кода класса: имя не отправляем, ответы идут по cookie ученика.
+      const payloadCode = form.tasks
+        .map((t) => ({
+          taskNumber: t.number,
+          value: answers[t.number] ?? "",
+          ...(photos[t.number] ? { photoR2Key: photos[t.number] } : {}),
+        }))
+        .filter((a) => a.value.trim() !== "" || Boolean(a.photoR2Key));
+
+      const resCode = await submitCodeForm(classCode, token, { answers: payloadCode });
+      if (resCode.ok) {
+        clearDraft(classCode);
+        setResult({
+          ok: true,
+          scoreTotal: resCode.scoreTotal,
+          scoreMax: resCode.scoreMax,
+          perTask: resCode.perTask,
+        });
+        setPhase("submitted");
+        setSubmitting(false);
+        return;
+      }
+      setSubmitting(false);
+      setSubmitError(
+        resCode.error === "network"
+          ? "Нет связи с сервером — ответы сохранены, попробуйте ещё раз"
+          : "Отправить не получилось. Ответы сохранены — попробуйте ещё раз",
+      );
+      return;
+    }
 
     const payload = form.tasks
       .map((t) => ({ taskNumber: t.number, value: answers[t.number] ?? "" }))
@@ -181,7 +338,8 @@ export function FormRunner() {
   }
 
   if (phase === "submitted" && form && result) {
-    return <SubmittedScreen form={form} result={result} name={name} />;
+    // В режиме кода класса имя пришло из черновика, а не из поля ввода.
+    return <SubmittedScreen form={form} result={result} name={classCode ? studentName || name : name} />;
   }
 
   if (!form) return <LoadingScreen />;
@@ -269,6 +427,14 @@ export function FormRunner() {
   return (
     <Shell>
       {header}
+      {draftRestored && (
+        <p
+          className="mb-3 rounded-xl bg-brand-50 p-3 text-sm text-brand-900"
+          data-testid="form-draft-restored"
+        >
+          Вернули ответы, которые вы не успели отправить в прошлый раз.
+        </p>
+      )}
       <div className="space-y-3" data-form-tasks="" data-testid="form-tasks">
         {form.tasks.map((task) => (
           <Card key={task.number} padded>
@@ -283,6 +449,14 @@ export function FormRunner() {
               value={answers[task.number] ?? ""}
               onChange={(v) => handleSetAnswer(task.number, v)}
             />
+            {classCode && (
+              <PhotoCapture
+                taskNumber={task.number}
+                uploaded={Boolean(photos[task.number])}
+                onUpload={handlePhotoUpload}
+                onError={(m) => setSubmitError(m)}
+              />
+            )}
             {task.points > 0 && (
               <p className="mt-2 text-xs text-[color:var(--text-muted)]">{task.points} балл.</p>
             )}

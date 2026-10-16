@@ -34,8 +34,10 @@ import {
   Download,
   Sparkles,
   Plus,
+  Pencil,
 } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
+import { WorksheetEditForm } from "@/components/worksheet/WorksheetEditForm";
 
 /**
  * Страница превью материала (`/preview?id=<id>`).
@@ -67,6 +69,13 @@ export default function PreviewPage() {
   const [searching, setSearching] = React.useState(false);
   /** Счётчик повторов: кнопка «Попробовать ещё раз» на экране «не найден». */
   const [retry, setRetry] = React.useState(0);
+  /**
+   * Открыта ли форма правки (ТЗ-30).
+   *
+   * Показывается только у листа с заданиями: у плана урока, презентации и КТП
+   * заданий нет, и кнопка «Редактировать» там была бы враньём.
+   */
+  const [editing, setEditing] = React.useState(false);
 
   React.useEffect(() => {
     setId(new URLSearchParams(window.location.search).get("id") ?? "");
@@ -139,6 +148,24 @@ export default function PreviewPage() {
   const handlePrint = () => {
     if (typeof window !== "undefined") window.print();
     trackEvent("dashboard_artifact_downloaded", { from: "preview", format: "pdf" });
+  };
+
+  /**
+   * Лист сохранён после правки: обновляем артефакт на экране.
+   *
+   * Перерисовываем ПРЕВЬЮ, а не только форму: учитель должен сразу увидеть
+   * результат, иначе он будет гадать, применилась ли правка, и заново
+   * откроет лист.
+   */
+  const handleEdited = (updated: FavoriteArtifact) => {
+    setArtifact(updated);
+    saveFavorite(updated);
+    toast({
+      tone: "success",
+      title: "Правка сохранена",
+      description: "Генерация не списывалась — лист пересобран из сохранённого",
+    });
+    trackEvent("worksheet_edited", { from: "preview" });
   };
 
   const handleDownload = async () => {
@@ -285,6 +312,14 @@ export default function PreviewPage() {
             >
               PDF
             </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              leftIcon={<Pencil className="w-4 h-4" />}
+              onClick={() => setEditing((v) => !v)}
+            >
+              {editing ? "Закрыть правку" : "Редактировать"}
+            </Button>
             <Button variant="secondary" size="md" onClick={handleDownload}>
               {"slides" in artifact ? "PPTX" : "DOCX"}
             </Button>
@@ -293,6 +328,18 @@ export default function PreviewPage() {
 
         {/* F-06 B-4: discriminated union по типу артефакта. */}
         <ArtifactBody artifact={artifact} />
+
+        {/* ТЗ-30: правка заданий на месте. Форму рисуем только у листа с
+            заданиями — у плана урока, презентации и КТП их нет. */}
+        {editing && "tasks" in artifact && (
+          <div className="container-tight">
+            <WorksheetEditForm
+              worksheet={artifact}
+              onClose={() => setEditing(false)}
+              onSaved={handleEdited}
+            />
+          </div>
+        )}
 
         {/* TZ-13 §4.9 / сценарий A: точка входа в интерактивы — с экрана
             готового листа. Учитель уже работает с листом по теме, значит

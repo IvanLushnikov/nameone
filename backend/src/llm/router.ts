@@ -13,7 +13,7 @@
  *   Теперь:
  *     worksheet / test / cards / lesson-plan / materials → Luna
  *     control / oge / ege / ktp / presentation              → Sonnet 5.5
- *     validate / embed / photo-check / image-gen            → своя модель
+ *     validate / embed / photo-check                        → своя модель
  *
  * С 2026-09-27 — polza.ai единственный провайдер для УчЛист.
  * Один POLZA_API_KEY покрывает все модели. Без ключа → primary = null
@@ -24,7 +24,7 @@
  */
 
 import type { Env } from "../env";
-import { InternalError } from "../lib/errors";
+import { BadRequestError, InternalError } from "../lib/errors";
 import { logLlmEvent } from "./log";
 import { isProviderEnabled, isVisionModel } from "./config";
 import { getProvider, hasCompleteImpl } from "./providers/base";
@@ -63,8 +63,35 @@ export const ARTIFACT_TASK: Record<ArtifactType, GenerationKind> = {
   // по ветке «неизвестный тип → worksheet-gen» случайно.
   "lesson-bundle": "worksheet-gen", // урок целиком = 4 массовых артефакта
   interactive: "worksheet-gen", // форма для учеников генерируется как контент
-  image: "image-gen", // иллюстрации: провайдера пока нет, роут отдаст 503
+  // ТЗ-30 AD-4: тип `image` убран. Провайдера генерации изображений нет, и
+  // `pickModel("image-gen")` отдавал `primary: null`, то есть роут честно
+  // отвечал 503 на кнопке, которая стоила учителю одно нажатие и ноль
+  // результата. Проверено по боевой базе 15.10.2026: в `llm_logs` нет НИ ОДНОГО
+  // вызова `image-gen`, в `events` — ни одного события с таким типом, в
+  // `worksheets.payload_json` — ни одного сохранённого листа. То есть откат
+  // никого не отнимает: пользователей этой функции не было.
+  //
+  // Возврат — отдельная задача с расчётом себестоимости картинки, а не
+  // «раскомментировать строку».
 };
+
+/**
+ * Типы артефактов, снятых с продукта (ТЗ-30 AD-4).
+ *
+ * Их нет ни в `ArtifactType`, ни в `ARTIFACT_TASK` — но они всё ещё прилетают
+ * в теле запроса: у клиента может быть открытая вкладка конструктора, сохранённая
+ * ссылка или просто чужой скрипт. Сервер обязан отказать сам, а не подставить
+ * вместо снятого типа рабочий лист.
+ *
+ * Возврат типа — отдельная задача с расчётом себестоимости картинки. Когда она
+ * начнётся, строка удаляется отсюда, а не из памяти автора.
+ */
+const RETIRED_ARTIFACT_TYPES: ReadonlySet<string> = new Set(["image"]);
+
+/** Тип снят с продукта? Проверка отделена, чтобы её нельзя было обойти `??`. */
+export function isRetiredArtifactType(type: string): boolean {
+  return RETIRED_ARTIFACT_TYPES.has(type);
+}
 
 /**
  * Типы задач, которые входят только в тариф «Плюс».
@@ -83,6 +110,17 @@ export const PLUS_ONLY_TASKS: ReadonlySet<GenerationKind> = new Set<GenerationKi
 /** Задача по типу артефакта. Неизвестный тип трактуем как рабочий лист. */
 export function taskForArtifact(type: string | null | undefined): GenerationKind {
   if (!type) return "worksheet-gen";
+  // Снятый тип — не «неизвестный», а осознанно отключённый. Молча отдавать
+  // вместо него `worksheet-gen` нельзя: запрос с `type=image` успешно
+  // отработал бы рабочим листом, списал бы квоту генерации и выглядел бы
+  // как успех. Клиент (старый фронт, закладка, ручной curl) узнает правду
+  // раньше, чем потратит квоту.
+  if (isRetiredArtifactType(type)) {
+    throw new BadRequestError(
+      `Тип материала «${type}» больше не доступен`,
+      { code: "ARTIFACT_TYPE_RETIRED", type },
+    );
+  }
   return ARTIFACT_TASK[type as ArtifactType] ?? "worksheet-gen";
 }
 
@@ -175,9 +213,10 @@ export function pickModel(task: GenerationKind, env: Env): RoutingDecision {
       };
     }
 
-    case "image-gen":
-      // Заглушка на старте — нет провайдера. Вызывающий должен вернуть null.
-      return { primary: null, fallbacks: [], generation: "primary" };
+    // Ветки `image-gen` здесь больше нет (ТЗ-30 AD-4): тип артефакта «image»
+    // убран из интерфейса и из `GenerationKind`. Провайдера не было, а кнопка
+    // в конструкторе отдавала 503 — шесть типов артефактов, из которых один не
+    // работает, хуже пяти рабочих.
 
     case "photo-check": {
       // TZ-11 §5.1: распознаём фото тетради мультимодальной gpt-6-luna.

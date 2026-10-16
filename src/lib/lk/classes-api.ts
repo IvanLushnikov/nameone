@@ -75,6 +75,12 @@ export interface RosterClass {
   name: string;
   createdAt: number;
   students: RosterStudent[];
+  /**
+   * Короткий код для ссылки класса (ТЗ-28). null у классов, созданных до
+   * миграции: код выдаётся при создании, а выдавать его задним числом — значит
+   * рисковать чужим кодом. Учитель увидит «Скопировать» только когда код есть.
+   */
+  classCode: string | null;
 }
 
 /** Работа учителя, которой можно раздать персональные QR. */
@@ -183,6 +189,7 @@ function parseClass(raw: unknown): RosterClass | null {
     name: o.name,
     createdAt: typeof o.createdAt === "number" ? o.createdAt : 0,
     students,
+    classCode: typeof o.classCode === "string" && o.classCode ? o.classCode : null,
   };
 }
 

@@ -56,7 +56,6 @@ const TYPE_LABEL: Record<TaskType, string> = {
   materials: "Комплект материалов",
   "lesson-bundle": "Комплект урока",
   interactive: "Форма для учеников",
-  image: "Иллюстрация к заданию",
 };
 
 /**
@@ -180,6 +179,16 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
                   <li key={task.number} className="flex items-start gap-2 worksheet-task">
                     <span className="worksheet-task-num">{task.number}</span>
                     <div className="flex-1">
+                      {/* ТЗ-27: метка темы — ОТДЕЛЬНО от текста задания, а не
+                          внутри него. Внутри текста она стала бы частью условия
+                          («Давление твёрдых тел. Найдите…»), и ученик получил
+                          бы задание, в котором половина строки — служебная
+                          пометка учителя. */}
+                      {task.skill && (
+                        <div className="mb-1 text-[11px] font-medium text-accent-700">
+                          Тема: {task.skill}
+                        </div>
+                      )}
                       {/* График К ЗАДАНИЮ, а не ко всему листу (лист 2.1.8).
                           Модель отдаёт схему у того задания, условие которого
                           без рисунка бессмысленно, поэтому и показывать её надо

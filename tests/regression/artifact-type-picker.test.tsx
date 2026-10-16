@@ -77,16 +77,18 @@ describe("ArtifactTypePicker — TZ-5: plusOnly без hasPlus", () => {
     expect(lockIcon).toBeTruthy();
   });
 
-  it("яркий badge '+' с белым текстом на accent-500 для заблокированных опций", () => {
+  it("яркий badge «Плюс» с белым текстом на accent-500 для заблокированных опций", () => {
     const { container } = render(
       <ArtifactTypePicker value="worksheet" onChange={vi.fn()} hasPlus={false} />
     );
 
-    // Находим бейдж '+' внутри disabled-кнопки «Презентация».
+    // Находим бейдж «Плюс» внутри disabled-кнопки «Презентация».
+    // ТЗ-32 AD-7: вместо оранжевого «+», который ничего не значил без наведения,
+    // на кнопке написано слово «Плюс».
     const btn = screen.getByRole("radio", { name: /Презентация/ });
     const badge = btn.querySelector("span.bg-accent-500");
     expect(badge).toBeTruthy();
-    expect(badge).toHaveTextContent("+");
+    expect(badge).toHaveTextContent("Плюс");
     expect(badge?.className).toMatch(/text-white/);
   });
 

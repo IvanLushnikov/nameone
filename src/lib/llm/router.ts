@@ -17,7 +17,11 @@ export interface RouterPick {
   reason: string;
 }
 
-export function pickModelByPlan(task: 'worksheet-gen' | 'validate' | 'embed' | 'image-gen', plan: 'free' | 'base' | 'standard' | 'plus'): RouterPick {
+// Задачи "image-gen" в списке нет: генерации картинок у нас нет (ТЗ-30
+// AD-4). Раньше здесь стояла ветка, которая для картинки возвращала первую
+// модель списка, то есть генератор текста, — вызов выглядел рабочим и
+// обещал картинку, которой не будет.
+export function pickModelByPlan(task: 'worksheet-gen' | 'validate' | 'embed', plan: 'free' | 'base' | 'standard' | 'plus'): RouterPick {
   if (task === 'validate') {
     const v = MODELS.find((m) => m.role === 'validator')!;
     return { primary: v, fallbacks: [], reason: 'validator — всегда deepseek-v4-flash' };
@@ -26,10 +30,6 @@ export function pickModelByPlan(task: 'worksheet-gen' | 'validate' | 'embed' | '
     const e = MODELS.find((m) => m.role === 'embeddings')!;
     return { primary: e, fallbacks: [], reason: 'embeddings — qwen3 или openai' };
   }
-  if (task === 'image-gen') {
-    return { primary: MODELS[0]!, fallbacks: [], reason: 'image-gen — отдельный провайдер (см. бэк)' };
-  }
-
   // worksheet-gen
   if (plan === 'plus') {
     const p = MODELS.find((m) => m.role === 'premium')!;

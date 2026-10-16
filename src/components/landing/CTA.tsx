@@ -23,7 +23,7 @@ export function CTA() {
             <h2 className="text-3xl sm:text-5xl font-display font-bold tracking-tight text-balance">
               Попробуйте прямо сейчас.
               <br />
-              <span className="text-accent-100">3 листа бесплатно.</span>
+              <span className="text-accent-100">5 листов в месяц бесплатно.</span>
             </h2>
             <p className="mt-5 text-lg sm:text-xl text-brand-50 max-w-xl mx-auto text-pretty">
               Без регистрации. Без карты. Готовый PDF за минуту.
