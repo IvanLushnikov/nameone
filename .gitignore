@@ -87,3 +87,8 @@ ai-feedback/
 # в репозитории им не место.
 *.tmp
 *.correct.txt
+
+# «cloudflare-test-env.d 2.ts» и подобные — копии Finder/iCloud с суффиксом
+# « N». Блокируются по маске, потому что появляются снова при каждом
+# столкновении с облачным диском.
+backend/tests/cloudflare-test-env.d *.d 2.ts

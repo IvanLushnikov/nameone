@@ -53,6 +53,13 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
+  // ТЗ-28: PWA-манифест. Без него «добавить на главный экран» на Android
+  // не предлагается, а ученику это и нужно — открывать задания одним касанием.
+  manifest: "/manifest.webmanifest",
+  // Подсказка для браузеров без поддержки манифеста.
+  applicationName: "УчЛист",
+  appleWebApp: { capable: true, title: "УчЛист", statusBarStyle: "default" },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
