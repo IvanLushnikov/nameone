@@ -36,6 +36,7 @@ import {
 } from "../services/auth";
 import { createPendingToken, isTotpEnabled } from "../services/admin-totp";
 import { deleteSession, getUserPasswordState } from "../db/queries";
+import { FREE_TOTAL_GENERATIONS } from "../services/usage";
 import type { UserRow } from "../db/queries";
 import { BadRequestError, RateLimitError, UnauthorizedError } from "../lib/errors";
 import { checkPasswordPolicy, PASSWORD_MAX_LENGTH } from "../lib/password";
@@ -63,7 +64,10 @@ function toSessionUser(user: UserRow) {
     generationsTotal: user.generations_total,
     generationsToday: user.generations_today,
     // Платным считается всё, что не «free» (ТЗ-21 п.4).
-    generationsLimit: user.plan === "free" ? 3 : -1,
+    //
+    // Жёсткое `3` было расхождением с настоящей квотой в 5 листов —
+    // сервер отдавал число, которого у него нет (аудит 18.10.2026).
+    generationsLimit: user.plan === "free" ? FREE_TOTAL_GENERATIONS : -1,
     createdAt: new Date(user.created_at * 1000).toISOString(),
   };
 }

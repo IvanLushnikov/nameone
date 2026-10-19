@@ -24,6 +24,7 @@ import {
   subjects,
 } from "@/lib/content/subjects";
 import { prepositionalTitle } from "@/lib/content/subject-cases";
+import { FREE_QUOTA_LABEL } from "@/lib/content/plans";
 
 type Props = { params: { subject: string; grade: string } };
 
@@ -319,7 +320,11 @@ export default function KtpGradePage({ params }: Props) {
               },
               {
                 q: "Сколько стоит генерация КТП?",
-                a: "Бесплатно — 3 генерации. На тарифе Плюс КТП входит в объём тарифа.",
+                // Аудит 18.10.2026: здесь было «3 генерации» — число из
+                // старой квоты, тогда как продукт даёт 5 листов в месяц
+                // (FREE_GENERATIONS). Число берётся из кода, чтобы опять не
+                // разъехалось.
+                a: `Бесплатно — ${FREE_QUOTA_LABEL}. На тарифе Плюс КТП входит в объём тарифа.`,
               },
             ].map((f) => (
               <Card key={f.q}>

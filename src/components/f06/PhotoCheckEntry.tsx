@@ -40,9 +40,26 @@ export interface PhotoCheckEntryProps {
   onCreateSource: () => void;
   /** Открыть историю готовых листов (эталон оттуда). */
   onOpenHistory: () => void;
+  /**
+   * Есть ли уже эталон (готовый лист).
+   *
+   * Аудит 18.10.2026 (BUG-040): экран входа прятался условием `!worksheet`,
+   * поэтому учитель с любым готовым листом нажимал «Проверить фото» и
+   * проваливался в генератор — проверки на экране не было. Теперь вход
+   * показывается всегда, но говорит РАЗНОЕ в зависимости от того, есть ли
+   * эталон: «сделайте лист» или «проверьте по текущему листу».
+   */
+  hasSource?: boolean;
+  /** Перейти к панели загрузки фото (когда эталон уже есть). */
+  onUseSource?: () => void;
 }
 
-export function PhotoCheckEntry({ onCreateSource, onOpenHistory }: PhotoCheckEntryProps) {
+export function PhotoCheckEntry({
+  onCreateSource,
+  onOpenHistory,
+  hasSource = false,
+  onUseSource,
+}: PhotoCheckEntryProps) {
   return (
     <Card className="border-dashed border-warm-300 bg-gradient-to-br from-warm-50 to-white">
       <div className="flex flex-col items-center text-center pt-8 pb-6 px-4">
@@ -64,20 +81,33 @@ export function PhotoCheckEntry({ onCreateSource, onOpenHistory }: PhotoCheckEnt
           почему фото-проверки на экране нет.
         */}
         <p className="text-sm text-warm-500 max-w-md mb-6">
-          Чтобы сверить ответы, нужен сам лист с заданиями — по нему мы
-          проверяем. Сделайте лист, и проверка откроется сразу после него.
+          {hasSource
+            ? "Эталон у вас уже есть — загрузите фото тетради, и мы сверим ответы с этим листом."
+            : "Чтобы сверить ответы, нужен сам лист с заданиями — по нему мы проверяем. Сделайте лист, и проверка откроется сразу после него."}
         </p>
 
         <div className="flex flex-col sm:flex-row gap-3">
-          <Button
-            variant="primary"
-            size="lg"
-            onClick={onCreateSource}
-            leftIcon={<FileText className="w-4 h-4" />}
-            data-testid="photo-check-create-source"
-          >
-            Сделать лист и проверить фото
-          </Button>
+          {hasSource ? (
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={onUseSource}
+              leftIcon={<FileText className="w-4 h-4" />}
+              data-testid="photo-check-use-source"
+            >
+              Проверить фото по этому листу
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={onCreateSource}
+              leftIcon={<FileText className="w-4 h-4" />}
+              data-testid="photo-check-create-source"
+            >
+              Сделать лист и проверить фото
+            </Button>
+          )}
           <Button
             variant="secondary"
             size="lg"

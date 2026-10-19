@@ -115,6 +115,14 @@ import { fetchUsage, signOutFromApi } from "@/lib/auth/api";
 const PAGE_SIZE = 20;
 
 /**
+ * Вкладки кабинета. Значения совпадают с `value` у TabsTrigger.
+ *
+ * Это и есть белый список для `?tab=`: неизвестное значение молча уводит на
+ * «Историю», а не рисует пустую вкладку.
+ */
+const DASHBOARD_TABS = ["history", "favorites", "templates", "forms"] as const;
+
+/**
  * Любой артефакт, который может лежать в истории: `FavoriteArtifact` плюс
  * карточки и комплекты. Им заполняется поле `artifact` у последних записей
  * истории (см. `ARTIFACT_KEEP` в `utils/storage.ts`).
@@ -129,6 +137,19 @@ export default function DashboardPage() {
   // показывает. null = не пришло/не залогинен, тогда карточка не рисуется.
   const [usage, setUsage] = React.useState<UsagePayload | null>(null);
   const [usageLoading, setUsageLoading] = React.useState(true);
+  /**
+   * Активная вкладка кабинета.
+   *
+   * Параметр `?tab=` в адресе РАНЬШЕ ИГНОРИРОВАЛСЯ: стояло жёсткое
+   * `useState("history")`, и ссылка `/dashboard?tab=forms` открывала кабинет
+   * на вкладке «История». При этом обещание блока на главной («В кабинете есть
+   * вкладка „Выданное“: жмите „Выдать“») и ссылка из карточки «Выдать лист
+   * классу» вели именно туда — то есть обещание и поведение расходились
+   * (аудит 18.10.2026, BUG-038).
+   *
+   * Теперь параметр учитывается. Белый список — те вкладки, что реально есть;
+   * на неизвестный или отсутствующий параметр открывается «История».
+   */
   const [tab, setTab] = React.useState("history");
 
   /* ─── История: сервер ⇄ устройство, постранично ────────────────────────── */
@@ -177,6 +198,19 @@ export default function DashboardPage() {
 
   React.useEffect(() => {
     setProfile(getProfile());
+  }, []);
+
+  /**
+   * Открыть вкладку, указанную в адресе (`?tab=forms` и т. п.).
+   *
+   * Query читаем из `window.location`, а не через `useSearchParams`: хук требует
+   * границы <Suspense> при статическом экспорте, а она прятала бы за fallback
+   * весь кабинет на время гидратации — так же, как это сделано в конструкторе.
+   */
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const wanted = new URLSearchParams(window.location.search).get("tab");
+    if (wanted && (DASHBOARD_TABS as readonly string[]).includes(wanted)) setTab(wanted);
   }, []);
 
   /**
@@ -253,6 +287,16 @@ export default function DashboardPage() {
 
   const handleTabChange = (next: string) => {
     setTab(next);
+    // Адрес синхронизируем с вкладкой: он должен совпадать с тем, что на
+    // экране, — иначе F5 возвращает на «Историю», а скопированная ссылка
+    // ведёт не туда. `replaceState`, а не `push`: переключение вкладки не
+    // должно плодить записи в истории браузера.
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (next === "history") url.searchParams.delete("tab");
+      else url.searchParams.set("tab", next);
+      window.history.replaceState(null, "", url.toString());
+    }
     // ТЗ-21, блок 3: сколько вкладок реально открывают, а какие остаются
     // нетронутыми функцией-призраком.
     trackEvent("dashboard_subsection_entered", { subsection: next });

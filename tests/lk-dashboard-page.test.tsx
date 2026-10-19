@@ -109,6 +109,11 @@ function seedHistoryDevice(count: number, mk?: (i: number) => Partial<Worksheet>
 
 beforeEach(() => {
   window.localStorage.clear();
+  // Кабинет читает вкладку из адреса (`?tab=`) и сам его синхронизирует.
+  // В jsdom адрес общий для всех тестов файла, поэтому без сброса вкладка,
+  // выбранная предыдущим тестом, «переезжала» в следующий — и проверки
+  // видели не ту вкладку. В браузере такого нет: адрес у страницы свой.
+  window.history.replaceState(null, "", "/dashboard");
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
   process.env.NEXT_PUBLIC_API_URL = "https://api.example.test";
@@ -374,6 +379,24 @@ describe("Остальные вкладки кабинета", () => {
     expect(
       screen.getByRole("link", { name: /создать лист и сохранить как шаблон/i })
     ).toBeInTheDocument();
+  });
+
+  it("вкладка из ?tab= открывается: ссылка «Выдать лист классу» ведёт в «Выданное»", async () => {
+    // Аудит 18.10.2026, BUG-038: параметр ?tab= игнорировался, и обещание на
+    // главной («В кабинете есть вкладка „Выданное“») вместе со ссылкой «Выдать
+    // лист классу» вели в никуда — кабинет открывался на «Истории».
+    window.history.replaceState(null, "", "/dashboard?tab=forms");
+    render(<DashboardPage />);
+
+    expect(await screen.findByTestId("forms-tab")).toBeInTheDocument();
+  });
+
+  it("неизвестный ?tab= молча открывает «Историю», а не пустую вкладку", async () => {
+    window.history.replaceState(null, "", "/dashboard?tab=nesushchestvuyushchaya");
+    render(<DashboardPage />);
+
+    await screen.findByText("История пуста");
+    expect(screen.queryByTestId("forms-tab")).toBeNull();
   });
 
   it("избранное устройства показывается анонимному учителю", async () => {

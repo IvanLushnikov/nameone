@@ -30,6 +30,7 @@
 import type { D1Database } from "@cloudflare/workers-types";
 import { RateLimitError, ChallengeRequiredError } from "../lib/errors";
 import { sha256Hex } from "../lib/hash";
+import { logLlmEvent } from "./log";
 import {
   checkFreeQuota,
   consumeFreeQuota,
@@ -92,6 +93,20 @@ export interface GenerationGuardInput {
   salt: string;
   /** Кто уже прошёл капчу в этом запросе (токен Turnstile). */
   challengePassed?: boolean;
+  /**
+   * Настроена ли на воркере проверка капчи (env TURNSTILE_SECRET_KEY).
+   *
+   * КЛЮЧЕВОЙ ПАРАМЕТР (аудит 18.10.2026, BUG-013). Если секрет НЕ задан:
+   *   - на фронте нет sitekey → виджет капчи не загрузится никогда;
+   *   - сервер не может проверить токен → `/api/turnstile/verify` отвечает
+   *     «not_configured» и fail-open по той же причине (routes/turnstile.ts).
+   * То есть требовать капчу, которую взять нечем, — это отказ в обслуживании
+   * без единого шанса на прохождение. Именно это и было на проде: 409
+   * TURNSTILE_REQUIRED → фронт без виджета → тихая заготовка.
+   *
+   * Когда секрет настроен, поведение прежнее: 409 и виджет.
+   */
+  turnstileConfigured?: boolean;
 }
 
 export interface GenerationGuardResult {
@@ -115,6 +130,7 @@ export async function guardGeneration(
   input: GenerationGuardInput,
 ): Promise<GenerationGuardResult> {
   const { db, userId, plan, ip, userAgent, cf, salt } = input;
+  const turnstileConfigured = input.turnstileConfigured !== false;
 
   // Отпечаток один и тот же и до, и после капчи: капча подтверждает человека
   // за ЭТИМ отпечатком, а не создаёт новый.
@@ -170,6 +186,7 @@ export async function guardGeneration(
         userId,
         cf,
         challengePassed: input.challengePassed,
+        turnstileConfigured,
         freeRemaining,
       });
     } catch (err) {
@@ -190,6 +207,7 @@ export async function guardGeneration(
     userId,
     cf,
     challengePassed: input.challengePassed,
+    turnstileConfigured,
     freeRemaining,
   });
 }
@@ -201,6 +219,8 @@ interface FraudGuardInput {
   userId: string | null;
   cf?: CfObject;
   challengePassed?: boolean;
+  /** Настроена ли капча на воркере. false = просить нечем. */
+  turnstileConfigured: boolean;
   freeRemaining: number | null;
 }
 
@@ -218,6 +238,25 @@ async function runFraudGuard(input: FraudGuardInput): Promise<GenerationGuardRes
       // Капчу уже прошли в этом запросе — доверяем и идём дальше.
       await markChallengePassed(db, fingerprint);
       return { fingerprint, signals, challenged: true, freeRemaining };
+    }
+    if (!input.turnstileConfigured) {
+      // КАПЧА НЕ НАСТРОЕНА (аудит 18.10.2026, BUG-013).
+      //
+      // Требовать подтверждение, которое взять нечем, — значит отказать в
+      // генерации человеку, который не может ничего сделать. Секрет капчи не
+      // задан → на фронте нет sitekey → виджет не загрузится → токен не
+      // получить → запрос уйдёт в тот же 409 по кругу.
+      //
+      // Логика та же, что и в routes/turnstile.ts (fail-open, если Cloudflare
+      // недоступен) и в самом antifraud.ts («подозрение ≠ блокировка»).
+      // Сигнал при этом НЕ теряется: он записан в fraud_signals, решение
+      // залогировано, и админ увидит картину.
+      logLlmEvent("warn", "antifraud: challenge required, but turnstile is not configured", {
+        fingerprint: fingerprint.slice(0, 12),
+        userId,
+        reason: verdict.reason,
+      });
+      return { fingerprint, signals, challenged: false, freeRemaining };
     }
     await markChallengeIssued(db, fingerprint);
     throw new ChallengeRequiredError(

@@ -95,7 +95,47 @@ jobs:
           NEXT_PUBLIC_OPERATOR_NAME: ${{ secrets.NEXT_PUBLIC_OPERATOR_NAME }}
           NEXT_PUBLIC_OPERATOR_INN: ${{ secrets.NEXT_PUBLIC_OPERATOR_INN }}
           NEXT_PUBLIC_OPERATOR_ADDRESS: ${{ secrets.NEXT_PUBLIC_OPERATOR_ADDRESS }}
+          # ─────────────────────────────────────────────────────────────────────
+          # КЛЮЧ АНТИФРОДА (аудит 18.10.2026, BUG-013) — ГЛАВНЫЙ БЛОКЕР.
+          #
+          # Sitekey Cloudflare Turnstile вшивается в бандл на этапе сборки:
+          # фронт статически экспортируется, и в рантайме ключ уже не поменять.
+          # Пока переменной не было, слова TURNSTILE в workflows не было
+          # вообще, а в 9 продакшн-бандлах сайта sitekey не находился:
+          #   - фронт не грузил виджет капчи;
+          #   - бэк отдавал 409 TURNSTILE_REQUIRED, который взять было нечем;
+          #   - фронт fail-open'ил и подставлял типовую заготовку под видом
+          #     готового листа, с зелёным тостом «Готово!».
+          #
+          # ЧТО НУЖНО СДЕЛАТЬ (один раз, руками):
+          #   1) Cloudflare → Turnstile → создать виджет для домена uchlist.ru
+          #      и взять у него site key (0x…) — он публичный, показывается
+          #      в HTML любой страницы с виджетом;
+          #   2) GitHub → репозиторий → Settings → Secrets and variables →
+          #      Actions → New repository secret:
+          #        NEXT_PUBLIC_TURNSTILE_SITE_KEY = <sitekey>;
+          #   3) Cloudflare → Workers → rabochielisty-api → Settings →
+          #      Variables and Secrets → добавить СЕКРЕТ (не переменную):
+          #        TURNSTILE_SECRET_KEY = <secret key>;
+          #      и выполнить:
+          #        cd backend && npx wrangler secret put TURNSTILE_SECRET_KEY --env production
+          #
+          # Пока секрет на воркере НЕ задан, антифрод fail-open'ит (просить
+          # капчу, которую взять нечем, — значит отказать в генерации), и
+          # учитель получает настоящий лист. Как только секрет появится —
+          # 409 заработает, виджет загрузится, и отпечаток будет запоминаться.
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
         run: npm run build
+
+      - name: Проверить, что ключ антифрода задан
+        # Не блокирует сборку: без ключа капча просто не включается, а
+        # антифрод fail-open'ит (см. ratelimit.ts → runFraudGuard). Но узнать
+        # об этом лучше в логе сборки, чем из жалобы учителя.
+        if [ -z "${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}" ]; then
+          echo "::warning::NEXT_PUBLIC_TURNSTILE_SITE_KEY не задан — антифрод (Turnstile) не включится. См. комментарий в deploy.yml"
+        else
+          echo "Ключ антифрода задан, виджет капчи будет грузиться."
+        fi
 
       - name: Deploy to Cloudflare Pages
         env:

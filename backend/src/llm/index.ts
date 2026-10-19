@@ -447,6 +447,9 @@ export async function generateWorksheet(
             latencyMs: meta.latencyMs,
             cached: true,
             fallback: false,
+            // Кэш стоит ноль, но привязка к листу полезна: по ней видно, что
+            // этот лист был отдан из кэша, а не сгенерирован заново.
+            worksheetId: cachedResponse.worksheet?.id ?? null,
           });
           // Попадание в кэш не тратит токены, поэтому норма не меняется: честно
           // возвращаем текущее состояние, чтобы UI не показывал «израсходовано».
@@ -1342,6 +1345,11 @@ export async function generateWorksheet(
   }
 
   // Log — ПО КАЖДОМУ вызову провайдера (AD-5).
+  //
+  // worksheetId (миграция 0009) — привязка вызова к листу. Без неё по базе
+  // нельзя было посчитать, сколько стоит ОДИН лист: вызовов на лист
+  // несколько (генерация, дозапрос, второй вариант контрольной, проверка),
+  // и все они падали в общую кучу по `user_id` и `task`.
   for (const call of calls) {
     await logLlmCall(db, {
       userId,
@@ -1356,6 +1364,7 @@ export async function generateWorksheet(
       latencyMs: call.latencyMs,
       cached: false,
       fallback: call.generation === "boost",
+      worksheetId: worksheet.id ?? null,
     });
   }
 
@@ -2342,6 +2351,14 @@ export interface SelfVerifyArgs {
   task: SelfVerifyTaskInput;
   userId: string | null;
   plan: "free" | "base" | "standard" | "plus";
+  /**
+   * Идентификатор листа, задание которого проверяем.
+   *
+   * Проверка идёт ПО ОДНОМУ ЗАДАНИЮ за раз (10–20 вызовов на лист), и без
+   * привязки к листу эти вызовы падали в базу россыпью: «сколько стоит
+   * проверка одного листа» по базе не считалось. Миграция 0009.
+   */
+  worksheetId?: string | null;
 }
 
 export interface SelfVerifyResult {
@@ -2616,6 +2633,7 @@ export async function verifySelfTask(
       provider: step.res.provider,
       model: step.res.model,
       plan,
+      worksheetId: args.worksheetId ?? null,
       tokensIn: step.res.response.tokensIn,
       tokensOut: step.res.response.tokensOut,
       costUsd: step.res.response.costUsd,
@@ -3018,6 +3036,15 @@ export interface LogLlmCallParams {
   cached: boolean;
   fallback: boolean;
   error?: string;
+  /**
+   * Идентификатор листа, ради которого сделан вызов.
+   *
+   * Аудит 18.10.2026, раздел 9.4 п.4: без этой привязки расход нельзя было
+   * отнести к листу — «сколько стоит один лист» и «сколько стоит контрольная»
+   * по базе не считались вообще. Колонка `worksheet_id` добавлена миграцией
+   * 0009; NULL означает «лист неизвестен» (например, вызов вне генерации).
+   */
+  worksheetId?: string | null;
 }
 
 export async function logLlmCall(db: D1Database, params: LogLlmCallParams): Promise<void> {
@@ -3026,8 +3053,9 @@ export async function logLlmCall(db: D1Database, params: LogLlmCallParams): Prom
       .prepare(
         `INSERT INTO llm_logs
            (id, user_id, task, provider, model, plan,
-            tokens_in, tokens_out, cost_usd, latency_ms, cached, fallback, error, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)`,
+            tokens_in, tokens_out, cost_usd, latency_ms, cached, fallback, error,
+            worksheet_id, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`,
       )
       .bind(
         `log_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
@@ -3043,6 +3071,7 @@ export async function logLlmCall(db: D1Database, params: LogLlmCallParams): Prom
         params.cached ? 1 : 0,
         params.fallback ? 1 : 0,
         params.error ?? null,
+        params.worksheetId ?? null,
         Math.floor(Date.now() / 1000),
       )
       .run();
@@ -3054,8 +3083,9 @@ export async function logLlmCall(db: D1Database, params: LogLlmCallParams): Prom
       await db
         .prepare(
           `INSERT INTO llm_costs_actual
-             (id, user_id, task, provider, model, cost_rub, cost_usd_est, latency_ms, created_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+             (id, user_id, task, provider, model, cost_rub, cost_usd_est, latency_ms,
+              worksheet_id, created_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
         )
         .bind(
           `act_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
@@ -3066,6 +3096,7 @@ export async function logLlmCall(db: D1Database, params: LogLlmCallParams): Prom
           params.costRub,
           params.costUsd,
           params.latencyMs,
+          params.worksheetId ?? null,
           Math.floor(Date.now() / 1000),
         )
         .run();

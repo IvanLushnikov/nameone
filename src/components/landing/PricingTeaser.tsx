@@ -86,7 +86,11 @@ export function PricingTeaser({ headingLevel: Heading = "h2" }: { headingLevel?:
                   {p.label}
                   {id === "academicYear" && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-bold whitespace-nowrap">
-                      − {maxAcademicYearDiscount()} %
+                      // Аудит 18.10.2026 (BUG-011): здесь стояло «− 18,5 %», и это
+                      // выглядело как общая скидка на тарифы. На деле 18,5 % —
+                      // только у «Плюса», у «Базового» 15,7 %, у «Оптимального»
+                      // 14,7 %. «До» — единственная честная формулировка.
+                      − до {maxAcademicYearDiscount()} %
                     </span>
                   )}
                 </button>

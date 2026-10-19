@@ -23,6 +23,16 @@ interface WeekTopic {
   grade: number;
   subjectSlug: string;
   topicTitle: string;
+  /**
+   * Слаг темы из каталога.
+   *
+   * ВАЖНО (аудит 18.10.2026, BUG-029): здесь стоял `neravenstva` — такого
+   * слага в каталоге нет, и карточка с главной отправляла в конструктор тему,
+   * которой не существует. Валидный слаг этой темы — `m-neravenstva-9`
+   * (предмет «algebra», 9 класс). Теперь ссылка ещё и проверяется в
+   * конструкторе: даже если слаг протухнет, учителя уведёт на выбор темы, а
+   * не в заведомо пустую генерацию.
+   */
   topicSlug?: string;
   hook: string;
   emoji: string;
@@ -40,7 +50,7 @@ function getSeasonalTopics(): WeekTopic[] {
       { grade: 6, subjectSlug: "math", topicTitle: "Пропорции и проценты", hook: "Решаем задачи на проценты каждый день", emoji: "📐" },
       { grade: 7, subjectSlug: "algebra", topicTitle: "Линейные уравнения", hook: "Базовая тема для всего года", emoji: "🧮" },
       { grade: 8, subjectSlug: "geometry", topicTitle: "Четырёхугольники. Площади", hook: "Самая сложная тема четверти", emoji: "📐" },
-      { grade: 9, subjectSlug: "algebra", topicTitle: "Неравенства и системы", topicSlug: "neravenstva", hook: "Ближе к ОГЭ — повторяем", emoji: "📚" },
+      { grade: 9, subjectSlug: "algebra", topicTitle: "Неравенства и системы", topicSlug: "m-neravenstva-9", hook: "Ближе к ОГЭ — повторяем", emoji: "📚" },
       { grade: 10, subjectSlug: "algebra", topicTitle: "Тригонометрия", hook: "Вход в старшую школу", emoji: "📐" },
       { grade: 11, subjectSlug: "algebra", topicTitle: "Производная и интеграл", hook: "Финиш перед ЕГЭ", emoji: "🎓" },
     ];

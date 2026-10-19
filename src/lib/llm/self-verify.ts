@@ -65,6 +65,14 @@ export interface SelfVerifyTaskInput {
   topic: string;
   text: string;
   expectedAnswer?: string;
+  /**
+   * Идентификатор листа, к которому относится задание.
+   *
+   * Нужен, чтобы стоимость проверки можно было отнести к листу (миграция
+   * 0009 на бэке): проверка идёт по заданиям по одному, 10–20 вызовов на
+   * лист, и без привязки расход на проверку в базе не собирался.
+   */
+  worksheetId?: string;
 }
 
 /**
@@ -90,6 +98,9 @@ export async function selfVerifyTask(
           text: task.text,
           expectedAnswer: task.expectedAnswer,
         },
+        // Привязка к листу: без неё расход на проверку нельзя было посчитать
+        // по листу (аудит 18.10.2026, раздел 9.4 п.4).
+        ...(task.worksheetId ? { worksheet_id: task.worksheetId } : {}),
       }),
       signal: controller.signal,
     });

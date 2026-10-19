@@ -35,15 +35,67 @@ export function mockApi(): void {
 
     if (url.includes("/api/users/usage")) {
       return new Response(
-        JSON.stringify({ generationsToday: 0, generationsLimit: 3, plan: "free" }),
+        JSON.stringify({
+          generationsToday: 0,
+          generationsLimit: 3,
+          plan: "free",
+          // Сервер — единственный источник остатка (аудит 18.10.2026): без
+          // freeRemaining фронт считает по своей константе и врёт учителю.
+          freeRemaining: 5,
+          freeUsed: 0,
+          freeResetsAt: null,
+        }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
+    }
+    // Настоящий лист с сервера. Нужен там, где проверяется путь БЭКА:
+    // заготовка (демо-режим) в историю не пишется и не восстанавливается —
+    // это осознанное поведение (аудит 18.10.2026, BUG-018), а не поломка.
+    if (url.includes("/api/worksheets/generate")) {
+      return new Response(JSON.stringify({ ok: true, worksheet: serverWorksheet() }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     }
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: { "content-type": "application/json" },
     });
   }) as unknown as typeof fetch;
+}
+
+/**
+ * Лист, каким его отдаёт сервер.
+ *
+ * Сделано как ответ бэка: `worksheet` без `isDemo`. Именно такой материал
+ * конструктор кладёт в историю и потом восстанавливает.
+ */
+export function serverWorksheet(): Record<string, unknown> {
+  return {
+    id: "ws-server-1",
+    title: "Лист с сервера",
+    subject: "algebra",
+    grade: 7,
+    topic: "m-lin-uravn-7",
+    difficulty: "medium",
+    createdAt: new Date().toISOString(),
+    tasks: [
+      {
+        number: 1,
+        text: "Решите уравнение 2x + 3 = 11",
+        type: "short-answer",
+        answer: "4",
+        points: 1,
+      },
+      {
+        number: 2,
+        text: "Упростите выражение 3(a + 2) − 2a",
+        type: "short-answer",
+        answer: "a + 6",
+        points: 1,
+      },
+    ],
+  };
 }
 
 export interface DeviceStub {

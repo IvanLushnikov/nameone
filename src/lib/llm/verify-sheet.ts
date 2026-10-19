@@ -85,6 +85,9 @@ export async function verifyWorksheetTasks(
       topic: worksheet.topic,
       text: task.text,
       expectedAnswer: task.answer,
+      // Привязка проверки к листу: без неё расход на проверку нельзя было
+      // посчитать по листу (аудит 18.10.2026, раздел 9.4 п.4).
+      worksheetId: worksheet.id,
     });
 
     const verifiedTask: WorksheetTask = {

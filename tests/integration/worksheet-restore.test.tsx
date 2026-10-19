@@ -39,6 +39,21 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+/**
+ * Тест работает с СЕРВЕРНЫМ листом, а не с заготовкой.
+ *
+ * `NEXT_PUBLIC_API_URL` читается модулем клиента на верхнем уровне, поэтому
+ * env задаётся через `vi.hoisted` — до импорта конструктора.
+ *
+ * Почему сервер, а не демо: с 18.10.2026 заготовка НЕ попадает в историю и не
+ * восстанавливается (аудит, BUG-018: заготовка не должна выглядеть как
+ * готовый лист). Значит, проверять восстановление на заготовке бессмысленно —
+ * восстанавливается настоящий материал, который прислал сервер.
+ */
+vi.hoisted(() => {
+  process.env.NEXT_PUBLIC_API_URL = "https://api.example.test";
+});
 import { createElement, useEffect, type ComponentType } from "react";
 import fs from "node:fs";
 import path from "node:path";

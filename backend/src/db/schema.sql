@@ -265,11 +265,18 @@ CREATE TABLE IF NOT EXISTS llm_logs (
   cached      INTEGER NOT NULL DEFAULT 0,
   fallback    INTEGER NOT NULL DEFAULT 0,
   error       TEXT,
+  -- Привязка вызова к листу (миграция 0009). NULL у старых строк — честно:
+  -- «лист неизвестен», а не выдуманная привязка.
+  worksheet_id TEXT,
   created_at  INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_llm_logs_user_created ON llm_logs(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_llm_logs_task_created ON llm_logs(task, created_at);
+-- Привязка расхода к листу (миграция 0009): по этому индексу считается
+-- «сколько стоил один лист» — без него группировка по листу читает таблицу
+-- целиком.
+CREATE INDEX IF NOT EXISTS idx_llm_logs_worksheet ON llm_logs(worksheet_id, created_at);
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Фактические списания от провайдера (ТЗ-24)
@@ -303,11 +310,14 @@ CREATE TABLE IF NOT EXISTS llm_costs_actual (
   -- Наш расчёт по прайсу на тот же вызов — чтобы считать расхождение на экране.
   cost_usd_est REAL,
   latency_ms  INTEGER,
+  -- Привязка списания к листу (миграция 0009). См. llm_logs.
+  worksheet_id TEXT,
   created_at  INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_llm_costs_actual_created ON llm_costs_actual(created_at);
 CREATE INDEX IF NOT EXISTS idx_llm_costs_actual_provider ON llm_costs_actual(provider, created_at);
+CREATE INDEX IF NOT EXISTS idx_llm_costs_actual_worksheet ON llm_costs_actual(worksheet_id, created_at);
 
 -- Снимок баланса на стороне провайдера, раз в сутки.
 --

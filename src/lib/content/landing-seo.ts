@@ -156,10 +156,14 @@ export const faqItems: FaqItem[] = [
     // тарифа — именно по этой причине учитель с несколькими предметами
     // понимает, зачем он ему нужен.
     q: "Сколько стоит?",
+    // Аудит 18.10.2026 (BUG-006): здесь было «... плюс план урока по ФГОС» в
+    // тарифе «Оптимальный». Плана урока в «Оптимальном» нет — он только в
+    // «Плюсе» (plans.ts → PLANS.standard.features), а учитель принимал решение
+    // по неверному составу тарифа.
     // Абзац про «Оптимальный» — из theirs (ТЗ-21 п.4). Хвост про оплату —
     // из main: «ЮKassa, карты МИР российских банков, СБП» точнее, чем
     // обезличенное «ЮКасса, карты, СБП».
-    a: `Бесплатно: ${FREE_QUOTA_LABEL} — без карты и без регистрации. Базовый: ${priceLabel("base", "month")} или ${priceLabel("base", "academicYear")} (${normLabel("base")}, история, шаблоны). Оптимальный: ${priceLabel("standard", "month")} или ${priceLabel("standard", "academicYear")} — если у вас 3–4 предмета, норма втрое больше базовой, плюс план урока по ФГОС. Плюс: ${priceLabel("plus", "month")} или ${priceLabel("plus", "academicYear")} (${normLabel("plus")}, + ${ARTIFACT_NAMES.lessonPlan.toLowerCase()} по ФГОС, ${ARTIFACT_NAMES.presentation.toLowerCase()}, ${ARTIFACT_NAMES.ktp}, варианты ОГЭ/ЕГЭ с разбором). Учебный год — это 9 месяцев, а не 12: летом платить не нужно. Принимаем ЮKassa, карты МИР российских банков, СБП.`,
+    a: `Бесплатно: ${FREE_QUOTA_LABEL} — без карты и без регистрации. Базовый: ${priceLabel("base", "month")} или ${priceLabel("base", "academicYear")} (${normLabel("base")}, история, шаблоны). Оптимальный: ${priceLabel("standard", "month")} или ${priceLabel("standard", "academicYear")} — если у вас 3–4 предмета, норма втрое больше базовой. Плюс: ${priceLabel("plus", "month")} или ${priceLabel("plus", "academicYear")} (${normLabel("plus")}, + ${ARTIFACT_NAMES.lessonPlan.toLowerCase()} по ФГОС, ${ARTIFACT_NAMES.presentation.toLowerCase()}, ${ARTIFACT_NAMES.ktp}, варианты ОГЭ/ЕГЭ с разбором). Учебный год — это 9 месяцев, а не 12: летом платить не нужно. Принимаем ЮKassa, карты МИР российских банков, СБП.`,
   },
   {
     q: "Можно использовать в школе?",

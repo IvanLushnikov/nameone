@@ -6,7 +6,8 @@
  * На mount дёргает `/api/users/usage` (GET). Семантика:
  *   - 401 (unauthorized) → `usage = null` — юзер не залогинен, виджет не показываем.
  *     Используем localStorage fallback (`src/lib/utils/limit.ts`) для анонимов.
- *   - 2xx → `usage = { generationsToday, generationsLimit, plan }`.
+ *   - 2xx → `usage = { freeRemaining, freeUsed, freeResetsAt, ... }` — остаток
+ *     и расход приходят с сервера, а не считаются в браузере (аудит 18.10.2026).
  *   - 5xx / network → `usage = null`, ошибку НЕ бросаем (mock-fallback работает).
  *
  * `refresh()` — повторный fetch после успешной генерации (`saveWorksheet({ok:true})`)
@@ -20,7 +21,29 @@ import * as React from "react";
 import { getUsage, type UsageInfo } from "@/lib/auth/api";
 
 export interface UseUsageResult {
-  usage: { generationsToday: number; generationsLimit: number; plan: UsageInfo["plan"] } | null;
+  /**
+   * Остаток и расход — ВСЕГДА из сервера.
+   *
+   * Аудит 18.10.2026 (BUG-031/032/037): хук отдавал наружу только
+   * `generationsToday` и `generationsLimit`, а это старый дневной счётчик,
+   * который рос при каждом сохранении и никогда не сбрасывался. Из-за этого
+   * конструктор показывал «Осталось 0 из 5» при серверном `freeRemaining: 5`,
+   * прятал кнопку генерации и продавал подписку человеку с пятью
+   * бесплатными листами.
+   *
+   * Теперь наружу отдаётся то, что сервер прислал: `freeRemaining`
+   * (сколько осталось), `freeUsed` (сколько сделано) и `freeResetsAt`
+   * (когда обновится). Старые поля остались для совместимости, но остаток
+   * по ним НЕ считается.
+   */
+  usage: {
+    freeRemaining: number | null;
+    freeUsed: number | null;
+    freeResetsAt: string | null;
+    generationsToday: number;
+    generationsLimit: number;
+    plan: UsageInfo["plan"];
+  } | null;
   refresh: () => Promise<void>;
   isLoading: boolean;
 }
@@ -45,6 +68,9 @@ export function useUsage(): UseUsageResult {
     try {
       const info = await getUsage();
       setUsage({
+        freeRemaining: info.freeRemaining,
+        freeUsed: info.freeUsed,
+        freeResetsAt: info.freeResetsAt,
         generationsToday: info.generationsToday,
         generationsLimit: info.generationsLimit,
         plan: info.plan,

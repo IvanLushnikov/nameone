@@ -47,7 +47,7 @@ import {
   Send,
   LayoutTemplate,
 } from "lucide-react";
-import { subjects, getSubject, getGrade } from "@/lib/content/subjects";
+import { subjects, getSubject, getGrade, getTopic } from "@/lib/content/subjects";
 // ТЗ-26 Ф-3: ключ предмета (`algebra`) не должен попадать ни в имя файла,
 // ни в шапку — там название по-русски из таксономии.
 import { subjectDisplayName } from "@/lib/content/subject-display-name";
@@ -87,6 +87,7 @@ import {
   isTimeoutError,
   type QualityLoss,
   type VariantStatus,
+  type DemoReason,
 } from "@/lib/client/llm";
 import { generateWorksheetDocx, downloadBlob } from "@/lib/utils/docx";
 import { verifyWorksheetTasks, type VerifyProgress } from "@/lib/llm/verify-sheet";
@@ -500,6 +501,14 @@ export default function ConstructorPage() {
    * Теперь заготовка всегда помечена, а рядом стоит кнопка «Повторить».
    */
   const [isDemoResult, setIsDemoResult] = React.useState(false);
+  /**
+   * Почему последний результат — заготовка (аудит 18.10.2026, BUG-018).
+   *
+   * Раньше интерфейс говорил «Сервис сейчас недоступен» даже когда сервис был
+   * на месте, а тип материала просто не имеет серверного эндпоинта. Причина
+   * нужна, чтобы банн��р и тост не врали по-разному.
+   */
+  const [demoReason, setDemoReason] = React.useState<DemoReason | null>(null);
   const [remaining, setRemaining] = React.useState<number>(3);
   const [showPaywall, setShowPaywall] = React.useState(false);
   /**
@@ -717,6 +726,16 @@ export default function ConstructorPage() {
     // История отсортирована новыми сверху, поэтому берём первую подходящую.
     const candidate = getHistory().find((item) => {
       if (!item.artifact) return false;
+      // ЗАГОТОВКУ НЕ ВОССТАНАВЛИВАЕМ (аудит 18.10.2026, BUG-019).
+      //
+      // Раньше любую запись истории можно было восстановить, и учитель после
+      // неудачной генерации видел тост «Лист восстановлен — генерация не
+      // потерялась» и типовой лист на экране. Генерация-то как раз ПОТЕРЯЛАСЬ:
+      // её не было, был 409 и подставленная заготовка.
+      //
+      // Новые заготовки в историю уже не попадают (см. addToHistory выше), но
+      // старые могут лежать в localStorage — их тоже пропускаем.
+      if ((item.artifact as { isDemo?: boolean }).isDemo === true) return false;
       const age = now - new Date(item.createdAt).getTime();
       if (!Number.isFinite(age) || age > RESTORE_WINDOW_MS || age < 0) return false;
       // Тип в истории должен совпадать с типом самого артефакта — иначе это
@@ -769,6 +788,7 @@ export default function ConstructorPage() {
       title: "Лист восстановлен",
       description: "Вот ваши PDF и DOCX — генерация не потерялась",
     });
+    // (Заготовки сюда не попадают: см. фильтр выше — иначе тост врал бы.)
     trackEvent("constructor_artifact_restored", { kind, id: candidate.id });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -841,9 +861,26 @@ export default function ConstructorPage() {
     const ty = params.get("type") as TaskType | null;
     if (s && getSubject(s)) {
       setSubject(s);
-      const validGrade = !Number.isNaN(g) && g > 0 ? g : null;
+      // КЛАСС ПРОВЕРЯЕМ ПО КАТАЛОГУ (аудит 18.10.2026, BUG-030).
+      //
+      // Раньше проверялось только «число больше нуля», поэтому ссылка
+      // `?subject=math&grade=99` приводила в тупик: на экране было
+      // «Готовы сгенерировать математику 99 класса» и «Завершите выбор темы»,
+      // а списка тем и кнопки перехода не было. Выйти можно было только
+      // через «Сначала».
+      const gradeExists = !Number.isNaN(g) && g > 0 ? Boolean(getGrade(s, g)) : false;
+      const validGrade = gradeExists ? g : null;
       if (validGrade) setGrade(validGrade);
-      if (t) setTopic(t);
+      // ТЕМУ ИЗ ССЫЛКИ ТОЖЕ ПРОВЕРЯЕМ (аудит 18.10.2026, BUG-029).
+      //
+      // Раньше стояло `if (t) setTopic(t)` — без сверки с каталогом. Карточка
+      // с главной «Неравенства и системы» присылала `topic=neravenstva`, а
+      // валидный идентификатор — `m-neravenstva-9`; выдуманная тема
+      // `nesushchestvuyushchaya-tema` тоже уходила в запрос как есть. Учитель
+      // при этом видел только плашку «Алгебра · 9 кл» и не понимал, что
+      // ему собирают.
+      const topicExists = Boolean(t && validGrade && getTopic(s, validGrade, t));
+      if (topicExists) setTopic(t);
       if (d && ["easy", "medium", "hard"].includes(d)) setDifficulty(d);
       if (!Number.isNaN(c) && c >= 5 && c <= 30) setCount(c);
       // TZ-16: whitelist расширен на 4 новых типа из TaskType. Deep-link
@@ -854,8 +891,21 @@ export default function ConstructorPage() {
       if (ty && DEEP_LINK_TYPES.includes(ty)) setType(ty);
       // Deep-link → перескакиваем максимально далеко.
       // UMK больше не отдельный шаг — оно inline в TopicStep (если опций > 1) или auto-pick (если 1).
-      if (t) {
+      if (topicExists) {
         setStep("configure");
+      } else if (t && validGrade) {
+        // Тема в ссылке есть, но её нет в каталоге. Молча уводить в «параметры»
+        // нельзя — учитель думал бы, что ему собирают именно её. Ведём на
+        // выбор темы и говорим, что такой темы нет.
+        toast({
+          tone: "info",
+          title: "Такой темы нет",
+          description: "Выберите тему из списка — по ссылке мы её не нашли",
+        });
+        const subj = getSubject(s);
+        const umkList = subj ? getUMK(s, validGrade) : [];
+        if (umkList.length === 1) setUmk(umkList[0].id);
+        setStep("topic");
       } else if (validGrade) {
         // Auto-pick UMK, если только один вариант — UI в TopicStep всё равно подсветит выбор.
         const subj = getSubject(s);
@@ -863,7 +913,15 @@ export default function ConstructorPage() {
         if (umkList.length === 1) setUmk(umkList[0].id);
         setStep("topic");
       } else {
-        // Есть только subject → класс ещё не выбран, остаёмся на шаге 1.
+        // Класса из ссылки не существует (или он не выбран) — отправляем
+        // учителя на первый шаг, где можно выбрать и класс, и предмет.
+        if (!Number.isNaN(g) && g > 0) {
+          toast({
+            tone: "info",
+            title: "Такого класса нет",
+            description: "Выберите предмет и класс — по ссылке мы их не нашли",
+          });
+        }
         setStep("select");
       }
     }
@@ -1270,11 +1328,26 @@ export default function ConstructorPage() {
     if (mode === "exam") {
       if (!exam || !examSubject || examNumbers.length === 0) return;
       const gradeForExam = exam === "oge" ? 9 : 11;
-      const firstNum = examNumbers[0];
+      // ВСЕ выбранные номера, а не только первый (аудит 18.10.2026, BUG-034).
+      //
+      // Раньше здесь стояло `const firstNum = examNumbers[0]` и тема уезжала как
+      // `exam-oge-1`. Учитель отмечал № 1 и № 4, а в подтверждении на экране
+      // стояло «ОГЭ · Математика · № 1, 4» — и уходил только № 1. Про обратное
+      // в интерфейсе не было сказано нигде.
+      //
+      // Теперь в тему уходят все номера. Это важно ещё и для кэша: ключ кэша
+      // строится из темы, а значит набор {1} и набор {1, 4} — разные ключи, и
+      // лист по «1 и 4» больше не может прийти из кэша от листа по «1».
+      const nums = [...examNumbers].sort((a, b) => a - b);
+      const examTitle = exam === "oge" ? "ОГЭ" : "ЕГЭ";
+      const subjectTitle = getSubject(examSubject)?.shortTitle ?? examSubject;
       body = {
         subject: examSubject,
         grade: gradeForExam,
-        topic: `exam-${exam}-${firstNum}`,
+        // Тема читаемая: её видно и в подтверждении, и в истории, и в промпте
+        // модели. Раньше в запрос уходило машинное `exam-oge-1`, из-за чего в
+        // режиме экзамена тема не подставлялась вовсе (BUG-035).
+        topic: `${examTitle} · ${subjectTitle} · № ${nums.join(", ")}`,
         type,
         difficulty,
         count,
@@ -1308,13 +1381,13 @@ export default function ConstructorPage() {
      * в тот же день и на другой вкладке, хотя его тариф к localStorage отношения
      * не имеет: лимиты платных считает бэк.
      *
-     * Для анонимов (serverUsage === null) поведение прежнее — 3 бесплатные
+     * Для анонимов (serverUsage === null) поведение прежнее — бесплатные
      * генерации. Решение об оплате принимает бэк (402 → paywall), поэтому
      * клиентский чек — только против недопустимой генерации у бесплатного.
      */
     // Платный тариф = любой не «free». Список тарифов здесь намеренно не пишется:
     // 12.10.2026 стояло `base || plus`, и подписчик «Оптимального» упирался в
-    // бесплатные 3 генерации, хотя бэк его принимал.
+    // бесплатную квоту, хотя бэк его принимал.
     const isPaid = isPaidPlan(serverUsage?.plan);
     if (!isPaid && !canGenerate()) {
       setShowPaywall(true);
@@ -1323,6 +1396,7 @@ export default function ConstructorPage() {
 
     setGenerating(true);
     setIsDemoResult(false);
+    setDemoReason(null);
     setWorksheet(null);
     // Второй вариант контрольной тоже сбрасываем ЗДЕСЬ, а не только после
     // успешной генерации: если генерация упадёт, в состоянии остался бы
@@ -1370,33 +1444,33 @@ export default function ConstructorPage() {
         switch (type) {
           case "lesson-plan": {
             const r = await generateLessonPlanSmart(body);
-            return { kind: "lesson-plan" as const, payload: r.data, isDemo: r.isDemo };
+            return { kind: "lesson-plan" as const, payload: r.data, isDemo: r.isDemo, demoReason: r.demoReason };
           }
           case "presentation": {
             const r = await generatePresentationSmart(body);
-            return { kind: "presentation" as const, payload: r.data, isDemo: r.isDemo };
+            return { kind: "presentation" as const, payload: r.data, isDemo: r.isDemo, demoReason: r.demoReason };
           }
           case "ktp": {
             const r = await generateKtpSmart(body);
-            return { kind: "ktp" as const, payload: r.data, isDemo: r.isDemo };
+            return { kind: "ktp" as const, payload: r.data, isDemo: r.isDemo, demoReason: r.demoReason };
           }
           // TZ-16 §3.1: карточки — самостоятельный артефакт со своим моком.
           // Раньше `cards` был в списке ниже и молча отдавал обычный лист.
           case "cards": {
             const r = await generateCardsSmart(body);
-            return { kind: "cards" as const, payload: r.data, isDemo: r.isDemo };
+            return { kind: "cards" as const, payload: r.data, isDemo: r.isDemo, demoReason: r.demoReason };
           }
           // TZ-16 §3.2: комплект материалов (словарь / справочник / раздатка).
           case "materials": {
             const r = await generateMaterialsSmart(body);
-            return { kind: "materials" as const, payload: r.data, isDemo: r.isDemo };
+            return { kind: "materials" as const, payload: r.data, isDemo: r.isDemo, demoReason: r.demoReason };
           }
           // TZ-16 §3.4: «урок целиком» — 4 слота. Оркестрация ПАРАЛЛЕЛЬНА
           // (Promise.allSettled внутри generateBundleSmart → мок): при отказе
           // одного слота остальные три не теряются, отказ уходит в `failed`.
           case "lesson-bundle": {
             const r = await generateBundleSmart(body);
-            return { kind: "lesson-bundle" as const, payload: r.data, isDemo: r.isDemo };
+            return { kind: "lesson-bundle" as const, payload: r.data, isDemo: r.isDemo, demoReason: r.demoReason };
           }
           // Лист с разной перепаковкой заданий.
           case "worksheet":
@@ -1408,6 +1482,7 @@ export default function ConstructorPage() {
               kind: "worksheet" as const,
               payload: r.worksheet,
               isDemo: r.isDemo,
+              demoReason: r.demoReason,
               // ТЗ-25: потери заданий бывают у ЛИСТА и ТЕСТА тоже — разрыв 5
               // бьёт по всем типам работ, а не только по контрольной.
               quality: r.quality,
@@ -1444,6 +1519,7 @@ export default function ConstructorPage() {
               kind: "worksheet" as const,
               payload: r.worksheet,
               isDemo: r.isDemo,
+              demoReason: r.demoReason,
               secondVariant: r.secondVariant ?? null,
               // ТЗ-25: признаки потерь едут вместе с результатом. Без них
               // учитель не узнает, что заданий меньше, чем просил.
@@ -1473,6 +1549,7 @@ export default function ConstructorPage() {
 
       // Честность результата: заготовка всегда помечается в интерфейсе.
       setIsDemoResult(result.isDemo);
+      setDemoReason(result.demoReason);
 
       // Сохраняем в правильный state.
       // TZ-16 §4.3 (точка 3): цепочка if/else заменена на switch — на 7 типах
@@ -1585,30 +1662,41 @@ export default function ConstructorPage() {
 
       setRemaining(left);
 
-      addToHistory({
-        // TZ-16: id берём из switch выше, а не из тернарника по result.kind —
-        // на 13 типах такой тернарник гарантированно что-то забывает.
-        id: artifactId,
-        type: historyType,
-        title: artifactTitle,
-        subject: (histSubject ?? subject) as SubjectSlug,
-        grade: histGrade,
-        createdAt: new Date().toISOString(),
-        isFavorite: false,
-        // З1: кладём в историю сам артефакт, а не только метаданные —
-        // иначе перезагрузка страницы стирает результат генерации.
-        // `addToHistory` сам обрезает это поле у всех, кроме 5 последних,
-        // чтобы localStorage не раздувался.
-        // Флаг заготовки едет вместе с артефактом. Раньше в историю уходил
-        // «сырой» `result.payload` без `isDemo`, поэтому заготовка, открытая
-        // заново из «Истории», печаталась как обычный материал: ни плашки, ни
-        // водяного знака. В state артефакт с флагом (см. switch выше), а в
-        // историю — нет, и именно оттуда учитель его и переоткрывает.
-        artifact: {
-          ...(result.payload as UserHistoryItem["artifact"]),
-          isDemo: result.isDemo,
-        } as UserHistoryItem["artifact"],
-      });
+      // ЗАГОТОВКА В ИСТОРИЮ НЕ ПОПАДАЕТ (аудит 18.10.2026, BUG-025).
+      //
+      // Раньше каждая неудачная попытка добавляла в историю ещё один фальшивый
+      // лист: у тестового аккаунта их было 20, все одинаковые, и у каждого
+      // кнопка «Выдать классу». Учитель видел в кабинете девять «своих»
+      // листов, которых не делал, и мог отдать один классу.
+      //
+      // Заготовка — не результат, значит и в истории ей не место. Настоящий
+      // материал (isDemo === false) попадает в историю, как раньше.
+      if (!result.isDemo) {
+        addToHistory({
+          // TZ-16: id берём из switch выше, а не из тернарника по result.kind —
+          // на 13 типах такой тернарник гарантированно что-то забывает.
+          id: artifactId,
+          type: historyType,
+          title: artifactTitle,
+          subject: (histSubject ?? subject) as SubjectSlug,
+          grade: histGrade,
+          createdAt: new Date().toISOString(),
+          isFavorite: false,
+          // З1: кладём в историю сам артефакт, а не только метаданные —
+          // иначе перезагрузка страницы стирает результат генерации.
+          // `addToHistory` сам обрезает это поле у всех, кроме 5 последних,
+          // чтобы localStorage не раздувался.
+          // Флаг заготовки едет вместе с артефактом. Раньше в историю уходил
+          // «сырой» `result.payload` без `isDemo`, поэтому заготовка, открытая
+          // заново из «Истории», печаталась как обычный материал: ни плашки, ни
+          // водяного знака. В state артефакт с флагом (см. switch выше), а в
+          // историю — нет, и именно оттуда учитель его и переоткрывает.
+          artifact: {
+            ...(result.payload as UserHistoryItem["artifact"]),
+            isDemo: result.isDemo,
+          } as UserHistoryItem["artifact"],
+        });
+      }
 
       // W1+п.2+п.3: синхронно с localStorage addToHistory — сохраняем артефакт
       // на бэк (для залогиненных юзеров). Идёт в фоне, не блокирует UI:
@@ -1709,7 +1797,11 @@ export default function ConstructorPage() {
 
       // Карточки и материалы пока не умеют сохраняться на бэк (см. ветку
       // `return null` выше) — не шлём запрос, который гарантированно отбросят.
-      if (saveInput) {
+      //
+      // И заготовку на сервер не кладём: иначе она всплывает в истории
+      // кабинета («История · 9» из девяти одинаковых листов, которых учитель
+      // не делал) — то есть ровно тот дефект, который мы чиним (BUG-025).
+      if (saveInput && !result.isDemo) {
         // Лист 4.1.1: сохраняем его в ref, чтобы «Собрать игру» могла
         // дождаться этого же сохранения вместо второго запроса (иначе в базе
         // появилось бы два одинаковых листа). Плюс флаг для панели игры:
@@ -1744,19 +1836,48 @@ export default function ConstructorPage() {
       }
 
       // F-04-B: success-burst сверху страницы (~80 частиц, ~1.2с).
-      void fireConfetti();
+      //
+      // Конфетти — только за настоящий материал. Раньше они сыпались и за
+      // заготовку: учитель видел праздник, тост «Готово!» и уходил отдавать
+      // классу типовой лист (аудит 18.10.2026, BUG-018).
+      if (!result.isDemo) void fireConfetti();
 
-      toast({
-        tone: "success",
-        title: "Готово!",
-        // З6/З7: единое время «30 сек» — столько же стоит в заголовке и в
-        // подписи под кнопкой. Слово «demo-режим» в пользовательский текст
-        // не выносим: учителю оно ничего не объясняет.
-        // Для разработчика: это заявленное время из UI, а не замер. Когда
-        // подключим реальный LLM — считаем `performance.now()` и подставляем
-        // фактическое, тогда здесь же уйдёт и «· demo-режим».
-        description: "Готово примерно за минуту · сохраните в PDF",
-      });
+      if (result.isDemo) {
+        // ЗАГОТОВКА — НЕ РЕЗУЛЬТАТ (аудит 18.10.2026, BUG-018).
+        //
+        // Раньше в этом месте стоял зелёный тост «Готово! Готово примерно за
+        // минуту» — и он показывался даже когда на экране была заготовка с
+        // баннером «Это демонстрационная заготовка». Два сообщения, одно
+        // из которых врёт, и учитель читает то, что приятнее.
+        //
+        // Теперь тост соответствует тому, что на экране:
+        //   - `service_failed`    — сервер не ответил, это не готовый лист;
+        //   - `no_llm_endpoint`   — у типа нет серверного эндпоинта, материал
+        //                           собран из шаблона (это не авария);
+        //   - `no_backend`        — сборка без адреса сервера (dev/стенд).
+        const demoTone = result.demoReason === "service_failed" ? "error" : "info";
+        const demoTitle =
+          result.demoReason === "no_llm_endpoint"
+            ? "Собрано из шаблона"
+            : "Это заготовка, а не готовый лист";
+        const demoDescription =
+          result.demoReason === "no_llm_endpoint"
+            ? "Этот тип собирается из шаблона — серверной генерации для него пока нет"
+            : "Сервис не ответил, поэтому показан типовой пример. Попробуйте ещё раз";
+        toast({ tone: demoTone, title: demoTitle, description: demoDescription });
+      } else {
+        toast({
+          tone: "success",
+          title: "Готово!",
+          // З6/З7: единое время «30 сек» — столько же стоит в заголовке и в
+          // подписи под кнопкой. Слово «demo-режим» в пользовательский текст
+          // не выносим: учителю оно ничего не объясняет.
+          // Для разработчика: это заявленное время из UI, а не замер. Когда
+          // подключим реальный LLM — считаем `performance.now()` и подставляем
+          // фактическое, тогда здесь же уйдёт и «· demo-режим».
+          description: "Готово примерно за минуту · сохраните в PDF",
+        });
+      }
     } catch (err) {
       stageTimers.forEach((id) => window.clearTimeout(id));
       setProgressStage(null);
@@ -1784,6 +1905,21 @@ export default function ConstructorPage() {
       // закончится ровно тем же отказом. Обещать учителю «попробуйте ещё
       // раз» здесь значит врать. Вместо этого говорим, что делать: уменьшить
       // лист или снять то, что делает генерацию длиннее всего.
+      // Капча попросилась, а взять её нечем (аудит 18.10.2026, BUG-013).
+      //
+      // Раньше этот случай доходил до общей ветки «Не получилось — попытка не
+      // потрачена», а фронт подставлял заготовку и показывал «Готово!». Теперь
+      // заготовки тут нет, и учитель должен понять, что именно произошло.
+      if (err instanceof BackendError && err.isChallengeUnavailable) {
+        toast({
+          tone: "error",
+          title: "Не удалось подтвердить, что запрос отправил человек",
+          description: "Капча сейчас недоступна. Попробуйте ещё раз чуть позже",
+        });
+        console.error("[generate] failed: challenge unavailable", err);
+        return;
+      }
+
       if (isTimeoutError(err)) {
         toast({
           tone: "error",
@@ -2288,9 +2424,23 @@ export default function ConstructorPage() {
                 ВХОД в проверку, а не генератор (08.10.2026). Раньше флаг
                 раскрывал `PhotoCheckPanel`, который рендерится только после
                 генерации листа, поэтому учительница после «Попробовать»
-                видела генератор. Подробности — в PhotoCheckEntry. */}
-            {!worksheet && !generating && photoCheckOpen && (
+                видела генератор. Подробности — в PhotoCheckEntry.
+
+                С 18.10.2026 вход виден и когда лист УЖЕ есть (BUG-040): раньше
+                условие `!worksheet` его прятало, и учитель с любым готовым
+                листом попадал в генератор вместо проверки. */}
+            {!generating && photoCheckOpen && (
               <PhotoCheckEntry
+                /* Аудит 18.10.2026 (BUG-040): экран входа прятался условием
+                   `!worksheet`, поэтому учитель с готовым листом нажимал
+                   «Проверить фото» и проваливался в генератор — проверки на
+                   экране не было вовсе. Теперь вход виден всегда, а текст и
+                   кнопка зависят от того, есть ли уже эталон. */
+                hasSource={Boolean(worksheet)}
+                onUseSource={() => {
+                  const panel = document.getElementById("photo-check-panel");
+                  panel?.scrollIntoView({ behavior: "smooth", block: "center" });
+                }}
                 onCreateSource={() => {
                   // Флаг НЕ сбрасываем: он означает «учитель пришёл за проверкой
                   // по фото». Если его закрыть здесь, то после генерации листа
@@ -2640,21 +2790,27 @@ export default function ConstructorPage() {
                       role="status"
                       className="no-print mb-4 rounded-xl border border-accent-300 bg-accent-50 p-4 text-sm text-warm-900"
                     >
-                      <p className="font-semibold">Это демонстрационная заготовка</p>
-                      <p className="mt-1 text-warm-700">
-                        Сервис сейчас недоступен, поэтому задания типовые: они взяты из заготовки, а не собраны
-                        под вашу тему. Формат и разметку посмотреть можно, но отдавать такой лист ученикам как
-                        проверенный материал не стоит. Попробуйте ещё раз — обычно помогает.
+                      <p className="font-semibold">
+                        {demoReason === "no_llm_endpoint"
+                          ? "Этот материал собран из шаблона"
+                          : "Это демонстрационная заготовка"}
                       </p>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="mt-3"
-                        onClick={() => generate()}
-                        disabled={generating}
-                      >
-                        Повторить
-                      </Button>
+                      <p className="mt-1 text-warm-700">
+                        {demoReason === "no_llm_endpoint"
+                          ? "У этого типа материала пока нет серверной генерации, поэтому задания взяты из шаблона, а не собраны под вашу тему. Формат и разметку посмотреть можно."
+                          : "Сервис сейчас недоступен, поэтому задания типовые: они взяты из заготовки, а не собраны под вашу тему. Формат и разметку посмотреть можно, но отдавать такой лист ученикам как проверенный материал не стоит. Попробуйте ещё раз — обычно помогает."}
+                      </p>
+                      {demoReason !== "no_llm_endpoint" && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="mt-3"
+                          onClick={() => generate()}
+                          disabled={generating}
+                        >
+                          Повторить
+                        </Button>
+                      )}
                     </div>
                   )}
 
@@ -2743,20 +2899,29 @@ export default function ConstructorPage() {
                         /* Лимит генераций — тихой строкой под фото-проверкой.
                            Тот же источник, что у карточки выше: серверный
                            `useUsage` для залогиненных, localStorage — для
-                           анонимов. `limit: null` = безлимит на платном. */
+                           анонимов. `limit: null` = безлимит на платном.
+
+                           Аудит 18.10.2026 (BUG-031/037): остаток раньше
+                           считался как `generationsLimit - generationsToday` —
+                           то есть из СТАРОГО дневного счётчика, который не
+                           сбрасывался. Сервер отдаёт `freeRemaining: 5`, а
+                           интерфейс показывал 0. Теперь остаток — это
+                           `freeRemaining` с сервера, как есть. */
                         quota={{
                           left: serverUsage
                             ? serverUsage.generationsLimit === -1
                               ? 0
                               : Math.max(
                                   0,
-                                  serverUsage.generationsLimit - serverUsage.generationsToday,
+                                  serverUsage.freeRemaining ??
+                                    serverUsage.generationsLimit -
+                                      serverUsage.generationsToday,
                                 )
                             : Math.max(0, remaining),
                           limit: serverUsage
                             ? serverUsage.generationsLimit === -1
                               ? null
-                              : serverUsage.generationsLimit
+                              : FREE_GENERATIONS
                             : FREE_GENERATIONS,
                         }}
                       />
@@ -2801,17 +2966,25 @@ export default function ConstructorPage() {
                           {(() => {
                             if (serverUsage) {
                               const isUnlimited = serverUsage.generationsLimit === -1;
-                              const left = isUnlimited
-                                ? Number.POSITIVE_INFINITY
-                                : Math.max(0, serverUsage.generationsLimit - serverUsage.generationsToday);
                               if (isUnlimited) {
-                                return `Безлимит на тарифе «${PLANS[serverUsage.plan].name}». Уже сгенерировано: ${serverUsage.generationsToday}.`;
+                                // `generationsToday` теперь честный дневной счётчик
+                                // (ленивый сброс в incrementUserGenerations), поэтому
+                                // и подпись говорит «сегодня», а не «всего».
+                                return `Безлимит на тарифе «${PLANS[serverUsage.plan].name}». Сегодня сгенерировано: ${serverUsage.generationsToday}.`;
                               }
-                              // Без слов «на сегодня» / «в день»: счётчик бесплатной квоты
-                              // серверный и НЕ сбрасывается (backend/src/db/queries.ts →
-                              // resetUserDailyGenerations нигде не вызывается), а лимит
-                              // платного тарифа считается за период подписки, не за сутки.
-                              return `Осталось ${left} из ${serverUsage.generationsLimit}. ${PLANS_TEXT}`;
+                              // Остаток — с сервера (freeRemaining), а не вычисленный
+                              // из старого счётчика. Раньше здесь было
+                              // `generationsLimit - generationsToday`, и при
+                              // `generationsToday: 32` учитель с пятью
+                              // бесплатными листами видел «Осталось 0 из 5» и
+                              // ценник (аудит 18.10.2026, BUG-031/037).
+                              const left = Math.max(
+                                0,
+                                serverUsage.freeRemaining ??
+                                  serverUsage.generationsLimit -
+                                    serverUsage.generationsToday,
+                              );
+                              return `Осталось ${left} из ${FREE_GENERATIONS} листов в месяц, обновятся 1-го числа. ${PLANS_TEXT}`;
                             }
                             return `Осталось ${remaining} из ${FREE_GENERATIONS} — счёт общий, обновится 1-го числа. ${PLANS_TEXT}`;
                           })()}
@@ -2823,9 +2996,21 @@ export default function ConstructorPage() {
                               width: `${(() => {
                                 if (serverUsage) {
                                   if (serverUsage.generationsLimit === -1) return 100;
-                                  return Math.max(0, Math.min(100, ((serverUsage.generationsLimit - serverUsage.generationsToday) / serverUsage.generationsLimit) * 100));
+                                  // Та же формула, что и в тексте выше: остаток
+                                  // берём с сервера, иначе полоса показывала бы
+                                  // «пусто» при полной квоте.
+                                  const left = Math.max(
+                                    0,
+                                    serverUsage.freeRemaining ??
+                                      serverUsage.generationsLimit -
+                                        serverUsage.generationsToday,
+                                  );
+                                  return Math.max(
+                                    0,
+                                    Math.min(100, (left / FREE_GENERATIONS) * 100),
+                                  );
                                 }
-                                return Math.max(0, Math.min(100, (remaining / 3) * 100));
+                                return Math.max(0, Math.min(100, (remaining / FREE_GENERATIONS) * 100));
                               })()}%`,
                             }}
                           />

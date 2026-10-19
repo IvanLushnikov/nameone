@@ -148,6 +148,14 @@ const verifySchema = z.object({
     text: z.string().min(1).max(8000),
     expectedAnswer: z.string().max(4000).optional(),
   }),
+  /**
+   * Идентификатор листа (миграция 0009).
+   *
+   * Проверка идёт по заданиям по одному, и без этого поля расход на проверку
+   * нельзя было отнести к листу. Необязательный: приходит от фронта, который
+   * лист знает, но в базу пишется только если передан.
+   */
+  worksheet_id: z.string().max(120).optional(),
 });
 
 /**
@@ -196,6 +204,7 @@ llmRouter.post("/verify", verifyLimit, async (c) => {
       },
       userId: user?.id ?? null,
       plan,
+      worksheetId: parsed.worksheet_id ?? null,
     },
     c.env,
     c.env.DB,

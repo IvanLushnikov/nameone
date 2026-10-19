@@ -115,7 +115,7 @@ export function Comparison() {
               </span>
             </div>
             <h3 className="text-lg font-semibold text-warm-950 mb-1">Через УчЛист</h3>
-            <p className="text-sm text-brand-700 mb-5 font-medium">Минута — PDF готов</p>
+            <p className="text-sm text-brand-700 mb-5 font-medium">Готовый PDF с ответами</p>
 
             {/* Mock worksheet auto-generated */}
             <div className="bg-white border border-brand-200 rounded-2xl p-4 mb-4 space-y-2 relative overflow-hidden">
@@ -125,7 +125,7 @@ export function Comparison() {
               />
               <div className="relative flex items-center justify-between mb-2 pb-2 border-b border-warm-100">
                 <div className="text-[10px] font-semibold text-warm-950">Обыкновенные дроби · 5 кл.</div>
-                <div className="text-[9px] text-emerald-600 font-bold">✓ минута</div>
+                <div className="text-[9px] text-emerald-600 font-bold">✓ готово</div>
               </div>
               {[
                 "Сократите: 8/12 = __",

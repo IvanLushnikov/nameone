@@ -220,6 +220,9 @@ export async function prepareArtifactGeneration(
     // Капча при необходимости приходит как заголовок cf-turnstile-response
     // (её выдал фронт по 409 от прошлой попытки).
     challengePassed: Boolean(c.req.header("cf-turnstile-response")),
+    // Капча настроена на воркере? Если нет — требовать её нечем
+    // (аудит 18.10.2026, BUG-013), и guardGeneration не откажет.
+    turnstileConfigured: Boolean(c.env.TURNSTILE_SECRET_KEY),
   });
 
   return {

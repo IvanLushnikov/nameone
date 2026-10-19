@@ -40,6 +40,7 @@ import {
 import { rateLimitMiddleware } from "../middleware/ratelimit";
 import type { CfObject } from "../lib/antifraud";
 import type { UsagePlan } from "../services/usage";
+import { FREE_TOTAL_GENERATIONS } from "../services/usage";
 
 /**
  * Данные Cloudflare о клиенте: страна, устройство, браузер, ОС, ASN.
@@ -174,6 +175,9 @@ worksheetsRouter.post("/generate", async (c) => {
     cf: readCf(c),
     salt: c.env.FINGERPRINT_SALT ?? "dev-fingerprint-salt",
     challengePassed: Boolean(c.req.header("cf-turnstile-response")),
+    // Капча настроена на воркере? Если нет — требовать её нечем
+    // (аудит 18.10.2026, BUG-013), и guardGeneration не откажет.
+    turnstileConfigured: Boolean(c.env.TURNSTILE_SECRET_KEY),
   });
 
   // Гарантируем, что у worksheet есть id (для будущего save)
@@ -181,17 +185,46 @@ worksheetsRouter.post("/generate", async (c) => {
     throw new BadRequestError("Invalid 'request' object");
   }
 
-  const result = await generateWorksheet(
-    {
-      request: body.request,
-      plan,
-      bypassCache: body.bypassCache ?? false,
+  /**
+   * Генерация — в try/catch: упавший вызов должен ОТДАТЬ занятую попытку.
+   *
+   * Аудит 18.10.2026, волна 3 («списывается ли квота за оборванные запросы»).
+   * Попытка занимается ДО вызова провайдера (`holdFreeQuotaSlot`) — иначе два
+   * параллельных запроса прошли бы проверку одновременно. Но занятый слот
+   * переводится в «использовано» только после успеха (`consumeGenerationQuota`),
+   * а вот ПРИ ОШИБКЕ слот оставался занятым до истечения TTL — 5 минут.
+   *
+   * Что это значило для учителя: сломанный запрос (провайдер упал, связь
+   * оборвалась, учитель закрыл вкладку) на 5 минут уменьшал доступную квоту.
+   * При квоте в 5 листов и одном-единственном неудачном запросе учитель
+   * видел «листов закончилось» — хотя ничего не потратил.
+   *
+   * Списывания при этом НЕ было: занятый слот и «потраченный» — разные
+   * вещи, `consume` не вызывался. Теперь слот освобождается сразу.
+   */
+  let result: Awaited<ReturnType<typeof generateWorksheet>>;
+  try {
+    result = await generateWorksheet(
+      {
+        request: body.request,
+        plan,
+        bypassCache: body.bypassCache ?? false,
+        userId,
+        ip,
+      },
+      c.env,
+      c.env.DB,
+    );
+  } catch (e) {
+    await releaseFreeQuotaForGeneration(c.env.DB, {
       userId,
-      ip,
-    },
-    c.env,
-    c.env.DB,
-  );
+      plan: plan as UsagePlan,
+      fingerprint: guard.fingerprint,
+    }).catch(() => {
+      /* вернуть не удалось — слот освободится по TTL */
+    });
+    throw e;
+  }
 
   // Если у worksheet нет id — проставляем наш (для последующего сохранения)
   const worksheet: Worksheet = {
@@ -265,6 +298,9 @@ worksheetsRouter.post("/validate", validateLimit, async (c) => {
     cf: readCf(c),
     salt: c.env.FINGERPRINT_SALT ?? "dev-fingerprint-salt",
     challengePassed: Boolean(c.req.header("cf-turnstile-response")),
+    // Капча настроена на воркере? Если нет — требовать её нечем
+    // (аудит 18.10.2026, BUG-013), и guardGeneration не откажет.
+    turnstileConfigured: Boolean(c.env.TURNSTILE_SECRET_KEY),
   });
 
   try {
@@ -621,7 +657,11 @@ worksheetsRouter.post("/save", async (c) => {
   // было ошибкой на каждый новый тариф: «Оптимальный» (ТЗ-21 п.4) попал бы
   // в ветку бесплатного и получил бы 3 генерации вместо безлимита.
   // -1 = лимита генераций нет.
-  const generationsLimit = fresh ? (fresh.plan === "free" ? 3 : -1) : 3;
+  // Не жёсткое `3`: квота бесплатного тарифа — FREE_TOTAL_GENERATIONS (5).
+  // Раньше сервер отвечал «3» при настоящих 5 (аудит 18.10.2026).
+  const generationsLimit = fresh
+    ? (fresh.plan === "free" ? FREE_TOTAL_GENERATIONS : -1)
+    : FREE_TOTAL_GENERATIONS;
 
   // 9) Audit-event (легковесный console-info). Полный event-pipeline через
   // POST /api/track на фронте, но бэк логирует минимальный контекст для дебага.

@@ -55,12 +55,29 @@ export function isTimeoutError(err: unknown): boolean {
   return err instanceof Error && err.name === "TimeoutError";
 }
 
+/**
+ * Почему результат — заготовка, а не материал модели.
+ *
+ * Аудит 18.10.2026 (BUG-018): интерфейс показывал зелёный тост «Готово!» и
+ * баннер «Сервис сейчас недоступен» одновременно, а это РАЗНЫЕ ситуации:
+ *
+ *   - `no_backend`       — сборка без NEXT_PUBLIC_API_URL (dev/демо-стенд).
+ *   - `no_llm_endpoint`  — у этого типа нет серверного эндпоинта вовсе
+ *                          («урок целиком»): заготовка здесь и есть реализация.
+ *   - `service_failed`   — сервер ответил 5xx: настоящего листа получить
+ *                          нечем, и подставлять заготовку вместо него нельзя
+ *                          (это выключено в smartGenerate).
+ */
+export type DemoReason = "no_backend" | "no_llm_endpoint" | "service_failed";
+
 interface ArtifactResult<T, TExtra = never> {
   data: T;
   /** Прочие поля ответа бэка (сейчас — `secondVariant` у контрольной). */
   extra?: TExtra;
   source: "llm" | "mock";
   isDemo: boolean;
+  /** Почему это заготовка. null у настоящего результата. */
+  demoReason: DemoReason | null;
   costUsd: number;
   latencyMs: number;
 }
@@ -78,6 +95,15 @@ interface GenerateOpts {
    * одинаковыми параметрами вернули бы один и тот же лист дважды.
    */
   bypassCache?: boolean;
+  /**
+   * Разрешить заготовку вместо ответа сервера.
+   *
+   * ВКЛЮЧАТЬ ТОЛЬКО ТАМ, ГДЕ ЗАГОТОВКА — ЭТО И ЕСТЬ РЕАЛИЗАЦИЯ. Сейчас такой
+   * тип один: «урок целиком» (`/api/bundles/generate` на сервере не существует,
+   * проверено: 404). Для остальных типов заготовка вместо ответа сервера —
+   * это ложь, которую чиним (аудит 18.10.2026, BUG-013/014/018/025).
+   */
+  mockOnFailure?: boolean;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -107,6 +133,17 @@ export class BackendError extends Error {
   }
   get isGenerationForbidden(): boolean {
     return this.status === 403 && this.code === "GENERATION_FORBIDDEN";
+  }
+  /**
+   * Капчу попросили, а пройти её нечем.
+   *
+   * Случай «сервер сказал 409, а виджета нет» — это не «капча не нужна»:
+   * это ровно то состояние, в котором продукт раньше подставлял заготовку и
+   * показывал зелёный тост «Готово!». Отдельный код нужен, чтобы UI сказал
+   * правду: «подтвердите, что вы человек», а не «попробуйте ещё раз».
+   */
+  get isChallengeUnavailable(): boolean {
+    return this.status === 409 && this.code === "CHALLENGE_UNAVAILABLE";
   }
 }
 
@@ -185,6 +222,12 @@ async function callBackendOnce<T, TExtra = never>(
  * При 409 TURNSTILE_REQUIRED один раз показываем невидимый Turnstile и
  * повторяем тот же запрос с токеном. Не более одного повтора: если капча не
  * помогла, второй круг только замкнёт нагрузку на Cloudflare.
+ *
+ * ВАЖНО (аудит 18.10.2026, BUG-013/018): если капчу пройти НЕЧЕМ (sitekey не
+ * задан в сборке или скрипт не загрузился), раньше здесь возвращался `null`, а
+ * `null` означал «упади в мок-генератор». То есть учитель получал типовую
+ * заготовку под видом готового листа и зелёный тост «Готово!». Теперь это
+ * явная ошибка с отдельным кодом: UI скажет правду.
  */
 async function callBackend<T, TExtra = never>(
   path: string,
@@ -199,8 +242,14 @@ async function callBackend<T, TExtra = never>(
       if (token) {
         return await callBackendOnce<T, TExtra>(path, body, dataKey, token);
       }
-      // Капча недоступна — fail-open, как и на бэке.
-      return null;
+      // Капчу взять нечем: sitekey не задан или скрипт Cloudflare не пришёл.
+      // Fail-open здесь означал бы «подставь заготовку вместо листа» — то
+      // самое враньё, которое чиним. Поэтому честная ошибка.
+      throw new BackendError(
+        409,
+        "CHALLENGE_UNAVAILABLE",
+        "Сервер попросил подтвердить, что запрос отправил человек, а подтвердить нечем",
+      );
     }
     throw e;
   }
@@ -210,10 +259,18 @@ async function wrapMock<T>(
   reason: string,
   fn: () => Promise<T>,
   startMs: number,
+  demoReason: DemoReason,
 ): Promise<ArtifactResult<T>> {
   console.info(`[client-llm] demo-режим (${reason})`);
   const data = await fn();
-  return { data, source: "mock", isDemo: true, costUsd: 0, latencyMs: Date.now() - startMs };
+  return {
+    data,
+    source: "mock",
+    isDemo: true,
+    demoReason,
+    costUsd: 0,
+    latencyMs: Date.now() - startMs,
+  };
 }
 
 async function smartGenerate<T, TExtra = never>(
@@ -224,8 +281,46 @@ async function smartGenerate<T, TExtra = never>(
   const start = Date.now();
   // Здесь BackendError НЕ глотается. «Квота кончилась» и «этот тип не входит
   // в тариф» — это ответы пользователю (PaywallModal / предложение Плюс),
-  // а не повод подсунуть мок. Мок — только когда бэка нет или он упал (5xx,
-  // сеть), то есть когда настоящую генерацию получить нечем.
+  // а не повод подсунуть мок. Мок — только когда бэка нет вовсе (сборка без
+  // NEXT_PUBLIC_API_URL, то есть dev/демо-стенд) или когда для этого типа
+  // заготовка и есть реализация.
+  // Тип без серверного эндпоинта (сейчас — «урок целиком»): заготовка здесь и
+  // есть реализация, и 404/501 на таком эндпоинте — не авария.
+  if (opts.mockOnFailure) {
+    try {
+      const remote = await callBackend<T, TExtra>(
+        `/api/${opts.endpoint}/generate`,
+        opts.bypassCache ? { request: req, bypassCache: true } : { request: req },
+        opts.dataKey,
+      );
+      if (remote) {
+        return {
+          data: remote.data,
+          extra: remote.extra,
+          source: "llm",
+          isDemo: false,
+          demoReason: null,
+          costUsd: 0,
+          latencyMs: Date.now() - start,
+        };
+      }
+      return wrapMock(
+        `${opts.endpoint}/generate не ответил — для этого типа заготовка и есть реализация`,
+        mockFn,
+        start,
+        "no_llm_endpoint",
+      );
+    } catch (e) {
+      if (!(e instanceof BackendError && (e.status === 404 || e.status === 501))) throw e;
+      return wrapMock(
+        `${opts.endpoint}/generate не реализован на сервере — для этого типа заготовка и есть реализация`,
+        mockFn,
+        start,
+        "no_llm_endpoint",
+      );
+    }
+  }
+
   const remote = await callBackend<T, TExtra>(
     `/api/${opts.endpoint}/generate`,
     opts.bypassCache ? { request: req, bypassCache: true } : { request: req },
@@ -237,11 +332,24 @@ async function smartGenerate<T, TExtra = never>(
       extra: remote.extra,
       source: "llm",
       isDemo: false,
+      demoReason: null,
       costUsd: 0,
       latencyMs: Date.now() - start,
     };
   }
-  return wrapMock(`NEXT_PUBLIC_API_URL не задан или ${opts.endpoint}/generate недоступен`, mockFn, start);
+  // Сервер ответил, но материала не прислал (5xx) — либо бэка нет в этой
+  // сборке. Дальше развилка: подставлять заготовку можно только там, где это
+  // разрешено явно. Иначе — честная ошибка (аудит 18.10.2026, BUG-018):
+  // раньше учитель в этом месте получал типовой лист с зелёным тостом
+  // «Готово!» и уходил отдавать его классу.
+  if (!API_URL) {
+    return wrapMock("NEXT_PUBLIC_API_URL не задан", mockFn, start, "no_backend");
+  }
+  throw new BackendError(
+    503,
+    "BACKEND_UNAVAILABLE",
+    "Сервер не ответил — показать заготовку вместо листа мы не будем",
+  );
 }
 
 /**
@@ -314,6 +422,8 @@ export interface WorksheetClientResult {
   variants: VariantStatus;
   source: "llm" | "mock";
   isDemo: boolean;
+  /** Почему это заготовка (null у настоящего результата). */
+  demoReason: DemoReason | null;
   costUsd: number;
   latencyMs: number;
 }
@@ -390,6 +500,7 @@ export async function generateWorksheetSmart(
     variants,
     source: r.source,
     isDemo: r.isDemo,
+    demoReason: r.demoReason,
     costUsd: r.costUsd,
     latencyMs: r.latencyMs,
   };
@@ -423,10 +534,18 @@ export async function generateMaterialsSmart(request: GenerationRequest): Promis
 /**
  * TZ-16 §3.4: «Урок целиком» — 4 артефакта одной темы.
  *
- * Эндпоинт `/api/bundles/generate` в этом ТЗ не создаётся (§11), поэтому
- * `callBackend` вернёт null и сработает мок. Сама оркестрация 4 слотов лежит
- * в моке (`buildLessonBundle`) и уже параллельна — здесь мы её не дублируем.
+ * Эндпоинт `/api/bundles/generate` в этом ТЗ не создаётся (§11) — проверено на
+ * боевом воркере: 404. Для этого типа заготовка и ЕСТЬ реализация, поэтому
+ * `mockOnFailure` включён явно. Для всех остальных типов заготовка вместо
+ * ответа сервера — враньё, и она запрещена (аудит 18.10.2026, BUG-018).
+ *
+ * Сама оркестрация 4 слотов лежит в моке (`buildLessonBundle`) и уже
+ * параллельна — здесь мы её не дублируем.
  */
 export async function generateBundleSmart(request: GenerationRequest): Promise<BundleClientResult> {
-  return smartGenerate<LessonBundle>(request, { endpoint: "bundles", dataKey: "lessonBundle" }, () => mockLessonBundle(request));
+  return smartGenerate<LessonBundle>(
+    request,
+    { endpoint: "bundles", dataKey: "lessonBundle", mockOnFailure: true },
+    () => mockLessonBundle(request),
+  );
 }

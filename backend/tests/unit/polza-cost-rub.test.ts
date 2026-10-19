@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS llm_logs (
   cached      INTEGER NOT NULL DEFAULT 0,
   fallback    INTEGER NOT NULL DEFAULT 0,
   error       TEXT,
+  -- Привязка вызова к листу (миграция 0009). NULL — «лист неизвестен».
+  worksheet_id TEXT,
   created_at  INTEGER NOT NULL
 );
 
@@ -76,6 +78,8 @@ CREATE TABLE IF NOT EXISTS llm_costs_actual (
   cost_rub    REAL NOT NULL,
   cost_usd_est REAL,
   latency_ms  INTEGER,
+  -- Привязка расхода к листу (миграция 0009).
+  worksheet_id TEXT,
   created_at  INTEGER NOT NULL
 );
 

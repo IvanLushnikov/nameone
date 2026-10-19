@@ -20,6 +20,7 @@ import { requireAuth } from "../middleware/auth";
 import { rateLimitMiddleware } from "../middleware/ratelimit";
 import { BadRequestError } from "../lib/errors";
 import { getUserById } from "../db/queries";
+import { FREE_TOTAL_GENERATIONS } from "../services/usage";
 import { setSessionCookie, ADMIN_SESSION_MAX_AGE_SECONDS } from "../lib/session-cookie";
 import {
   startTotpSetup,
@@ -224,7 +225,8 @@ totpRouter.post("/totp/verify", codeRateLimit, async (c) => {
           plan: user.plan,
           generationsTotal: user.generations_total,
           generationsToday: user.generations_today,
-          generationsLimit: user.plan === "free" ? 3 : -1,
+          // Жёсткое `3` расходилось с настоящей квотой в 5 листов.
+          generationsLimit: user.plan === "free" ? FREE_TOTAL_GENERATIONS : -1,
           createdAt: new Date(user.created_at * 1000).toISOString(),
         }
       : null,

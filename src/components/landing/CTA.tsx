@@ -26,7 +26,7 @@ export function CTA() {
               <span className="text-accent-100">5 листов в месяц бесплатно.</span>
             </h2>
             <p className="mt-5 text-lg sm:text-xl text-brand-50 max-w-xl mx-auto text-pretty">
-              Без регистрации. Без карты. Готовый PDF за минуту.
+              Без регистрации. Без карты. Готовый PDF с ответами.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
               <Button

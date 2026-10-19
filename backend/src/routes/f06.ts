@@ -411,6 +411,9 @@ f06Router.post(
           cf: readCf(c),
           salt: c.env.FINGERPRINT_SALT ?? "dev-fingerprint-salt",
           challengePassed: Boolean(c.req.header("cf-turnstile-response")),
+          // Капча настроена на воркере? Если нет — требовать её нечем
+          // (аудит 18.10.2026, BUG-013), и guardGeneration не откажет.
+          turnstileConfigured: Boolean(c.env.TURNSTILE_SECRET_KEY),
         })
       : null;
 

@@ -35,8 +35,31 @@ export interface AuthUser {
   createdAt?: string;
 }
 
+/**
+ * Ответ `GET /api/users/usage` в том виде, в каком его реально отдаёт бэк.
+ *
+ * ГЛАВНОЕ (аудит 18.10.2026, BUG-031/032/037): источник правды по остатку —
+ * `freeRemaining` / `freeUsed` / `freeResetsAt`, то есть МЕСЯЧНАЯ квота из
+ * `free_usage`. Поля `generationsToday` / `generationsLimit` — старый дневной
+ * счётчик, который рос при каждом СОХРАНЕНИИ листа, никогда не сбрасывался и
+ * из-за этого показывал учителю «Осталось 0 из 5» при серверном остатке 5.
+ *
+ * Они оставлены в типе, потому что бэк их ещё отдаёт, но UI больше не должен
+ * считать по ним остаток: остаток — это `freeRemaining`.
+ */
 export interface UsageInfo {
+  /** Остаток бесплатных листов в этом месяце. null у платных тарифов. */
+  freeRemaining: number | null;
+  /** Сколько бесплатных листов сделано в этом месяце. null у платных. */
+  freeUsed: number | null;
+  /** Когда обновится квота (1-е число). null у платных. */
+  freeResetsAt: string | null;
+  /**
+   * Старый дневной счётчик. НЕ использовать для остатка и блокировки —
+   * он не сбрасывается и считает сохранения, а не генерации.
+   */
   generationsToday: number;
+  /** Старое поле лимита. Для остатка используйте `freeRemaining`. */
   generationsLimit: number;
   /** null если daily counter ни разу не инициализировался. */
   generationsResetAt: string | null;
@@ -61,8 +84,12 @@ export interface UsagePayload {
   periodEndsAt: string | null;
   /** Токены, переведённые в листы: понятная подпись для учителя. */
   worksheetsEquivalent: number;
-  /** Остаток бесплатных генераций (3 всего). null у платных. */
+  /** Остаток бесплатных листов в этом месяце. null у платных. */
   freeRemaining: number | null;
+  /** Сколько бесплатных листов сделано в этом месяце. null у платных. */
+  freeUsed?: number | null;
+  /** Когда обновится квота (1-е число). null у платных. */
+  freeResetsAt?: string | null;
   /** Показать ли невидимый Turnstile: у отпечатка есть признаки фрода. */
   requiresChallenge: boolean;
   /** Старые поля — бэк их ещё отдаёт. */
@@ -299,6 +326,11 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 export async function getUsage(): Promise<UsageInfo> {
   const res = await getJson<{ ok: true } & UsageInfo>("/api/users/usage");
   return {
+    // Месячная квота — единственный честный остаток. `null` у платных.
+    freeRemaining: res.freeRemaining ?? null,
+    freeUsed: res.freeUsed ?? null,
+    freeResetsAt: res.freeResetsAt ?? null,
+    // Старые поля — как есть, для совместимости. Считать по ним остаток нельзя.
     generationsToday: res.generationsToday,
     generationsLimit: res.generationsLimit,
     generationsResetAt: res.generationsResetAt ?? null,
@@ -315,7 +347,14 @@ export async function getUsage(): Promise<UsageInfo> {
 export async function fetchUsage(): Promise<UsagePayload | null> {
   try {
     const res = await getJson<{ ok: true } & UsagePayload>("/api/users/usage");
-    return res as UsagePayload;
+    return {
+      ...(res as UsagePayload),
+      // Месячная квота — единственный честный остаток. Если бэк не прислал
+      // (старый воркер), остаётся `null`, а не выдуманное число.
+      freeRemaining: res.freeRemaining ?? null,
+      freeUsed: res.freeUsed ?? null,
+      freeResetsAt: res.freeResetsAt ?? null,
+    };
   } catch {
     return null;
   }

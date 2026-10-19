@@ -224,23 +224,53 @@ export async function setUserRole(
     .run();
 }
 
+/**
+ * Увеличить счётчики генераций.
+ *
+ * ГЛАВНОЕ (аудит 18.10.2026, BUG-032): сброс дневного счётчика больше не
+ * «обещан, но не вызывается» — он делается ЛЕНИВО, здесь же, перед
+ * инкрементом. Раньше функция `resetUserDailyGenerations` была объявлена, но
+ * не вызывалась НИГДЕ, из-за чего `generations_today` рос бесконечно (в
+ * аудите замерено 16 и 32) и назывался «счётчиком за сегодня», не будучи им.
+ *
+ * Сброс ленивый, а не по крону: крона у воркера нет, а лишний UPDATE на
+ * каждом запросе — это лишняя запись в D1. Проверка дешёвая: сброс делается
+ * только тогда, когда `generations_reset_at` пуст или просрочен.
+ *
+ * ВАЖНО: считается это НЕ квота. Квота — месячная, в `free_usage`
+ * (services/usage.ts), и остаток для учителя считается по ней. Здесь живёт
+ * простой счётчик «сколько генераций сегодня», который честно обнуляется
+ * раз в сутки.
+ */
 export async function incrementUserGenerations(db: D1Database, id: string): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
+  const row = await db
+    .prepare(`SELECT generations_reset_at FROM users WHERE id = ?1`)
+    .bind(id)
+    .first<{ generations_reset_at: number | null }>();
+
+  const resetAt = row?.generations_reset_at ?? null;
+  const dueForReset = resetAt == null || resetAt <= now;
+
   await db
     .prepare(
       `UPDATE users
        SET generations_total = generations_total + 1,
-           generations_today = generations_today + 1,
+           generations_today = CASE WHEN ?3 THEN 1 ELSE generations_today + 1 END,
+           generations_reset_at = CASE WHEN ?3 THEN ?4 ELSE generations_reset_at END,
            updated_at = ?1
        WHERE id = ?2`,
     )
-    .bind(now, id)
+    .bind(now, id, dueForReset ? 1 : 0, now + 86400)
     .run();
 }
 
 /**
  * Сбросить дневной счётчик (вызывается кроном или лениво — когда
  * generations_reset_at < now). Один SQL-апдейт без транзакции.
+ *
+ * Вызывается из `incrementUserGenerations` — ленивый сброс перед инкрементом.
+ * Отдельный вызов тоже возможен (например, из крона, если он появится).
  */
 export async function resetUserDailyGenerations(db: D1Database, id: string): Promise<void> {
   const now = Math.floor(Date.now() / 1000);

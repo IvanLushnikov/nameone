@@ -75,6 +75,10 @@ const ALLOWED_EVENTS = new Set([
   "form_csv_downloaded",
   "form_status_changed",
   "interactive_csv_downloaded",
+  // Аудит 18.10.2026 (BUG-001): главная шлёт `landing_view` (src/app/page.tsx),
+  // а события не было в белом списке — каждая загрузка главной получала
+  // `400 UNKNOWN_EVENT`, и источники переходов с главной не писались вообще.
+  "landing_view",
   "login_password_failed",
   "login_password_submit",
   "login_password_success",

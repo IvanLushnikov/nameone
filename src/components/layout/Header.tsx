@@ -139,8 +139,16 @@ export function Header() {
                 className="inline-flex items-center gap-2"
                 aria-label={`Кабинет: ${profile.name}`}
               >
-                <span className="max-w-[9rem] truncate text-warm-500">{profile.name}</span>
-                <span>Кабинет</span>
+                {/* Аудит 18.10.2026 (BUG-002): имя и «Кабинет» склеивались без
+                    зазора — на экране читалось «uchlist audit 1792297698Кабинет».
+                    Причина в Button: он оборачивает содержимое в
+                    `<span className="truncate">`, и `gap-2` на самой кнопке
+                    раскладывал флексом КНОПКУ, а не эти два span'а внутри.
+                    Поэтому зазор задаём здесь — своими flex-контейнером. */}
+                <span className="inline-flex items-center gap-2">
+                  <span className="max-w-[9rem] truncate text-warm-500">{profile.name}</span>
+                  <span>Кабинет</span>
+                </span>
               </Button>
             ) : (
               <>

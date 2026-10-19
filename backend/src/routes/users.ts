@@ -102,7 +102,13 @@ usersRouter.get("/me", async (c) => {
       generationsToday: user.generations_today,
       // Платным считается всё, что не «free» — иначе новый тариф молча
       // получает бесплатную квоту (см. ТЗ-21 п.4, тариф «Оптимальный»).
-      generationsLimit: user.plan === "free" ? 3 : -1,
+      //
+      // Раньше здесь было жёсткое `3` — при настоящей квоте в 5 листов.
+      // То есть клиент получал от сервера число, которого на сервере нет
+      // (аудит 18.10.2026: «интерфейс показывает значение не из того
+      // источника, что реально есть на сервере»). Теперь — из общей
+      // константы, как в /api/users/usage.
+      generationsLimit: user.plan === "free" ? FREE_TOTAL_GENERATIONS : -1,
       createdAt: new Date(user.created_at * 1000).toISOString(),
     },
   });

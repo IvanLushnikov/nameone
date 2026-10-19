@@ -24,6 +24,7 @@ import { env, SELF, applyD1Migrations } from "cloudflare:test";
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 
 import { createMagicLink, consumeMagicLink, createSession, createUser } from "../../src/db/queries";
+import { FREE_TOTAL_GENERATIONS } from "../../src/services/usage";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Встроенная копия src/db/schema.sql (workerd не имеет fs.readFileSync).
@@ -374,8 +375,11 @@ describe("POST /api/worksheets/save", () => {
     expect(body.ok).toBe(true);
     expect(body.worksheetId).toMatch(/^ws_[0-9a-z]{12}$/);
     expect(body.generationsToday).toBe(1);
-    // free plan → 3; см. backend/src/routes/users.ts / usage handler.
-    expect(body.generationsLimit).toBe(3);
+    // free plan → месячная квота; см. FREE_TOTAL_GENERATIONS в
+    // backend/src/services/usage.ts. Число берётся из кода, а не вписано
+    // руками: раньше здесь стояло «3», и после смены квоты на 5 листов
+    // в месяц (ТЗ-29) тест врал.
+    expect(body.generationsLimit).toBe(FREE_TOTAL_GENERATIONS);
 
     // Лист реально записан в БД.
     const row = await env.DB
@@ -469,7 +473,7 @@ describe("POST /api/worksheets/save", () => {
     expect(body.ok).toBe(true);
     expect(body.worksheetId).toMatch(/^ws_[0-9a-z]{12}$/);
     expect(body.generationsToday).toBe(1);
-    expect(body.generationsLimit).toBe(3);
+    expect(body.generationsLimit).toBe(FREE_TOTAL_GENERATIONS);
 
     // Лист реально записан: type="lesson-plan", count=stages.length=2.
     const row = await env.DB
