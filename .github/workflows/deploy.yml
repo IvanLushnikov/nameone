@@ -131,11 +131,16 @@ jobs:
         # Не блокирует сборку: без ключа капча просто не включается, а
         # антифрод fail-open'ит (см. ratelimit.ts → runFraudGuard). Но узнать
         # об этом лучше в логе сборки, чем из жалобы учителя.
-        if [ -z "${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}" ]; then
-          echo "::warning::NEXT_PUBLIC_TURNSTILE_SITE_KEY не задан — антифрод (Turnstile) не включится. См. комментарий в deploy.yml"
-        else
-          echo "Ключ антифрода задан, виджет капчи будет грузиться."
-        fi
+        #
+        # ВАЖНО: у шага обязателен `run:` — без него workflow невалиден и
+        # GitHub отклоняет весь файл (именно так случилось 19.10.2026: пуш в
+        # main упал за 0 секунд, до первой проверки).
+        run: |
+          if [ -z "${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}" ]; then
+            echo "::warning::NEXT_PUBLIC_TURNSTILE_SITE_KEY не задан — антифрод (Turnstile) не включится. См. комментарий в deploy.yml"
+          else
+            echo "Ключ антифрода задан, виджет капчи будет грузиться."
+          fi
 
       - name: Deploy to Cloudflare Pages
         env:
