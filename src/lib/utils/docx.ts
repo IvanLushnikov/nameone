@@ -490,6 +490,155 @@ function cellWidthPct(colIndex: number): { size: number; type: (typeof WidthType
   return { size: COLUMN_WIDTHS_PCT[colIndex] ?? 100, type: WidthType.PERCENTAGE };
 }
 
+/**
+ * ТЗ-33: дополнительные блоки задания — по полям, а не по типу.
+ *
+ * Печать устроена так: у задания есть необязательные поля (`sample`, `table`,
+ * `items`, `criteria`, `steps`), и каждый печатается, если он есть. Поля нет —
+ * блока нет. Поэтому старые листы печатаются ровно как раньше, а новый тип
+ * печатается, если модель прислала нужные поля.
+ *
+ * ЧТО И ГДЕ ПЕЧАТАТЬ:
+ *   · `sample`  — образец ДО текста задания, в рамке. Порядок важен: образец
+ *                 должен быть виден раньше, чем формулировка «выполните по
+ *                 образцу», иначе ученик ищет его в тексте задания.
+ *   · `table`   — таблицей. Тот же механизм фиксированного layout, что и в
+ *                 таблице ответов: без явной сетки колонок Google Docs
+ *                 пересчитывает ширины по содержимому и «размазывает» таблицу
+ *                 (ровно тот дефект, что чинили в ТЗ для таблицы ответов).
+ *   · `items`   — нумерованным списком с местом для номера: для «расположите
+ *                 в порядке» ученик должен вписать порядок рядом с элементом.
+ *   · `steps`   — чек-листом с квадратиками: отметка выполненного шага.
+ *   · `criteria`— в ключ (страница ответов), а не в тело листа: критерий
+ *                 приёмки нужен учителю, а не ученику.
+ */
+function taskBlocks(task: Worksheet["tasks"][number]): Array<Paragraph | Table> {
+  const blocks: Array<Paragraph | Table> = [];
+  const typed = task as Worksheet["tasks"][number] & {
+    sample?: string | null;
+    table?: { headers: string[]; rows: string[][] } | null;
+    items?: string[] | null;
+    criteria?: string[] | null;
+    steps?: string[] | null;
+  };
+
+  // Образец — в рамке, ДО текста задания.
+  if (typeof typed.sample === "string" && typed.sample.trim()) {
+    blocks.push(
+      new Paragraph({
+        children: [new TextRun({ text: "Образец:", bold: true, size: 22 })],
+        spacing: { before: 120, after: 40 },
+      }),
+      new Paragraph({
+        children: mathChildren(typed.sample, undefined, 22),
+        border: {
+          top: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC", space: 6 },
+          bottom: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC", space: 6 },
+          left: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC", space: 6 },
+          right: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC", space: 6 },
+        },
+        spacing: { after: 120 },
+      })
+    );
+  }
+
+  // Таблица задания — таблицей, а не строкой текста.
+  if (typed.table && typed.table.headers.length > 0 && typed.table.rows.length > 0) {
+    // Локальная копия: сужение `typed.table` теряется внутри замыканий
+    // (TypeScript не держит проверку типа через границу колбэка).
+    const table = typed.table;
+    const columnCount = table.headers.length;
+    const colWidth = Math.floor(100 / columnCount);
+    const rows: TableRow[] = [
+      new TableRow({
+        children: table.headers.map(
+          (h) =>
+            new TableCell({
+              children: [new Paragraph({ children: [new TextRun({ text: h, bold: true })] })],
+              width: { size: colWidth, type: WidthType.PERCENTAGE },
+            })
+        ),
+      }),
+      ...table.rows.map(
+        (row) =>
+          new TableRow({
+            children: table.headers.map(
+              (_, i) =>
+                new TableCell({
+                  children: [new Paragraph({ children: mathChildren(row[i] ?? "", undefined) })],
+                  width: { size: colWidth, type: WidthType.PERCENTAGE },
+                })
+            ),
+          })
+      ),
+    ];
+    blocks.push(
+      new Table({
+        rows,
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        // Фиксированный layout + границы: без этого Google Docs пересчитывает
+        // ширины по содержимому, и таблица «схлопывается» в полоски.
+        layout: TableLayoutType.FIXED,
+        borders: {
+          top: { style: BorderStyle.SINGLE, size: 1, color: "999999" },
+          bottom: { style: BorderStyle.SINGLE, size: 1, color: "999999" },
+          left: { style: BorderStyle.SINGLE, size: 1, color: "999999" },
+          right: { style: BorderStyle.SINGLE, size: 1, color: "999999" },
+          insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: "BBBBBB" },
+          insideVertical: { style: BorderStyle.SINGLE, size: 1, color: "BBBBBB" },
+        },
+      })
+    );
+    blocks.push(new Paragraph({ children: [new TextRun({ text: "", size: 12 })], spacing: { after: 80 } }));
+  }
+
+  // Элементы — нумерованным списком с местом для номера.
+  if (Array.isArray(typed.items) && typed.items.length > 0) {
+    for (const item of typed.items) {
+      blocks.push(
+        new Paragraph({
+          children: [
+            new TextRun({ text: "   ______  ", size: 22, color: "888888" }),
+            ...mathChildren(item, undefined, 22),
+          ],
+          spacing: { after: 40 },
+        })
+      );
+    }
+  }
+
+  // Шаги алгоритма — чек-листом.
+  if (Array.isArray(typed.steps) && typed.steps.length > 0) {
+    for (const step of typed.steps) {
+      blocks.push(
+        new Paragraph({
+          children: [
+            new TextRun({ text: "☐  ", size: 24 }),
+            ...mathChildren(step, undefined, 22),
+          ],
+          spacing: { after: 40 },
+        })
+      );
+    }
+  }
+
+  return blocks;
+}
+
+/**
+ * ТЗ-33: критерии приёмки — в ключ, а не в тело листа.
+ *
+ * Критерий нужен учителю, чтобы оценить развёрнутый ответ, и не нужен
+ * ученику: напечатанный на листе критерий превращается в подсказку, какой
+ * ответ ждёт учитель. Поэтому в тело листа критерии не идут — только в
+ * таблицу ответов.
+ */
+function criteriaForTask(task: Worksheet["tasks"][number]): string[] {
+  const typed = task as Worksheet["tasks"][number] & { criteria?: string[] | null };
+  if (!Array.isArray(typed.criteria)) return [];
+  return typed.criteria.filter((c) => typeof c === "string" && c.trim().length > 0);
+}
+
 export async function generateWorksheetDocx(
   worksheet: Worksheet,
   options: { withAnswers?: boolean; withExplanations?: boolean; isDemo?: boolean } = {}
@@ -587,6 +736,7 @@ export async function generateWorksheetDocx(
     const taskLatex = (task as TaskWithLatex).text_latex;
 
     children.push(
+      ...taskBlocks(task),
       new Paragraph({
         children: [
           new TextRun({ text: `${task.number}. `, size: 24 }),
@@ -710,6 +860,15 @@ export async function generateWorksheetDocx(
                       withExplanations && task.explanation ? task.explanation : "—"
                     ),
                   }),
+                  // ТЗ-33: критерии приёмки — под ответом, в той же колонке.
+                  // Критерий нужен учителю (оценить развёрнутый ответ) и не
+                  // нужен ученику, поэтому в тело листа он не попадает.
+                  ...criteriaForTask(task).map(
+                    (c) =>
+                      new Paragraph({
+                        children: [new TextRun({ text: `Критерий: ${c}`, size: 18, color: "666666" })],
+                      })
+                  ),
                 ],
                 width: cellWidthPct(2),
               }),

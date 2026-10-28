@@ -25,6 +25,7 @@ import type {
   LessonStage,
   Slide,
   KtpEntry,
+  TaskTypeId,
 } from "@/lib/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
@@ -49,13 +50,24 @@ export type SaveWorksheetInput =
       tasks: Array<{
         number: number;
         text: string;
-        type: "computation" | "multiple-choice" | "short-answer" | "essay" | "fill-blank";
+        /**
+         * ТЗ-33: типы заданий — из общего реестра (17 штук вместо 5).
+         * Раньше здесь был зашитый union из пяти значений, и каждое новое
+         * требование к листу начиналось с правки этого типа.
+         */
+        type: TaskTypeId;
         options?: string[];
         answer?: string;
         explanation?: string;
         points: number;
         verified?: boolean | null;
         verifiedExplanation?: string;
+        // ТЗ-33: поля новых типов задания.
+        sample?: string | null;
+        table?: { headers: string[]; rows: string[][] } | null;
+        items?: string[] | null;
+        criteria?: string[] | null;
+        steps?: string[] | null;
       }>;
       source?: "mock" | "llm";
     }

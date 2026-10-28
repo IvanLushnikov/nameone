@@ -37,6 +37,98 @@ type TaskWithChart = Worksheet["tasks"][number] & { chart_spec?: ChartSpec };
 type TaskWithLatex = WorksheetTask & { text_latex?: string };
 
 /**
+ * ТЗ-33: задание с полями новых типов (образец, таблица, элементы, шаги).
+ *
+ * Поля добавлены в `src/lib/types.ts` как необязательные, поэтому здесь они
+ * доступны напрямую — без структурного пересечения.
+ */
+type TaskWithExtras = WorksheetTask & {
+  sample?: string | null;
+  table?: { headers: string[]; rows: string[][] } | null;
+  items?: string[] | null;
+  criteria?: string[] | null;
+  steps?: string[] | null;
+};
+
+/**
+ * ТЗ-33: дополнительные блоки задания в превью.
+ *
+ * Печать (DOCX) и превью показывают ОДНО И ТО ЖЕ: образец в рамке до текста
+ * задания, таблицу таблицей, элементы списком с местом для номера, шаги
+ * галочками. Если превью и бумага расходятся, учитель отдаёт классу не то,
+ * что видел на экране.
+ *
+ * Критерии приёмки здесь НЕ показываются: они нужны учителю, а не ученику —
+ * в печати они уходят в ключ (страницу ответов).
+ */
+function TaskExtraBlocks({ task }: { task: WorksheetTask }) {
+  const typed = task as TaskWithExtras;
+  const sample = typeof typed.sample === "string" ? typed.sample.trim() : "";
+  const table = typed.table;
+  const items = Array.isArray(typed.items) ? typed.items : [];
+  const steps = Array.isArray(typed.steps) ? typed.steps : [];
+
+  if (!sample && !table && items.length === 0 && steps.length === 0) return null;
+
+  return (
+    <>
+      {sample && (
+        <div className="mt-2 mb-1 border border-warm-300 rounded p-2">
+          <div className="text-[10px] font-semibold text-warm-700 mb-1">Образец</div>
+          <MathText text={sample} />
+        </div>
+      )}
+      {table && table.headers.length > 0 && table.rows.length > 0 && (
+        <table className="mt-2 mb-1 w-full border-collapse text-sm">
+          <thead>
+            <tr>
+              {table.headers.map((h, i) => (
+                <th key={i} className="border border-warm-300 px-2 py-1 text-left font-semibold">
+                  <MathText text={h} />
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((row, ri) => (
+              <tr key={ri}>
+                {table.headers.map((_, ci) => (
+                  <td key={ci} className="border border-warm-300 px-2 py-1">
+                    <MathText text={row[ci] ?? ""} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {items.length > 0 && (
+        <ol className="mt-2 mb-1 list-none space-y-1">
+          {items.map((item, i) => (
+            <li key={i} className="flex items-baseline gap-2 text-sm">
+              <span className="inline-block w-14 shrink-0 border-b border-warm-400 text-[11px] text-warm-600">
+                &nbsp;
+              </span>
+              <MathText text={item} />
+            </li>
+          ))}
+        </ol>
+      )}
+      {steps.length > 0 && (
+        <ul className="mt-2 mb-1 list-none space-y-1">
+          {steps.map((step, i) => (
+            <li key={i} className="flex items-baseline gap-2 text-sm">
+              <span className="shrink-0 text-warm-700">☐</span>
+              <MathText text={step} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+/**
  * F-09: лейблы типов для шапки и подвала превью.
  *
  * TZ-16 (добавлено): 4 новых типа артефактов. Сами артефакты реализуются
@@ -201,6 +293,12 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
                           className="worksheet-chart my-2"
                         />
                       )}
+                      {/* ТЗ-33: блоки новых типов задания. Те же поля, что и
+                          в печати (DOCX), — и в том же порядке: образец ДО
+                          текста задания, таблица после, элементы и шаги — в
+                          списке. Учитель сначала видит на экране то, что
+                          потом унесёт в класс на бумаге. */}
+                      <TaskExtraBlocks task={task} />
                       <div className="flex items-start gap-2 flex-wrap">
                         <span className="flex-1 min-w-0">
                           <MathText

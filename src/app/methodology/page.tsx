@@ -11,6 +11,7 @@ import {
   gradeRange,
   gradeRangeLabel,
   subjectsWord,
+  TASK_TYPE_COUNT,
   taskTypes,
   topicsWord,
   umkDative,
@@ -154,7 +155,10 @@ export default function MethodologyPage() {
                   {type.label}
                 </span>
               ))}
-              . Подряд одинаковые формы не идут: лист из пяти одинаковых заданий
+              {", а всего продукт различает "}
+              {TASK_TYPE_COUNT} форм задания — от «выполните по образцу» до
+              «установите соответствие» и «задания по таблице». Подряд
+              одинаковые формы не идут: лист из пяти одинаковых заданий
               проверяет один навык и ничего больше.
             </p>
           </div>

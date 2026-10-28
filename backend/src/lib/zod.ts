@@ -12,6 +12,15 @@
 
 import { z } from "zod";
 
+/**
+ * ТЗ-33: перечень типов заданий — из общего реестра.
+ *
+ * Реестр лежит во фронте, но это ЕДИНЫЙ источник истины: бэк проверяет
+ * ответ модели по нему же, по нему же собирается промпт. Импорт относительный,
+ * внешних зависимостей не добавляет.
+ */
+import { TASK_TYPE_IDS } from "../../../src/lib/content/task-types";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Примитивы
 // ─────────────────────────────────────────────────────────────────────────────
@@ -62,11 +71,31 @@ export const periodSchema = z.enum(["monthly", "academicYear"]);
 export const worksheetTaskSchema = z.object({
   number: z.number().int().positive(),
   text: z.string().min(1),
-  type: z.enum(["computation", "multiple-choice", "short-answer", "essay", "fill-blank"]),
+  /**
+   * ТЗ-33: типы заданий — из общего реестра, а не из зашитого списка.
+   * Значение вне реестра отбрасывается здесь же (400), а не падает в 500
+   * на сервере генерации.
+   */
+  type: z.enum(TASK_TYPE_IDS as [string, ...string[]]),
   options: z.array(z.string()).optional(),
   answer: z.string().optional(),
   explanation: z.string().optional(),
   points: z.number().int().nonnegative(),
+  /** ТЗ-33: разобранный образец для типа `pattern`. */
+  sample: z.string().max(4000).nullish(),
+  /** ТЗ-33: таблица в задании (тип `table-task`). */
+  table: z
+    .object({
+      headers: z.array(z.string().max(500)).max(20),
+      rows: z.array(z.array(z.string().max(500)).max(20)).max(50),
+    })
+    .nullish(),
+  /** ТЗ-33: элементы задания (sequence, classification, matching, compare). */
+  items: z.array(z.string().max(1000)).max(50).nullish(),
+  /** ТЗ-33: критерии приёмки (essay, open-ended, practical). */
+  criteria: z.array(z.string().max(1000)).max(20).nullish(),
+  /** ТЗ-33: шаги алгоритма (practical). */
+  steps: z.array(z.string().max(1000)).max(30).nullish(),
 });
 
 export const generationRequestSchema = z.object({

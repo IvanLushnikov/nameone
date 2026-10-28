@@ -18,6 +18,13 @@ import type { WorksheetTask } from "@/lib/types";
  * Тип задания внутри формы. Ровно 5 значений — те же, что у
  * `WorksheetTask["type"]` в `src/lib/types.ts:117`, но объявлены здесь
  * независимо, чтобы ТЗ-16 не мог случайно расширить форму до 13 типов.
+ *
+ * ТЗ-33: реестр расширил типы задания в листе с 5 до 17, но форму это НЕ
+ * тронуло: у формы своя, более узкая роль — она выдаётся ученику, и
+ * автопроверка для новых форм («две колонки», «чек-лист») устроена иначе,
+ * чем для числового ответа. Поэтому лист с новым типом переносится в форму
+ * как `short-answer` — задание с ручной проверкой учителем (см.
+ * `toFormSourceTask`).
  */
 export type FormTaskType =
   | "computation"
@@ -25,6 +32,15 @@ export type FormTaskType =
   | "short-answer"
   | "essay"
   | "fill-blank";
+
+/** Типы, которые форма умеет принимать без потерь. */
+const FORM_TASK_TYPES: readonly FormTaskType[] = [
+  "computation",
+  "multiple-choice",
+  "short-answer",
+  "essay",
+  "fill-blank",
+];
 
 /** Как сверялся ответ. `manual` = учитель смотрит сам (short-answer, essay). */
 export type FormCheckMethod = "auto" | "llm" | "manual";
@@ -243,12 +259,26 @@ export const FORM_ERROR_MESSAGE: Record<
 /**
  * `WorksheetTask` → `FormSourceTask`. Единственное место, где фронт знает
  * про `WorksheetTask`: эталон нужен только для снимка на сервере.
+ *
+ * ТЗ-33: тип задания в листе расширен до 17, а форма принимает 5. Задание
+ * нового типа («по образцу», «установите соответствие», «практическая
+ * работа») переносится в форму как `short-answer` — его проверяет учитель.
+ *
+ * ПОЧЕМУ ТАК, А НЕ ОТКАЗ:
+ * Тип в листе и способ проверки в форме — разные вещи. Если бы мы отказали,
+ * учитель не смог бы выдать классу лист с «по образцу» — а это ровно тот
+ * материал, ради которого он и мучился с конструктором. Превращение в
+ * `short-answer` сохраняет эталон и текст задания, а проверка уходит
+ * учителю, как и должно быть для формы, которую заполняют вручную.
  */
 export function toFormSourceTask(task: WorksheetTask): FormSourceTask {
+  const type: FormTaskType = FORM_TASK_TYPES.includes(task.type as FormTaskType)
+    ? (task.type as FormTaskType)
+    : "short-answer";
   return {
     number: task.number,
     text: task.text,
-    type: task.type,
+    type,
     options: task.options,
     answer: task.answer,
     explanation: task.explanation,
