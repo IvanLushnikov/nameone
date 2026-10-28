@@ -21,7 +21,11 @@
  * Единственный источник — таксономия.
  */
 
-import { getSubject } from "@/lib/content/subjects";
+// Лёгкая сводка таксономии вместо `subjects.ts`. Здесь важен не только вес:
+// `subject-display-name.ts` тянут и клиентские компоненты (например,
+// `WorksheetPreview`), а `subjects.ts` утаскивал в браузер 3.8 МБ данных ФГОС
+// общим чанком на 4.2 МБ. Подробнее — в `src/lib/content/subject-index.ts`.
+import { getSubjectIndex } from "@/lib/content/subject-index";
 
 /**
  * Название предмета по-русски для показа учителю.
@@ -32,5 +36,5 @@ import { getSubject } from "@/lib/content/subjects";
  */
 export function subjectDisplayName(slug: string | null | undefined): string {
   if (!slug) return "";
-  return getSubject(slug)?.title ?? slug;
+  return getSubjectIndex(slug)?.title ?? slug;
 }

@@ -105,7 +105,10 @@ import { ShareFormDialog } from "@/components/teacher/ShareFormDialog";
 // больше нигде в файле не используются.
 import { pluralizeTasks } from "@/lib/utils/cn";
 import { PLANS, priceShort } from "@/lib/content/plans";
-import { getSubject } from "@/lib/content/subjects";
+// Лёгкая сводка таксономии вместо `subjects.ts`: дашборду нужны только
+// эмодзи и короткое название предмета, а `subjects.ts` тянет в браузер 3.8 МБ
+// данных ФГОС общим чанком на 4.2 МБ.
+import { getSubjectIndex } from "@/lib/content/subject-index";
 import { trackEvent } from "@/lib/track";
 import { UsageCard, type UsagePayload } from "@/components/shared/UsageCard";
 import { FREE_QUOTA_SCOPE_NOTE } from "@/lib/content/landing-seo";
@@ -1111,7 +1114,7 @@ function HistoryCard({
   onDownload: () => void;
   onShare: () => void;
 }) {
-  const subject = getSubject(item.subject as SubjectSlug);
+  const subject = getSubjectIndex(item.subject as SubjectSlug);
   const count = countLabel(item);
 
   return (
@@ -1314,7 +1317,7 @@ function TemplateCard({
   onUse: () => void;
   onRemove: () => void;
 }) {
-  const subject = getSubject(template.subject as SubjectSlug);
+  const subject = getSubjectIndex(template.subject as SubjectSlug);
   return (
     <Card className="flex items-start gap-3">
       <div className="w-10 h-10 rounded-xl bg-warm-100 grid place-items-center text-xl shrink-0">

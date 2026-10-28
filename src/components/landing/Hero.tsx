@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/Badge";
 import { Sparkles, FileCheck, Wand2, ArrowRight, Play, Check } from "lucide-react";
 import { useTilt } from "@/hooks/useTilt";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
-import { getRealMetrics } from "@/components/landing/Stats";
 import { FREE_QUOTA_LABEL } from "@/lib/content/plans";
 import { SITE_HOST } from "@/lib/site";
 import { useRouter } from "next/navigation";
@@ -19,10 +18,13 @@ const REGEN_HREF = "/constructor?subject=math&grade=5&type=worksheet";
  * Число тем в каталоге считается из таксономии, а не вписано в разметку:
  * секция «Что внутри» (Stats) и секция предметов (Subjects) показывают то же
  * самое значение, поэтому расходиться им больше не с чем.
+ *
+ * Значение приходит ПРОПСОМ с серверной страницы: раньше Hero считал его сам
+ * и потому тянул каталог материалов, а через него — полную таксономию
+ * (3.8 МБ) в общий клиентский чанк на 4.2 МБ. Число нужно одно, а уезжал
+ * весь каталог тем с текстами заданий.
  */
-const CATALOG_TOPICS = getRealMetrics().topics;
-
-export function Hero() {
+export function Hero({ catalogTopics }: { catalogTopics: number }) {
   return (
     <section className="relative pt-12 sm:pt-16 lg:pt-24 pb-12 sm:pb-16 overflow-hidden">
       <div className="absolute inset-0 -z-10 bg-grid opacity-50" />
@@ -98,7 +100,7 @@ export function Hero() {
                 другая операция, у неё своё число. */}
 
             <Stat icon={<FileCheck className="w-4 h-4" />} label="с&nbsp;ответами и&nbsp;пояснениями" value="Все листы" />
-            <Stat icon={<Sparkles className="w-4 h-4" />} label="Тем в&nbsp;каталоге" value={`${CATALOG_TOPICS}`} />
+            <Stat icon={<Sparkles className="w-4 h-4" />} label="Тем в&nbsp;каталоге" value={`${catalogTopics}`} />
           </div>
         </div>
 

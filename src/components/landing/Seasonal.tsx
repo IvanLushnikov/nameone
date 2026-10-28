@@ -4,7 +4,10 @@ import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Calendar, ArrowRight, Clock } from "lucide-react";
-import { getSubject } from "@/lib/content/subjects";
+// Лёгкая сводка таксономии вместо `subjects.ts`: блоку нужен только
+// короткий заголовок предмета, а `subjects.ts` тянет в браузер 3.8 МБ данных
+// ФГОС общим чанком на 4.2 МБ.
+import { getSubjectIndex } from "@/lib/content/subject-index";
 
 /**
  * «Что проходят сейчас в школах» — событийно-календарный блок.
@@ -104,7 +107,7 @@ export function Seasonal() {
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {topics.slice(0, 6).map((t, i) => {
-            const subject = getSubject(t.subjectSlug);
+            const subject = getSubjectIndex(t.subjectSlug);
             return (
               <Link
                 key={`${t.grade}-${t.subjectSlug}-${t.topicSlug ?? t.topicTitle}`}
