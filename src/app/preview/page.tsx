@@ -20,7 +20,10 @@ import { subjectDisplayName } from "@/lib/content/subject-display-name";
 import { findArtifact } from "@/lib/lk/artifact";
 import { generateWorksheetDocx, downloadBlob } from "@/lib/utils/docx";
 import { generateLessonPlanDocx } from "@/lib/utils/lesson-plan-docx";
-import { getSubject } from "@/lib/content/subjects";
+// Лёгкая сводка таксономии вместо `subjects.ts`: превью нужно только короткое
+// название предмета, а `subjects.ts` тянет в браузер 3.8 МБ данных ФГОС
+// общим чанком на 4.2 МБ.
+import { getSubjectIndex } from "@/lib/content/subject-index";
 import { pluralizeTasks } from "@/lib/utils/cn";
 import { generateKtpDocx } from "@/lib/utils/ktp-docx";
 import { generatePptx, pptxFilename } from "@/lib/utils/pptx";
@@ -417,7 +420,7 @@ function ArtifactBody({ artifact }: { artifact: FavoriteArtifact }) {
  */
 function artifactSubtitle(a: FavoriteArtifact): string {
   if ("tasks" in a) {
-    const subject = getSubject(a.subject);
+    const subject = getSubjectIndex(a.subject);
     return `${subject?.shortTitle ?? a.subject} · ${a.grade} класс · ${a.tasks.length} ${pluralizeTasks(a.tasks.length)}`;
   }
   if ("stages" in a) {

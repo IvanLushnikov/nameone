@@ -2,9 +2,15 @@
 
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { subjects } from "@/lib/content/subjects";
-import type { Subject as SubjectType, Grade as GradeType } from "@/lib/types";
-// GradeType retained for totalTopics aggregation
+// Лёгкая сводка таксономии, а не `subjects.ts`: лендингу нужны «визитка»
+// предмета и счётчики тем, но не тексты заданий. `subjects.ts` тянул в браузер
+// 3.8 МБ (данные ФГОС) общим чанком на 4.2 МБ, и главная была самой тяжёлой
+// страницей сайта. Подробнее — в `src/lib/content/subject-index.ts`.
+import {
+  subjectIndex as subjects,
+  subjectTopicsCount,
+  type SubjectIndexEntry,
+} from "@/lib/content/subject-index";
 import { useInView } from "@/hooks/useInView";
 import * as React from "react";
 import { plural } from "@/lib/utils/cn";
@@ -64,22 +70,22 @@ const illustrationMap: Record<string, React.ElementType> = {
  * Теперь это диапазон: «1–6 классы», «7–11 классы», а для одного класса —
  * «5 класс».
  */
-function gradesLabel(subject: SubjectType): string {
-  const nums = subject.grades.map((g: GradeType) => g.num).sort((a: number, b: number) => a - b);
+function gradesLabel(subject: SubjectIndexEntry): string {
+  const nums = subject.grades.map((g) => g.num).sort((a: number, b: number) => a - b);
   const first = nums[0];
   const last = nums[nums.length - 1];
   if (first === last) return `${first} класс`;
   return `${first}\u2013${last} классы`;
 }
 
-const colorGradients: Record<SubjectType["color"], string> = {
+const colorGradients: Record<SubjectIndexEntry["color"], string> = {
   brand: "from-brand-400/30 to-brand-500/10",
   accent: "from-accent-400/30 to-accent-500/10",
   warm: "from-warm-300/40 to-warm-400/10",
   info: "from-blue-400/30 to-blue-500/10",
 };
 
-const ringColors: Record<SubjectType["color"], string> = {
+const ringColors: Record<SubjectIndexEntry["color"], string> = {
   brand: "ring-brand-200",
   accent: "ring-accent-200",
   warm: "ring-warm-200",
@@ -116,7 +122,7 @@ export function Subjects() {
 
   // Считаем реальные метрики из каталога (не выдуманные числа)
   const totalTopics = subjects.reduce(
-    (sum: number, s) => sum + s.grades.reduce((g: number, grade) => g + grade.topics.length, 0),
+    (sum: number, s) => sum + subjectTopicsCount(s),
     0,
   );
   const totalCount = subjects.length;
@@ -193,14 +199,15 @@ function SubjectBentoCard({
   index,
   show,
 }: {
-  subject: SubjectType;
+  subject: SubjectIndexEntry;
   size: "lg" | "md" | "sm";
   index: number;
   show: boolean;
 }) {
   const Illustration = illustrationMap[subject.slug];
-  const totalTopics = subject.grades.reduce((sum: number, g: GradeType) => sum + g.topics.length, 0);
-  const firstTopic = subject.grades[0]?.topics[0];
+  const totalTopics = subjectTopicsCount(subject);
+  const firstGrade = subject.grades[0];
+  const firstTopic = firstGrade?.firstTopicSlug;
 
   // md:min-h-[372px] больше не нужен: высоту ряда задаёт auto-rows, а фиксированный
   // min-h только конфликтовал с ней (и был рассчитан на старые 180px).
@@ -223,7 +230,7 @@ function SubjectBentoCard({
     <Link
       href={
         firstTopic
-          ? `/subject/${subject.slug}/${subject.grades[0].num}/${firstTopic.slug}`
+          ? `/subject/${subject.slug}/${firstGrade.num}/${firstTopic}`
           : `/subject/${subject.slug}`
       }
       className={`group relative rounded-2xl border border-warm-100 bg-white overflow-hidden hover:shadow-soft-lg hover:-translate-y-0.5 transition-all duration-300 ${sizeClasses}`}
