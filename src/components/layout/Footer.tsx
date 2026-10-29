@@ -60,8 +60,8 @@ export function Footer() {
             <Logo />
             <p className="mt-4 text-sm text-warm-600 max-w-xs leading-relaxed">
               ИИ-генератор рабочих листов по&nbsp;ФГОС для учителей 1–11&nbsp;классов.
-              PDF и&nbsp;DOCX: лист&nbsp;— за&nbsp;30&nbsp;секунд, сверка
-              ответов&nbsp;— 1–3&nbsp;минуты.
+              PDF и&nbsp;DOCX: лист из&nbsp;10&nbsp;заданий&nbsp;— за&nbsp;30&nbsp;секунд, сверка ответов&nbsp;— 1–3&nbsp;минуты.
+              Заданий больше&nbsp;— времени больше.
               План урока, презентация и&nbsp;КТП&nbsp;— в&nbsp;тарифе «Плюс».
             </p>
             <div className="mt-5 flex gap-2">
