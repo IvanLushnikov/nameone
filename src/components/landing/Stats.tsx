@@ -2,56 +2,24 @@
 
 import { useInView, useCountUp } from "@/hooks/useInView";
 import * as React from "react";
-import { subjects } from "@/lib/content/subjects";
-import { MATERIALS_CATALOG } from "@/lib/content/materials-catalog";
+import type { LandingMetrics } from "@/lib/content/landing-metrics";
 import { plural } from "@/lib/utils/cn";
 
 /**
- * Реальные метрики продукта (не выдуманные цифры активности).
- * Считаются из таксономии в момент рендера.
+ * Блок «Что внутри».
  *
- * Экспортируется наружу, потому что число тем показывают ДВА блока лендинга —
- * эта секция и «Тем в каталоге» в Hero. Раньше Hero держал свою цифру
- * в строке, а здесь считалось настоящее: каталог и Hero показывали разные
- * числа. Теперь оба берут значение отсюда.
+ * Метрики приходят ПРОПСОМ, а не считаются здесь. Раньше компонент сам их
+ * считал и потому импортировал каталог материалов, а тот — полную таксономию
+ * (`subjects.ts`, 3.8 МБ). Таксономия попадала в общий клиентский чанк на
+ * 4.2 МБ, и он грузился на главной ради трёх чисел.
+ *
+ * Теперь числа считаются на сервере (`src/lib/content/landing-metrics.ts`), а
+ * сюда приходят уже готовые значения. Тип — `LandingMetrics`, тот же, что
+ * возвращает серверный счётчик: рассинхрон типов невозможен.
  */
-
-export function getRealMetrics() {
-  let totalTopics = 0;
-  let subjectGradePairs = 0;
-  const totalSubjects = subjects.length;
-  for (const subject of subjects) {
-    subjectGradePairs += subject.grades.length;
-    for (const grade of subject.grades) {
-      totalTopics += grade.topics.length;
-    }
-  }
-  return {
-    subjects: totalSubjects,
-    subjectGradePairs,
-    topics: totalTopics,
-    // ТЗ-21 п.9: витринных чисел на сайте не было вообще — у конкурентов
-    // «110 000 учителей», у нас молчание выглядело как пустой продукт. Показываем
-    // то, что можно посчитать в коде, а не выдуманную активность.
-    //
-    // ЧЕГО ТУТ НЕТ И ПОЧЕМУ. Счётчика «сколько листов сделали» в коде нет:
-    // worksheets считаются в БД (backend/src/db/schema.sql), на главной он был
-    // бы нулём у каждого нового посетителя. Выдумывать «10 000 листов»
-    // нельзя — это ровно тот приём, из-за которого конкуренты и не верят.
-    materials: MATERIALS_CATALOG.length,
-    // Здесь раньше стоял `avgTimeSec: 30` — в блоке «Что внутри» он выводился
-    // рядом с настоящими числами и подписью «генерация листа · оценка».
-    // Замера длительности генерации в коде нет, поэтому в ряду метрик это
-    // было единственное придуманное число. Плашка убрана: «за 30 секунд»
-    // осталось обещанием в заголовке и кнопках, но не фактом в статистике.
-    // Если появится реальный замер (например, median по llm_logs), вернуть
-    // можно будет вместе с данными.
-  };
-}
-
-export function RealStats() {
+export function RealStats({ metrics }: { metrics: LandingMetrics }) {
   const [ref, inView] = useInView<HTMLDivElement>({ once: true });
-  const m = getRealMetrics();
+  const m = metrics;
 
   return (
     <section ref={ref} className="py-14 sm:py-20 border-y border-warm-200 bg-warm-50/40">

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Hero } from "@/components/landing/Hero";
 import { WeeklyTopicBlock } from "@/components/landing/WeeklyTopic";
 import { RealStats } from "@/components/landing/Stats";
+import { getLandingMetrics } from "@/lib/content/landing-metrics";
 import { Features } from "@/components/landing/Features";
 import { Limitations } from "@/components/landing/Limitations";
 import { HiddenFeatures } from "@/components/landing/HiddenFeatures";
@@ -141,11 +142,16 @@ const homeJsonLd = [
 ];
 
 export default function Home() {
+  // Метрики считаются здесь, на сервере: клиент получает только числа.
+  // Раньше их считали клиентские компоненты, и ради трёх чисел в браузер
+  // уезжал каталог материалов, а с ним — полная таксономия (3.8 МБ).
+  const metrics = getLandingMetrics();
+
   return (
     <>
       <JsonLd id="ld-home" data={homeJsonLd} />
-      <Hero />
-      <RealStats />
+      <Hero catalogTopics={metrics.topics} />
+      <RealStats metrics={metrics} />
       <Features />
       {/* Аудит 11.10, Д-5: честный блок ограничений сразу после обещаний —
           обещаний больше трёх, ограничения читаются до оплаты, а не после. */}
