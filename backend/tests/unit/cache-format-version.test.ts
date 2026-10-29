@@ -79,11 +79,19 @@ const LEGACY_VERSION = 1;
  *   cd backend && npx tsx -e "import {WORKSHEET_GEN_SYSTEM} from './src/llm/prompts/worksheet-gen';
  *   import {createHash} from 'node:crypto';
  *   console.log(createHash('sha256').update(WORKSHEET_GEN_SYSTEM).digest('hex').slice(0,16));"
+ *
+ * 29.10.2026: хэш пересчитан после слияния с `main`, где в промпт добавлен
+ * блок реестра типов задания (`buildTaskTypesPromptBlock`). Версия формата
+ * при этом **не поднималась**: `FORMAT_VERSION = 2` вводится вместе с этим
+ * промптом, записей по версии 2 в кэше ещё нет, а записи деплоя от 30.10
+ * сделаны по старому ключу без версии и после подъёма просто перестанут
+ * находиться — одноразовый промах кэша, а не выдача материала по старым
+ * правилам.
  */
-const PROMPT_HASH = "513c86ad1a15e7a6";
+const PROMPT_HASH = "4e81ff28cd38a74f";
 
 /** Хэш блока формата ответа — см. `formatBlock()` ниже. */
-const FORMAT_HASH = "cb69ec0bddf9eb4a";
+const FORMAT_HASH = "2aba0783bf60e37e";
 
 const BUMP_HINT =
   "Подними FORMAT_VERSION в backend/src/llm/cache.ts в этом же коммите " +
