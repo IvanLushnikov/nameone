@@ -93,6 +93,10 @@ interface GenerateOpts {
    * Нужен второму варианту контрольной работы: ключ кэша строится из предмета,
    * класса, темы, сложности, количества и типа, поэтому два прохода с
    * одинаковыми параметрами вернули бы один и тот же лист дважды.
+   *
+   * И кнопке «Новый вариант» (ТЗ-36): без обхода кэша она отдавала учителю
+   * прошлый лист байт в байт — фронт считал запрос новым, а сервер отдавал
+   * старый ответ, и обе стороны были по-своему правы.
    */
   bypassCache?: boolean;
   /**
@@ -444,6 +448,9 @@ export type BundleClientResult = ArtifactResult<LessonBundle>;
  *
  * `opts.bypassCache` оставлен для ручной перегенерации с обходом кэша — сам
  * второй вариант через него больше не ходит.
+ *
+ * ТЗ-36: этим флагом пользуется кнопка «Новый вариант» — она обязана дать
+ * НОВЫЙ материал, а не тот же, что лежит в кэше.
  */
 export async function generateWorksheetSmart(
   request: GenerationRequest,
@@ -506,29 +513,72 @@ export async function generateWorksheetSmart(
   };
 }
 
-export async function generateLessonPlanSmart(request: GenerationRequest): Promise<LessonPlanClientResult> {
-  return smartGenerate<LessonPlan>(request, { endpoint: "lesson-plans", dataKey: "lessonPlan" }, () => mockLessonPlan(request));
+export async function generateLessonPlanSmart(
+  request: GenerationRequest,
+  opts?: { bypassCache?: boolean },
+): Promise<LessonPlanClientResult> {
+  return smartGenerate<LessonPlan>(
+    request,
+    { endpoint: "lesson-plans", dataKey: "lessonPlan", bypassCache: opts?.bypassCache === true },
+    () => mockLessonPlan(request),
+  );
 }
 
-export async function generatePresentationSmart(request: GenerationRequest): Promise<PresentationClientResult> {
-  return smartGenerate<Presentation>(request, { endpoint: "presentations", dataKey: "presentation" }, () => mockPresentation(request));
+export async function generatePresentationSmart(
+  request: GenerationRequest,
+  opts?: { bypassCache?: boolean },
+): Promise<PresentationClientResult> {
+  return smartGenerate<Presentation>(
+    request,
+    {
+      endpoint: "presentations",
+      dataKey: "presentation",
+      bypassCache: opts?.bypassCache === true,
+    },
+    () => mockPresentation(request),
+  );
 }
 
-export async function generateKtpSmart(request: GenerationRequest): Promise<KtpClientResult> {
-  return smartGenerate<Ktp>(request, { endpoint: "ktp", dataKey: "ktp" }, () => mockKtp(request));
+export async function generateKtpSmart(
+  request: GenerationRequest,
+  opts?: { bypassCache?: boolean },
+): Promise<KtpClientResult> {
+  return smartGenerate<Ktp>(
+    request,
+    { endpoint: "ktp", dataKey: "ktp", bypassCache: opts?.bypassCache === true },
+    () => mockKtp(request),
+  );
 }
 
 /**
  * TZ-16 §3.1: карточки. Эндпоинт бэка появится вместе с LLM-ранклером;
  * пока бэк его не отдаёт — `callBackend` вернёт null и сработает мок.
  */
-export async function generateCardsSmart(request: GenerationRequest): Promise<CardsClientResult> {
-  return smartGenerate<CardSet>(request, { endpoint: "cards", dataKey: "cardSet" }, () => mockCards(request));
+export async function generateCardsSmart(
+  request: GenerationRequest,
+  opts?: { bypassCache?: boolean },
+): Promise<CardsClientResult> {
+  return smartGenerate<CardSet>(
+    request,
+    { endpoint: "cards", dataKey: "cardSet", bypassCache: opts?.bypassCache === true },
+    () => mockCards(request),
+  );
 }
 
 /** TZ-16 §3.2: комплект материалов (словарь / справочник / раздатка). */
-export async function generateMaterialsSmart(request: GenerationRequest): Promise<MaterialsClientResult> {
-  return smartGenerate<MaterialBundle>(request, { endpoint: "materials", dataKey: "materialBundle" }, () => mockMaterials(request));
+export async function generateMaterialsSmart(
+  request: GenerationRequest,
+  opts?: { bypassCache?: boolean },
+): Promise<MaterialsClientResult> {
+  return smartGenerate<MaterialBundle>(
+    request,
+    {
+      endpoint: "materials",
+      dataKey: "materialBundle",
+      bypassCache: opts?.bypassCache === true,
+    },
+    () => mockMaterials(request),
+  );
 }
 
 /**
@@ -542,10 +592,18 @@ export async function generateMaterialsSmart(request: GenerationRequest): Promis
  * Сама оркестрация 4 слотов лежит в моке (`buildLessonBundle`) и уже
  * параллельна — здесь мы её не дублируем.
  */
-export async function generateBundleSmart(request: GenerationRequest): Promise<BundleClientResult> {
+export async function generateBundleSmart(
+  request: GenerationRequest,
+  opts?: { bypassCache?: boolean },
+): Promise<BundleClientResult> {
   return smartGenerate<LessonBundle>(
     request,
-    { endpoint: "bundles", dataKey: "lessonBundle", mockOnFailure: true },
+    {
+      endpoint: "bundles",
+      dataKey: "lessonBundle",
+      mockOnFailure: true,
+      bypassCache: opts?.bypassCache === true,
+    },
     () => mockLessonBundle(request),
   );
 }

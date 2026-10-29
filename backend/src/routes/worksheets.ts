@@ -35,6 +35,7 @@ import { taskForArtifact, PLUS_ONLY_TASKS } from "../llm/router";
 import {
   guardGeneration,
   consumeGenerationQuota,
+  noteCachedGeneration,
   releaseFreeQuotaForGeneration,
 } from "../llm/ratelimit";
 import { rateLimitMiddleware } from "../middleware/ratelimit";
@@ -238,14 +239,38 @@ worksheetsRouter.post("/generate", async (c) => {
 
   // Бесплатную квоту списываем ПОСЛЕ успеха: упавший вызов провайдера не должен
   // съедать учителю генерацию.
-  await consumeGenerationQuota(c.env.DB, {
-    userId,
-    plan: plan as UsagePlan,
-    fingerprint: guard.fingerprint,
-    // Письмо о третьей генерации месяца (ТЗ-29) — без почты оно не уходит.
-    email: c.get("user")?.email ?? null,
-    env: c.env,
-  });
+  //
+  // ТЗ-36: попадание в кэш — это НЕ генерация.
+  //
+  // Провайдеру не заплатили (`meta.costUsd = 0`), нового материала не
+  // получили — учитель увидел ровно тот же лист, что и в прошлый раз. Списывать
+  // за это месячную квоту нельзя: раньше «создать ещё раз» по той же теме съедал
+  // одну из пяти бесплатных попыток и возвращал тот же материал (исследование
+  // 29.10.2026, карточка M-02 и Q-06).
+  //
+  // Поэтому на кэш-хите занятый слот ВОЗВРАЩАЕТСЯ (генерация не состоялась), а
+  // сам запрос засчитывается в антифрод-счётчик (AD-4): иначе «нажимай „Новый
+  // вариант“ и не трать квоту» становится способом нагрузить API.
+  if (result.meta.cached === true) {
+    await releaseFreeQuotaForGeneration(c.env.DB, {
+      userId,
+      plan: plan as UsagePlan,
+      fingerprint: guard.fingerprint,
+    });
+    await noteCachedGeneration(c.env.DB, {
+      fingerprint: guard.fingerprint,
+      userId,
+    });
+  } else {
+    await consumeGenerationQuota(c.env.DB, {
+      userId,
+      plan: plan as UsagePlan,
+      fingerprint: guard.fingerprint,
+      // Письмо о третьей генерации месяца (ТЗ-29) — без почты оно не уходит.
+      email: c.get("user")?.email ?? null,
+      env: c.env,
+    });
+  }
 
   return c.json({
     // Второй вариант контрольной (09.10.2026): приходит из того же вызова

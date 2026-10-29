@@ -1291,7 +1291,17 @@ export default function ConstructorPage() {
     worksheet,
   ]);
 
-  const generate = async () => {
+  /**
+   * Собрать материал.
+   *
+   * `opts.bypassCache` — обойти семантический кэш бэка (ТЗ-36). Ставит его
+   * только кнопка «Новый вариант»: без обхода кэша она отдавала учителю ТОТ ЖЕ
+   * лист байт в байт (тот же id, та же дата, `meta.model = "semantic-cache"`),
+   * потому что фронт считал запрос новым, а сервер отдавал прошлый ответ.
+   * Первая генерация по теме идёт через кэш как и раньше — кэш это ускоритель,
+   * и он должен работать.
+   */
+  const generate = async (opts?: { bypassCache?: boolean }) => {
     // Лист 4.1.1: интерактив — отдельный путь. Он не «генерируется» тем же
     // запросом, что лист: сначала нужен лист, сохранённый на сервере, потом
     // отдельный вызов ранклера. Поэтому вся сборка живёт в buildInteractive(),
@@ -1443,33 +1453,33 @@ export default function ConstructorPage() {
       const result = await (async () => {
         switch (type) {
           case "lesson-plan": {
-            const r = await generateLessonPlanSmart(body);
+            const r = await generateLessonPlanSmart(body, opts);
             return { kind: "lesson-plan" as const, payload: r.data, isDemo: r.isDemo, demoReason: r.demoReason };
           }
           case "presentation": {
-            const r = await generatePresentationSmart(body);
+            const r = await generatePresentationSmart(body, opts);
             return { kind: "presentation" as const, payload: r.data, isDemo: r.isDemo, demoReason: r.demoReason };
           }
           case "ktp": {
-            const r = await generateKtpSmart(body);
+            const r = await generateKtpSmart(body, opts);
             return { kind: "ktp" as const, payload: r.data, isDemo: r.isDemo, demoReason: r.demoReason };
           }
           // TZ-16 §3.1: карточки — самостоятельный артефакт со своим моком.
           // Раньше `cards` был в списке ниже и молча отдавал обычный лист.
           case "cards": {
-            const r = await generateCardsSmart(body);
+            const r = await generateCardsSmart(body, opts);
             return { kind: "cards" as const, payload: r.data, isDemo: r.isDemo, demoReason: r.demoReason };
           }
           // TZ-16 §3.2: комплект материалов (словарь / справочник / раздатка).
           case "materials": {
-            const r = await generateMaterialsSmart(body);
+            const r = await generateMaterialsSmart(body, opts);
             return { kind: "materials" as const, payload: r.data, isDemo: r.isDemo, demoReason: r.demoReason };
           }
           // TZ-16 §3.4: «урок целиком» — 4 слота. Оркестрация ПАРАЛЛЕЛЬНА
           // (Promise.allSettled внутри generateBundleSmart → мок): при отказе
           // одного слота остальные три не теряются, отказ уходит в `failed`.
           case "lesson-bundle": {
-            const r = await generateBundleSmart(body);
+            const r = await generateBundleSmart(body, opts);
             return { kind: "lesson-bundle" as const, payload: r.data, isDemo: r.isDemo, demoReason: r.demoReason };
           }
           // Лист с разной перепаковкой заданий.
@@ -1477,7 +1487,7 @@ export default function ConstructorPage() {
           case "test":
           case "oge":
           case "ege": {
-            const r = await generateWorksheetSmart(body);
+            const r = await generateWorksheetSmart(body, opts);
             return {
               kind: "worksheet" as const,
               payload: r.worksheet,
@@ -1514,7 +1524,7 @@ export default function ConstructorPage() {
             // `worksheet-gen.ts`, разбор в `backend/src/llm/index.ts`), а
             // `bypassCache` больше не нужен: кэш персональный, и второй
             // вариант приходит вместе с первым, а не отдельным запросом.
-            const r = await generateWorksheetSmart(body);
+            const r = await generateWorksheetSmart(body, opts);
             return {
               kind: "worksheet" as const,
               payload: r.worksheet,
@@ -1944,8 +1954,20 @@ export default function ConstructorPage() {
     }
   };
 
+  /**
+   * «Новый вариант» = НОВЫЙ материал (ТЗ-36).
+   *
+   * Раньше здесь стояло `generate()` — то есть запрос БЕЗ обхода кэша. Сервер
+   * отдавал прошлый ответ целиком: тот же `id`, та же дата создания,
+   * `meta.model = "semantic-cache"`, `costUsd = 0`. Учитель получал тот же
+   * лист байт в байт и при этом терял одну из пяти бесплатных попыток.
+   *
+   * Теперь запрос уходит с `bypassCache: true` — это единственный честный
+   * способ получить другой материал по той же теме (AD-1: ключ кэша не трогаем,
+   * вариантность решается на стороне кнопки).
+   */
   const handleNewVariant = () => {
-    if (subject && grade && topic) generate();
+    if (subject && grade && topic) generate({ bypassCache: true });
   };
 
   const handlePrint = () => {
@@ -2664,10 +2686,24 @@ export default function ConstructorPage() {
                       <span className="hidden sm:inline">Как шаблон</span>
                       <span className="sm:hidden">Шаблон</span>
                     </Button>
-                    <Button variant="secondary" size="sm" leftIcon={<RotateCcw className="w-4 h-4" />} onClick={handleNewVariant} loading={generating}>
-                      <span className="hidden sm:inline">Новый вариант</span>
-                      <span className="sm:hidden">Заново</span>
-                    </Button>
+                    {/* ТЗ-36: «Новый вариант» делает НАСТОЯЩУЮ генерацию — то
+                        есть тратит квоту (у платного тарифа — деньги, у
+                        бесплатного — одну из пяти попыток). Без подписи
+                        учитель видит, что попытка исчезла, и не понимает
+                        куда: раньше это выглядело как «нажал и ничего не
+                        изменилось». Формулировка — за владельцем (см.
+                        docs/backlog.md, «Требует решения владельца»); по
+                        умолчанию подпись есть, потому что молчание тут
+                        дороже. */}
+                    <div className="flex flex-col items-start gap-1">
+                      <Button variant="secondary" size="sm" leftIcon={<RotateCcw className="w-4 h-4" />} onClick={handleNewVariant} loading={generating}>
+                        <span className="hidden sm:inline">Новый вариант</span>
+                        <span className="sm:hidden">Заново</span>
+                      </Button>
+                      <span className="text-xs text-warm-500 max-w-[15rem] leading-snug">
+                        Новый вариант — это новая генерация, она расходует квоту
+                      </span>
+                    </div>
                     {/* Переключатель двух вариантов КОНТРОЛЬНОЙ (08.10.2026).
                         Логика вынесена в ControlVariantSwitch, потому что её
                         ломало: чтение «варианта 1» из `worksheet` (того, что
