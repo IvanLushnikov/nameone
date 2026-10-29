@@ -64,6 +64,23 @@ export interface TaskTypeSpec {
   /** Какого ответа ждёт задание. Определяет проверку и печать ответа. */
   answerKind: TaskAnswerKind;
   /**
+   * Максимальный балл за задание этого типа (ТЗ-34, AD-3).
+   *
+   * Вес — свойство ФОРМЫ задания, а не конкретного задания: расчёт весит
+   * столько же, сколько краткий ответ, а развёрнутый — втрое больше. Отсюда
+   * два следствия, и оба важные:
+   *
+   *   · НОВЫЙ ТИП ЗАДАНИЯ ПОЛУЧАЕТ ВЕС АВТОМАТИЧЕСКИ, а не через «ещё одно
+   *     жёсткое правило» в валидаторе;
+   *   · МОДЕЛЬНОЕ ПОЛЕ `points` ПЕРЕСТАЁТ БЫТЬ ИСТОЧНИКОМ ПРАВДЫ. Раньше в
+   *     одном файле жили два разных числа о балле задания — и учитель, и
+   *     проверяющий видели разные баллы.
+   *
+   * Основание — трудоёмкость ответа учителя, а не «сколько баллов в школьной
+   * системе»: за один и тот же объём работы в разных школах ставят по-разному.
+   */
+  weight: number;
+  /**
    * Требуется образец В ТЕКСТЕ задания. У типа `pattern` образец обязателен:
    * задание «выполните по образцу» без образца в листе — это дефект, который
    * учитель уносит в класс (жалоба №5, docs/30-feedback-cases-2026-10-08.md).
@@ -107,6 +124,7 @@ const LEGACY_TASK_TYPES: TaskTypeSpec[] = [
     name: "Расчёт",
     whatTeacherAsks: "Вычислите / решите — нужен один точный числовой ответ.",
     answerKind: "exact",
+    weight: 2,
     printHints: ["строка ответа с линией", "пояснение под ответом, если есть"],
     checkHint: "Ответ пересчитан и сходится с условием.",
   },
@@ -115,6 +133,7 @@ const LEGACY_TASK_TYPES: TaskTypeSpec[] = [
     name: "Выбор из вариантов",
     whatTeacherAsks: "Выберите один верный вариант из четырёх.",
     answerKind: "choice",
+    weight: 1,
     needsOptions: true,
     printHints: ["четыре варианта списком с буквами", "радиокнопки в превью"],
     checkHint: "Верный вариант ровно один, все четыре осмысленные.",
@@ -124,6 +143,7 @@ const LEGACY_TASK_TYPES: TaskTypeSpec[] = [
     name: "Краткий ответ",
     whatTeacherAsks: "Дайте краткий ответ — одно слово, число или фраза.",
     answerKind: "text",
+    weight: 2,
     printHints: ["строка ответа с линией"],
     checkHint: "Ответ совпадает по смыслу с эталоном.",
   },
@@ -132,6 +152,7 @@ const LEGACY_TASK_TYPES: TaskTypeSpec[] = [
     name: "Развёрнутый ответ",
     whatTeacherAsks: "Разверните ответ — с объяснением и примерами.",
     answerKind: "criteria",
+    weight: 3,
     printHints: ["несколько строк ответа", "критерии приёмки — на странице ответов"],
     checkHint: "Ответ задан критериями приёмки, а не готовым текстом.",
   },
@@ -140,6 +161,7 @@ const LEGACY_TASK_TYPES: TaskTypeSpec[] = [
     name: "Вставь в пропуск",
     whatTeacherAsks: "Впишите пропущенное значение на своём месте.",
     answerKind: "exact",
+    weight: 2,
     printHints: ["пропуск подчёркнут в тексте задания", "строка ответа с линией"],
     checkHint: "Значение подставляется в пропуск без изменения смысла.",
   },
@@ -160,6 +182,7 @@ const NEW_TASK_TYPES: TaskTypeSpec[] = [
       "Выполните по образцу. В задании обязательно приведите разобранный пример — " +
       "например «Образец: 3/12 = 1/4. Выполните по образцу: 8/20 = …».",
     answerKind: "exact",
+    weight: 2,
     needsSample: true,
     printHints: ["образец в рамке ДО текста задания", "далее текст задания и линия ответа"],
     checkHint:
@@ -173,6 +196,7 @@ const NEW_TASK_TYPES: TaskTypeSpec[] = [
       "Установите соответствие между двумя колонками и запишите пары. " +
       "В `items` — элементы правой колонки, в `answer` — соответствие.",
     answerKind: "order",
+    weight: 2,
     subjects: ["english", "german", "biology", "social", "chemistry", "history", "geography"],
     grades: [2, 11],
     printHints: ["элементы — нумерованным списком", "рядом с каждым — место для пары"],
@@ -185,6 +209,7 @@ const NEW_TASK_TYPES: TaskTypeSpec[] = [
       "Расположите события в хронологическом (логическом, технологическом) порядке. " +
       "В `items` — то, что нужно упорядочить, в `answer` — правильный порядок.",
     answerKind: "order",
+    weight: 2,
     subjects: ["history", "biology", "technology", "social", "literature", "okruzhaet"],
     grades: [3, 11],
     printHints: ["элементы — нумерованным списком с пустым местом для номера"],
@@ -197,6 +222,7 @@ const NEW_TASK_TYPES: TaskTypeSpec[] = [
       "Разделите предложенные объекты на группы по указанному признаку. " +
       "В `items` — объекты, в `answer` — к какой группе относится каждый.",
     answerKind: "order",
+    weight: 2,
     subjects: ["biology", "social", "geography", "chemistry", "okruzhaet"],
     grades: [4, 11],
     printHints: ["объекты — списком с местом для пометки группы"],
@@ -209,6 +235,7 @@ const NEW_TASK_TYPES: TaskTypeSpec[] = [
       "Найдите ошибку в решении и исправьте её. В условии — решение с ошибкой, " +
       "в `answer` — верный результат.",
     answerKind: "text",
+    weight: 2,
     subjects: ["math", "algebra", "geometry", "russian", "physics", "chemistry", "informatics"],
     grades: [3, 11],
     printHints: ["решение с ошибкой — отдельным блоком", "линия ответа после него"],
@@ -221,6 +248,7 @@ const NEW_TASK_TYPES: TaskTypeSpec[] = [
       "Выполните задание по таблице или рисунку. В `table` — заголовки и строки, " +
       "в `answer` — ответ по данным таблицы.",
     answerKind: "exact",
+    weight: 2,
     needsTable: true,
     subjects: ["math", "algebra", "geometry", "physics", "chemistry", "informatics", "geography"],
     grades: [3, 11],
@@ -234,6 +262,7 @@ const NEW_TASK_TYPES: TaskTypeSpec[] = [
       "Выберите ВСЕ подходящие варианты — их может быть несколько. " +
       "В `options` — варианты, в `answer` — номера верных.",
     answerKind: "choice",
+    weight: 1,
     needsOptions: true,
     printHints: ["варианты — с квадратиками, а не кружками", "подпись «верных может быть несколько»"],
     checkHint: "Верных вариантов больше одного, и в `options` они различимы.",
@@ -245,6 +274,7 @@ const NEW_TASK_TYPES: TaskTypeSpec[] = [
       "Сравните два объекта по указанным признакам. В `items` — объекты, " +
       "в `answer` — сходства и различия.",
     answerKind: "text",
+    weight: 2,
     subjects: ["biology", "geography", "literature", "social", "history", "physics"],
     grades: [3, 11],
     printHints: ["объекты — рядом, в две колонки", "строка ответа под ними"],
@@ -257,6 +287,7 @@ const NEW_TASK_TYPES: TaskTypeSpec[] = [
       "Ответьте на вопрос своими словами. В `criteria` — критерии приёмки, " +
       "по которым ответ оценивают.",
     answerKind: "criteria",
+    weight: 3,
     printHints: ["несколько строк ответа", "критерии приёмки — на странице ответов"],
     checkHint: "Критерии приёмки заданы явно, а не подразумеваются.",
   },
@@ -267,6 +298,7 @@ const NEW_TASK_TYPES: TaskTypeSpec[] = [
       "Выполните работу по алгоритму и отметьте выполненные шаги. " +
       "В `steps` — шаги, в `criteria` — критерий качества результата.",
     answerKind: "criteria",
+    weight: 3,
     subjects: ["technology", "obzh", "pe", "biology", "chemistry"],
     grades: [5, 11],
     printHints: ["шаги — списком с квадратиками для отметки", "критерий — на странице ответов"],
@@ -279,6 +311,7 @@ const NEW_TASK_TYPES: TaskTypeSpec[] = [
       "Решите задачу, опираясь на условие. В условии — все данные, " +
       "в `answer` — краткий ответ.",
     answerKind: "exact",
+    weight: 2,
     subjects: ["math", "algebra", "geometry", "physics", "informatics"],
     grades: [2, 11],
     printHints: ["условие — отдельным блоком", "линия ответа под ним"],
@@ -291,6 +324,7 @@ const NEW_TASK_TYPES: TaskTypeSpec[] = [
       "Прочитайте текст-источник, найдите в нём нужное и обоснуйте ответ. " +
       "В `answer` — вывод, в `criteria` — на что опираться.",
     answerKind: "criteria",
+    weight: 3,
     subjects: ["russian", "literature", "social", "history", "okruzhaet"],
     grades: [5, 11],
     printHints: ["текст источника — в тексте задания", "строка ответа под ним"],

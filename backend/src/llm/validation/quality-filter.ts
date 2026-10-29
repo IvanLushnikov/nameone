@@ -34,6 +34,14 @@
 import {
   getTaskTypeSpec,
 } from "../../../../src/lib/content/task-types";
+/**
+ * ТЗ-34: проверка конкретности критериев — в общем модуле оценивания.
+ *
+ * Правило «пустые и общие формулировки отбрасываются» должно быть ОДНИМ и на
+ * бэке (чистка ответа модели), и на ответе API (сборка `evaluation`), иначе
+ * одно и то же правило разъедется по двум реализациям.
+ */
+import { isConcreteCriterion } from "../../../../src/lib/content/grading";
 
 /** Задание в том виде, в каком пришло от модели. */
 export interface RawTask {
@@ -84,6 +92,25 @@ export interface QualityFilterReport {
    * модель возвращала больше), и дефект всплывал уже на печати.
    */
   droppedUnknownType: number[];
+  /**
+   * ТЗ-34: задания, у которых вычищены критерии приёмки.
+   *
+   * Номера заданий, у которых список `criteria` после чистки стал короче
+   * (пустые строки, общие формулировки вроде «ответ неполный»).
+   *
+   * Факт чистки виден именно здесь, а не внутри задания: иначе по готовому
+   * листу нельзя понять, был ли критерий у задания и почему исчез.
+   */
+  cleanedCriteria: number[];
+  /**
+   * ТЗ-34: задания, у которых ответ обнулён, потому что тип ждёт критериев.
+   *
+   * Для типа с `answerKind: "criteria"` поле `answer` — это НЕ эталонный
+   * текст, а мусор от модели (часто — сами критерии, написанные не в то
+   * поле). Оставлять такой текст в ключе нельзя: он выглядит как ответ,
+   * которым учитель будет сверять работу.
+   */
+  cleanedCriteriaAnswer: number[];
   /** Всего заданий до и после. */
   before: number;
   after: number;
@@ -248,6 +275,50 @@ function hasNonEmptyList(value: unknown): boolean {
  */
 function hasSampleField(task: RawTask): boolean {
   return typeof task.sample === "string" && task.sample.trim().length > 0;
+}
+
+/**
+ * ТЗ-34: ждёт ли этот тип критериев вместо эталона.
+ *
+ * Берётся из реестра (`answerKind === "criteria"`), а не из списка типов в
+ * коде: правило живёт рядом с описанием типа, поэтому новый тип с критериями
+ * обслуживается автоматически.
+ */
+export function taskExpectsCriteria(task: RawTask): boolean {
+  const rawType = typeof task.type === "string" ? task.type.trim() : "";
+  if (!rawType) return false;
+  return getTaskTypeSpec(rawType)?.answerKind === "criteria";
+}
+
+/**
+ * ТЗ-34: есть ли у задания КОНКРЕТНЫЕ критерии приёмки.
+ *
+ * Для типа с `answerKind: "criteria"` критерий приёмки и ЕСТЬ ключ: эталонного
+ * текста там не существует в принципе, и выкидывать такое задание — значит
+ * заменить развёрнутый вопрос обычным расчётом (так и было: учитель получал
+ * контрольную, где не было ни одного развёрнутого задания).
+ */
+export function hasConcreteCriteria(task: RawTask): boolean {
+  if (!Array.isArray(task.criteria)) return false;
+  return task.criteria.some(
+    (c) => typeof c === "string" && isConcreteCriterion(c),
+  );
+}
+
+/**
+ * ТЗ-34: почистить список критериев задания.
+ *
+ * Убираются пустые строки и общие формулировки («ответ неполный», «бывают
+ * ошибки»): в ключе они занимают строку и ничего не говорят учителю. Возвращается
+ * новый список и признак «что-то вычистили».
+ */
+function cleanCriteria(task: RawTask): { criteria: string[]; changed: boolean } {
+  if (!Array.isArray(task.criteria)) return { criteria: [], changed: false };
+  const original = task.criteria;
+  const kept = original.filter(
+    (c): c is string => typeof c === "string" && isConcreteCriterion(c),
+  );
+  return { criteria: kept, changed: kept.length !== original.length };
 }
 
 /**
@@ -421,6 +492,8 @@ export function filterTasks(
     droppedNoAnswer: [],
     droppedTypeMismatch: [],
     droppedUnknownType: [],
+    cleanedCriteria: [],
+    cleanedCriteriaAnswer: [],
     before: tasks.length,
     after: tasks.length,
   };
@@ -472,6 +545,32 @@ export function filterTasks(
       report.cleanedAnswer.push(index + 1);
     }
 
+    // 3-бис. ТЗ-34: КРИТЕРИИ ЧИСТЯТСЯ, А У ТИПА С КРИТЕРИЯМИ ОБНУЛЯЕТСЯ ОТВЕТ.
+    //
+    //    Критерии приёмки лежат в поле `criteria` (AD-4: один носитель, а не
+    //    два). Пустые строки и общие формулировки («ответ неполный») убираются:
+    //    в ключе они занимают строку и ничего не говорят учителю.
+    //
+    //    Ответ у типа с `answerKind: "criteria"` обнуляется, если модель
+    //    положила туда критерии (старое правило 17) или любой текст со
+    //    словом «критери». Такой текст выглядит как эталонный ответ, которым
+    //    учитель будет сверять работу, а эталонного ответа у такого типа не
+    //    существует в принципе.
+    const expectsCriteria = taskExpectsCriteria(task);
+    const cleaned = cleanCriteria(task);
+    if (cleaned.changed) {
+      report.cleanedCriteria.push(index + 1);
+      task.criteria = cleaned.criteria.length > 0 ? cleaned.criteria : null;
+    }
+    if (
+      expectsCriteria &&
+      typeof task.answer === "string" &&
+      /критер/i.test(task.answer)
+    ) {
+      task.answer = null;
+      report.cleanedCriteriaAnswer.push(index + 1);
+    }
+
     // 3a. ТЗ-26, Ф-5: ответов не оказалось — задание без ответа. Если учитель
     //     просил ответы, такое задание в выгрузку не идёт: в DOCX у него нет
     //     строки ответа, и учитель не может сверить работу. Выкидываем, чтобы
@@ -479,7 +578,15 @@ export function filterTasks(
     //
     //     При `withAnswers = false` НЕ выкидываем: там null — то, что просил
     //     учитель, и выкидывание съело бы весь лист.
-    if (requireAnswer && !hasUsableAnswer(task.answer)) {
+    //
+    //     ТЗ-34, AD-5: ИСКЛЮЧЕНИЕ ДЛЯ ТИПА С КРИТЕРИЯМИ. У эссе, открытого
+    //     ответа, практической работы и работы с источником эталонного текста
+    //     не существует — критерий приёмки и ЕСТЬ ключ. Раньше такое задание
+    //     выкидывалось, и на его место дозапрос ставил обычный расчёт: учитель
+    //     получал контрольную, в которой не было ни одного развёрнутого
+    //     задания. Правило выводится из `answerKind` в реестре, а не из
+    //     списка типов в коде.
+    if (requireAnswer && !hasUsableAnswer(task.answer) && !hasConcreteCriteria(task)) {
       report.droppedNoAnswer.push(index + 1);
       return;
     }

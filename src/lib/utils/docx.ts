@@ -19,12 +19,247 @@ import {
   type ParagraphChild,
 } from "docx";
 import type { Worksheet, WorksheetTask } from "@/lib/types";
+import { marksScale, type EvaluationPart } from "@/lib/content/grading";
 import { parseMathText, type MathSegment } from "@/lib/math/latex";
 import { latexToOmml, latexToUnicode } from "@/lib/math/latex-to-omml";
 import { SITE_HOST } from "@/lib/site";
 // ТЗ-26 Ф-3: в шапку и в свойства файла — название предмета по-русски,
 // а не внутренний ключ (`algebra`).
 import { subjectDisplayName } from "@/lib/content/subject-display-name";
+
+/**
+ * Страница «Критерии оценивания» (ТЗ-34).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ГДЕ ОНА СТОИТ
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ПОСЛЕ страницы ключа («Ответы и пояснения») и ПОСЛЕ тела листа. Порядок
+ * проверяется по тексту документа, а не на глаз: сначала учитель читает
+ * ответы, потом — по чему он их принимает.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ЧТО НА НЕЙ
+ * ─────────────────────────────────────────────────────────────────────────────
+ *   · шкала отметок 5/4/3/2 с числами 85/70/50/0 — из `grading.ts`, тем же
+ *     кодом, по которому считает отметку API;
+ *   · таблица «№ задания — критерий — максимальный балл»;
+ *   · типичные ошибки по теме;
+ *   · рекомендация учителю.
+ *
+ * Максимальный балл — ИЗ РЕЕСТРА ТИПОВ, а не из модельного поля `points`: в
+ * одном файле не должно быть двух разных чисел о балле одного задания.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * КОГДА СТРАНИЦЫ НЕТ
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Для обычного рабочего листа страницы нет вообще: лист учитель раздаёт, а не
+ * оценивает. Для контрольной и теста — есть, если есть что печатать.
+ *
+ * Если критериев не удалось получить НИ ОДНОГО — печатается честная строка
+ * «критерии не удалось сформировать — оценивайте по ключу». Пустая страница
+ * без объяснения — та же ложь, которую ТЗ чинит.
+ */
+function criteriaPageChildren(part: EvaluationPart): Array<Paragraph | Table> {
+  const children: Array<Paragraph | Table> = [];
+
+  children.push(
+    new Paragraph({
+      text: "",
+      pageBreakBefore: true,
+    }),
+    new Paragraph({
+      text: "Критерии оценивания",
+      heading: HeadingLevel.HEADING_1,
+      spacing: { after: 60 },
+    }),
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: "Только для учителя — не раздавать ученикам",
+          italics: true,
+          color: "C73213",
+          size: 22,
+        }),
+      ],
+      spacing: { after: 200 },
+    }),
+  );
+
+  // Подзаголовок варианта: у контрольной критерии свои у каждого варианта.
+  if (part.variant > 1) {
+    children.push(
+      new Paragraph({
+        children: [new TextRun({ text: `Вариант ${part.variant}`, bold: true, size: 26 })],
+        spacing: { after: 120 },
+      }),
+    );
+  }
+
+  // Шкала отметок — из общего модуля, чтобы на бумаге и в API были одни числа.
+  children.push(
+    new Paragraph({
+      children: [new TextRun({ text: "Шкала отметок", bold: true, size: 24 })],
+      spacing: { after: 60 },
+    }),
+  );
+  for (const entry of marksScale()) {
+    children.push(
+      new Paragraph({
+        children: [
+          new TextRun({ text: `Отметка ${entry.mark} — от ${entry.fromPercent}% выполнения`, size: 20 }),
+        ],
+        spacing: { after: 20 },
+      }),
+    );
+  }
+  children.push(
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: `Максимальный балл работы: ${part.totalMaxPoints}`,
+          size: 20,
+          bold: true,
+        }),
+      ],
+      spacing: { after: 200 },
+    }),
+  );
+
+  // Таблица критериев.
+  if (part.criteria.length === 0) {
+    children.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: "критерии не удалось сформировать — оценивайте по ключу",
+            size: 22,
+            color: "C73213",
+          }),
+        ],
+        spacing: { after: 200 },
+      }),
+    );
+  } else {
+    children.push(
+      new Paragraph({
+        children: [new TextRun({ text: "Критерии по заданиям", bold: true, size: 24 })],
+        spacing: { after: 60 },
+      }),
+    );
+
+    const rows: TableRow[] = [
+      new TableRow({
+        children: [
+          new TableCell({
+            children: [new Paragraph({ children: [new TextRun({ text: "№", bold: true })] })],
+            width: cellWidthPct(0),
+          }),
+          new TableCell({
+            children: [new Paragraph({ children: [new TextRun({ text: "Критерий", bold: true })] })],
+            width: cellWidthPct(1),
+          }),
+          new TableCell({
+            children: [
+              new Paragraph({ children: [new TextRun({ text: "Макс. балл", bold: true })] }),
+            ],
+            width: cellWidthPct(2),
+          }),
+        ],
+      }),
+      ...part.criteria.map(
+        (item) =>
+          new TableRow({
+            children: [
+              new TableCell({
+                children: [
+                  new Paragraph({ children: [new TextRun({ text: String(item.number), bold: true })] }),
+                ],
+                width: cellWidthPct(0),
+              }),
+              new TableCell({
+                children: item.criteria.map(
+                  (c) =>
+                    new Paragraph({
+                      children: [new TextRun({ text: `— ${c}`, size: 20 })],
+                    }),
+                ),
+                width: cellWidthPct(1),
+              }),
+              new TableCell({
+                children: [
+                  new Paragraph({ children: [new TextRun({ text: String(item.maxPoints) })] }),
+                ],
+                width: cellWidthPct(2),
+              }),
+            ],
+          }),
+      ),
+    ];
+
+    children.push(
+      new Table({
+        rows,
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        layout: TableLayoutType.FIXED,
+        columnWidths: COLUMN_WIDTHS_DXA,
+        borders: {
+          top: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
+          bottom: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
+          left: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
+          right: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
+          insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: "EEEEEE" },
+          insideVertical: { style: BorderStyle.SINGLE, size: 1, color: "EEEEEE" },
+        },
+      }),
+    );
+  }
+
+  // Типичные ошибки и рекомендация — от модели. Блоки печатаются всегда, чтобы
+  // структура страницы не зависела от того, что модель принесла; если данных
+  // нет, в блоке стоит честное «не указаны».
+  children.push(
+    new Paragraph({
+      children: [new TextRun({ text: "Типичные ошибки", bold: true, size: 24 })],
+      spacing: { before: 240, after: 60 },
+    }),
+  );
+  if (part.typicalMistakes.length === 0) {
+    children.push(
+      new Paragraph({
+        children: [new TextRun({ text: "не указаны", size: 20, color: "666666" })],
+        spacing: { after: 120 },
+      }),
+    );
+  } else {
+    for (const mistake of part.typicalMistakes) {
+      children.push(
+        new Paragraph({
+          children: [new TextRun({ text: `— ${mistake}`, size: 20 })],
+          spacing: { after: 40 },
+        }),
+      );
+    }
+  }
+
+  children.push(
+    new Paragraph({
+      children: [new TextRun({ text: "Рекомендация учителю", bold: true, size: 24 })],
+      spacing: { before: 160, after: 60 },
+    }),
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: part.recommendation ?? "не указана",
+          size: 20,
+          color: part.recommendation ? "000000" : "666666",
+        }),
+      ],
+      spacing: { after: 120 },
+    }),
+  );
+
+  return children;
+}
 
 /**
  * Генератор DOCX для рабочего листа.
@@ -641,7 +876,19 @@ function criteriaForTask(task: Worksheet["tasks"][number]): string[] {
 
 export async function generateWorksheetDocx(
   worksheet: Worksheet,
-  options: { withAnswers?: boolean; withExplanations?: boolean; isDemo?: boolean } = {}
+  options: {
+    withAnswers?: boolean;
+    withExplanations?: boolean;
+    isDemo?: boolean;
+    /**
+     * ТЗ-34: критерии оценивания и шкала отметок.
+     *
+     * Один элемент — лист или тест, два — контрольная (по вариантам). Если
+     * блока нет или он пустой, страницы «Критерии оценивания» в файле нет:
+     * обычный рабочий лист учитель не оценивает.
+     */
+    evaluation?: EvaluationPart[];
+  } = {},
 ): Promise<Blob> {
   const { withAnswers = true, withExplanations = true, isDemo = false } = options;
 
@@ -895,6 +1142,15 @@ export async function generateWorksheetDocx(
         },
       })
     );
+  }
+
+  // Страница «Критерии оценивания» — ПОСЛЕ страницы ключа (ТЗ-34).
+  //
+  // Стоит именно здесь: ключ учитель читает первым, и критерии отвечают на
+  // вопрос «по чему я принимаю работу». Для обычного рабочего листа блока
+  // нет — страницы не будет.
+  for (const part of options.evaluation ?? []) {
+    children.push(...criteriaPageChildren(part));
   }
 
   const doc = new Document({

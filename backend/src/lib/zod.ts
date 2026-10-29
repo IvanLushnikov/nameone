@@ -20,7 +20,6 @@ import { z } from "zod";
  * внешних зависимостей не добавляет.
  */
 import { TASK_TYPE_IDS } from "../../../src/lib/content/task-types";
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Примитивы
 // ─────────────────────────────────────────────────────────────────────────────
@@ -96,6 +95,54 @@ export const worksheetTaskSchema = z.object({
   criteria: z.array(z.string().max(1000)).max(20).nullish(),
   /** ТЗ-33: шаги алгоритма (practical). */
   steps: z.array(z.string().max(1000)).max(30).nullish(),
+});
+
+/**
+ * ТЗ-34: блок `evaluation` — контракт критериев оценивания.
+ *
+ * Две схемы, потому что это ДВА разных объекта:
+ *
+ *   · `modelEvaluationSchema` — то, что присылает МОДЕЛЬ: типичные ошибки по
+ *     теме и рекомендация учителю. Баллов, отметок и процентов в нём нет и
+ *     быть не должно: их считает сервер.
+ *   · `evaluationPartSchema` — то, что уходит УЧИТЕЛЮ: критерии по заданиям,
+ *     максимальный балл из реестра типов, сумма баллов и шкала отметок.
+ *
+ * Критерии в ответе API СОБИРАЮТСЯ из `task.criteria` (у каждого задания
+ * своё поле), а не приходят вторым ответом модели. Поэтому второй носитель
+ * одних и тех же данных не появится: разойтись им не с чем.
+ */
+export const modelEvaluationSchema = z.object({
+  typicalMistakes: z.array(z.string().max(1000)).max(20).default([]),
+  recommendation: z.string().max(2000).nullish(),
+});
+
+export const evaluationCriterionSchema = z.object({
+  /** Номер задания в работе (номер ставит сервер). */
+  number: z.number().int().positive(),
+  /** Конкретные критерии приёмки. */
+  criteria: z.array(z.string().max(1000)).max(20),
+  /** Максимальный балл за задание — из реестра типов, не от модели. */
+  maxPoints: z.number().int().nonnegative(),
+});
+
+export const evaluationMarkSchema = z.object({
+  mark: z.number().int().min(2).max(5),
+  fromPercent: z.number().min(0).max(100),
+  toPercent: z.number().min(0).max(100),
+});
+
+export const evaluationPartSchema = z.object({
+  /** Номер варианта: 1 — лист или тест, 1 и 2 — варианты контрольной. */
+  variant: z.number().int().positive(),
+  title: z.string().max(500),
+  criteria: z.array(evaluationCriterionSchema).max(60),
+  typicalMistakes: z.array(z.string().max(1000)).max(20),
+  recommendation: z.string().max(2000).nullish(),
+  /** Сумма максимальных баллов по всем заданиям работы. */
+  totalMaxPoints: z.number().int().nonnegative(),
+  /** Шкала отметок 5/4/3/2. */
+  marks: z.array(evaluationMarkSchema).max(4),
 });
 
 export const generationRequestSchema = z.object({

@@ -38,6 +38,8 @@ import {
   buildWorksheetPrompt,
   buildTopUpPrompt,
   buildVariantRetryPrompt,
+  buildTypeReplacePrompt,
+  buildCriteriaPrompt,
   normalizeUmkId,
   sanitizeTextLatex,
 } from "./prompts/worksheet-gen";
@@ -79,6 +81,31 @@ import { variantsDiffer, missingTaskCount } from "./validation/variant-check";
 import { numberSheetForDelivery } from "./validation/task-numbering";
 import { assignTopicSkills } from "./validation/skill-labels";
 import { buildPlanPrompt, normalizePlan } from "./prompts/plan-gen";
+/**
+ * ТЗ-34: критерии оценивания.
+ *
+ * Шкала отметок, веса заданий и проверка конкретности критериев живут в общем
+ * модуле `src/lib/content/grading.ts` — импортируется относительным путём, как
+ * и реестр типов заданий. Второго источника правды об отметках быть не
+ * должно: у одного учителя «5 за 80 %», у другого «5 за 90 %» — и доверие к
+ * отметке пропадёт.
+ */
+import {
+  buildEvaluationPart,
+  concreteCriteria,
+  type EvaluationPart,
+  type EvaluationTaskInput,
+} from "../../../src/lib/content/grading";import {
+  typesForSubject,
+  diversityLimits,
+  getTaskTypeSpec,
+} from "../../../src/lib/content/task-types";
+import {
+  findTypeDiversityViolations,
+  pickReplacementIndex,
+  type DiversityGroup,
+  type TypeDiversityViolation,
+} from "./validation/type-diversity";
 
 /**
  * Стадия планирования включена флагом `PLAN=1` в окружении.
@@ -153,6 +180,16 @@ export interface GenerateWorksheetResult {
   quality: QualityLossInfo;
   /** Состояние вариантов: сколько просили, сколько пришло, деградировали ли. */
   variants: VariantStatusInfo;
+  /**
+   * ТЗ-34: критерии оценивания и шкала отметок.
+   *
+   * ОТДЕЛЬНЫЙ КЛЮЧ ответа: не внутри текста задания и не внутри `answer`.
+   * Один элемент для листа и теста, два для контрольной (по вариантам).
+   *
+   * Для обычного рабочего листа массив ПУСТОЙ (или отсутствует): лист
+   * учитель не оценивает, он его раздаёт (AD-7).
+   */
+  evaluation?: EvaluationPart[];
   meta: GenerateWorksheetMeta;
   /**
    * Состояние нормы после генерации. `over: true` = норма превышена, но
@@ -310,6 +347,21 @@ function summarizeLoss(
    * отсутствие ответа — то, что просил учитель.
    */
   tasksWithoutAnswer = 0,
+  /**
+   * ТЗ-34: нарушения разнообразия типов, которые остались в выдаче.
+   *
+   * Пока этого поля не было, конвейер знал, что правило нарушено, но молчал:
+   * учитель получал лист, который выглядел правильным, и обнаруживал
+   * однообразие сам — по листу в руках.
+   */
+  typeDiversityViolations: TypeDiversityViolation[] = [],
+  /**
+   * ТЗ-34: критерии оценивания сформировать не удалось.
+   *
+   * `true` — ни у одного задания работы нет критериев. На странице печати
+   * тогда пишется честная строка, а не пустая страница.
+   */
+  criteriaMissing = false,
 ): QualityLossInfo {
   const droppedPatternRef: number[] = [];
   const droppedForeignMath: number[] = [];
@@ -344,6 +396,8 @@ function summarizeLoss(
     // повторов в выдаче нет, независимо от того, сколько их было до чистки.
     repeatedSkills,
     tasksWithoutAnswer,
+    typeDiversityViolations,
+    criteriaMissing,
   };
 }
 
@@ -404,6 +458,11 @@ export async function generateWorksheet(
         secondVariant?: Worksheet | null;
         quality?: QualityLossInfo;
         variants?: VariantStatusInfo;
+        // ТЗ-34: критерии оценивания лежат в кэше рядом с материалом.
+        // Повторный запрос обязан вернуть тот же блок — иначе учитель, второй
+        // раз открывший ту же контрольную, увидел бы лист без критериев и
+        // решил бы, что их «нет в принципе».
+        evaluation?: EvaluationPart[];
       };
       const cachedSecond = cachedResponse.secondVariant ?? null;
       // ТЗ-25 AD-4: сносим ТОЛЬКО записи без флага результата.
@@ -471,7 +530,15 @@ export async function generateWorksheet(
                   : undefined,
               retried: false,
             });
-          return { worksheet: ws, meta, usage, secondVariant: cachedSecond, quality, variants };
+          return {
+            worksheet: ws,
+            meta,
+            usage,
+            secondVariant: cachedSecond,
+            quality,
+            variants,
+            evaluation: cachedResponse.evaluation ?? [],
+          };
         }
       }
     }
@@ -681,6 +748,11 @@ export async function generateWorksheet(
   let worksheet: Worksheet;
   // Объявлено до try: нужно после блока, чтобы вернуть второй вариант наружу.
   let controlVariants: Worksheet[] | null = null;
+  // ТЗ-34: модельные блоки `evaluation` (типичные ошибки и рекомендация).
+  // Объявлены здесь, потому что блок разбора ответа — try, а блок нужен за
+  // его пределами: при провале JSON из try вылетает исключение.
+  let modelEvaluationRaw: unknown = null;
+  let modelEvaluationRaw2: unknown = null;
   // Отчёты фильтра живут до конца конвейера (разрыв 5). Раньше `.report`
   // отбрасывался на месте.
   const filterReports: QualityFilterReport[] = [];
@@ -720,6 +792,22 @@ export async function generateWorksheet(
         ? ((parsed as unknown as { variants: unknown[] }).variants as Worksheet[])
         : null;
     const primaryParsed = controlVariants?.[0] ?? parsed;
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // ТЗ-34: МОДЕЛЬНЫЙ БЛОК `evaluation` (типичные ошибки и рекомендация).
+    //
+    // Это единственное, что в оценке работы приходит ОТ МОДЕЛИ: предметные
+    // ошибки по теме и методическая рекомендация — то, что человек написать
+    // не сможет. Баллы, веса и шкалу отметок считает код.
+    //
+    // Блок хранится СЫРЫМ: проверку конкретности делает общий модуль
+    // `grading.ts` в момент сборки ответа, и там же он отбрасывает мусор.
+    // ─────────────────────────────────────────────────────────────────────────────
+    modelEvaluationRaw =
+      (primaryParsed as unknown as { evaluation?: unknown })?.evaluation ?? null;
+    modelEvaluationRaw2 =
+      (controlVariants?.[1] as unknown as { evaluation?: unknown } | undefined)?.evaluation ??
+      null;
 
     // ─────────────────────────────────────────────────────────────────────────────
     // ТЗ-25: ФИЛЬТР КАЧЕСТВА С ОТЧЁТОМ (разрыв 5, ВСЕ ПРЕДМЕТЫ)
@@ -869,6 +957,10 @@ export async function generateWorksheet(
               title: retryFirstRaw.title ?? worksheet.title,
               tasks: retryFirstFiltered.tasks as unknown as Worksheet["tasks"],
             };
+            // ТЗ-34: ретрай вернул СВОЙ блок `evaluation` — он и есть
+            // настоящий, а не тот, что пришёл с первой попытки.
+            modelEvaluationRaw =
+              (retryFirstRaw as unknown as { evaluation?: unknown })?.evaluation ?? null;
             secondParsed = retrySecond;
           } else {
             degraded = true;
@@ -1281,6 +1373,181 @@ export async function generateWorksheet(
   // Разрыв 4: обрезанный ответ выше уже отбит (ретрай с удвоенным потолком, а
   // при неудаче — честная ошибка). Сюда конвейер доходит только с целым ответом.
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ТЗ-34 §3.5: ПРОВЕРКА РАЗНООБРАЗИЯ ТИПОВ ПОСЛЕ ГЕНЕРАЦИИ
+  //
+  // ТЗ-33 превратил правило разнообразия в числа и вставил их в промпт — но
+  // проверяло правило только модель. В живом ответе контрольной вариант 2 был
+  // `short-answer, computation, computation, computation`: три расчёта из
+  // четырёх при лимите «не больше 2 одного типа». В `quality` про типы не было
+  // ни одного поля, `dropped = 0` — нарушение не заметил никто.
+  //
+  // Промпт — просьба. Гарантия — код ПОСЛЕ ответа.
+  //
+  // ЧТО ДЕЛАЕМ ПРИ НАРУШЕНИИ: заменяем ОДНО задание на задание другого типа
+  // (тот же объём работы, который просил учитель) и повторяем проверку. Лимит
+  // попыток — 2 на работу. Не помогло — отдаём как есть, но ПОКАЗЫВАЕМ
+  // нарушение в `quality`: честный однообразный вариант с пометкой лучше
+  // пустого листа.
+  // ─────────────────────────────────────────────────────────────────────────────
+  const diversityGroups = (): DiversityGroup[] => {
+    const groups: DiversityGroup[] = [
+      {
+        scope: "variant1",
+        tasks: worksheet.tasks as unknown as CleanTask[],
+        count: worksheet.tasks.length,
+      },
+    ];
+    if (secondVariant) {
+      groups.push({
+        scope: "variant2",
+        tasks: secondVariant.tasks as unknown as CleanTask[],
+        count: secondVariant.tasks.length,
+      });
+    }
+    groups.push({
+      // Вся работа суммой: восемь заданий контрольной — это восемь, а не
+      // четыре. Иначе два варианта по четыре одинаковых расчёта прошли бы
+      // проверку «по четыре» и вместе дали бы восемь одинаковых.
+      scope: "work",
+      tasks: [
+        ...(worksheet.tasks as unknown as CleanTask[]),
+        ...((secondVariant?.tasks ?? []) as unknown as CleanTask[]),
+      ],
+      count:
+        worksheet.tasks.length + (secondVariant?.tasks?.length ?? 0),
+    });
+    return groups;
+  };
+
+  /**
+   * Найти, в каком варианте и какое задание менять.
+   *
+   * Для нарушения по СУММЕ («work») берём тот вариант, где таких заданий
+   * больше: иначе можно заменить задание там, где и так всё в порядке, а
+   * нарушение останется.
+   */
+  const locateReplacement = (
+    violation: TypeDiversityViolation,
+  ): { variant: 1 | 2; index: number } | null => {
+    const v1 = worksheet.tasks as unknown as CleanTask[];
+    const v2 = (secondVariant?.tasks ?? []) as unknown as CleanTask[];
+    const countOf = (tasks: CleanTask[], type: string) =>
+      tasks.filter((t) => (t as { type?: unknown }).type === type).length;
+
+    if (violation.scope === "variant1") {
+      const index = pickReplacementIndex(v1, violation);
+      return index === null ? null : { variant: 1, index };
+    }
+    if (violation.scope === "variant2") {
+      const index = pickReplacementIndex(v2, violation);
+      return index === null ? null : { variant: 2, index };
+    }
+    // Нарушение по сумме: выбираем вариант, где этого типа больше.
+    const inV1 = countOf(v1, violation.type);
+    const inV2 = countOf(v2, violation.type);
+    const useV1 = inV1 >= inV2;
+    const list = useV1 ? v1 : v2;
+    const index = pickReplacementIndex(list, violation);
+    if (index === null) return null;
+    return { variant: useV1 ? 1 : 2, index };
+  };
+
+  /** Типы, которые можно поставить вместо нарушившего. */
+  const allowedTypes = (): string[] => {
+    const specs = typesForSubject(request.subject, request.grade);
+    return specs.map((s) => s.id);
+  };
+
+  const DIVERSITY_MAX_ATTEMPTS = 2;
+  let diversityAttempts = 0;
+  while (diversityAttempts < DIVERSITY_MAX_ATTEMPTS) {
+    const violations = findTypeDiversityViolations(diversityGroups());
+    if (violations.length === 0) break;
+    // Берём самое грубое нарушение: у него больше всего «лишних» заданий.
+    const violation = violations.reduce((worst, v) =>
+      v.actual - v.limit > worst.actual - worst.limit ? v : worst,
+    );
+    const target = locateReplacement(violation);
+    if (!target) break;
+
+    const list =
+      target.variant === 1
+        ? (worksheet.tasks as unknown as CleanTask[])
+        : ((secondVariant?.tasks ?? []) as unknown as CleanTask[]);
+    const current = list[target.index] as
+      | (CleanTask & { type?: unknown; text?: unknown })
+      | undefined;
+    const currentType = typeof current?.type === "string" ? current.type : violation.type;
+    const currentText = typeof current?.text === "string" ? current.text : "";
+    const groupCount =
+      target.variant === 1 ? worksheet.tasks.length : (secondVariant?.tasks?.length ?? 0);
+    const maxSameType = diversityLimits(Math.max(1, groupCount)).maxSameType;
+
+    diversityAttempts += 1;
+    logLlmEvent("warn", "worksheet-gen: type diversity violated, replacing task", {
+      subject: request.subject,
+      scope: violation.scope,
+      type: currentType,
+      actual: violation.actual,
+      limit: violation.limit,
+      variant: target.variant,
+      taskNumber: target.index + 1,
+      attempt: diversityAttempts,
+    });
+
+    try {
+      const prompt = buildTypeReplacePrompt(request, {
+        number: target.index + 1,
+        type: currentType,
+        allowedTypes: allowedTypes().filter((id) => id !== currentType),
+        maxSameType,
+        text: currentText,
+      });
+      const res = await callProvider(prompt.system, prompt.user, 4096);
+      const parsed = JSON.parse(res.response.content) as { tasks?: unknown };
+      const fresh = filterAndReport(
+        Array.isArray(parsed.tasks) ? parsed.tasks : [],
+        request.subject,
+        request.withAnswers,
+      ).tasks;
+      const candidate = fresh[0];
+      const candidateType =
+        candidate && typeof (candidate as { type?: unknown }).type === "string"
+          ? ((candidate as { type: string }).type)
+          : null;
+      if (!candidate || !candidateType || candidateType === currentType) {
+        // Модель вернула то же самое (или мусор) — нарушение остаётся, и мы
+        // покажем его в `quality`, а не будем платить за третью попытку.
+        break;
+      }
+      const next = [...list];
+      next[target.index] = candidate;
+      if (target.variant === 1) {
+        worksheet = { ...worksheet, tasks: next as unknown as Worksheet["tasks"] };
+      } else if (secondVariant) {
+        secondVariant = { ...secondVariant, tasks: next as unknown as Worksheet["tasks"] };
+      }
+    } catch (e) {
+      logLlmEvent("error", "worksheet-gen: type replacement failed", {
+        subject: request.subject,
+        scope: violation.scope,
+        error: String(e),
+      });
+      break;
+    }
+  }
+
+  // Нарушения, которые остались после попыток починить. Показываем их честно:
+  // лучше однообразный лист с пометкой, чем лист, который выглядит правильным.
+  const typeDiversityViolations = findTypeDiversityViolations(diversityGroups());
+  if (typeDiversityViolations.length > 0) {
+    logLlmEvent("warn", "worksheet-gen: type diversity violation left in sheet", {
+      subject: request.subject,
+      violations: typeDiversityViolations,
+    });
+  }
+
   const meta: GenerateWorksheetMeta = {
     model: resultFinal.model,
     provider: resultFinal.provider,
@@ -1344,6 +1611,181 @@ export async function generateWorksheet(
     tasksWithoutAnswer += numberedSecond.withoutAnswer;
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ТЗ-34 §3.6: ЕСЛИ КРИТЕРИЕВ НЕТ — ОДИН ДОЗАПРОС, ИНАЧЕ ЧЕСТНАЯ ПУСТОТА
+  //
+  // Обычный путь — критерии приезжают в том же ответе, что и лист (AD-1):
+  // отдельный вызов удваивает цену контрольной. Этот дозапрос — аварийный
+  // ремонт на случай, когда модель не прислала ни одного критерия.
+  //
+  // Если и после дозапроса критериев нет — работа едет без блока критериев, а
+  // в `quality` появляется `criteriaMissing: true`, и на странице печати
+  // пишется честная строка. Пустая страница без объяснения — та же ложь,
+  // которую ТЗ чинит.
+  // ─────────────────────────────────────────────────────────────────────────────
+  const needsEvaluation = request.type === "control" || request.type === "test";
+  let criteriaMissing = false;
+
+  if (needsEvaluation) {
+    const hasAnyCriteria = (tasks: readonly CleanTask[]): boolean =>
+      tasks.some((t) => {
+        const list = (t as { criteria?: unknown }).criteria;
+        return Array.isArray(list) && list.some((c) => typeof c === "string" && c.trim().length > 0);
+      });
+
+    const targetTasks = (tasks: readonly CleanTask[]): CleanTask[] =>
+      tasks.filter((t) => {
+        const type = (t as { type?: unknown }).type;
+        if (typeof type !== "string") return false;
+        return getTaskTypeSpec(type)?.answerKind === "criteria";
+      });
+
+    const collectTargets = (tasks: readonly CleanTask[]): CleanTask[] => {
+      // Только ОТКРЫТЫЕ задания: у типа с `answerKind: "criteria"` эталонного
+      // ответа не существует, и критерий приёмки — единственный ключ к нему.
+      // Спрашивать критерии у расчёта, где ответ сверяется с числом, смысла
+      // нет: там ключ и так есть.
+      const open = targetTasks(tasks);
+      if (open.length === 0) return [];
+      // Больше 12 заданий за один дозапрос не берём — ответ не влезет в
+      // потолок, и мы заплатим дважды.
+      return open.slice(0, 12);
+    };
+
+    const variantNeeds = (tasks: readonly CleanTask[]): boolean => {
+      const targets = collectTargets(tasks);
+      if (targets.length === 0) return false;
+      // Дозапрос нужен, если хотя бы у одного открытого задания критериев нет.
+      return targets.some((t) => {
+        const list = (t as { criteria?: unknown }).criteria;
+        return !(
+          Array.isArray(list) &&
+          list.some((c) => typeof c === "string" && c.trim().length > 0)
+        );
+      });
+    };
+
+    const runCriteriaTopUp = async (
+      tasks: readonly CleanTask[],
+      stage: string,
+    ): Promise<CleanTask[] | null> => {
+      const targets = collectTargets(tasks);
+      if (targets.length === 0) return null;
+      const prompt = buildCriteriaPrompt(
+        request,
+        targets.map((t, i) => ({
+          number: typeof (t as { number?: unknown }).number === "number"
+            ? ((t as { number: number }).number)
+            : i + 1,
+          text: typeof (t as { text?: unknown }).text === "string"
+            ? ((t as { text: string }).text)
+            : "",
+          type: typeof (t as { type?: unknown }).type === "string"
+            ? ((t as { type: string }).type)
+            : "",
+        })),
+      );
+      try {
+        const res = await callProvider(prompt.system, prompt.user, 4096);
+        const parsed = JSON.parse(res.response.content) as {
+          criteria?: Array<{ number?: unknown; criteria?: unknown }>;
+        };
+        const list = Array.isArray(parsed.criteria) ? parsed.criteria : [];
+        const byNumber = new Map<number, string[]>();
+        for (const item of list) {
+          if (!item || typeof item !== "object") continue;
+          const number = typeof item.number === "number" ? item.number : null;
+          if (number === null) continue;
+          const concrete = concreteCriteria(item.criteria);
+          if (concrete.length === 0) continue;
+          byNumber.set(number, concrete);
+        }
+        if (byNumber.size === 0) return null;
+        const merged = tasks.map((task) => {
+          const number = (task as { number?: unknown }).number;
+          if (typeof number !== "number") return task;
+          const criteria = byNumber.get(number);
+          if (!criteria) return task;
+          return { ...task, criteria };
+        });
+        logLlmEvent("info", "worksheet-gen: criteria topped up", {
+          subject: request.subject,
+          stage,
+          tasks: byNumber.size,
+        });
+        return merged;
+      } catch (e) {
+        logLlmEvent("error", "worksheet-gen: criteria top-up failed", {
+          subject: request.subject,
+          stage,
+          error: String(e),
+        });
+        return null;
+      }
+    };
+
+    if (variantNeeds(worksheet.tasks as unknown as CleanTask[])) {
+      const topped = await runCriteriaTopUp(
+        worksheet.tasks as unknown as CleanTask[],
+        "variant1",
+      );
+      if (topped) {
+        worksheet = { ...worksheet, tasks: topped as unknown as Worksheet["tasks"] };
+      }
+    }
+    if (
+      secondVariant &&
+      variantNeeds((secondVariant.tasks ?? []) as unknown as CleanTask[])
+    ) {
+      const topped = await runCriteriaTopUp(
+        (secondVariant.tasks ?? []) as unknown as CleanTask[],
+        "variant2",
+      );
+      if (topped && secondVariant) {
+        secondVariant = { ...secondVariant, tasks: topped as unknown as Worksheet["tasks"] };
+      }
+    }
+
+    criteriaMissing =
+      !hasAnyCriteria(worksheet.tasks as unknown as CleanTask[]) ||
+      (secondVariant
+        ? !hasAnyCriteria((secondVariant.tasks ?? []) as unknown as CleanTask[])
+        : false);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ТЗ-34: СБОРКА БЛОКА `evaluation` ДЛЯ ОТВЕТА API
+  //
+  // Ключ ОТДЕЛЬНЫЙ — не внутри текста задания и не внутри `answer`. Внутри
+  // остаются сами критерии (`task.criteria`), а `evaluation` — производная:
+  // собранная из заданий и дополненная кодовыми весами. Разойтись они не
+  // могут: ключ считается по тем же заданиям, что уедут учителю.
+  //
+  // Для обычного рабочего листа блока НЕТ (AD-7): лист учитель не оценивает,
+  // он его раздаёт.
+  // ─────────────────────────────────────────────────────────────────────────────
+  const evaluationParts: EvaluationPart[] = [];
+  if (needsEvaluation) {
+    evaluationParts.push(
+      buildEvaluationPart({
+        variant: 1,
+        title: worksheet.title,
+        tasks: worksheet.tasks as unknown as EvaluationTaskInput[],
+        model: modelEvaluationRaw,
+      }),
+    );
+    if (secondVariant) {
+      evaluationParts.push(
+        buildEvaluationPart({
+          variant: 2,
+          title: secondVariant.title,
+          tasks: secondVariant.tasks as unknown as EvaluationTaskInput[],
+          model: modelEvaluationRaw2,
+        }),
+      );
+    }
+  }
+
   // Log — ПО КАЖДОМУ вызову провайдера (AD-5).
   //
   // worksheetId (миграция 0009) — привязка вызова к листу. Без неё по базе
@@ -1391,6 +1833,9 @@ export async function generateWorksheet(
     // ТЗ-32, AD-4: сколько заданий уедет без ключа. Считается по обоим
     // вариантам — лист учитель печатает целиком, а не один его фрагмент.
     tasksWithoutAnswer,
+    // ТЗ-34: нарушения разнообразия типов и «критериев нет».
+    typeDiversityViolations,
+    criteriaMissing,
   );
 
   const variantsInfo = buildVariantStatus(isControl ? 2 : 1, secondVariant ? 2 : 1, {
@@ -1414,10 +1859,18 @@ export async function generateWorksheet(
     difficulty: request.difficulty,
     count: request.count,
     type: request.type,
-    response: { worksheet, secondVariant, quality, variants: variantsInfo },
+    response: { worksheet, secondVariant, quality, variants: variantsInfo, evaluation: evaluationParts },
   });
 
-  return { worksheet, meta, usage, secondVariant, quality, variants: variantsInfo };
+  return {
+    worksheet,
+    meta,
+    usage,
+    secondVariant,
+    quality,
+    variants: variantsInfo,
+    evaluation: evaluationParts,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

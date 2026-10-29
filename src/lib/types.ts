@@ -6,6 +6,16 @@ import type { TaskTypeId } from "./content/task-types";
 
 export type { TaskTypeId };
 
+/**
+ * ТЗ-34: критерии оценивания и шкала отметок.
+ *
+ * Тип живёт в `src/lib/content/grading.ts` — там же, где пороги отметок и
+ * веса заданий. Фронт и бэк обязаны считать отметку по ОДНОЙ формуле: две
+ * копии шкалы разъехались бы за неделю, и у одного учителя было бы «5 за
+ * 80 %», а у другого «5 за 90 %».
+ */
+export type { EvaluationPart, EvaluationCriterion, EvaluationMarkScale } from "./content/grading";
+
 export type SubjectSlug =
   | "math"
   | "algebra"

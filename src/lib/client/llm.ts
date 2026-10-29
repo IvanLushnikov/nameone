@@ -17,6 +17,7 @@ import type {
   MaterialBundle,
   LessonBundle,
   GenerationRequest,
+  EvaluationPart,
 } from "@/lib/types";
 import { generateWorksheet as mockWorksheet } from "@/lib/mock/generator";
 import { generateLessonPlan as mockLessonPlan } from "@/lib/mock/lesson-plan";
@@ -392,6 +393,32 @@ export interface QualityLoss {
    * дописать счётчик для этого ответа нечем, и молчание тут уместно.
    */
   tasksWithoutAnswer?: number;
+  /**
+   * ТЗ-34: нарушения разнообразия типов заданий, которые остались в выдаче.
+   *
+   * Приходит с бэкенда, который считает это по финальному списку заданий.
+   * Пустой массив — разнообразие соблюдено.
+   */
+  typeDiversityViolations?: TypeDiversityViolation[];
+  /**
+   * ТЗ-34: критерии оценивания сформировать не удалось.
+   *
+   * `true` — ни у одного задания нет критериев. На странице печати тогда
+   * честная строка, а не пустая страница.
+   */
+  criteriaMissing?: boolean;
+}
+
+/**
+ * ТЗ-34: нарушение разнообразия типов (зеркало бэкенда).
+ *
+ * `scope` — где нарушение: в конкретном варианте или по всей работе суммой.
+ */
+export interface TypeDiversityViolation {
+  type: string;
+  actual: number;
+  limit: number;
+  scope: string;
 }
 
 /**
@@ -420,6 +447,14 @@ export interface WorksheetClientResult {
   quality: QualityLoss;
   /** Сколько вариантов обещали, сколько пришло, деградировали ли. */
   variants: VariantStatus;
+  /**
+   * ТЗ-34: критерии оценивания и шкала отметок.
+   *
+   * Приходят из ответа БЭКА отдельным ключом `evaluation`. Один элемент для
+   * листа и теста, два для контрольной (по вариантам). Для обычного рабочего
+   * листа массив пустой — лист учитель раздаёт, а не оценивает.
+   */
+  evaluation: EvaluationPart[];
   source: "llm" | "mock";
   isDemo: boolean;
   /** Почему это заготовка (null у настоящего результата). */
@@ -451,7 +486,12 @@ export async function generateWorksheetSmart(
 ): Promise<WorksheetClientResult> {
   const r = await smartGenerate<
     Worksheet,
-    { secondVariant?: Worksheet | null; quality?: QualityLoss; variants?: VariantStatus }
+    {
+      secondVariant?: Worksheet | null;
+      quality?: QualityLoss;
+      variants?: VariantStatus;
+      evaluation?: EvaluationPart[];
+    }
   >(
     request,
     { endpoint: "worksheets", dataKey: "worksheet", bypassCache: opts?.bypassCache === true },
@@ -498,6 +538,9 @@ export async function generateWorksheetSmart(
     secondVariant,
     quality,
     variants,
+    // ТЗ-34: критерии оценивания. Приходят из ответа бэка; для рабочего
+    // листа массив пустой — и это не потеря, а замысел: лист не оценивают.
+    evaluation: r.extra?.evaluation ?? [],
     source: r.source,
     isDemo: r.isDemo,
     demoReason: r.demoReason,
