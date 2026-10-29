@@ -1,4 +1,5 @@
-import type { Worksheet, WorksheetTask, TaskType } from "@/lib/types";
+import type { Worksheet, WorksheetTask, TaskType, EvaluationPart } from "@/lib/types";
+import { marksScale } from "@/lib/content/grading";
 import { subjectDisplayName } from "@/lib/content/subject-display-name";
 import { formatDate } from "@/lib/utils/cn";
 import { SITE_HOST } from "@/lib/site";
@@ -15,6 +16,13 @@ interface Props {
   withExplanations: boolean;
   /** F-09: тип артефакта (worksheet | test | cards | control). Меняет вёрстку и заголовок. */
   type?: TaskType;
+  /**
+   * ТЗ-34: критерии оценивания и шкала отметок.
+   *
+   * Приходят из ответа API отдельным ключом `evaluation`. Для рабочего листа
+   * массив пустой — тогда блока на экране нет, как нет и страницы в печати.
+   */
+  evaluation?: EvaluationPart[];
 }
 
 /**
@@ -35,6 +43,98 @@ type TaskWithChart = Worksheet["tasks"][number] & { chart_spec?: ChartSpec };
  * для self-verification и сверки ответов, `text_latex` идёт только в рендер.
  */
 type TaskWithLatex = WorksheetTask & { text_latex?: string };
+
+/**
+ * ТЗ-33: задание с полями новых типов (образец, таблица, элементы, шаги).
+ *
+ * Поля добавлены в `src/lib/types.ts` как необязательные, поэтому здесь они
+ * доступны напрямую — без структурного пересечения.
+ */
+type TaskWithExtras = WorksheetTask & {
+  sample?: string | null;
+  table?: { headers: string[]; rows: string[][] } | null;
+  items?: string[] | null;
+  criteria?: string[] | null;
+  steps?: string[] | null;
+};
+
+/**
+ * ТЗ-33: дополнительные блоки задания в превью.
+ *
+ * Печать (DOCX) и превью показывают ОДНО И ТО ЖЕ: образец в рамке до текста
+ * задания, таблицу таблицей, элементы списком с местом для номера, шаги
+ * галочками. Если превью и бумага расходятся, учитель отдаёт классу не то,
+ * что видел на экране.
+ *
+ * Критерии приёмки здесь НЕ показываются: они нужны учителю, а не ученику —
+ * в печати они уходят в ключ (страницу ответов).
+ */
+function TaskExtraBlocks({ task }: { task: WorksheetTask }) {
+  const typed = task as TaskWithExtras;
+  const sample = typeof typed.sample === "string" ? typed.sample.trim() : "";
+  const table = typed.table;
+  const items = Array.isArray(typed.items) ? typed.items : [];
+  const steps = Array.isArray(typed.steps) ? typed.steps : [];
+
+  if (!sample && !table && items.length === 0 && steps.length === 0) return null;
+
+  return (
+    <>
+      {sample && (
+        <div className="mt-2 mb-1 border border-warm-300 rounded p-2">
+          <div className="text-[10px] font-semibold text-warm-700 mb-1">Образец</div>
+          <MathText text={sample} />
+        </div>
+      )}
+      {table && table.headers.length > 0 && table.rows.length > 0 && (
+        <table className="mt-2 mb-1 w-full border-collapse text-sm">
+          <thead>
+            <tr>
+              {table.headers.map((h, i) => (
+                <th key={i} className="border border-warm-300 px-2 py-1 text-left font-semibold">
+                  <MathText text={h} />
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((row, ri) => (
+              <tr key={ri}>
+                {table.headers.map((_, ci) => (
+                  <td key={ci} className="border border-warm-300 px-2 py-1">
+                    <MathText text={row[ci] ?? ""} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {items.length > 0 && (
+        <ol className="mt-2 mb-1 list-none space-y-1">
+          {items.map((item, i) => (
+            <li key={i} className="flex items-baseline gap-2 text-sm">
+              <span className="inline-block w-14 shrink-0 border-b border-warm-400 text-[11px] text-warm-600">
+                &nbsp;
+              </span>
+              <MathText text={item} />
+            </li>
+          ))}
+        </ol>
+      )}
+      {steps.length > 0 && (
+        <ul className="mt-2 mb-1 list-none space-y-1">
+          {steps.map((step, i) => (
+            <li key={i} className="flex items-baseline gap-2 text-sm">
+              <span className="shrink-0 text-warm-700">☐</span>
+              <MathText text={step} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
 
 /**
  * F-09: лейблы типов для шапки и подвала превью.
@@ -65,7 +165,7 @@ const TYPE_LABEL: Record<TaskType, string> = {
  * F-09: для type=test рендерим как тест (multiple-choice с буквами A–D),
  * для type=cards — как сетку карточек, иначе — обычный нумерованный список.
  */
-export function WorksheetPreview({ worksheet, withAnswers, withExplanations, type }: Props) {
+export function WorksheetPreview({ worksheet, withAnswers, withExplanations, type, evaluation }: Props) {
   /**
    * ИИ-проверены ли задания. Источник правды — `task.verified` у каждого
    * задания, а не «лист вообще проверен»: частично проверенный лист не должен
@@ -73,6 +173,14 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
    */
   const allTasksVerified =
     worksheet.tasks.length > 0 && worksheet.tasks.every((task) => task.verified === true);
+
+  /**
+   * Сколько страниц в материале. Критерии — отдельная страница ПОСЛЕ ключа,
+   * и подвал должен считать её тоже: «Лист 1 из 2» при трёх страницах —
+   * враньё, которое учитель видит на бумаге.
+   */
+  const criteriaParts = evaluation ?? [];
+  const totalPages = 1 + (withAnswers ? 1 : 0) + criteriaParts.length;
 
   return (
     <div className="bg-warm-100 rounded-2xl p-3 sm:p-6 print:p-0 print:bg-white">
@@ -201,6 +309,12 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
                           className="worksheet-chart my-2"
                         />
                       )}
+                      {/* ТЗ-33: блоки новых типов задания. Те же поля, что и
+                          в печати (DOCX), — и в том же порядке: образец ДО
+                          текста задания, таблица после, элементы и шаги — в
+                          списке. Учитель сначала видит на экране то, что
+                          потом унесёт в класс на бумаге. */}
+                      <TaskExtraBlocks task={task} />
                       <div className="flex items-start gap-2 flex-wrap">
                         <span className="flex-1 min-w-0">
                           <MathText
@@ -248,7 +362,7 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
                   на всех шести страницах. Слово «стр.» обещало нумерацию
                   страниц, которой подвал не ведёт: настоящей нумерации
                   страниц в печати здесь нет. */}
-              <span>Лист 1 из {withAnswers ? 2 : 1}</span>
+              <span>Лист 1 из {totalPages}</span>
             </footer>
           </article>
         </WorksheetScale>
@@ -301,12 +415,113 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
 
                 <footer className="mt-10 pt-4 border-t border-warm-200 flex items-center justify-between text-[10px] text-[color:var(--text-muted)]">
                   <span>УчЛист · {SITE_HOST}</span>
-                  <span>Лист 2 из 2 · ответы только для учителя</span>
+                  <span>Лист 2 из {totalPages} · ответы только для учителя</span>
                 </footer>
               </article>
             </WorksheetScale>
           </div>
         )}
+
+        {/* Страница «Критерии оценивания» (ТЗ-34) — ПОСЛЕ страницы ключа.
+            Ровно тот же порядок, что в DOCX: сначала ответы, потом по чему
+            учитель их принимает. Критерий приёмки нужен учителю, а ученику он
+            превращается в подсказку — поэтому страница помечена «только для
+            учителя» и печатается отдельно от тела листа. */}
+        {criteriaParts.map((part, partIndex) => (
+          <div key={part.variant} className="mt-8 print:mt-0 print:break-before-page">
+            <WorksheetScale>
+              <article className="worksheet-page animate-fade-in print:shadow-none">
+                <header className="flex items-start justify-between pb-4 mb-5 border-b-2 border-warm-950">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-warm-500">
+                      Критерии оценивания
+                    </div>
+                    <h1 className="text-xl font-bold text-warm-950 mt-1">
+                      {part.variant > 1 ? `Вариант ${part.variant}` : worksheet.title}
+                    </h1>
+                    <div className="text-xs text-warm-600 mt-1">Только для учителя · не раздавать ученикам</div>
+                  </div>
+                  <div className="text-right text-xs text-warm-500 shrink-0">
+                    <div>УчЛист</div>
+                    <div className="mt-2 inline-block px-2 py-0.5 rounded border border-accent-300 text-accent-700 text-[10px] font-semibold">
+                      Шкала отметок
+                    </div>
+                  </div>
+                </header>
+
+                <div className="text-sm">
+                  <div className="font-semibold text-warm-950 mb-1">Шкала отметок</div>
+                  <ul className="mb-3 space-y-0.5 text-warm-800">
+                    {marksScale().map((entry) => (
+                      <li key={entry.mark}>
+                        Отметка {entry.mark} — от {entry.fromPercent}% выполнения
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="font-semibold text-warm-950 mb-1">
+                    Максимальный балл работы: {part.totalMaxPoints}
+                  </div>
+                </div>
+
+                {part.criteria.length === 0 ? (
+                  <div className="mt-4 rounded border border-accent-300 bg-accent-50 p-3 text-sm text-accent-800">
+                    Критерии не удалось сформировать — оценивайте по ключу
+                  </div>
+                ) : (
+                  <table className="mt-4 w-full border-collapse text-sm">
+                    <thead>
+                      <tr>
+                        <th className="border border-warm-300 px-2 py-1 text-left font-semibold w-10">№</th>
+                        <th className="border border-warm-300 px-2 py-1 text-left font-semibold">Критерий</th>
+                        <th className="border border-warm-300 px-2 py-1 text-left font-semibold w-24">Макс. балл</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {part.criteria.map((item) => (
+                        <tr key={item.number}>
+                          <td className="border border-warm-300 px-2 py-1 font-semibold align-top">{item.number}</td>
+                          <td className="border border-warm-300 px-2 py-1 align-top">
+                            {item.criteria.map((c) => (
+                              <div key={c}>— {c}</div>
+                            ))}
+                          </td>
+                          <td className="border border-warm-300 px-2 py-1 align-top">{item.maxPoints}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                <div className="mt-4 text-sm">
+                  <div className="font-semibold text-warm-950 mb-1">Типичные ошибки</div>
+                  {part.typicalMistakes.length === 0 ? (
+                    <div className="text-warm-500">не указаны</div>
+                  ) : (
+                    <ul className="space-y-0.5 text-warm-800">
+                      {part.typicalMistakes.map((mistake) => (
+                        <li key={mistake}>— {mistake}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div className="mt-3 text-sm">
+                  <div className="font-semibold text-warm-950 mb-1">Рекомендация учителю</div>
+                  <div className={part.recommendation ? "text-warm-800" : "text-warm-500"}>
+                    {part.recommendation ?? "не указана"}
+                  </div>
+                </div>
+
+                <footer className="mt-10 pt-4 border-t border-warm-200 flex items-center justify-between text-[10px] text-[color:var(--text-muted)]">
+                  <span>УчЛист · {SITE_HOST}</span>
+                  <span>
+                    Лист {(withAnswers ? 2 : 1) + partIndex + 1} из {totalPages} · критерии только для учителя
+                  </span>
+                </footer>
+              </article>
+            </WorksheetScale>
+          </div>
+        ))}
       </div>
     </div>
   );

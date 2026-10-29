@@ -15,6 +15,8 @@
 
 import { Hono, type Context } from "hono";
 import { z } from "zod";
+/** ТЗ-33: типы заданий — из общего реестра (см. `src/lib/content/task-types.ts`). */
+import { TASK_TYPE_IDS } from "../../../src/lib/content/task-types";
 import type { Env } from "../env";
 import { generateWorksheet, validateWorksheet } from "../llm";
 import { saveWorksheet, logWorksheetEvent, getWorksheetById, getWorksheetOwnerId } from "../services/worksheet";
@@ -263,6 +265,15 @@ worksheetsRouter.post("/generate", async (c) => {
     // сколько выкинул фильтр и что удалось добрать дозапросом (ТЗ-25, AD-7).
     quality: result.quality,
     variants: result.variants,
+    // ТЗ-34: критерии оценивания и шкала отметок — ОТДЕЛЬНЫМ КЛЮЧОМ.
+    //
+    // Раньше критериев в ответе не было вообще: в карточке тарифа написано
+    // «контрольная с критериями оценивания», а в файле был ключ с голыми
+    // ответами («12», «3/4», «б)»), по которому отметку не поставить.
+    //
+    // Ключ приезжает ТОЛЬКО для контрольной и теста: обычный рабочий лист
+    // учитель не оценивает, он его раздаёт (AD-7).
+    evaluation: result.evaluation ?? [],
     meta: result.meta,
     usage: result.usage,
   });
@@ -435,13 +446,25 @@ const WorksheetBody = z.object({
       z.object({
         number: z.number().int().positive(),
         text: z.string().min(1).max(2000),
-        type: z.enum(["computation", "multiple-choice", "short-answer", "essay", "fill-blank"]),
+        type: z.enum(TASK_TYPE_IDS as [string, ...string[]]),
         options: z.array(z.string().max(500)).max(20).optional(),
         answer: z.string().max(2000).optional(),
         explanation: z.string().max(2000).optional(),
         points: z.number().int().nonnegative().max(100),
         verified: z.union([z.boolean(), z.null()]).optional(),
         verifiedExplanation: z.string().max(2000).optional(),
+        // ТЗ-33: поля новых типов задания. Необязательные — старые листы
+        // приходят без них и принимаются как раньше.
+        sample: z.string().max(4000).nullish(),
+        table: z
+          .object({
+            headers: z.array(z.string().max(500)).max(20),
+            rows: z.array(z.array(z.string().max(500)).max(20)).max(50),
+          })
+          .nullish(),
+        items: z.array(z.string().max(1000)).max(50).nullish(),
+        criteria: z.array(z.string().max(1000)).max(20).nullish(),
+        steps: z.array(z.string().max(1000)).max(30).nullish(),
       }),
     )
     .min(1)

@@ -35,7 +35,7 @@
  * узнает, что модель не понимает формат, и правка промпта не случится никогда.
  * Тот же довод, по которому ТЗ-25 перестал выбрасывать `QualityFilterReport`.
  */
-import { hasUsableAnswer } from "./quality-filter";
+import { hasUsableAnswer, hasConcreteCriteria } from "./quality-filter";
 import { logLlmEvent } from "../log";
 
 /** Задание в том виде, в каком оно лежит в листе. */
@@ -120,6 +120,13 @@ export function renumberTasks<T extends NumberableTask>(
  *
  * При `withAnswers = false` пустой ответ — законное состояние, и считать его
  * дефектом нельзя: поэтому при `required = false` возвращаем 0.
+ *
+ * ТЗ-34, AD-5: У ТИПА С КРИТЕРИЯМИ КЛЮЧ — ЭТО КРИТЕРИИ, а не `answer`.
+ * Эталонного текста у эссе, открытого ответа, практической работы и работы с
+ * источником не существует в принципе, поэтому пустой `answer` у такого
+ * задания — не дефект. Считать его дефектом значило бы кричать учителю «у вас
+ * 3 задания без ключа» на контрольной, где ключ есть — он напечатан на
+ * отдельной странице «Критерии оценивания».
  */
 export function countTasksWithoutAnswer(
   tasks: readonly NumberableTask[],
@@ -128,7 +135,10 @@ export function countTasksWithoutAnswer(
 ): number {
   if (!required) return 0;
   return tasks.reduce(
-    (count, task) => (hasUsableAnswer(task?.answer) ? count : count + 1),
+    (count, task) =>
+      hasUsableAnswer(task?.answer) || hasConcreteCriteria(task)
+        ? count
+        : count + 1,
     0,
   );
 }

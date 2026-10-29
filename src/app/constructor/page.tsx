@@ -65,6 +65,7 @@ import type {
   TaskType,
   UserHistoryItem,
   Worksheet,
+  EvaluationPart,
   LessonPlan,
   Presentation,
   Ktp,
@@ -523,6 +524,16 @@ export default function ConstructorPage() {
    * коде; теперь он присылает их всегда (см. routes/worksheets.ts).
    */
   const [qualityNotice, setQualityNotice] = React.useState<QualityNotice | null>(null);
+  /**
+   * ТЗ-34: критерии оценивания и шкала отметок.
+   *
+   * Приходят из ответа API отдельным ключом `evaluation`: один блок для листа
+   * и теста, два для контрольной (по вариантам). Едут в печать и в превью.
+   *
+   * Для обычного рабочего листа массив пустой — лист учитель раздаёт, а не
+   * оценивает, и страницы критериев у него нет.
+   */
+  const [evaluation, setEvaluation] = React.useState<EvaluationPart[]>([]);
   /**
    * F-05: прогресс проверки ответов по кнопке.
    *
@@ -1487,6 +1498,8 @@ export default function ConstructorPage() {
               // бьёт по всем типам работ, а не только по контрольной.
               quality: r.quality,
               variants: r.variants,
+              // ТЗ-34: критерии оценивания едут вместе с материалом.
+              evaluation: r.evaluation,
             };
           }
           // Контрольная работа — единственный тип, который по определению
@@ -1525,6 +1538,8 @@ export default function ConstructorPage() {
               // учитель не узнает, что заданий меньше, чем просил.
               quality: r.quality,
               variants: r.variants,
+              // ТЗ-34: у контрольной — два блока критериев, по вариантам.
+              evaluation: r.evaluation,
             };
           }
           default: {
@@ -1610,6 +1625,9 @@ export default function ConstructorPage() {
           // что показано, и что пришло от сервера. `variants` для не-контрольной
           // работы не деградирует, и блок не появляется.
           setQualityNotice(buildQualityNotice(result.quality, result.variants));
+          // ТЗ-34: критерии оценивания — в превью и в печать. У листа их нет
+          // (массив пустой), у контрольной — два блока, по вариантам.
+          setEvaluation(result.evaluation ?? []);
           artifactTitle = ws.title;
           artifactId = ws.id;
           histSubject = ws.subject as SubjectSlug;
@@ -2031,6 +2049,10 @@ export default function ConstructorPage() {
     const blob = await generateWorksheetDocx(worksheet, {
       withAnswers,
       withExplanations,
+      // ТЗ-34: страница «Критерии оценивания» — ПОСЛЕ ключа. Для рабочего
+      // листа блок пустой, и страницы в файле не будет: лист учитель раздаёт,
+      // а не оценивает.
+      evaluation,
       // Пометка «демонстрационная заготовка» должна попасть В ФАЙЛ: на экране
       // её видно плашкой, а выгрузка уходит из приложения — и без неё учитель
       // раздаёт заготовку, не зная об этом (NEW-EXPORT-1).
@@ -2878,6 +2900,7 @@ export default function ConstructorPage() {
                       withAnswers={withAnswers}
                       withExplanations={withExplanations}
                       type={type}
+                      evaluation={evaluation}
                     />
                   )}
                   {kind === "worksheet" && photoCheckOpen && (

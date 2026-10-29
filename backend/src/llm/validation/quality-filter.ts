@@ -31,6 +31,18 @@
  * модель будет генерировать мусор и удивляться, почему он исчезает.
  */
 
+import {
+  getTaskTypeSpec,
+} from "../../../../src/lib/content/task-types";
+/**
+ * ТЗ-34: проверка конкретности критериев — в общем модуле оценивания.
+ *
+ * Правило «пустые и общие формулировки отбрасываются» должно быть ОДНИМ и на
+ * бэке (чистка ответа модели), и на ответе API (сборка `evaluation`), иначе
+ * одно и то же правило разъедется по двум реализациям.
+ */
+import { isConcreteCriterion } from "../../../../src/lib/content/grading";
+
 /** Задание в том виде, в каком пришло от модели. */
 export interface RawTask {
   number?: unknown;
@@ -39,6 +51,12 @@ export interface RawTask {
   options?: unknown;
   answer?: unknown;
   explanation?: unknown;
+  /** ТЗ-33: поля новых типов задания (образец, таблица, элементы…). */
+  sample?: unknown;
+  table?: unknown;
+  items?: unknown;
+  criteria?: unknown;
+  steps?: unknown;
   [key: string]: unknown;
 }
 
@@ -56,6 +74,43 @@ export interface QualityFilterReport {
    * `answer: null` и доходило до DOCX без строки ответа.
    */
   droppedNoAnswer: number[];
+  /**
+   * ТЗ-33: задания, выкинутые из-за несоответствия своему типу из реестра.
+   *
+   * Например, задание типа `pattern` без поля `sample` (образца) — это ровно
+   * тот дефект, из-за которого учительница уносила классу бессмысленный
+   * лист. Отдельное поле, а не `droppedPatternRef`: там про ссылку на
+   * несуществующий образец В ТЕКСТЕ, здесь про отсутствие самого поля.
+   */
+  droppedTypeMismatch: number[];
+  /**
+   * ТЗ-33: задания, выкинутые из-за типа, которого нет в реестре.
+   *
+   * Модель может вернуть тип, которого в продукте нет («diagram», «table»).
+   * Такой тип не печатается и не проверяется — значит, отдавать его учителю
+   * нельзя. Раньше такое проходило молча (zod проверял только 5 типов, а
+   * модель возвращала больше), и дефект всплывал уже на печати.
+   */
+  droppedUnknownType: number[];
+  /**
+   * ТЗ-34: задания, у которых вычищены критерии приёмки.
+   *
+   * Номера заданий, у которых список `criteria` после чистки стал короче
+   * (пустые строки, общие формулировки вроде «ответ неполный»).
+   *
+   * Факт чистки виден именно здесь, а не внутри задания: иначе по готовому
+   * листу нельзя понять, был ли критерий у задания и почему исчез.
+   */
+  cleanedCriteria: number[];
+  /**
+   * ТЗ-34: задания, у которых ответ обнулён, потому что тип ждёт критериев.
+   *
+   * Для типа с `answerKind: "criteria"` поле `answer` — это НЕ эталонный
+   * текст, а мусор от модели (часто — сами критерии, написанные не в то
+   * поле). Оставлять такой текст в ключе нельзя: он выглядит как ответ,
+   * которым учитель будет сверять работу.
+   */
+  cleanedCriteriaAnswer: number[];
   /** Всего заданий до и после. */
   before: number;
   after: number;
@@ -201,6 +256,142 @@ export function hasUsableAnswer(answer: unknown): boolean {
 }
 
 /**
+ * ТЗ-33: непустой список строк.
+ *
+ * Отдельная проверка вместо `Array.isArray(x) && x.length > 0` — потому что
+ * дальше по коду список надо ещё и ОБРЕЗАТЬ до лимита, а пустой после
+ * обрезки список — это уже другой случай.
+ */
+function hasNonEmptyList(value: unknown): boolean {
+  return Array.isArray(value) && value.some((v) => typeof v === "string" && v.trim().length > 0);
+}
+
+/**
+ * ТЗ-33: прислала ли модель образец отдельным полем `sample`.
+ *
+ * Образец типа `pattern` лежит в своём поле, а не в тексте задания: так его
+ * удобно печатать рамкой ДО формулировки. Проверка «есть ли образец» в тексте
+ * (`hasExampleInText`) такой образец не видит — поэтому здесь своя проверка.
+ */
+function hasSampleField(task: RawTask): boolean {
+  return typeof task.sample === "string" && task.sample.trim().length > 0;
+}
+
+/**
+ * ТЗ-34: ждёт ли этот тип критериев вместо эталона.
+ *
+ * Берётся из реестра (`answerKind === "criteria"`), а не из списка типов в
+ * коде: правило живёт рядом с описанием типа, поэтому новый тип с критериями
+ * обслуживается автоматически.
+ */
+export function taskExpectsCriteria(task: RawTask): boolean {
+  const rawType = typeof task.type === "string" ? task.type.trim() : "";
+  if (!rawType) return false;
+  return getTaskTypeSpec(rawType)?.answerKind === "criteria";
+}
+
+/**
+ * ТЗ-34: есть ли у задания КОНКРЕТНЫЕ критерии приёмки.
+ *
+ * Для типа с `answerKind: "criteria"` критерий приёмки и ЕСТЬ ключ: эталонного
+ * текста там не существует в принципе, и выкидывать такое задание — значит
+ * заменить развёрнутый вопрос обычным расчётом (так и было: учитель получал
+ * контрольную, где не было ни одного развёрнутого задания).
+ */
+export function hasConcreteCriteria(task: RawTask): boolean {
+  if (!Array.isArray(task.criteria)) return false;
+  return task.criteria.some(
+    (c) => typeof c === "string" && isConcreteCriterion(c),
+  );
+}
+
+/**
+ * ТЗ-34: почистить список критериев задания.
+ *
+ * Убираются пустые строки и общие формулировки («ответ неполный», «бывают
+ * ошибки»): в ключе они занимают строку и ничего не говорят учителю. Возвращается
+ * новый список и признак «что-то вычистили».
+ */
+function cleanCriteria(task: RawTask): { criteria: string[]; changed: boolean } {
+  if (!Array.isArray(task.criteria)) return { criteria: [], changed: false };
+  const original = task.criteria;
+  const kept = original.filter(
+    (c): c is string => typeof c === "string" && isConcreteCriterion(c),
+  );
+  return { criteria: kept, changed: kept.length !== original.length };
+}
+
+/**
+ * ТЗ-33: подходит ли задание своему типу из реестра.
+ *
+ * Проверка по ТРЕБОВАНИЯМ ТИПА, а не по захардкоженному списку: требования
+ * лежат в реестре (`src/lib/content/task-types.ts`) рядом с описанием типа,
+ * поэтому новая форма задания проверяется автоматически, а не «ещё одним
+ * правилом в коде».
+ *
+ * ТРИ СЛУЧАЯ, И ИХ НЕЛЬЗЯ СМЕШИВАТЬ:
+ *
+ *   1. ТИПА НЕТ — задание годное. Модель не всегда присылает `type`, и
+ *      фильтр не про форму заданий, а про его качество. Раньше такие задания
+ *      проходили, и ломать это нельзя: проверка должна ловить ДЕФЕКТ, а не
+ *      отсутствие необязательного поля.
+ *   2. ТИП НЕИЗВЕСТЕН (модель выдумала свой, например «diagram») — дефект.
+ *      Такой тип не напечатать и не сохранить: zod на клиентском сохранении
+ *      отвергнет его с 400, и учитель вместо листа получит ошибку.
+ *   3. ТИП ИЗ РЕЕСТРА, НО НЕ СООТВЕТСТВУЕТ ТРЕБОВАНИЯМ — дефект.
+ *
+ * Что требует каждый тип:
+ *   · `pattern`         — `sample`: разобранный образец В ТЕКСТЕ задания.
+ *                         Без него задание «выполните по образцу» бессмысленно
+ *                         (жалоба №5, 08.10.2026).
+ *   · `table-task`      — `table`: без таблицы задание не решаемо.
+ *   · `sequence`,       — `items`: без элементов нечего упорядочивать,
+ *     `classification`,   распределять или сопоставлять.
+ *     `matching`, `compare`
+ *   · `multiple-choice`, — `options`: без вариантов выбор не из чего делать.
+ *     `multi-answer`
+ *
+ * Возвращает `null`, если задание годное, и строку с причиной — если нет.
+ * Причина возвращается текстом, а не флагом, потому что она попадает в лог
+ * генерации: по логу должно быть видно, ЧТО именно не так с заданием.
+ */
+export function checkTaskTypeRequirements(task: RawTask): string | null {
+  const rawType = typeof task.type === "string" ? task.type.trim() : "";
+
+  // Случай 1: типа нет — проверять нечего, задание не трогаем.
+  if (!rawType) return null;
+
+  const spec = getTaskTypeSpec(rawType);
+  // Случай 2: тип есть, но в реестре его нет.
+  if (!spec) return `unknown-type:${rawType}`;
+
+  if (spec.needsSample && !hasNonEmptyList(task.sample ? [task.sample] : [])) {
+    return "pattern-without-sample";
+  }
+  if (spec.needsTable) {
+    const table = task.table as { headers?: unknown; rows?: unknown } | undefined | null;
+    const headers = Array.isArray(table?.headers) ? table.headers : [];
+    const rows = Array.isArray(table?.rows) ? table.rows : [];
+    if (headers.length === 0 || rows.length === 0) return "table-task-without-table";
+  }
+  if (spec.needsOptions && !hasNonEmptyList(task.options)) {
+    return `${rawType}-without-options`;
+  }
+  // Типы, которым нужны элементы для работы. `items` — это НЕ то же самое,
+  // что `options`: варианты ответа выбирают, элементы — упорядочивают.
+  if (
+    (rawType === "sequence" ||
+      rawType === "classification" ||
+      rawType === "matching" ||
+      rawType === "compare") &&
+    !hasNonEmptyList(task.items)
+  ) {
+    return `${rawType}-without-items`;
+  }
+  return null;
+}
+
+/**
  * Чужая математика в задании по предмету, который ею не занимается.
  *
  * Пороги: 2+ маркера в тексте задания. Один маркер — ложное срабатывание
@@ -299,6 +490,10 @@ export function filterTasks(
     cleanedAnswer: [],
     droppedForeignMath: [],
     droppedNoAnswer: [],
+    droppedTypeMismatch: [],
+    droppedUnknownType: [],
+    cleanedCriteria: [],
+    cleanedCriteriaAnswer: [],
     before: tasks.length,
     after: tasks.length,
   };
@@ -310,9 +505,28 @@ export function filterTasks(
 
     const text = typeof task.text === "string" ? task.text : "";
 
+    // 0. ТЗ-33: тип из реестра и соответствие типа его требованиям.
+    //    Идёт ПЕРВЫМ, потому что остальные проверки бессмысленны для задания
+    //    неизвестного типа: нечем ни печатать, ни проверять.
+    const typeProblem = checkTaskTypeRequirements(task);
+    if (typeProblem !== null) {
+      if (typeProblem.startsWith("unknown-type:")) {
+        report.droppedUnknownType.push(index + 1);
+      } else {
+        report.droppedTypeMismatch.push(index + 1);
+      }
+      return;
+    }
+
     // 1. Ссылка на образец, которого нет. Чинить нечем — задание неоднозначно
     //    для ученика, поэтому выкидываем.
-    if (hasDanglingPatternRef(text)) {
+    //
+    //    ТЗ-33: образец может лежать в отдельном поле `sample` — тогда ссылка
+    //    «выполните по образцу» НЕ висячая: образец есть, просто не в тексте,
+    //    а в своём поле (так его и печатают — рамкой ДО текста задания).
+    //    Без этой поправки фильтр выкидывал бы правильные задания типа
+    //    `pattern`: образец прислали, а проверка его не видела.
+    if (!hasSampleField(task) && hasDanglingPatternRef(text)) {
       report.droppedPatternRef.push(index + 1);
       return;
     }
@@ -331,6 +545,32 @@ export function filterTasks(
       report.cleanedAnswer.push(index + 1);
     }
 
+    // 3-бис. ТЗ-34: КРИТЕРИИ ЧИСТЯТСЯ, А У ТИПА С КРИТЕРИЯМИ ОБНУЛЯЕТСЯ ОТВЕТ.
+    //
+    //    Критерии приёмки лежат в поле `criteria` (AD-4: один носитель, а не
+    //    два). Пустые строки и общие формулировки («ответ неполный») убираются:
+    //    в ключе они занимают строку и ничего не говорят учителю.
+    //
+    //    Ответ у типа с `answerKind: "criteria"` обнуляется, если модель
+    //    положила туда критерии (старое правило 17) или любой текст со
+    //    словом «критери». Такой текст выглядит как эталонный ответ, которым
+    //    учитель будет сверять работу, а эталонного ответа у такого типа не
+    //    существует в принципе.
+    const expectsCriteria = taskExpectsCriteria(task);
+    const cleaned = cleanCriteria(task);
+    if (cleaned.changed) {
+      report.cleanedCriteria.push(index + 1);
+      task.criteria = cleaned.criteria.length > 0 ? cleaned.criteria : null;
+    }
+    if (
+      expectsCriteria &&
+      typeof task.answer === "string" &&
+      /критер/i.test(task.answer)
+    ) {
+      task.answer = null;
+      report.cleanedCriteriaAnswer.push(index + 1);
+    }
+
     // 3a. ТЗ-26, Ф-5: ответов не оказалось — задание без ответа. Если учитель
     //     просил ответы, такое задание в выгрузку не идёт: в DOCX у него нет
     //     строки ответа, и учитель не может сверить работу. Выкидываем, чтобы
@@ -338,7 +578,15 @@ export function filterTasks(
     //
     //     При `withAnswers = false` НЕ выкидываем: там null — то, что просил
     //     учитель, и выкидывание съело бы весь лист.
-    if (requireAnswer && !hasUsableAnswer(task.answer)) {
+    //
+    //     ТЗ-34, AD-5: ИСКЛЮЧЕНИЕ ДЛЯ ТИПА С КРИТЕРИЯМИ. У эссе, открытого
+    //     ответа, практической работы и работы с источником эталонного текста
+    //     не существует — критерий приёмки и ЕСТЬ ключ. Раньше такое задание
+    //     выкидывалось, и на его место дозапрос ставил обычный расчёт: учитель
+    //     получал контрольную, в которой не было ни одного развёрнутого
+    //     задания. Правило выводится из `answerKind` в реестре, а не из
+    //     списка типов в коде.
+    if (requireAnswer && !hasUsableAnswer(task.answer) && !hasConcreteCriteria(task)) {
       report.droppedNoAnswer.push(index + 1);
       return;
     }
@@ -364,8 +612,37 @@ export function filterTasks(
   // Если осталось МЕНЬШЕ трети — тоже возвращаем исходные: значит, сработало
   // слишком агрессивно (см. историю с порогом маркеров), и доверять такому
   // результату нельзя.
+  //
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ТЗ-33: ОТКАТ ВОЗВРАЩАЕТ ТОЛЬКО МЯГКИЕ ПОТЕРИ.
+  //
+  // Откат существует, чтобы учитель получил хоть какой-то материал. Но есть
+  // два вида потерь, и откатывать их нельзя:
+  //
+  //   · НЕИЗВЕСТНЫЙ ТИП — задание нельзя ни напечатать, ни сохранить (zod
+  //     отвергнет с 400). Вернуть его в откате значит подсунуть учителю
+  //     материал, который сломается на следующем шаге.
+  //   · НЕСООТВЕТСТВИЕ ТИПУ — «по образцу» без образца, «задание по таблице»
+  //     без таблицы. Такое задание бессмысленно ПО СМЫСЛУ: учитель отдаст
+  //     классу «выполните по образцу», которого нет. Откат здесь означал бы,
+  //     что вся работа ТЗ-33 (сделать форму, а не выкидывать её) обнуляется
+  //     ровно в том случае, когда модель ошиблась чаще обычного.
+  //
+  // Мягкие потери (ссылка на образец в тексте, чужая математика, нет ответа)
+  // откатываются, как и раньше: там задание можно починить или показать.
+  // ─────────────────────────────────────────────────────────────────────────────
   if (kept.length === 0 || kept.length < tasks.length / 3) {
-    return { tasks, report };
+    const recoverable = tasks.filter((task) => {
+      const problem = checkTaskTypeRequirements(task);
+      return problem === null;
+    });
+    // Если после жёсткой отсечки не осталось ничего — вернуть всё равно
+    // нечего. Но тогда возвращаем ПУСТОЙ набор, а не исходный: исходный
+    // состоит ровно из тех заданий, которые мы только что признали
+    // непригодными. Пустой лист учитель поймёт (признак в ответе API),
+    // а бессмысленное задание он унесёт в класс и не поймёт, почему оно
+    // там было.
+    return { tasks: recoverable, report };
   }
   return { tasks: kept, report };
 }
