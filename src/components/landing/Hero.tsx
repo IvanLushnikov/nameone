@@ -62,13 +62,13 @@ export function Hero() {
                     "linear-gradient(to top, rgba(255,202,184,0.9) 0 34%, rgba(255,202,184,0) 34%)",
                 }}
               >
-                Сделайте его за&nbsp;30&nbsp;секунд
+                Сделайте лист из&nbsp;10&nbsp;заданий за&nbsp;30&nbsp;секунд
               </span>
             </span>
           </h1>
 
           <p className="mt-6 text-lg sm:text-xl text-warm-600 text-pretty max-w-2xl mx-auto leading-relaxed animate-fade-in" style={{ animationDelay: "0.1s", animationFillMode: "both" }}>
-            Вечер уходит на&nbsp;поиск заданий по&nbsp;программе, перенос в&nbsp;Word и&nbsp;проверку, что класс и&nbsp;тема&nbsp;— правильные. Мы&nbsp;делаем рабочий лист за&nbsp;30&nbsp;секунд: задачи под&nbsp;ФГОС, верный класс и&nbsp;тема, ответы и&nbsp;пояснения внутри.
+            Вечер уходит на&nbsp;поиск заданий по&nbsp;программе, перенос в&nbsp;Word и&nbsp;проверку, что класс и&nbsp;тема&nbsp;— правильные. Мы&nbsp;делаем рабочий лист из&nbsp;10&nbsp;заданий за&nbsp;30&nbsp;секунд: задачи под&nbsp;ФГОС, верный класс и&nbsp;тема, ответы и&nbsp;пояснения внутри.
           </p>
 
           <div className="mt-9 flex flex-col sm:flex-row items-center justify-center gap-3 animate-fade-in" style={{ animationDelay: "0.2s", animationFillMode: "both" }}>
@@ -95,7 +95,15 @@ export function Hero() {
                 17,0 с на сервере, 25 с от клиента до готового PDF
                 (ТЗ-32 AD-9), поэтому 30 секунд — честное число, а не
                 округление «на глаз». Время сверки ответов (1–3 минуты) —
-                другая операция, у неё своё число. */}
+                другая операция, у неё своё число.
+
+                ТЗ-37 (M-11): «за 30 секунд» верно ровно для дефолтных 10
+                заданий (замер 29.10.2026 — 30,1 с), а на 12 заданиях тот же
+                лист собирается 67,5 с, на контрольной — 39,2 с. Поэтому
+                число теперь названо вместе с дефолтом: 10 заданий — это
+                столько, сколько стоит в конструкторе по умолчанию, и столько
+                же показывает макет листа ниже. Учитель, который выберет 12
+                заданий, увидит это число в конструкторе до генерации. */}
 
             <Stat icon={<FileCheck className="w-4 h-4" />} label="с&nbsp;ответами и&nbsp;пояснениями" value="Все листы" />
             <Stat icon={<Sparkles className="w-4 h-4" />} label="Тем в&nbsp;каталоге" value={`${CATALOG_TOPICS}`} />
@@ -184,7 +192,7 @@ function HeroMockup() {
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           </div>
           <div>
-            <div className="text-xs font-semibold text-warm-950">Готово примерно за 30 секунд</div>
+            <div className="text-xs font-semibold text-warm-950">10 заданий — за 30 секунд</div>
             <div className="text-[10px] text-warm-500">Ответы внутри</div>
           </div>
         </div>
@@ -230,6 +238,14 @@ function HeroMockup() {
                 <span>{task}</span>
               </li>
             ))}
+            {/* Макет показывает 10 заданий — столько, сколько в конструкторе по
+                умолчанию. Пять из них видно, остальные лист уносит на вторую
+                страницу: показывать все десять в макете не нужно, а число
+                «5 заданий» противоречило бы обещанию «за 30 секунд». */}
+            <li className="flex items-center text-warm-500">
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-warm-200 mr-2 shrink-0" />
+              …и ещё 5 заданий
+            </li>
           </ol>
 
           <div className="mt-6 pt-3 border-t border-dashed border-warm-200 text-[10px] text-[color:var(--text-muted)] text-center">
@@ -248,10 +264,10 @@ function HeroMockup() {
               <span className="text-xs text-warm-500">Генерация</span>
               <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Готово примерно за 30 секунд
+                Готово
               </span>
             </div>
-            <div className="text-sm font-semibold text-warm-950">5 заданий · со&nbsp;сложностью средняя</div>
+            <div className="text-sm font-semibold text-warm-950">10 заданий · со&nbsp;сложностью средняя</div>
             <div className="mt-3 h-1.5 bg-warm-100 rounded-full overflow-hidden">
               <div
                 className="h-full bg-gradient-to-r from-brand-400 to-brand-600"

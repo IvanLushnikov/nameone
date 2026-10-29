@@ -20,8 +20,16 @@ import {
   type PlanId,
 } from "@/lib/content/plans";
 import { quotaGenerations } from "@/lib/content/landing-seo";
+import { splitSchoolPlanFeatures } from "@/lib/content/school-plan";
 import { clipDescription, absoluteUrl, ogImages, twitterCard } from "@/lib/seo/metadata";
 import { JsonLd } from "@/components/seo";
+
+/**
+ * Пункты тарифа «Школа» делятся на две части: что работает сегодня и что в
+ * планах. Разделение живёт в `src/lib/content/school-plan.ts` (файл тарифов
+ * `plans.ts` в эту волну правят задачи волны 3).
+ */
+const schoolPlan = splitSchoolPlanFeatures();
 
 /**
  * Коммерческий поиск: «сколько стоит рабочие листы», «тарифы», «цена подписки
@@ -423,14 +431,41 @@ export default function PricingPage() {
                 Учитель получит админку с отчётами по успеваемости класса. Ученики — личные кабинеты с историей. Интеграция со школьной LMS. Ориентир цены — {priceLabel("school", "month")}.
               </p>
 
-              <ul className="space-y-2 mb-6">
-                {PLANS.school.features.map((f) => (
+              {/* ТЗ-37 (M-10): список «Школы» разделён на две части.
+                  С галочкой — то, что работает сегодня. Отдельным блоком, без
+                  галочек, — то, что в планах к запуску (I квартал 2027).
+                  Раньше все семь пунктов рисовались одинаковыми галочками,
+                  включая интеграцию со Сферум / Moodle, которой в проекте нет
+                  вообще: тариф помечен «скоро» и не продаётся, но галочка на
+                  витрине обещание выполняла. */}
+              <ul className="space-y-2 mb-4">
+                {schoolPlan.available.map((f) => (
                   <li key={f} className="flex items-start gap-2 text-sm text-warm-700">
                     <Check className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
                     {f}
                   </li>
                 ))}
               </ul>
+
+              <div className="mb-6">
+                <p className="text-xs font-semibold uppercase tracking-wider text-warm-500">
+                  В планах: {PLANS.school.comingSoon}
+                </p>
+                <ul className="mt-2 space-y-1.5">
+                  {schoolPlan.planned.map((f) => (
+                    <li key={f} className="flex items-start gap-2 text-sm text-warm-600">
+                      {/* Не галочка: пункта ещё нет. Пустой пунктирный круг
+                          читается как «пока не сделано» и не путается со
+                          зелёной галочкой продаваемого тарифа. */}
+                      <span
+                        aria-hidden="true"
+                        className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full border border-dashed border-warm-300"
+                      />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+              </div>
 
               <div className="flex flex-wrap items-baseline gap-2 mb-6">
                 <span className="text-3xl font-bold text-warm-950 whitespace-nowrap">
