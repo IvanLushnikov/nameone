@@ -358,7 +358,7 @@ export function buildWorksheetPrompt(
       // Anthropic'ом у Plus, а этот блок меняется от запроса к запросу.
       // В system-промпте стоит ссылка на него (правило 3).
       // ───────────────────────────────────────────────────────────────────
-      ТИПЫ_ЗАДАНИЙ: buildTaskTypesPromptBlock(req.subject, req.grade),
+      ТИПЫ_ЗАДАНИЙ: buildTaskTypesPromptBlock(req.subject, req.grade, req.count),
       ...(plan && plan.length > 0
         ? {
             ПЛАН_ЛИСТА: {
@@ -502,7 +502,7 @@ export function buildTopUpPrompt(
       // ему нужны те же, что и основному промпту. Без этого блока модель во
       // время дозапроса вернула бы задания только пяти старых типов, и в
       // готовом листе типы снова «съехали» бы в однообразие.
-      ТИПЫ_ЗАДАНИЙ: buildTaskTypesPromptBlock(req.subject, req.grade),
+      ТИПЫ_ЗАДАНИЙ: buildTaskTypesPromptBlock(req.subject, req.grade, req.count),
       сколько_нужно: missingCount,
       уже_есть_задания: existingTaskTexts.slice(0, 30),
       ...(usedSkills.length > 0
@@ -590,7 +590,7 @@ export function buildVariantRetryPrompt(
       // ТЗ-33: ретрай — это новый лист целиком, поэтому типы заданий нужны
       // те же. Иначе переписанный вариант оказался бы однообразным, и весь
       // ретрай был бы потрачен впустую.
-      ТИПЫ_ЗАДАНИЙ: buildTaskTypesPromptBlock(req.subject, req.grade),
+      ТИПЫ_ЗАДАНИЙ: buildTaskTypesPromptBlock(req.subject, req.grade, req.count),
       требования: {
         оба_варианта_по_count: req.count,
         варианты_разные:

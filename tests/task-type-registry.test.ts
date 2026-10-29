@@ -179,32 +179,37 @@ describe("ТЗ-33: реестр типов заданий", () => {
 
   describe("блок промпта", () => {
     it("собирается из реестра и содержит применимые типы", () => {
-      const block = buildTaskTypesPromptBlock("math", 5);
+      const block = buildTaskTypesPromptBlock("math", 5, 12);
       expect(block).toContain("ДОСТУПНЫЕ ТИПЫ ЗАДАНИЙ");
       expect(block).toContain("`pattern`");
       expect(block).toContain("`computation`");
     });
 
     it("в блоке для математики нет практической работы", () => {
-      expect(buildTaskTypesPromptBlock("math", 5)).not.toContain("`practical`");
+      expect(buildTaskTypesPromptBlock("math", 5, 12)).not.toContain("`practical`");
     });
 
     it("в блоке для физкультуры практическая работа есть", () => {
-      expect(buildTaskTypesPromptBlock("pe", 8)).toContain("`practical`");
+      expect(buildTaskTypesPromptBlock("pe", 8, 12)).toContain("`practical`");
     });
 
     it("в блоке каждого типа есть его id — модель должна знать точное имя", () => {
       for (const subject of SUBJECT_SLUGS) {
-        const block = buildTaskTypesPromptBlock(subject, 5);
+        const block = buildTaskTypesPromptBlock(subject, 5, 12);
         for (const spec of typesForSubject(subject, 5)) {
           expect(block, `${spec.id} потерялся в промпте для ${subject}`).toContain(`\`${spec.id}\``);
         }
       }
     });
 
-    it("в блоке есть требование разнообразия", () => {
-      const block = buildTaskTypesPromptBlock("math", 5);
-      expect(block).toMatch(/различаться|одинаковых подряд/i);
+    it("в блоке есть требование разнообразия с конкретными числами", () => {
+      const block = buildTaskTypesPromptBlock("math", 5, 12);
+      // Не «не пиши одинаковые подряд», а числа: сколько одного типа можно
+      // и сколько должно быть других. Иначе модель трактует расплывчатое
+      // «разнообразие» по-своему и выдаёт шесть расчётов из восьми.
+      expect(block).toMatch(/Не больше \d+ \S+ одного типа/);
+      expect(block).toMatch(/Остальные \d+ \S+ должны быть других видов/);
+      expect(block).toMatch(/не меньше \d+ разных типов/);
     });
   });
 });
