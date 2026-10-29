@@ -97,3 +97,6 @@ backend/tests/cloudflare-test-env.d 2.ts
 .probe*
 .wtest
 _probe*
+
+# Git-worktree'ы агентов (ТЗ-33): рабочие копии агентов, не содержимое репозитория.
+.worktrees/
