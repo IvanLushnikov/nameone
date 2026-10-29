@@ -255,6 +255,19 @@ $ npx vitest run tests/task-type-registry.test.ts
 **Живой воркер:** `https://rabochielisty-api.ivanlusnikov159.workers.dev` (`/healthz`, `/api/worksheets/generate`).
 **Прод-база D1** читается напрямую через Cloudflare API (токен в секрет-сторе): таблицы `events`, `worksheets`, `llm_logs`, `llm_costs_actual`, `users`, `subscriptions`.
 
-**Тесты:** 175+ файлов (69 в `backend/tests/unit`, 61 в `tests/`, интеграционные). Известно: `tests/integration/export-size-gate.test.ts` и `tests/unit/plurals.test.ts` **падают по таймауту 5 с** на 2 CPU — и на чистом коде тоже; с `--testTimeout=120000` зелёные. Это не твой баг.
+**Тесты:** 175+ файлов (69 в `backend/tests/unit`, 61 в `tests/`, интеграционные).
+
+**Известные падения по таймауту — НЕ твои баги.** На 2 CPU с медленным диском эти тесты не укладываются в 5 секунд и падают **точно так же на чистом `main`**:
+- `tests/integration/export-size-gate.test.ts`
+- `tests/unit/plurals.test.ts`
+- `tests/integration/build-assets.test.ts` — сканирует 14 000 файлов собранного `out/`, нужно ~25 с
+
+С `--testTimeout=120000` они зелёные. **Прежде чем чинить «упавший» тест — проверь на чистом коде:**
+```bash
+git stash push -- src/ backend/
+npx vitest run <тест>          # ← падает так же? Значит, не твой баг
+git stash pop
+```
+Если падает и на чистом — фиксируй в отчёте как чужое, не чини.
 
 **Правило приоритетов:** узкое место — качество материала и то, что продукт никто не открывает повторно. Правка (волна 1) → новые возможности (волна 2) → деньги (волна 3).
