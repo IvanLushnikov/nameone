@@ -26,6 +26,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { render, screen } from "@testing-library/react";
 import { createElement } from "react";
+import { readdirSync, statSync } from "node:fs";
 
 // next/navigation обязателен ДО импорта Header: в jsdom нет app router.
 vi.mock("next/navigation", () => ({
@@ -56,6 +57,23 @@ function userText(file: string): string {
   return read(file)
     .replace(/\/\*[\s\S]*?\*\//g, " ")
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+/** Все .ts/.tsx под каталогом. */
+function tsFiles(dir: string): string[] {
+  const root = join(process.cwd(), dir);
+  const out: string[] = [];
+  const walk = (current: string) => {
+    for (const entry of readdirSync(current)) {
+      const full = join(current, entry);
+      if (statSync(full).isDirectory()) walk(full);
+      else if (/\.tsx?$/.test(entry)) {
+        out.push(full.slice(process.cwd().length + 1));
+      }
+    }
+  };
+  walk(root);
+  return out;
 }
 
 describe("Д-1 — про точность не обещают", () => {
@@ -290,5 +308,211 @@ describe("Д-6/Д-7 — цены и лимиты не поехали", () => {
     // обещание объёма. Учитель делает один лист в день, поэтому цифру без
     // пояснения оставлять нельзя.
     expect(userText("src/app/pricing/page.tsx")).toMatch(/Лимиты в листах — оценка/);
+  });
+});
+// ─────────────────────────────────────────────────────────────────────────────
+// ТЗ-37 (29.10.2026): четыре обещания, которых продукт не держит.
+//
+// Q-07 / M-08 — тариф обещает «критерии оценивания», которых в ответе API
+//   нет (в схеме ответа такого поля нет вообще, слово «критери» в контрольной
+//   не встречается ни разу). Контрольная стоит в 44 раза дороже рабочего
+//   листа, то есть за отсутствующую фичу платят отдельно.
+// M-10 — карточка «Школа» рисовала галочками семь пунктов, включая
+//   интеграцию со Сферум / Moodle, которой в проекте нет вообще.
+// M-11 — «за 30 секунд» верно ровно для дефолтных 10 заданий (замер
+//   29.10.2026: 30,1 с), а на 12 заданиях тот же лист собирается 67,5 с.
+// Q-09 — страница «Методика» обещала, что одинаковые формы подряд не идут;
+//   в 7 листах из 10 живых прогонов они идут, и код этого не проверяет.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("ТЗ-37 · Q-07/M-08: тариф не обещает критериев оценивания", () => {
+  /**
+   * Формулировка «Контрольная с критериями оценивания» пришла из черновика
+   * ТЗ-21 и уехала в коммерческий текст. В ответе API поля для критериев нет
+   * (схема ответа), а слово «критери» в контрольной не встречается ни разу.
+   *
+   * Правку карточек тарифа делает волна 3 (TZ-45 → TZ-46): файл тарифов
+   * `plans.ts` в эту волну правят параллельно, и правка здесь создала бы
+   * конфликт. Поэтому здесь проверяются все остальные места, а `plans.ts`
+   * перечислен явно — когда волна 3 перепишет формулировку, список станет
+   * не нужным (об этом напомнит проверка ниже).
+   */
+  const WAVE_3_TARIFF_FILE = "src/lib/content/plans.ts";
+
+  it("в коде страниц нет обещания «критериями оценивания»", () => {
+    const offenders = tsFiles("src")
+      .filter((f) => f !== WAVE_3_TARIFF_FILE)
+      .filter((f) => /критериями оценивания/i.test(userText(f)));
+    expect(
+      offenders,
+      `«критериями оценивания» вернулось в: ${offenders.join(", ")}`,
+    ).toEqual([]);
+    // Проверка читает весь `src/` (около двухсот файлов, таксономия — 250 КБ),
+    // а рабочая копия лежит на сетевом диске: на холодном кэше чтение занимает
+    // больше стандартных пяти секунд.
+  }, 60_000);
+
+  it("в файлах для ИИ-краулеров обещания тоже нет", () => {
+    for (const file of ["public/llms.txt", "public/llms-full.txt"]) {
+      expect(read(file), `${file}: обещание критериев`).not.toMatch(
+        /критериями оценивания/i,
+      );
+    }
+  });
+
+  it("«критериями оценивания» осталось только в карточках тарифа — долг волны 3", () => {
+    // Пока волна 3 не переписала формулировку в карточках «Базовый» и «Плюс»,
+    // обещание живёт ровно в одном файле. Когда волна 3 его перепишет, эта
+    // проверка упадёт — и список исключений выше можно будет убрать.
+    const stillPromised = /критериями оценивания/i.test(userText(WAVE_3_TARIFF_FILE));
+    expect(
+      stillPromised,
+      "формулировка в plans.ts уже переписана (волна 3) — убери WAVE_3_TARIFF_FILE из проверок выше",
+    ).toBe(true);
+  });
+});
+
+describe("ТЗ-37 · M-10: карточка «Школа» не рисует галочки на том, чего нет", () => {
+  it("интеграция со Сферум / Moodle — в планах, а не в списке того, что есть", async () => {
+    const { splitSchoolPlanFeatures, SCHOOL_PLAN_PLANNED_FEATURES } = await import(
+      "@/lib/content/school-plan"
+    );
+    const { available, planned } = splitSchoolPlanFeatures();
+
+    expect(available.join(" "), "в списке «уже работает» появилось то, чего нет").not.toMatch(
+      /Сферум|Moodle/i,
+    );
+    expect(planned.join(" "), "в списке планов нет интеграции").toMatch(/Сферум/);
+
+    // Список планов ссылается на тексты из plans.ts: если волна 3 перепишет
+    // формулировку пункта, тест упадёт и пункт не сможет молча уехать в
+    // список «уже работает» (и получить галочку на несуществующей фиче).
+    const features = PLANS.school.features;
+    expect(
+      [...available, ...planned].sort(),
+      "пункты тарифа «Школа» не разделились полностью",
+    ).toEqual([...features].sort());
+    for (const f of SCHOOL_PLAN_PLANNED_FEATURES) {
+      expect(features, `пункт «${f}» исчез из тарифа «Школа»`).toContain(f);
+    }
+  });
+
+  it("в карточке тарифа Moodle нарисован без галочки, а работающие пункты — с галочкой", async () => {
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const { default: PricingPage } = await import("@/app/pricing/page");
+
+    const html = renderToStaticMarkup(createElement(PricingPage));
+
+    // Пункт не спрятан: он назван, но помечен как план.
+    expect(html, "интеграция со Сферум / Moodle пропала со страницы тарифов").toContain(
+      "Интеграция со Сферум / Moodle",
+    );
+    expect(html, "на странице тарифов нет блока «В планах»").toMatch(/В планах/);
+
+    // Галочка (lucide-check) рядом с Moodle — нет.
+    const plannedItem = html.match(/<li[^>]*>(?:(?!<\/li>)[\s\S])*Moodle(?:(?!<\/li>)[\s\S])*<\/li>/)?.[0] ?? "";
+    expect(plannedItem, "пункт с Moodle не найден в разметке").not.toBe("");
+    expect(plannedItem, "на несуществующей интеграции нарисована галочка").not.toContain(
+      "lucide-check",
+    );
+
+    // А на том, что работает сегодня, — есть.
+    const liveItem = html.match(
+      /<li[^>]*>(?:(?!<\/li>)[\s\S])*Админка учителя(?:(?!<\/li>)[\s\S])*<\/li>/,
+    )?.[0] ?? "";
+    expect(liveItem, "пункт «Админка учителя с отчётами» не найден").not.toBe("");
+    expect(liveItem, "у работающего пункта нет галочки").toContain("lucide-check");
+  });
+
+  it("тариф «Школа» по-прежнему помечен «скоро» и цена — «ориентир»", () => {
+    expect(PLANS.school.comingSoon, "у тарифа «Школа» нет даты запуска").toBeTruthy();
+    expect(userText("src/app/pricing/page.tsx")).toMatch(/ориентир/);
+  });
+});
+
+describe("ТЗ-37 · M-11: «за 30 секунд» — обещание про дефолтный лист", () => {
+  /**
+   * Замеры 29.10.2026: 5 заданий — 14,7 с, 10 заданий (дефолт конструктора,
+   * `useState(10)`) — 30,1 с, 12 заданий — 67,5 с, контрольная — 39,2 с.
+   * «За 30 секунд» верно ровно для дефолтных десяти заданий, поэтому число
+   * теперь называется вместе с дефолтом: иначе учитель, выбравший 12
+   * заданий, читает обещание, которого продукт не держит.
+   */
+  const DEFAULT_COUNT = /10\s+задани/;
+
+  /** Текстовые узлы, в которых встречается обещание времени. */
+  function timePromises(root: HTMLElement): string[] {
+    const out: string[] = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node) {
+      const text = node.textContent ?? "";
+      if (/30\s*секунд/i.test(text)) out.push(text);
+      node = walker.nextNode();
+    }
+    return out;
+  }
+
+  it("на главной число 30 секунд стоит рядом с дефолтом «10 заданий»", async () => {
+    const { Hero } = await import("@/components/landing/Hero");
+    const { container } = render(createElement(Hero));
+
+    const promises = timePromises(container);
+    expect(promises.length, "на главной не осталось обещания «за 30 секунд»").toBeGreaterThan(0);
+    for (const text of promises) {
+      const el = [...container.querySelectorAll("*")].find((node) =>
+        (node.textContent ?? "").includes(text.trim()),
+      );
+      expect(el?.textContent ?? "", `обещание без дефолта: «${text.trim()}»`).toMatch(
+        DEFAULT_COUNT,
+      );
+    }
+  });
+
+  it("в подвале то же самое: «за 30 секунд» — про лист из 10 заданий", async () => {
+    const { Footer } = await import("@/components/layout/Footer");
+    const { container } = render(createElement(Footer));
+
+    const promises = timePromises(container);
+    expect(promises.length, "в подвале не осталось обещания «за 30 секунд»").toBeGreaterThan(0);
+    for (const text of promises) {
+      const el = [...container.querySelectorAll("*")].find((node) =>
+        (node.textContent ?? "").includes(text.trim()),
+      );
+      expect(el?.textContent ?? "", `обещание без дефолта: «${text.trim()}»`).toMatch(
+        DEFAULT_COUNT,
+      );
+    }
+  });
+
+  it("в файле для ИИ-краулеров время тоже привязано к дефолту", () => {
+    const text = read("public/llms.txt").replace(/&nbsp;/g, " ").replace(/\s+/g, " ");
+    for (const sentence of text.split(/(?<=[.!?])\s+/)) {
+      if (!/30\s*секунд/i.test(sentence)) continue;
+      expect(sentence, "в llms.txt обещание времени без дефолта «10 заданий»").toMatch(
+        DEFAULT_COUNT,
+      );
+    }
+  });
+});
+
+describe("ТЗ-37 · Q-09: страница «Методика» не обещает чередование форм", () => {
+  const methodology = userText("src/app/methodology/page.tsx");
+
+  it("утверждения «Подряд одинаковые формы не идут» больше нет", () => {
+    expect(methodology).not.toMatch(/Подряд одинаковые формы не идут/i);
+    expect(methodology).not.toMatch(/одинаковые формы/i);
+  });
+
+  it("обещания, что формы чередуются, тоже нет — код этого не проверяет", () => {
+    // Проверку чередования форм добавляет ТЗ-40 (волна 2). До неё страница
+    // не имеет права обещать то, что не держит код.
+    expect(methodology).not.toMatch(/формы чередуются/i);
+    expect(methodology).not.toMatch(/не идут подряд/i);
+  });
+
+  it("страница говорит правду: чередование просим, но не проверяем", () => {
+    expect(methodology).toMatch(/чередовать формы/i);
+    expect(methodology).toMatch(/не\s+проверяем/i);
   });
 });

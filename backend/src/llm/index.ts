@@ -288,6 +288,9 @@ function logFilterReport(params: {
     droppedPatternRef: report.droppedPatternRef,
     droppedForeignMath: report.droppedForeignMath,
     cleanedAnswer: report.cleanedAnswer,
+    // ТЗ-34: был ли откат. По логу видно, что фильтр сработал настолько
+    // агрессивно, что его вердикт был отменён целиком.
+    rolledBack: report.rolledBack,
   };
 
   if (dropped > 0) {
@@ -368,7 +371,16 @@ function summarizeLoss(
   const cleanedAnswer: number[] = [];
   let dropped = 0;
   // Откат фильтра (вернуть исходный набор целиком при слишком агрессивной
-  // фильтрации) виден по `before - after == 0` при ненулевом `before`.
+  // фильтрации) — это СОБЫТИЕ, и конвейер узнаёт о нём из отчёта фильтра
+  // (ТЗ-34, Q-08).
+  //
+  // Раньше признак вычислялся косвенно: `before - after == 0` при ненулевом
+  // `before` означало «откат». Но тем же равенством описывается «фильтр
+  // ничего не отбросил» — а это обычное дело, не дефект. В итоге признак
+  // стоял `true` именно тогда, когда фильтр отбросил НИЧЕГО, то есть
+  // «откат» и «всё чисто» выглядели одинаково, а по ответу API отличить их
+  // было невозможно. Учителю при этом говорили: «Фильтр отсеял слишком много
+  // заданий» — про фильтр, который не отсеял ни одного.
   let filterBackedOff = false;
 
   for (const report of reports) {
@@ -377,7 +389,7 @@ function summarizeLoss(
     cleanedAnswer.push(...report.cleanedAnswer);
     const reportDropped = report.before - report.after;
     dropped += reportDropped;
-    if (report.before > 0 && reportDropped === 0) {
+    if (report.rolledBack) {
       filterBackedOff = true;
     }
   }
@@ -398,6 +410,52 @@ function summarizeLoss(
     tasksWithoutAnswer,
     typeDiversityViolations,
     criteriaMissing,
+  };
+}
+
+/**
+ * ПОСТУСЛОВИЕ ЧИСТКИ: убрать из листа всё, что осталось дублем (ТЗ-34, AD-2).
+ *
+ * Возвращает СПИСОК БЕЗ ДУБЛЕЙ; длина может уменьшиться — это осознанно:
+ * лист с дублем хуже короткого листа, а `stillMissing` скажет учителю правду.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ПОЧЕМУ ЭТО ОТДЕЛЬНАЯ ФУНКЦИЯ, А НЕ ПРОВЕРКА «НА ВХОДЕ»
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Дубли считаются по ИТОГОВОМУ списку, а не по списку до замены. Именно в этот
+ * разрыв и проваливалась чистка: подстановка замены на месте (`usable[slot] ??
+ * task`) возвращала СТАРОЕ задание — то есть ровно тот дубль, который чистка
+ * убирала. Длина листа при этом сохранялась, дозапрос не срабатывал, и дубль
+ * уезжал учителю вместе с честной фразой «заменить не получилось».
+ *
+ * Проверка на входе была бы верной и бесполезной: она не сказала бы ничего о
+ * том, что уехало учителю.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * КАКОЕ ЗАДАНИЕ УБИРАЕТСЯ
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Второе из пары — так же, как в `tasksToReplace`. Первое задание учитель уже
+ * видит, и его замена ломала бы нумерацию сильнее, чем польза от снятия
+ * дубля.
+ *
+ * Если ничего не убрано — возвращается ТОТ ЖЕ массив, а не копия: вызывающий
+ * код сравнивает списки по ссылке, чтобы понять, изменился ли лист.
+ */
+export function dropRemainingDupes(tasks: CleanTask[]): {
+  tasks: CleanTask[];
+  removed: number[];
+} {
+  const result = findSkillDupes(tasks as unknown as SkillTaskLike[]);
+  const removed = [...new Set(result.pairs.map((pair) => pair.second))].sort(
+    (a, b) => a - b,
+  );
+  if (removed.length === 0) {
+    return { tasks, removed: [] };
+  }
+  const dropped = new Set(removed);
+  return {
+    tasks: tasks.filter((_, index) => !dropped.has(index + 1)),
+    removed,
   };
 }
 
@@ -1096,6 +1154,7 @@ export async function generateWorksheet(
       subject: request.subject,
       stage,
       pairs: dupes.pairs.map((p) => `${p.first}-${p.second}`),
+      pairCount: dupes.pairs.length,
       replacing: replaceNumbers,
     });
 
@@ -1168,18 +1227,57 @@ export async function generateWorksheet(
           subject: request.subject,
           stage,
           wanted: replaceNumbers.length,
+          accepted: 0,
         });
-        return kept;
+        // Постусловие — и здесь: `kept` мог остаться с дублями, если бюджет
+        // выброшенных заданий не дал убрать все пары.
+        const post = dropRemainingDupes(kept);
+        if (post.removed.length > 0) {
+          logLlmEvent("warn", "worksheet-gen: duplicates dropped after replacement", {
+            subject: request.subject,
+            stage,
+            pairCount: dupes.pairs.length,
+            wanted: replaceNumbers.length,
+            accepted: 0,
+            removed: post.removed,
+            left: post.tasks.length,
+          });
+        }
+        return post.tasks;
       }
 
       // Заменяем по номерам, сохраняя порядок листа.
-      let cursor = 0;
-      return current.map((task, index) => {
+      //
+      // Слот замены — это НОМЕР ПОЗИЦИИ в `replaceNumbers`, а не счётчик,
+      // который должен расти. Раньше здесь стоял `cursor`, но `return`
+      // выполнялся ДО `cursor += 1`, и счётчик не рос НИКОГДА: на всех
+      // заменяемых позициях подставлялось `usable[0]` — то есть одно и то же
+      // задание. Если замен было несколько, лист получал не «несколько
+      // замен», а несколько копий одного задания, и детектор видел в них
+      // новый дубль. (Ошибку заметил ТЗ-33, чинил фикстуру её теста.)
+      const replaced = current.map((task, index) => {
         const number = index + 1;
-        if (!replaceNumbers.includes(number)) return task;
-        return usable[cursor] ?? task;
-        cursor += 1;
+        const slot = replaceNumbers.indexOf(number);
+        if (slot < 0) return task;
+        // `usable[slot] ?? task` — «замена не получилась»: на этом слоте
+        // остаётся СТАРОЕ задание, а старое задание и есть дубль, который
+        // чистка убирала. Дальше это снимается постусловием.
+        return usable[slot] ?? task;
       });
+
+      const post = dropRemainingDupes(replaced);
+      if (post.removed.length > 0) {
+        logLlmEvent("warn", "worksheet-gen: duplicates dropped after replacement", {
+          subject: request.subject,
+          stage,
+          pairCount: dupes.pairs.length,
+          wanted: replaceNumbers.length,
+          accepted: usable.length,
+          removed: post.removed,
+          left: post.tasks.length,
+        });
+      }
+      return post.tasks;
     } catch (e) {
       // Тот же довод, что и выше: отказ дозапроса не должен означать отказ от
       // чистоты листа. Убираем дубли, длину доберёт `ensureCount`.
@@ -1188,43 +1286,56 @@ export async function generateWorksheet(
         stage,
         error: String(e),
       });
-      return kept;
+      const post = dropRemainingDupes(kept);
+      if (post.removed.length > 0) {
+        logLlmEvent("warn", "worksheet-gen: duplicates dropped after replacement", {
+          subject: request.subject,
+          stage,
+          pairCount: dupes.pairs.length,
+          wanted: replaceNumbers.length,
+          accepted: 0,
+          removed: post.removed,
+          left: post.tasks.length,
+        });
+      }
+      return post.tasks;
     }
   };
 
   /**
-   * Чистка листа от повторов НЕСКОЛЬКИМИ проходами.
+   * ЧИСТКА ЗА ДВА ПРОХОДА (ТЗ-34).
    *
-   * Живые прогоны 13.10.2026: одного прохода мало. Проход убирает дубль,
-   * `ensureCount` добирает длину — а модель на ту же тему выдаёт ТОТ ЖЕ навык
-   * снова. На биологии 7 так и уезжало «дуб стебел год»: после замены приходил
-   * новый вариант того же задания, и в выдаче снова был повтор.
+   * Раньше проход был один, и замер 14.10.2026 на контрольной «Квадратный
+   * трёхчлен» показал почему: дополнительные проходы НЕ дают надёжности —
+   * прогоны и с одним, и с тремя проходами дают и успех, и дубль «корень
+   * квадратного трёхчлена». Разница в трёх проходах не помещалась в шум
+   * выборки из трёх замеров, а лишние проходы — это заведомо больше вызовов
+   * провайдера.
    *
-   * ПРОХОДОВ ОГРАНИЧЕНО ТРЕМЯ. Модель может упираться в один и тот же навык
-   * (например, в листе по биологии почти всё сводится к жилкованию), и без
-   * предела мы бы платили вызов за вызовом, ничего не меняя. Три прохода —
-   * это «почини, если можешь», а не «добивайся любой ценой».
-   */
-  /**
-   * ЧИСТКА ЗА ОДИН ПРОХОД, а не за три.
+   * ЭТОТ ЗАМЕР О СТАРОМ ПОРЯДКЕ. Порядок тогда был: чистка → добор. Второй
+   * проход при таком порядке бесполезен: модель упирается в один и тот же
+   * навык и возвращает его снова, то есть повтор возвращается тем же
+   * способом, каким чистка его убирала.
    *
-   * Что измерено на контрольной «Квадратный трёхчлен» (алгебра 8, 14.10.2026):
-   * дополнительные проходы НЕ дают надёжности — прогоны и с одним, и с тремя
-   * проходами дают и успех, и дубль «корень квадратного трёхчлена». Разница в
-   * трёх прогонах не помещается в шум выборки из трёх замеров, а лишние
-   * проходы — это заведомо больше вызовов провайдера.
+   * ТЕПЕРЬ ПОРЯДОК ДРУГОЙ (ТЗ-34, §3): чистка → добор → ПРОВЕРКА → второй
+   * проход. Второй проход нужен не для надёжности замены, а чтобы ПЕРЕД
+   * постусловием попробовать заменить дубль, который вернул добор. Без него
+   * постусловие просто выкинула бы это задание и укоротила лист — то есть
+   * вместо замены мы бы получили нехватку материала.
    *
    * ЧЕСТНО О ЦЕНЕ. Стоимость контрольной колеблется от 12 до 38 руб. НЕ из-за
    * проходов чистки: она определяется ретраями вариантов в `variant-check`
    * (модель возвращает совпадающие варианты — движок повторяет попытку) и
-   * добиванием длины. Сначала я приписал разницу в цене чистке — это было
+   * добиванием длины. Сначала разницу в цене приписали чистке — это было
    * неверно, замеры это не подтвердили.
    *
    * Что честно не работает: на УЗКОЙ теме модель упирается в один навык и
-   * возвращает его снова и снова, и дубль всё равно уходит учителю. Об этом
-   * надо сказать в текстах продукта, а не обещать «без повторов».
+   * возвращает его снова и снова. Тогда ни второй проход, ни постусловие не
+   * дадут материала нужного объёма — лист будет короче, и учитель увидит
+   * честное «получено 9 из 12». Об этом надо сказать в текстах продукта, а
+   * не обещать «без повторов».
    */
-  const dedupeRounds = 1;
+  const dedupeRounds = 2;
   /**
    * Бюджет выброшенных заданий.
    *
@@ -1248,6 +1359,31 @@ export async function generateWorksheet(
    */
   const countRemainingDupes = (tasks: readonly SkillTaskLike[]): number =>
     findSkillDupes(tasks).pairs.length;
+
+  /**
+   * ПОСТУСЛОВИЕ ЧИСТКИ, применённое к листу (ТЗ-34, AD-2).
+   *
+   * Убирает из списка всё, что осталось дублем, и пишет в лог, СКОЛЬКО
+   * заданий убрано. В логе — только номера, без текстов заданий (как во
+   * всём остальном логе генерации).
+   *
+   * Почему это отдельная функция, а не проверка «на входе»: дубли считаются
+   * по ИТОГОВОМУ списку. Подстановка замены на месте (`usable[slot] ?? task`)
+   * возвращала старое задание — то есть ровно тот дубль, который чистка
+   * убирала, — и такой лист уезжал учителю целиком, с честной фразой
+   * «заменить не получилось».
+   */
+  const applyPostcondition = (sheet: CleanTask[], stage: string): CleanTask[] => {
+    const post = dropRemainingDupes(sheet);
+    if (post.removed.length === 0) return sheet;
+    logLlmEvent("warn", "worksheet-gen: duplicates dropped after replacement", {
+      subject: request.subject,
+      stage,
+      removed: post.removed,
+      left: post.tasks.length,
+    });
+    return post.tasks;
+  };
 
   const isControl = request.type === "control";
   // У контрольной целевое количество общее для обоих вариантов (AD-8) и
@@ -1283,6 +1419,23 @@ export async function generateWorksheet(
         )) as unknown as Worksheet["tasks"],
       };
     }
+    // ФИНАЛЬНОЕ ПОСТУСЛОВИЕ (ТЗ-34).
+    //
+    // Добор длины умеет вернуть дубль: модель на ту же тему повторяет навык,
+    // и последнее задание в листе — копия первого. Если бы мы отдали такой
+    // лист, учитель получил бы ровно то, что ТЗ-34 и чинит.
+    //
+    // Здесь лист НЕ добирается заново: чистота важнее длины (AD-1). Учитель
+    // увидит честное «получено 9 из 12», и это лучше, чем полный лист с
+    // одинаковыми заданиями — дубль он обнаружит на печати, когда класс уже
+    // отвечает.
+    const postPrimary = applyPostcondition(
+      worksheet.tasks as unknown as CleanTask[],
+      "primary#post",
+    );
+    if (postPrimary !== (worksheet.tasks as unknown as CleanTask[])) {
+      worksheet = { ...worksheet, tasks: postPrimary as unknown as Worksheet["tasks"] };
+    }
   }
 
   // Второй вариант контрольной собираем тем же кодом, что и первый: те же
@@ -1306,25 +1459,45 @@ export async function generateWorksheet(
   // Раздавать классу варианты разного объёма нельзя: учитель обнаружит это
   // на печати.
   if (isControl && secondVariant) {
-    const v1Count = worksheet.tasks.length;
-    const v2Count = (secondVariant.tasks ?? []).length;
-    if (v1Count !== v2Count) {
+    /**
+     * Добрать объём: оба варианта — одна длина (AD-8).
+     *
+     * Причина в логе — чтобы видно было, ПОСЛЕ чего объёмы разошлись:
+     * до чистки, после чистки или после постусловия.
+     */
+    const equalizeVariants = async (reason: string): Promise<void> => {
+      const v2Tasks = secondVariant?.tasks ?? [];
+      const v1Count = worksheet.tasks.length;
+      const v2Count = v2Tasks.length;
+      if (v1Count === v2Count) return;
       const target = Math.max(v1Count, v2Count);
       logLlmEvent("warn", "worksheet-gen: variant counts differ, topping up", {
         subject: request.subject,
         v1Count,
         v2Count,
         target,
+        reason,
       });
-      const topped1 = await ensureCount(target, worksheet.tasks as unknown as CleanTask[], "variant1");
+      const topped1 = await ensureCount(
+        target,
+        worksheet.tasks as unknown as CleanTask[],
+        "variant1",
+      );
       const topped2 = await ensureCount(
         target,
-        (secondVariant.tasks ?? []) as unknown as CleanTask[],
+        v2Tasks as unknown as CleanTask[],
         "variant2",
       );
       worksheet = { ...worksheet, tasks: topped1 as unknown as Worksheet["tasks"] };
-      secondVariant = { ...secondVariant, tasks: topped2 as unknown as Worksheet["tasks"] };
-    }
+      if (secondVariant) {
+        secondVariant = {
+          ...secondVariant,
+          tasks: topped2 as unknown as Worksheet["tasks"],
+        };
+      }
+    };
+
+    await equalizeVariants("before-dedupe");
 
     // ТЗ-26 Ф-2: дубль проверяется ВНУТРИ каждого варианта. Сравнение между
     // вариантами уже делает `variant-check.ts` — это другая задача.
@@ -1345,29 +1518,51 @@ export async function generateWorksheet(
       worksheet = { ...worksheet, tasks: d1 as unknown as Worksheet["tasks"] };
       secondVariant = { ...secondVariant, tasks: d2 as unknown as Worksheet["tasks"] };
       if (!changed) break;
+      // Объём выравниваем СРАЗУ, до следующего прохода (ТЗ-34, §3: чистка →
+      // добор → проверка → второй проход). Иначе второй проход чистил бы
+      // список, который потом всё равно добирается, и дубль, пришедший с
+      // добором, уехал бы в учительский лист.
+      await equalizeVariants(`after-round-${round}`);
     }
 
-    // Оба варианта должны остаться одной длины (AD-8), иначе учитель
-    // обнаружит разницу на печати. Если dedupe убрал дубли, добираем.
-    const v1After = worksheet.tasks.length;
-    const v2After = (secondVariant.tasks ?? []).length;
-    if (v1After !== v2After) {
-      const target = Math.max(v1After, v2After);
-      logLlmEvent("warn", "worksheet-gen: variants differ after dedupe, topping up", {
-        subject: request.subject,
-        v1: v1After,
-        v2: v2After,
-        target,
-      });
-      worksheet = {
-        ...worksheet,
-        tasks: (await ensureCount(target, worksheet.tasks as unknown as CleanTask[], "variant1")) as unknown as Worksheet["tasks"],
-      };
-      secondVariant = {
-        ...secondVariant,
-        tasks: (await ensureCount(target, (secondVariant.tasks ?? []) as unknown as CleanTask[], "variant2")) as unknown as Worksheet["tasks"],
-      };
+    // ─────────────────────────────────────────────────────────────────────────
+    // ФИНАЛЬНОЕ ПОСТУСЛОВИЕ ЧИСТКИ (ТЗ-34, AD-2)
+    //
+    // Оба варианта должны остаться одной длины (AD-8), и в каждом не должно
+    // быть дублей. Два требования тянут друг друга: добор длины может вернуть
+    // дубль — модель на ту же тему повторяет навык. Поэтому круг замыкается
+    // так: постусловие → добор → постусловие.
+    //
+    // Кругов два, и круг заканчивается ПОСТУСЛОВИЕМ: уехать учителю может
+    // только лист без дублей. Бесконечного «добрал → дубль → убрал» не
+    // бывает — это вызов модели по кругу, и цена каждого круга — деньги
+    // учителя.
+    // ─────────────────────────────────────────────────────────────────────────
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const p1 = applyPostcondition(
+        worksheet.tasks as unknown as CleanTask[],
+        `variant1#post${attempt + 1}`,
+      );
+      const p2 = applyPostcondition(
+        (secondVariant.tasks ?? []) as unknown as CleanTask[],
+        `variant2#post${attempt + 1}`,
+      );
+      worksheet = { ...worksheet, tasks: p1 as unknown as Worksheet["tasks"] };
+      secondVariant = { ...secondVariant, tasks: p2 as unknown as Worksheet["tasks"] };
+      await equalizeVariants(`after-post-${attempt + 1}`);
     }
+    // Финальное постусловие — после последнего добора: добранное задание
+    // могло оказаться дублем, и уехать оно не должно.
+    const final1 = applyPostcondition(
+      worksheet.tasks as unknown as CleanTask[],
+      "variant1#final",
+    );
+    const final2 = applyPostcondition(
+      (secondVariant.tasks ?? []) as unknown as CleanTask[],
+      "variant2#final",
+    );
+    worksheet = { ...worksheet, tasks: final1 as unknown as Worksheet["tasks"] };
+    secondVariant = { ...secondVariant, tasks: final2 as unknown as Worksheet["tasks"] };
   }
 
   // Разрыв 4: обрезанный ответ выше уже отбит (ретрай с удвоенным потолком, а
