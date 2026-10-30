@@ -253,6 +253,19 @@ async function login(code: string, name: string): Promise<string | null> {
   return match?.[1] ?? null;
 }
 
+
+/**
+ * Настоящая сигнатура JPEG.
+ *
+ * С 30.10.2026 (ревью безопасности, находка №8) сервер определяет тип файла по
+ * содержимому, а не по заголовку клиента: под видом фотографии больше не
+ * пройдёт ни HTML, ни SVG. Тестовые байты теперь должны выглядеть как
+ * настоящая картинка.
+ */
+function jpegBytes(): Uint8Array {
+  return new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+}
+
 describe("ТЗ-28: доступ ученика с телефона", () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, [{ name: "schema", queries: [SCHEMA_SQL] }]);
@@ -432,7 +445,7 @@ describe("ТЗ-28: доступ ученика с телефона", () => {
         headers: { Cookie: `class_student_${cls.code}=${cookie}` },
         body: (() => {
           const fd = new FormData();
-          fd.append("photo", new File([new Uint8Array([1, 2, 3, 4])], "photo.jpg", { type: "image/jpeg" }));
+          fd.append("photo", new File([jpegBytes()], "photo.jpg", { type: "image/jpeg" }));
           return fd;
         })(),
       },
@@ -502,7 +515,7 @@ describe("ТЗ-28: доступ ученика с телефона", () => {
         // Content-Type НЕ задаём: границу multipart проставляет fetch сам.
         body: (() => {
           const fd = new FormData();
-          fd.append("photo", new File([new Uint8Array([9, 9, 9])], "photo.jpg", { type: "image/jpeg" }));
+          fd.append("photo", new File([jpegBytes()], "photo.jpg", { type: "image/jpeg" }));
           return fd;
         })(),
       },

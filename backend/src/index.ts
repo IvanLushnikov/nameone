@@ -94,6 +94,26 @@ function checkProductionConfig(env: AppEnv["Bindings"]): void {
   ];
   const missing = required.filter(([, value]) => !value).map(([name]) => name);
 
+  // Необязательные секреты: без них продукт работает, но часть защиты выключена.
+  // Отдельным списком и отдельным словом — «ВНИМАНИЕ», а не «КРИТИЧНО»: за
+  // «КРИТИЧНО» владелец бежит проверять продукт, который при этом не сломался.
+  //
+  // TURNSTILE_SECRET_KEY — ревью безопасности 30.10.2026, находка №5: без него
+  // капча при входе не требуется никогда, и публичная генерация держится
+  // только на квоте по отпечатку и лимите по IP.
+  const recommended: Array<[string, unknown]> = [["TURNSTILE_SECRET_KEY", env.TURNSTILE_SECRET_KEY]];
+  const missingRecommended = recommended.filter(([, value]) => !value).map(([name]) => name);
+
+  if (missingRecommended.length > 0) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[config] ВНИМАНИЕ: в production не заданы необязательные секреты: ` +
+        `${missingRecommended.join(", ")}. TURNSTILE_SECRET_KEY — капча при входе ` +
+        `выключена: публичная генерация держится только на квоте по отпечатку и ` +
+        `лимите по IP. Задать: npx wrangler secret put TURNSTILE_SECRET_KEY --env production`,
+    );
+  }
+
   if (missing.length === 0) {
     // eslint-disable-next-line no-console
     console.info("[config] все обязательные секреты на месте");
