@@ -43,6 +43,7 @@ import { materialsRouter } from "./routes/materials";
 import { trackRouter } from "./routes/track";
 import { totpRouter as adminTotpRouter } from "./routes/admin-totp";
 import { turnstileRouter } from "./routes/turnstile";
+import { securityRouter } from "./routes/security";
 import { accountRouter } from "./routes/account";
 import { f06Router } from "./routes/f06";
 import { f07Router } from "./routes/f07";
@@ -337,6 +338,10 @@ app.route("/api/public/class-links", publicClassLinksRouter); // 3.1.1: перс
 app.route("/api/interactives", interactivesRouter); // TZ-13: ЛК учителя (требует входа)
 app.route("/api/public/interactives", publicInteractivesRouter); // TZ-13: игра ученика, БЕЗ авторизации
 app.route("/api/turnstile", turnstileRouter); // проверка капчи антифрода (409 → капча → повтор)
+// Приём отчётов CSP (режим report-only). Без приёма отчётов политика в
+// report-only бессмысленна: нарушения некуда деваться. В лог уходит только
+// источник документа — в пути и в query живут токены входа и ссылки учеников.
+app.route("/api/security", securityRouter);
 app.route("/api/admin", adminRouter);
 // Код подтверждения администратора (ТЗ-24 §8.1). Отдельный роутер: проверка
 // кода при входе происходит ДО сессии, и смешивать её с админ-API нельзя.
