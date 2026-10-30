@@ -6,7 +6,7 @@
  * Задача учителя после нажатия «Создать ссылку»: получить то, что он реально
  * унесёт в класс. Отсюда три действия:
  *   - «Скопировать ссылку» — вставить в классный чат (сценарий А, вариант Б);
- *   - «Скачать PDF с QR» — `window.print()` + уже существующий `@media print` в
+ *   - «Сохранить в PDF с QR» — `window.print()` + уже существующий `@media print` в
  *     `src/app/globals.css:140-171` (A4, поля 12 мм, `.no-print`). Отдельный
  *     серверный рендер PDF не нужен и стоил бы денег;
  *   - «Показать на весь экран» — повесить QR на доску / показать с телефона
@@ -89,7 +89,7 @@ export function FormQrBlock(props: FormQrBlockProps) {
           leftIcon={<Printer className="w-4 h-4" />}
           data-testid="form-print"
         >
-          Скачать PDF с QR
+          Сохранить в PDF с QR
         </Button>
         <Button
           variant="secondary"
@@ -168,7 +168,7 @@ function FullscreenQr({ onClose, ...props }: FormQrBlockProps & { onClose: () =>
         </div>
         <div className="no-print mt-4 flex gap-2">
           <Button variant="secondary" size="sm" onClick={() => window.print()} leftIcon={<Printer className="w-4 h-4" />}>
-            Скачать PDF с QR
+            Сохранить в PDF с QR
           </Button>
           <Button variant="primary" size="sm" onClick={onClose} leftIcon={<X className="w-4 h-4" />}>
             Закрыть

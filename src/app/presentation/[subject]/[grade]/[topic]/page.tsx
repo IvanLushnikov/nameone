@@ -84,7 +84,10 @@ export function generateMetadata({ params }: Props): Metadata {
   // Обрезка — по theirs (ТЗ-21 п.14), текст — из main: «заметками для учителя»
   // вместо «заметками спикера» (копирайт-аудит, аудитория — учитель).
   const description = clipDescription(
-    `Готовая презентация по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему ${quotedTopic(topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef))}. 10 слайдов с заметками для учителя в PPTX. Сгенерируйте за минуту.`,
+    // ТЗ-37b: было «Сгенерируйте за минуту» — а презентацию мы не мерили
+    // (в прод-базе за 30 дней нет ни одной генерации презентации, а тип
+    // доступен только на тарифе «Плюс»). Неизмеренное время не обещаем.
+    `Готовая презентация по ФГОС для ${grade.num} класса по предмету «${subject.title}» на тему ${quotedTopic(topicTitleWithUmk(topic.title, sameNameCount(params.subject, Number(params.grade), topic.title.trim()), topic.fgosRef))}. 10 слайдов с заметками для учителя в PPTX. Сгенерируйте под свой класс.`,
   );
   const url = absoluteUrl(`/presentation/${subject.slug}/${grade.num}/${topic.slug}`);
 
