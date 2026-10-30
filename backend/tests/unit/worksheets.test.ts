@@ -654,3 +654,152 @@ describe("POST /api/worksheets/save", () => {
     expect(await getGenerationsToday(u.id)).toBe(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UL-D08: сохранённый лист должен открываться по ссылке.
+//
+// Раньше payload_json хранил ровно то, что прислал клиент, — БЕЗ id.
+// Загрузчик на фронте (`toFavoriteArtifact` в src/lib/lk/artifact.ts) требует
+// непустой строковый id и без него отказывается показывать артефакт:
+// сохранённый лист открывался по ссылке как «Лист не найден», хотя строка в
+// базе была. Теперь id и createdAt кладёт сервер, и они же подставляются
+// при чтении старых строк.
+//
+// Минимальный контракт загрузчика (duplicated намеренно, как «контракт»):
+//   id — непустая строка; есть единица содержания (tasks/stages/slides/weeks);
+//   есть title.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function getWorksheet(
+  id: string,
+  cookieSessionToken?: string,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (cookieSessionToken) headers["Cookie"] = `session=${cookieSessionToken}`;
+  const res = await SELF.fetch(`https://worker.test/api/worksheets/${id}`, { headers });
+  return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+}
+
+describe("UL-D08: канонический id сохранённого листа", () => {
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, [{ name: "schema", queries: [SCHEMA_SQL] }]);
+  });
+
+  beforeEach(async () => {
+    await env.DB.prepare("DELETE FROM worksheets").run();
+    await env.DB.prepare("DELETE FROM sessions").run();
+    await env.DB.prepare("DELETE FROM magic_links").run();
+    await env.DB.prepare("DELETE FROM users").run();
+  });
+
+  it("D08-1: save → GET отдаёт id строки и валидный createdAt", async () => {
+    const u = await createTestUserWithSession();
+    const res = await postSave(VALID_BODY, u.sessionToken);
+    expect(res.status).toBe(200);
+    const saved = (await res.json()) as { worksheetId: string };
+
+    const got = await getWorksheet(saved.worksheetId, u.sessionToken);
+    expect(got.status).toBe(200);
+
+    const ws = got.body.worksheet as Record<string, unknown>;
+    // id — ровно тот, что вернул /save: клиентский id подделать нельзя.
+    expect(ws.id).toBe(saved.worksheetId);
+    expect(typeof ws.id).toBe("string");
+    expect((ws.id as string).length).toBeGreaterThan(0);
+    // createdAt — валидный ISO-дата.
+    expect(typeof ws.createdAt).toBe("string");
+    expect(Number.isNaN(Date.parse(ws.createdAt as string))).toBe(false);
+    // Контракт загрузчика фронта: единица содержания и заголовок на месте.
+    expect(Array.isArray(ws.tasks)).toBe(true);
+    expect(typeof ws.title).toBe("string");
+  });
+
+  it("D08-2: старая строка без id в payload → GET всё равно отдаёт id строки", async () => {
+    const u = await createTestUserWithSession();
+    const legacyId = "ws_legacy_payload_01";
+    // Так выглядели листы, сохранённые до починки: payload без id и createdAt.
+    await env.DB
+      .prepare(
+        `INSERT INTO worksheets
+           (id, user_id, subject, grade, topic, difficulty, type, count, title, payload_json, created_at)
+         VALUES (?1, ?2, 'math', 7, 'algebra', 'medium', 'worksheet', 1, 'Лист 1', ?3, ?4)`,
+      )
+      .bind(
+        legacyId,
+        u.id,
+        JSON.stringify({
+          type: "worksheet",
+          subject: "math",
+          grade: 7,
+          topic: "algebra",
+          title: "Лист 1",
+          difficulty: "medium",
+          tasks: [{ number: 1, text: "2 + 2 = ?", type: "short-answer", answer: "4", points: 1 }],
+        }),
+        Math.floor(Date.now() / 1000),
+      )
+      .run();
+
+    const got = await getWorksheet(legacyId, u.sessionToken);
+    expect(got.status).toBe(200);
+    const ws = got.body.worksheet as Record<string, unknown>;
+    expect(ws.id).toBe(legacyId);
+    expect(typeof ws.createdAt).toBe("string");
+    // Содержимое и тип не потерялись.
+    expect(ws.type).toBe("worksheet");
+    expect(Array.isArray(ws.tasks)).toBe(true);
+  });
+
+  it("D08-3: план урока, презентация и КТП сохраняют тип и содержимое", async () => {
+    const u = await createTestUserWithSession();
+    const cases: Array<[unknown, string]> = [
+      [LESSON_PLAN_BODY, "lesson-plan"],
+      [PRESENTATION_BODY, "presentation"],
+      [KTP_BODY, "ktp"],
+    ];
+
+    for (const [body, expectedType] of cases) {
+      const res = await postSave(body, u.sessionToken);
+      expect(res.status).toBe(200);
+      const saved = (await res.json()) as { worksheetId: string };
+
+      const got = await getWorksheet(saved.worksheetId, u.sessionToken);
+      expect(got.status).toBe(200);
+      const ws = got.body.worksheet as Record<string, unknown>;
+      expect(ws.id).toBe(saved.worksheetId);
+      // Тип не превращён в worksheet: у плана — этапы, у презентации — слайды.
+      expect(ws.type).toBe(expectedType);
+      if (expectedType === "lesson-plan") expect(Array.isArray(ws.stages)).toBe(true);
+      if (expectedType === "presentation") expect(Array.isArray(ws.slides)).toBe(true);
+      if (expectedType === "ktp") expect(Array.isArray(ws.weeks)).toBe(true);
+    }
+  });
+
+  it("D08-4: чужой учитель получает 404 ДО чтения payload", async () => {
+    const owner = await createTestUserWithSession();
+    const other = await createTestUserWithSession();
+    const res = await postSave(VALID_BODY, owner.sessionToken);
+    const saved = (await res.json()) as { worksheetId: string };
+
+    const got = await getWorksheet(saved.worksheetId, other.sessionToken);
+    expect(got.status).toBe(404);
+    expect(JSON.stringify(got.body)).not.toContain("2 + 2 = ?");
+  });
+
+  it("D08-5: битый JSON в payload → 404, а не выдуманный артефакт", async () => {
+    const u = await createTestUserWithSession();
+    const brokenId = "ws_broken_payload_01";
+    await env.DB
+      .prepare(
+        `INSERT INTO worksheets
+           (id, user_id, subject, grade, topic, difficulty, type, count, title, payload_json, created_at)
+         VALUES (?1, ?2, 'math', 7, 'algebra', 'medium', 'worksheet', 1, 'Лист 1', '{не json', ?3)`,
+      )
+      .bind(brokenId, u.id, Math.floor(Date.now() / 1000))
+      .run();
+
+    const got = await getWorksheet(brokenId, u.sessionToken);
+    expect(got.status).toBe(404);
+    expect(got.body.worksheet).toBeUndefined();
+  });
+});
