@@ -1149,8 +1149,16 @@ export async function generateWorksheetDocx(
   // Стоит именно здесь: ключ учитель читает первым, и критерии отвечают на
   // вопрос «по чему я принимаю работу». Для обычного рабочего листа блока
   // нет — страницы не будет.
-  for (const part of options.evaluation ?? []) {
-    children.push(...criteriaPageChildren(part));
+  //
+  // ВКЛЮЧАЕТСЯ ТОЛЬКО ВМЕСТЕ С КЛЮЧОМ (UL-D12). Критерии и шкала отметок —
+  // материал для учителя. В раздаточном файле для ученика их быть не должно:
+  // критерий приёмки на бумаге превращается в подсказку. Раньше этот блок
+  // печатался ВСЕГДА, даже при withAnswers=false, и ученик получал шкалу
+  // отметок и критерии вместе с заданиями.
+  if (withAnswers) {
+    for (const part of options.evaluation ?? []) {
+      children.push(...criteriaPageChildren(part));
+    }
   }
 
   const doc = new Document({
