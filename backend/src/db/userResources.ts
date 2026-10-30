@@ -14,6 +14,7 @@
 import type { D1Database } from "@cloudflare/workers-types";
 import type { UserTemplate, HistoryItem, SubscriptionView, Worksheet } from "../types";
 import { worksheetId, shortId } from "../lib/shortid";
+import { NotFoundError } from "../lib/errors";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // History — последние сгенерированные пользователем worksheets
@@ -128,6 +129,19 @@ export interface FavoriteRecord {
 /**
  * Список favorites пользователя + JOIN с worksheets для payload.
  * Пагинация — по created_at favorites (а не worksheets).
+ *
+ * ВЛАДЕЛЕЦ. В списке показываются только листы, которые пользователь имеет
+ * право читать: свои (`user_id = ?1`) и анонимные (`user_id IS NULL` — по
+ * текущему контракту анонимный лист доступен всем по прямой ссылке).
+ * Чужой приватный лист сюда не попадает: связь может остаться в базе от
+ * прежней версии, от ручного импорта или от чужого клиента, но payload
+ * наружу не отдаётся (UL-D01).
+ *
+ * LEFT JOIN + `w.user_id IS NULL` — это два разных случая, и оба допустимы:
+ * анонимный лист (строка есть, владелец NULL) и удалённый лист (строки нет,
+ * отдаётся stub "(удалено)"). Признак «строка есть, владелец чужой» — это
+ * `w.user_id` с непустым значением, отличным от ?1, и такие строки
+ * отфильтровываются.
  */
 export async function listFavorites(
   db: D1Database,
@@ -143,7 +157,9 @@ export async function listFavorites(
                   w.payload_json
            FROM favorites f
            LEFT JOIN worksheets w ON w.id = f.worksheet_id
-           WHERE f.user_id = ?1 AND f.created_at < ?2
+           WHERE f.user_id = ?1
+             AND f.created_at < ?2
+             AND (w.user_id IS NULL OR w.user_id = ?1)
            ORDER BY f.created_at DESC
            LIMIT ?3`,
         )
@@ -156,6 +172,7 @@ export async function listFavorites(
            FROM favorites f
            LEFT JOIN worksheets w ON w.id = f.worksheet_id
            WHERE f.user_id = ?1
+             AND (w.user_id IS NULL OR w.user_id = ?1)
            ORDER BY f.created_at DESC
            LIMIT ?2`,
         )
@@ -207,6 +224,16 @@ export async function listFavorites(
  * сгенерируем. Делаем это в два шага (не транзакция, D1 не поддерживает tx
  * через prepare-bind на каждом шаге, но операции идемпотентны — повторный
  * POST на тот же id не сломает ничего).
+ *
+ * ВЛАДЕЛЕЦ (UL-D01). Перед вставкой читается `user_id` уже существующего
+ * листа:
+ *   * строка есть, владелец другой → 404. Тот же ответ, что у GET
+ *     /api/worksheets/:id: по коду ответа нельзя перебрать чужие id.
+ *   * строка есть, владелец мы → лист наш, payload НЕ перезаписывается
+ *     (присланный клиентом payload игнорируется, как и раньше).
+ *   * строка есть, владелец NULL → анонимный лист, доступен по текущему
+ *     контракту всем по прямой ссылке, поэтому его можно взять в избранное.
+ *   * строки нет → импорт: лист создаётся под тем, кто его добавил.
  */
 export async function addFavorite(
   db: D1Database,
@@ -218,9 +245,14 @@ export async function addFavorite(
 
   // 1. Upsert worksheet — храним payload_json для последующего GET.
   const existing = await db
-    .prepare(`SELECT id FROM worksheets WHERE id = ?1`)
+    .prepare(`SELECT id, user_id FROM worksheets WHERE id = ?1`)
     .bind(wsId)
-    .first<{ id: string }>();
+    .first<{ id: string; user_id: string | null }>();
+
+  // Чужой приватный лист: 404, а не 403 — существование не подтверждаем.
+  if (existing && existing.user_id !== null && existing.user_id !== userId) {
+    throw new NotFoundError("Worksheet not found");
+  }
 
   if (!existing) {
     await db
