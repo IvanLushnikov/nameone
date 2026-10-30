@@ -40,6 +40,8 @@
 import { env, applyD1Migrations, SELF } from "cloudflare:test";
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import { createUser, createSession } from "../../src/db/queries";
+/** ТЗ-33: общий реестр типов заданий — тот же, что у генерации. */
+import { TASK_TYPE_IDS } from "../../../src/lib/content/task-types";
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS users (
@@ -417,6 +419,102 @@ describe("ТЗ-30 работа 2: правка листа без LLM и без �
     });
     expect(res.status).not.toBe(501);
     expect(res.status).toBe(401);
+  });
+
+  it("D11-1: правка принимает ЛЮБОЙ тип задания из общего реестра", async () => {
+    // Раньше правка держала свой список из пяти типов. Лист, сгенерированный с
+    // новым типом задания, нельзя было исправить: правка отвечала 400 на типе,
+    // который сам генератор и создавал.
+    expect(TASK_TYPE_IDS.length).toBeGreaterThan(5);
+
+    for (const type of TASK_TYPE_IDS) {
+      const { status, json } = await patch("tok_owner", {
+        tasks: [{ id: "t1", number: 1, text: "Задание", type }],
+      });
+      expect(status, `тип ${type} должен приниматься правкой`).toBe(200);
+      const tasks = (json.worksheet as { tasks: Array<{ type?: string }> }).tasks;
+      expect(tasks[0]?.type).toBe(type);
+    }
+  });
+
+  it("D11-2: правка текста не теряет структурированные поля задания", async () => {
+    // Таблица и прочие структурированные поля — часть условия задачи. При
+    // правке текста они должны остаться на месте.
+    const tableTask = {
+      id: "t1",
+      number: 1,
+      text: "Заполните таблицу",
+      type: "table",
+      table: {
+        headers: ["Шаг", "Значение"],
+        rows: [["1", "2"]],
+      },
+      sample: "образец",
+      items: ["a", "b"],
+      criteria: ["критерий"],
+      steps: ["шаг 1"],
+    };
+    await env.DB
+      .prepare(
+        `INSERT INTO worksheets
+           (id, user_id, subject, grade, topic, difficulty, type, count, title, payload_json, created_at)
+         VALUES ('ws_edit_table01', 'u_owner', 'math', 5, 'Дроби', 'medium', 'worksheet', 1, 'Таблица', ?1, ?2)`,
+      )
+      .bind(
+        JSON.stringify({
+          id: "ws_edit_table01",
+          title: "Таблица",
+          subject: "math",
+          grade: 5,
+          topic: "Дроби",
+          difficulty: "medium",
+          tasks: [tableTask],
+          createdAt: new Date(NOW * 1000).toISOString(),
+        }),
+        NOW,
+      )
+      .run();
+
+    const { status, json } = await patch(
+      "tok_owner",
+      { tasks: [{ id: "t1", number: 1, text: "Заполните таблицу (исправлено)" }] },
+      "ws_edit_table01",
+    );
+    expect(status).toBe(200);
+
+    const tasks = (
+      json.worksheet as {
+        tasks: Array<{ text: string; type?: string; table?: { rows: string[][] } }>;
+      }
+    ).tasks;
+    expect(tasks[0]?.text).toBe("Заполните таблицу (исправлено)");
+    expect(tasks[0]?.type).toBe("table");
+    expect(tasks[0]?.table?.rows?.[0]?.[1]).toBe("2");
+  });
+
+  it("D11-3: неизвестный тип и пустой текст — 400 со списком issues, лист не меняется", async () => {
+    const before = await env.DB
+      .prepare("SELECT payload_json FROM worksheets WHERE id = ?1")
+      .bind(WS_ID)
+      .first<{ payload_json: string }>();
+
+    const bad = await patch("tok_owner", {
+      tasks: [{ id: "t1", number: 1, text: "Задание", type: "выдуманный-тип" }],
+    });
+    expect(bad.status).toBe(400);
+    const issues = (bad.json.details as { issues?: unknown[] } | undefined)?.issues;
+    expect(Array.isArray(issues)).toBe(true);
+
+    const blank = await patch("tok_owner", {
+      tasks: [{ id: "t1", number: 1, text: "   ", type: "short-answer" }],
+    });
+    expect(blank.status).toBe(400);
+
+    const after = await env.DB
+      .prepare("SELECT payload_json FROM worksheets WHERE id = ?1")
+      .bind(WS_ID)
+      .first<{ payload_json: string }>();
+    expect(after?.payload_json).toBe(before?.payload_json);
   });
 
   it("E8: основной путь из контракта PATCH /api/worksheets/:id тоже работает", async () => {

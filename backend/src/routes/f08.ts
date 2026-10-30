@@ -38,6 +38,8 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { D1Database } from "@cloudflare/workers-types";
+/** ТЗ-33: типы заданий — из общего реестра (см. `src/lib/content/task-types.ts`). */
+import { TASK_TYPE_IDS } from "../../../src/lib/content/task-types";
 import type { AppEnv } from "../types";
 import { requireAuth } from "../middleware/auth";
 import {
@@ -75,7 +77,12 @@ const EditBody = z.object({
           .transform((s) => s.trim())
           .refine((s) => s.length > 0, "текст задания не может быть пустым"),
         type: z
-          .enum(["computation", "multiple-choice", "short-answer", "essay", "fill-blank"])
+          // ТЗ-33: типы заданий — из общего реестра (src/lib/content/task-types.ts),
+          // а не из локального списка из пяти. Локальный список отстал от реестра:
+          // лист, сгенерированный с новым типом задания, нельзя было исправить —
+          // правка отвечала 400 на типе, который сам генератор и создавал.
+          // Перечисление типов теперь одно на весь продукт.
+          .enum(TASK_TYPE_IDS as [string, ...string[]])
           .optional(),
         options: z.array(z.string().max(500)).max(20).optional(),
         // Ответ и пояснение можно не присылать — тогда лист их не имеет.
@@ -189,12 +196,17 @@ async function editWorksheet(c: Context<AppEnv>) {
 
   const parsed = EditBody.safeParse(raw);
   if (!parsed.success) {
-    throw new BadRequestError("Проверьте задания: текст задания не может быть пустым", {
-      issues: parsed.error.issues.map((i) => ({
-        field: i.path.join("."),
-        message: i.message,
-      })),
-    });
+    // Текст ошибки перечисляет обе возможные причины: пустой текст и
+    // неизвестный тип задания. Форма ответа прежняя (400 + issues[]).
+    throw new BadRequestError(
+      "Проверьте задания: текст задания не может быть пустым, тип задания должен быть из реестра",
+      {
+        issues: parsed.error.issues.map((i) => ({
+          field: i.path.join("."),
+          message: i.message,
+        })),
+      },
+    );
   }
 
   // Пересборка структуры: сохраняем ТОЛЬКО непустые поля. Пустой ответ или
