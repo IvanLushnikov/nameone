@@ -19,6 +19,7 @@
  */
 
 import { Hono } from "hono";
+import type { MiddlewareHandler } from "hono";
 import { corsMiddleware } from "./middleware/cors";
 import { originGuard } from "./middleware/origin";
 import { errorMiddleware, notFoundHandler } from "./middleware/error";
@@ -86,6 +87,10 @@ function checkProductionConfig(env: AppEnv["Bindings"]): void {
     ["RESEND_API_KEY", env.RESEND_API_KEY],
     ["YOOKASSA_SHOP_ID", env.YOOKASSA_SHOP_ID],
     ["YOOKASSA_SECRET_KEY", env.YOOKASSA_SECRET_KEY],
+    // Отпечаток посетителя без соли считается хэшем с публичной константой
+    // из исходников: такой хэш перебирается за секунды, и таблица отпечатков
+    // становится справочником по IP. Ревью безопасности 30.10.2026, находка №2.
+    ["FINGERPRINT_SALT", env.FINGERPRINT_SALT],
   ];
   const missing = required.filter(([, value]) => !value).map(([name]) => name);
 
@@ -100,9 +105,94 @@ function checkProductionConfig(env: AppEnv["Bindings"]): void {
     `[config] КРИТИЧНО: в production не заданы секреты: ${missing.join(", ")}. ` +
       `Последствия по каждому: RESEND_API_KEY — вход по ссылке не работает; ` +
       `YOOKASSA_* — приём платежей отключён; JWT_SECRET — сессии не проверяются; ` +
-      `POLZA_API_KEY — генерация не работает. ` +
-      `Задать: npx wrangler secret put <ИМЯ> --name rabochielisty-api`,
+      `POLZA_API_KEY — генерация не работает; FINGERPRINT_SALT — отпечаток ` +
+      `посетителя считается с публичной солью (хэш перебирается за секунды). ` +
+      `Задать: npx wrangler secret put <ИМЯ> --env production`,
   );
+}
+
+/**
+ * Небезопасные режимы — что они означают.
+ *
+ * Оба флага включают ровно то, что на боевом воркере является дырой:
+ *   ALLOW_DEV_MAGIC_URL — ссылка для входа приходит прямо в ответе, то есть
+ *                         тому, кто знает чужой email, достаточно её запросить;
+ *   ALLOW_DEMO_PAYMENTS — оплата не проверяется, подписку можно получить
+ *                         бесплатно.
+ *
+ * Режимы нужны локальной разработке, поэтому вынесены в отдельную функцию:
+ * и предупреждение в лог, и запрет изменяющих ручек считают их одинаково.
+ */
+function unsafeModeProblems(env: AppEnv["Bindings"]): string[] {
+  const problems: string[] = [];
+  if (env.ALLOW_DEV_MAGIC_URL === "true") {
+    problems.push("ALLOW_DEV_MAGIC_URL=true — ссылка входа выдаётся в ответе, вход не защищён");
+  }
+  if (env.ALLOW_DEMO_PAYMENTS === "true") {
+    problems.push("ALLOW_DEMO_PAYMENTS=true — оплата симулируется, подписку можно получить бесплатно");
+  }
+  return problems;
+}
+
+/**
+ * Локальный адрес — это запрос с машины разработчика, а не с опубликованного
+ * воркера. По нему и отличаем «опасная конфигурация» от «обычная локальная
+ * разработка»: конфигурация у них одна и та же, различается только адрес.
+ */
+function isLocalRequest(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return false;
+  }
+  const bare = host.replace(/^\[/, "").replace(/\]$/, "");
+  return bare === "localhost" || bare === "127.0.0.1" || bare === "::1";
+}
+
+/** Методы, которые меняют состояние. Их-то и закрываем при плохой конфигурации. */
+const MUTATING_METHODS: ReadonlySet<string> = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
+ * Запрет изменяющих ручек при небезопасной конфигурации.
+ *
+ * Зачем: 02.10.2026 и 04.10.2026 боевой воркер выкатывали из секции `[vars]` —
+ * то есть с ALLOW_DEV_MAGIC_URL=true и ALLOW_DEMO_PAYMENTS=true. Вход отдавал
+ * ссылку прямо в ответе, подписку можно было получить без оплаты. Самопроверка
+ * это замечала, но только писала в лог — и продолжала работать в опасном
+ * состоянии.
+ *
+ * Теперь при опасной конфигурации изменяющие ручки отвечают 503, а чтение
+ * продолжает работать: сайт должен остаться живым, чтобы поломку было видно.
+ *
+ * Два исключения — без них ломается локальная разработка:
+ *   * запрос с локального адреса (машина разработчика, не опубликованный воркер);
+ *   * ALLOW_INSECURE_MODES=true — явная отмашка для `wrangler dev --remote`,
+ *     который поднимает воркер на публичном адресе Cloudflare. Задаётся только
+ *     в `.dev.vars`: его читает `wrangler dev` и НЕ читает деплой.
+ */
+function unsafeConfigurationGuard(): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const problems = unsafeModeProblems(c.env);
+    if (problems.length === 0) return next();
+    if (c.env.ALLOW_INSECURE_MODES === "true") return next();
+    if (isLocalRequest(c.req.url)) return next();
+    if (!MUTATING_METHODS.has(c.req.method)) return next();
+
+    // eslint-disable-next-line no-console
+    console.error(
+      "[config] КРИТИЧНО: изменяющий запрос отклонён (503). Опубликованный воркер " +
+        "работает с небезопасными режимами: " +
+        problems.join("; ") +
+        ". Признак деплоя из [vars] вместо [env.production.vars]. " +
+        "Задеплойте с окружением: npx wrangler deploy --env production",
+    );
+
+    return c.json(
+      { ok: false, error: "Сервер настроен неправильно", code: "UNSAFE_CONFIGURATION" },
+      503,
+    );
+  };
 }
 
 /**
@@ -142,11 +232,8 @@ function checkPublishedEnvironment(env: AppEnv["Bindings"]): void {
   if (looksLikeLocal(env.FRONTEND_URL)) {
     problems.push(`FRONTEND_URL="${env.FRONTEND_URL ?? "—"}" указывает на локальную машину`);
   }
-  if (env.ALLOW_DEV_MAGIC_URL === "true") {
-    problems.push("ALLOW_DEV_MAGIC_URL=true — ссылка входа выдаётся в ответе, вход не защищён");
-  }
-  if (env.ALLOW_DEMO_PAYMENTS === "true") {
-    problems.push("ALLOW_DEMO_PAYMENTS=true — оплата симулируется, подписку можно получить бесплатно");
+  if (env.ALLOW_DEV_MAGIC_URL === "true" || env.ALLOW_DEMO_PAYMENTS === "true") {
+    problems.push(...unsafeModeProblems(env));
   }
 
   if (problems.length === 0) return;
@@ -174,6 +261,11 @@ app.use("*", async (c, next) => {
 });
 
 app.use("*", corsMiddleware());
+
+// Запрет изменяющих ручек при небезопасной конфигурации. Идёт ПОСЛЕ CORS:
+// иначе ответ 503 дошёл бы до браузера без заголовков и выглядел бы как
+// сетевая ошибка, а не как «сервер настроен неправильно».
+app.use("*", unsafeConfigurationGuard());
 
 // CSRF-защита: изменяющие запросы (POST/PUT/PATCH/DELETE) с чужим Origin → 403.
 // Идёт сразу после CORS, до auth: смысл в том, чтобы чужой сайт не дошёл
@@ -275,13 +367,25 @@ app.notFound(notFoundHandler);
  *
  * Срабатывает раз в сутки, независимо от того, заходил ли учитель в ЛК.
  *
- * ─── Почему `app.scheduled`, а не отдельный `export default { scheduled }` ───
- * В Hono 4.13 метода `app.scheduled` нет вообще (проверено:
- * `typeof new Hono().scheduled === "undefined"`), cron-триггер вешается через
- * `app.fire("scheduled", event, env, ctx)` из обработчика Fetch. `scheduled` —
- * зарезервированное имя события воркера, поэтому навешиваем его вручную.
+ * ─── Почему cron — это отдельная точка входа, а не `app.fire` ───
+ * Cloudflare вызывает cron ТОЛЬКО через экспорт `scheduled` модуля воркера —
+ * это требование из документации Workers. Раньше обработчик был навешан на
+ * `app.fire(...)`, а модуль отдавал `export default app`: объект Hono без
+ * метода `scheduled`. Воркер был задеплоен с cron-триггерами, но ни один из
+ * них не сработал НИ РАЗУ — с 02.10.2026 ежесуточная уборка не выполнялась
+ * (фото детских работ лежали в бакете бессрочно, хотя обещано удаление через
+ * 7 дней). Доказательство: пустая таблица `weekly_topic_state` в боевой базе
+ * — её пишет только этот cron.
+ *
+ * Кстати, `app.fire` в Hono — deprecated-хелпер для Service-Worker-совместимости
+ * (`addEventListener("fetch", ...)`), а НЕ диспетчер событий Cloudflare.
+ * Перекрывать его было нечем: cron пришёл отдельной функцией.
  */
-app.fire = ((event: ScheduledEvent, env: AppEnv["Bindings"], ctx: ExecutionContext) => {
+function handleScheduled(
+  controller: ScheduledController,
+  env: AppEnv["Bindings"],
+  ctx: ExecutionContext,
+): void {
   // ── Какой это триггер ────────────────────────────────────────────────────
   // В `wrangler.toml` их два: суточный (уборка) и часовой (биллинг, ТЗ-20).
   // Без разведения уборка ездила бы раз в час — 24 полных обхода таблиц в
@@ -292,8 +396,8 @@ app.fire = ((event: ScheduledEvent, env: AppEnv["Bindings"], ctx: ExecutionConte
   // осторожность здесь недопустима.
   const HOURLY_CRON = "0 * * * *";
   const DAILY_CRON = "0 3 * * *";
-  const isHourly = event.cron === HOURLY_CRON;
-  const isDaily = event.cron === DAILY_CRON || !isHourly;
+  const isHourly = controller.cron === HOURLY_CRON;
+  const isDaily = controller.cron === DAILY_CRON || !isHourly;
 
   ctx.waitUntil(
     (async () => {
@@ -351,7 +455,22 @@ app.fire = ((event: ScheduledEvent, env: AppEnv["Bindings"], ctx: ExecutionConte
       }
     })(),
   );
-}) as typeof app.fire;
+}
 
-export default app;
+/**
+ * Точка входа воркера (module format).
+ *
+ * `fetch` — обычные запросы к API. `scheduled` — cron-триггеры из
+ * `[env.production.triggers]`. Оба обязательны: без `scheduled` Cloudflare
+ * не зовёт cron вообще, и вся плановая уборка (фото тетрадей через 7 дней,
+ * ответы учеников через 90 дней) не выполняется никогда.
+ *
+ * Именно так это и было сломано с 02.10.2026 по 30.10.2026: модуль отдавал
+ * `export default app`, где метода `scheduled` нет. См. комментарий у
+ * `handleScheduled` выше.
+ */
+export default {
+  fetch: app.fetch,
+  scheduled: handleScheduled,
+};
 export { app };

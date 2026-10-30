@@ -128,6 +128,14 @@ export interface FavoriteRecord {
 /**
  * Список favorites пользователя + JOIN с worksheets для payload.
  * Пагинация — по created_at favorites (а не worksheets).
+ *
+ * Фильтр `w.user_id IS NULL OR w.user_id = ?1` — это защита на ЧТЕНИЕ.
+ * Находка №4 ревью 30.10.2026: раньше лист чужого учителя можно было
+ * положить в избранное, и `GET /api/users/favorites` отдавал его payload.
+ * Запись теперь запрещена (см. addFavorite), но строки, созданные ДО починки,
+ * в базе остались — без этого фильтра они продолжили бы отдавать чужой
+ * payload. Лист без владельца (user_id IS NULL, анонимная генерация) —
+ * обычное дело и фильтром не затрагивается.
  */
 export async function listFavorites(
   db: D1Database,
@@ -144,6 +152,7 @@ export async function listFavorites(
            FROM favorites f
            LEFT JOIN worksheets w ON w.id = f.worksheet_id
            WHERE f.user_id = ?1 AND f.created_at < ?2
+             AND (w.user_id IS NULL OR w.user_id = ?1)
            ORDER BY f.created_at DESC
            LIMIT ?3`,
         )
@@ -156,6 +165,7 @@ export async function listFavorites(
            FROM favorites f
            LEFT JOIN worksheets w ON w.id = f.worksheet_id
            WHERE f.user_id = ?1
+             AND (w.user_id IS NULL OR w.user_id = ?1)
            ORDER BY f.created_at DESC
            LIMIT ?2`,
         )
@@ -212,15 +222,34 @@ export async function addFavorite(
   db: D1Database,
   userId: string,
   worksheet: Worksheet,
-): Promise<{ favoriteId: string; worksheetId: string; alreadyFavorited: boolean }> {
+): Promise<{
+  favoriteId: string;
+  worksheetId: string;
+  alreadyFavorited: boolean;
+  /** Лист принадлежит другому учителю — в избранное его положить нельзя. */
+  forbidden: boolean;
+}> {
   const now = Math.floor(Date.now() / 1000);
   const wsId = worksheet.id || worksheetId();
 
   // 1. Upsert worksheet — храним payload_json для последующего GET.
   const existing = await db
-    .prepare(`SELECT id FROM worksheets WHERE id = ?1`)
+    .prepare(`SELECT id, user_id FROM worksheets WHERE id = ?1`)
     .bind(wsId)
-    .first<{ id: string }>();
+    .first<{ id: string; user_id: string | null }>();
+
+  // Чужой лист в избранное не кладём (находка №4 ревью 30.10.2026).
+  //
+  // Раньше тут было `SELECT id` — проверка только «существует ли такой id».
+  // Учитель Б мог положить в избранное лист учителя А, и `GET
+  // /api/users/favorites` отдавал ему payload листа А.
+  //
+  // Тот же policy, что в F-07 (`src/routes/f07.ts`): лист с владельцем, и
+  // владелец — не ты, недоступен. Лист без владельца (анонимная генерация)
+  // — обычное дело, его класть можно.
+  if (existing && existing.user_id !== null && existing.user_id !== userId) {
+    return { favoriteId: "", worksheetId: wsId, alreadyFavorited: false, forbidden: true };
+  }
 
   if (!existing) {
     await db
@@ -266,10 +295,11 @@ export async function addFavorite(
       favoriteId: existingFav?.id ?? favId,
       worksheetId: wsId,
       alreadyFavorited: true,
+      forbidden: false,
     };
   }
 
-  return { favoriteId: favId, worksheetId: wsId, alreadyFavorited: false };
+  return { favoriteId: favId, worksheetId: wsId, alreadyFavorited: false, forbidden: false };
 }
 
 export async function removeFavorite(db: D1Database, userId: string, favoriteId: string): Promise<boolean> {

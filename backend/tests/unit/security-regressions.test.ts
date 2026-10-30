@@ -134,6 +134,10 @@ function prodEnv(overrides: Partial<Env> = {}): Env {
     // «прод» в тестах унаследовал бы разрешение на небезопасные режимы.
     ALLOW_DEV_MAGIC_URL: "false",
     ALLOW_DEMO_PAYMENTS: "false",
+    // Отмашка для небезопасных режимов в тестовой среде — в «проде» её быть
+    // не должно: иначе запрет изменяющих ручек (unsafeConfigurationGuard)
+    // не сработал бы там, где он нужен.
+    ALLOW_INSECURE_MODES: undefined,
     ...overrides,
   };
 }
@@ -158,6 +162,8 @@ function devEnv(overrides: Partial<Env> = {}): Env {
     // поэтому prodEnv обязан переопределить их ниже.
     ALLOW_DEV_MAGIC_URL: "true",
     ALLOW_DEMO_PAYMENTS: "true",
+    // Локальная машина: запрет изменяющих ручек здесь не нужен.
+    ALLOW_INSECURE_MODES: "true",
     ...overrides,
   };
 }

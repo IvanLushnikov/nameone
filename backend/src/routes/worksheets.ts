@@ -15,8 +15,11 @@
 
 import { Hono, type Context } from "hono";
 import { z } from "zod";
-/** ТЗ-33: типы заданий — из общего реестра (см. `src/lib/content/task-types.ts`). */
-import { TASK_TYPE_IDS } from "../../../src/lib/content/task-types";
+/**
+ * ТЗ-33: типы заданий — из общего реестра (см. `src/lib/content/task-types.ts`).
+ * Сама схема задания — общая с избранным, лежит в `src/schemas/worksheet.ts`.
+ */
+import { worksheetTaskSchema } from "../schemas/worksheet";
 import type { Env } from "../env";
 import { generateWorksheet, validateWorksheet } from "../llm";
 import { saveWorksheet, logWorksheetEvent, getWorksheetById, getWorksheetOwnerId } from "../services/worksheet";
@@ -41,7 +44,7 @@ import {
   releaseFreeQuotaForGeneration,
 } from "../llm/ratelimit";
 import { rateLimitMiddleware } from "../middleware/ratelimit";
-import type { CfObject } from "../lib/antifraud";
+import { fingerprintSalt, type CfObject } from "../lib/antifraud";
 import type { UsagePlan } from "../services/usage";
 import { FREE_TOTAL_GENERATIONS } from "../services/usage";
 
@@ -176,7 +179,7 @@ worksheetsRouter.post("/generate", async (c) => {
     ip,
     userAgent: c.get("userAgent") ?? "",
     cf: readCf(c),
-    salt: c.env.FINGERPRINT_SALT ?? "dev-fingerprint-salt",
+    salt: fingerprintSalt(c.env),
     challengePassed: Boolean(c.req.header("cf-turnstile-response")),
     // Капча настроена на воркере? Если нет — требовать её нечем
     // (аудит 18.10.2026, BUG-013), и guardGeneration не откажет.
@@ -332,7 +335,7 @@ worksheetsRouter.post("/validate", validateLimit, async (c) => {
     ip,
     userAgent: c.get("userAgent") ?? "",
     cf: readCf(c),
-    salt: c.env.FINGERPRINT_SALT ?? "dev-fingerprint-salt",
+    salt: fingerprintSalt(c.env),
     challengePassed: Boolean(c.req.header("cf-turnstile-response")),
     // Капча настроена на воркере? Если нет — требовать её нечем
     // (аудит 18.10.2026, BUG-013), и guardGeneration не откажет.
@@ -468,29 +471,7 @@ const WorksheetBody = z.object({
   difficulty: z.enum(["easy", "medium", "hard"]),
   tasks: z
     .array(
-      z.object({
-        number: z.number().int().positive(),
-        text: z.string().min(1).max(2000),
-        type: z.enum(TASK_TYPE_IDS as [string, ...string[]]),
-        options: z.array(z.string().max(500)).max(20).optional(),
-        answer: z.string().max(2000).optional(),
-        explanation: z.string().max(2000).optional(),
-        points: z.number().int().nonnegative().max(100),
-        verified: z.union([z.boolean(), z.null()]).optional(),
-        verifiedExplanation: z.string().max(2000).optional(),
-        // ТЗ-33: поля новых типов задания. Необязательные — старые листы
-        // приходят без них и принимаются как раньше.
-        sample: z.string().max(4000).nullish(),
-        table: z
-          .object({
-            headers: z.array(z.string().max(500)).max(20),
-            rows: z.array(z.array(z.string().max(500)).max(20)).max(50),
-          })
-          .nullish(),
-        items: z.array(z.string().max(1000)).max(50).nullish(),
-        criteria: z.array(z.string().max(1000)).max(20).nullish(),
-        steps: z.array(z.string().max(1000)).max(30).nullish(),
-      }),
+      worksheetTaskSchema,
     )
     .min(1)
     .max(100),

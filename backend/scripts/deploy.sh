@@ -3,12 +3,12 @@
 #
 # Использование:
 #   ./scripts/deploy.sh                # production (по умолчанию)
-#   ./scripts/deploy.sh staging        # dev-окружение, preview URL
+#   ./scripts/deploy.sh staging        # ОТКАЗАНО: нужен свой воркер + своя D1 + свой R2
 #
 # Требования:
 #   - CLOUDFLARE_API_TOKEN в env, либо `npx wrangler login`
 #   - database_id в wrangler.toml заменён на реальный
-#   - secrets: npx wrangler secret put RESEND_API_KEY --name <worker>
+#   - secrets: npx wrangler secret put RESEND_API_KEY --env production
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # ПОЧЕМУ ЗДЕСЬ ЯВНО ПРОПИСАН --env production
@@ -31,7 +31,9 @@
 #
 # Теперь окружение передаётся явно, а шаг 5 проверяет по Cloudflare API,
 # что опубликовано именно то, что задумано. Молчаливый неверный деплой
-# больше невозможен: он падает.
+# больше невозможен: он падает. Дополнительно верхнеуровневый воркер назван
+# `rabochielisty-api-dev`, поэтому даже `npx wrangler deploy` без окружения
+# не может выкатить воркер `rabochielisty-api`.
 
 set -e
 cd "$(dirname "$0")/.."
@@ -41,8 +43,33 @@ WORKER_NAME="rabochielisty-api"
 
 case "$ENVIRONMENT" in
   production) WRANGLER_ENV_FLAG="--env production" ;;
-  staging)    WRANGLER_ENV_FLAG="" ;;
-  *) echo "Неизвестное окружение: $ENVIRONMENT (допустимо: production | staging)"; exit 1 ;;
+  staging)
+    # ОТКАЗАНО НАМЕРЕННО (ревью безопасности 30.10.2026, находка №3).
+    #
+    # Раньше здесь стояло `WRANGLER_ENV_FLAG=""` — то есть `wrangler deploy`
+    # без окружения, который выкатывал ВЕРХНЕУРОВНЕВУЮ секцию [vars] на
+    # боевой адрес: ALLOW_DEV_MAGIC_URL=true, ALLOW_DEMO_PAYMENTS=true.
+    # Так прод выкатывали с настройками разработки дважды (02.10 и 04.10).
+    #
+    # Сейчас верхнеуровневый воркер переименован в `rabochielisty-api-dev`,
+    # поэтому такой деплой больше не задевает прод. Но отдельный стенд без
+    # своей базы D1 и своего бакета R2 — это стенд, пишущий в боевую базу.
+    # Стенд = свой воркер + своя D1 + свой R2, см.
+    # `docs/agents/03-deploy-prod-cloudflare.md`.
+    echo ""
+    echo "❌ staging-деплой отключён."
+    echo "   Причина: верхнеуровневая секция [vars] указывает на БОЕВУЮ базу D1"
+    echo "   (rabochielisty). Стенд без своей базы пишет в боевые данные."
+    echo "   Что сделать, если стенд действительно нужен:"
+    echo "     1) npx wrangler d1 create rabochielisty-staging"
+    echo "     2) npx wrangler r2 bucket create rabochielisty-staging-pdfs"
+    echo "     3) секция [env.staging] в wrangler.toml: своё имя воркера,"
+    echo "        свой database_id, свой bucket_name"
+    echo "     4) ./scripts/deploy.sh staging"
+    echo "   До этого — деплойте прод: ./scripts/deploy.sh"
+    exit 1
+    ;;
+  *) echo "Неизвестное окружение: $ENVIRONMENT (допустимо: production)"; exit 1 ;;
 esac
 
 echo "▶ Окружение деплоя: $ENVIRONMENT"

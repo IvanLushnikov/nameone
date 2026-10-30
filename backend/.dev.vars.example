@@ -40,6 +40,18 @@ YOOKASSA_SECRET_KEY=
 # тексты на /pricing переписаны обратно на «продлевается автоматически».
 RECURRING_BILLING_ENABLED=true
 
+# Отмашка для `wrangler dev --remote`.
+#
+# Локальный `wrangler dev --local` работает на адресе localhost — там
+# запрет изменяющих ручек (см. unsafeConfigurationGuard в src/index.ts) не
+# срабатывает. А вот `wrangler dev --remote` поднимает воркер на ПУБЛИЧНОМ
+# адресе Cloudflare, и запрет сработал бы: изменяющие ручки отвечали бы 503.
+# Эта переменная его отключает.
+#
+# Ставить ТОЛЬКО здесь, в `.dev.vars`: этот файл читает `wrangler dev` и НЕ
+# читает деплой, так что на опубликованном воркере переменной не будет.
+ALLOW_INSECURE_MODES=true
+
 # Сессии — замени на 32-байтную hex-строку перед прод-деплоем
 JWT_SECRET=dev-only-replace-in-prod-with-32-byte-hex
 

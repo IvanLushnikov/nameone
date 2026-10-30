@@ -28,7 +28,7 @@ import {
   ForbiddenError,
   PaymentRequiredError,
 } from "../lib/errors";
-import type { CfObject } from "../lib/antifraud";
+import { fingerprintSalt, type CfObject } from "../lib/antifraud";
 import { moderateGenerationRequest } from "../llm/moderation";
 import { taskForArtifact, PLUS_ONLY_TASKS } from "../llm/router";
 import { guardGeneration, consumeGenerationQuota } from "../llm/ratelimit";
@@ -216,7 +216,7 @@ export async function prepareArtifactGeneration(
     ip,
     userAgent: c.get("userAgent") ?? "",
     cf: readCf(c),
-    salt: c.env.FINGERPRINT_SALT ?? "dev-fingerprint-salt",
+    salt: fingerprintSalt(c.env),
     // Капча при необходимости приходит как заголовок cf-turnstile-response
     // (её выдал фронт по 409 от прошлой попытки).
     challengePassed: Boolean(c.req.header("cf-turnstile-response")),

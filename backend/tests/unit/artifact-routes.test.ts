@@ -34,7 +34,9 @@
 import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 
-import app from "../../src/index";
+// Именованный импорт: default-экспорт воркера — это { fetch, scheduled },
+// а само Hono-приложение доступно как `app`.
+import { app } from "../../src/index";
 
 /** Эндпоинт → ожидаемый код ответа для анонимного запроса без тарифа. */
 const ENDPOINTS: Array<{ path: string; expectStatus: number; label: string }> = [

@@ -12,13 +12,20 @@
  * приводить к лишней работе, а не к пропуску.
  */
 /// <reference types="@cloudflare/vitest-plugin" />
-import { env, SELF, applyD1Migrations } from "cloudflare:test";
+import {
+  env,
+  SELF,
+  applyD1Migrations,
+  createExecutionContext,
+  createScheduledController,
+  waitOnExecutionContext,
+} from "cloudflare:test";
 // Настоящая схема из репозитория, а не выдержка: тест про разведение
 // триггеров не должен расходиться с тем, что реально применяется в проде.
 import schemaSql from "../../src/db/schema.sql?raw";
 // Типы для `?raw` — в tests/raw-imports.d.ts.
 import { describe, it, expect, beforeAll } from "vitest";
-import app from "../../src/index";
+import worker from "../../src/index";
 
 const HOURLY_CRON = "0 * * * *";
 const DAILY_CRON = "0 3 * * *";
@@ -28,7 +35,14 @@ beforeAll(async () => {
   await SELF.fetch("https://local.test/healthz");
 });
 
-/** Прогоняет cron-обработчик и возвращает строки, которые он записал в лог. */
+/**
+ * Прогоняет cron-обработчик и возвращает строки, которые он записал в лог.
+ *
+ * Обработчик зовётся ТЕМ ЖЕ способом, каким его зовёт Cloudflare: экспорт
+ * `scheduled` модуля с контроллером расписания. Раньше здесь был прямой вызов
+ * `app.fire(...)` — он проверял разведение триггеров, но не проверял, что
+ * Cloudflare вообще достучится до воркера (находка №1 ревью 30.10.2026).
+ */
 async function runCron(cron: string): Promise<string[]> {
   const lines: string[] = [];
   const originalInfo = console.info;
@@ -36,15 +50,15 @@ async function runCron(cron: string): Promise<string[]> {
   console.info = (...args: unknown[]) => lines.push(args.map(String).join(" "));
   console.error = (...args: unknown[]) => lines.push(args.map(String).join(" "));
 
-  let ran: Promise<unknown> = Promise.resolve();
-  const ctx = { waitUntil: (p: Promise<unknown>) => (ran = p) } as unknown as ExecutionContext;
   try {
-    (app.fire as unknown as (e: unknown, e2: unknown, c: unknown) => void)(
-      { cron } as ScheduledEvent,
+    const ctx = createExecutionContext();
+    const controller = createScheduledController({ cron });
+    (worker.scheduled as unknown as (c: unknown, e: unknown, x: unknown) => void)(
+      controller,
       env,
       ctx,
     );
-    await ran;
+    await waitOnExecutionContext(ctx);
   } finally {
     console.info = originalInfo;
     console.error = originalError;

@@ -39,6 +39,13 @@ export default defineConfig({
         // не попадает.
         bindings: {
           TOTP_ENCRYPTION_KEY: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+          // Тесты гоняют воркер на фиктивном хосте (local.test / api.test),
+          // который для воркера выглядит публичным. Если оставить опасные
+          // режимы включёнными, запрет изменяющих ручек (см.
+          // unsafeConfigurationGuard в src/index.ts) отвечал бы 503 на
+          // половине тестов. Здесь это явная отмашка: тестовая среда — не
+          // опубликованный воркер.
+          ALLOW_INSECURE_MODES: "true",
         },
       },
     }),

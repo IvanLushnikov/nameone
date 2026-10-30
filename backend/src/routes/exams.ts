@@ -11,7 +11,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Context } from "hono";
-import type { CfObject } from "../lib/antifraud";
+import { fingerprintSalt, type CfObject } from "../lib/antifraud";
 import type { UsagePlan } from "../services/usage";
 import { generateExam } from "../llm";
 import {
@@ -77,7 +77,7 @@ examsRouter.post("/generate", async (c) => {
     ip,
     userAgent: c.get("userAgent") ?? "",
     cf: readCf(c),
-    salt: c.env.FINGERPRINT_SALT ?? "dev-fingerprint-salt",
+    salt: fingerprintSalt(c.env),
     challengePassed: Boolean(c.req.header("cf-turnstile-response")),
     // Капча настроена на воркере? Если нет — требовать её нечем
     // (аудит 18.10.2026, BUG-013), и guardGeneration не откажет.

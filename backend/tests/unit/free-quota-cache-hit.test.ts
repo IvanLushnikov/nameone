@@ -48,7 +48,7 @@ import {
   checkFreeQuota,
   freeQuotaOwnerKey,
 } from "../../src/services/usage";
-import { fingerprintHash } from "../../src/lib/antifraud";
+import { fingerprintHash, fingerprintSalt } from "../../src/lib/antifraud";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15";
 
@@ -70,7 +70,7 @@ beforeAll(async () => {
 
 /** Отпечаток посетителя: тот же, что считает роут. */
 async function fingerprintOf(ip: string): Promise<string> {
-  const salt = env.FINGERPRINT_SALT ?? "dev-fingerprint-salt";
+  const salt = fingerprintSalt(env);
   return fingerprintHash({ ip, userAgent: UA }, salt);
 }
 

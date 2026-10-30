@@ -113,6 +113,21 @@ export class EmailDeliveryError extends ApiError {
   }
 }
 
+/**
+ * 503: сервер настроен небезопасно — выполнять запрос нельзя.
+ *
+ * Отдельный класс, а не InternalError, потому что это НЕ баг в коде, а
+ * неверная конфигурация воркера: например, в production не задан
+ * FINGERPRINT_SALT (ревью безопасности 30.10.2026, находка №2). Клиенту —
+ * общий текст без деталей конфигурации; причина уходит в лог.
+ */
+export class ServiceMisconfiguredError extends ApiError {
+  constructor(message = "Сервер настроен неправильно", details?: unknown) {
+    super(503, "SERVICE_MISCONFIGURED", message, details);
+    this.name = "ServiceMisconfiguredError";
+  }
+}
+
 export class InternalError extends ApiError {
   constructor(message = "Internal Server Error", details?: unknown) {
     super(500, "INTERNAL", message, details);

@@ -121,6 +121,13 @@ export interface WorksheetTask {
   number: number;
   text: string;
   /**
+   * LaTeX-версия задания для ОТРИСОВКИ, формулы в `$...$`.
+   *
+   * `text` остаётся источником правды, `text_latex` — та же формула
+   * вертикально. Поле необязательное: у листов до его появления его нет.
+   */
+  text_latex?: string | null;
+  /**
    * Тип задания. ТЗ-33: набор расширен с 5 до 17.
    *
    * Идентификаторы берутся из реестра `src/lib/content/task-types.ts` — файл
@@ -175,6 +182,19 @@ export interface Worksheet {
   tasks: WorksheetTask[];
   createdAt: string;
   variant?: "A" | "B";
+  /**
+   * Спецификация SVG-графика (Phase 1 roadmap).
+   *
+   * Тип живёт на фронте (`src/lib/llm/svg-renderer`), и тянуть его сюда нельзя:
+   * бэк не должен зависеть от фронтовых модулей. Бэку нужно только сохранить
+   * это поле как есть — оно лежит в payload_json и возвращается учителю.
+   */
+  chartSpec?: unknown;
+  /**
+   * Заготовка: сервис был недоступен, задания типовые. Едет вместе с
+   * артефактом в избранное, предпросмотр и ЛК — нужен для водяного знака.
+   */
+  isDemo?: boolean;
 }
 
 export interface ExamProblem {
