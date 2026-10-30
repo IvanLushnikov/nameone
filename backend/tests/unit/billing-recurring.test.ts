@@ -169,16 +169,46 @@ function testEnv(overrides: Partial<Env> = {}): Env {
 }
 
 /**
- * Окружение ДЛЯ ВЕБХУКА — без ключей ЮKassa.
+ * Окружение ДЛЯ ВЕБХУКА — с ключами ЮKassa.
  *
- * Зачем: живая сверка статуса платежа (defense in depth) ходит в
- * api.yookassa.ru по-настоящему, если ключи заданы. В тестах это даёт сетевой
- * вызов с фальшивыми учётными данными — медленно, нестабильно и бессмысленно.
- * Основную защиту (каноническая запись в БД + сверка суммы) она лишь
- * дублирует, поэтому в тестах отключается.
+ * Зачем: с 30.10.2026 (UL-D02) подтверждение оплаты провайдером обязательно.
+ * Когда провайдер недоступен, вебхук не активирует подписку и отдаёт 503,
+ * чтобы уведомление повторилось. Раньше сверку можно было просто выключить,
+ * убрав ключи, — и тест молча кодировал fail-open (дефект D02).
+ *
+ * Теперь вместо «выключить проверку» подставляется провайдер, который
+ * подтверждает оплату (см. confirmedProvider). Кейсы «провайдер недоступен»
+ * и «провайдер не подтвердил» живут в
+ * tests/unit/billing-webhook-authenticity.test.ts.
  */
 function webhookEnv(overrides: Partial<Env> = {}): Env {
-  return testEnv({ YOOKASSA_SHOP_ID: undefined, YOOKASSA_SECRET_KEY: undefined, ...overrides });
+  return testEnv(overrides);
+}
+
+/**
+ * Провайдер, который подтверждает платёж на ту же сумму, что и в уведомлении.
+ *
+ * Ответ повторяет канонический объект ЮKassa: id, status, paid, amount.
+ */
+function confirmedProvider(amountValue: string): typeof globalThis.fetch {
+  return (async (url: string) => {
+    const id = decodeURIComponent(String(url).split("/").pop() ?? "");
+    return new Response(
+      JSON.stringify({
+        id,
+        status: "succeeded",
+        paid: true,
+        amount: { value: amountValue, currency: "RUB" },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }) as typeof globalThis.fetch;
+}
+
+/** Вебхук с провайдером, подтверждающим сумму из самого уведомления. */
+async function notify(note: YooKassaWebhookPayload) {
+  const amountValue = note.object?.amount?.value ?? (BASE_MONTHLY / 100).toFixed(2);
+  return handleWebhook(db(), webhookEnv(), note, { fetcher: confirmedProvider(amountValue) });
 }
 
 /** Ответ ЮKassa на создание платежа — без реальной сети. */
@@ -591,11 +621,7 @@ describe("Первый платёж и согласие (createPayment → webho
     expect(requests[0]?.save_payment_method).toBe(true);
     expect(paymentKindById(result.paymentId)).toBe("consent");
 
-    await handleWebhook(
-      db(),
-      webhookEnv(),
-      succeededNotification("yk_first", { paymentMethod: { id: "pm_123", saved: true } }),
-    );
+    await notify(succeededNotification("yk_first", { paymentMethod: { id: "pm_123", saved: true } }));
 
     const sub = await db()
       .prepare(
@@ -642,11 +668,7 @@ describe("Первый платёж и согласие (createPayment → webho
 
     // Провайдер вернул payment_method — но согласия не было, значит сохранять
     // нечего. Строка согласия не появляется, крон этот период не тронет.
-    await handleWebhook(
-      db(),
-      webhookEnv(),
-      succeededNotification("yk_plain", { paymentMethod: { id: "pm_hacked", saved: true } }),
-    );
+    await notify(succeededNotification("yk_plain", { paymentMethod: { id: "pm_hacked", saved: true } }));
 
     expect(await count(`SELECT COUNT(*) AS n FROM recurring_payment_methods`)).toBe(0);
     const sub = await db()
@@ -682,9 +704,7 @@ describe("Первый платёж и согласие (createPayment → webho
     expect(requests[0]?.save_payment_method).toBeUndefined();
     expect(paymentKindById(result.paymentId)).toBe("standard");
 
-    await handleWebhook(
-      db(),
-      webhookEnv(),
+    await notify(
       succeededNotification("yk_year", {
         amountKopecks: BASE_YEAR,
         paymentMethod: { id: "pm_year", saved: true },
@@ -748,7 +768,7 @@ describe("Вебхук автопродления", () => {
     const ykId = await seedChargeInFlight();
     const before = await getSub("sub_renew");
 
-    await handleWebhook(db(), webhookEnv(), succeededNotification(ykId));
+    await notify(succeededNotification(ykId));
 
     const after = await getSub("sub_renew");
     expect(after.id).toBe(before.id);
@@ -784,7 +804,7 @@ describe("Вебхук автопродления", () => {
       .prepare(`UPDATE subscriptions SET yookassa_payment_id = 'yk_stale' WHERE id = 'sub_stale'`)
       .run();
 
-    await handleWebhook(db(), webhookEnv(), succeededNotification("yk_stale"));
+    await notify(succeededNotification("yk_stale"));
 
     const sub = await getSub("sub_stale");
     const realNow = Math.floor(Date.now() / 1000);
@@ -794,10 +814,10 @@ describe("Вебхук автопродления", () => {
   it("повторное уведомление по тому же платежу НЕ продлевает дважды", async () => {
     const ykId = await seedChargeInFlight();
 
-    await handleWebhook(db(), webhookEnv(), succeededNotification(ykId));
+    await notify(succeededNotification(ykId));
     const afterFirst = await getSub("sub_renew");
 
-    await handleWebhook(db(), webhookEnv(), succeededNotification(ykId));
+    await notify(succeededNotification(ykId));
     const afterSecond = await getSub("sub_renew");
 
     expect(afterSecond.ends_at).toBe(afterFirst.ends_at);
@@ -825,7 +845,7 @@ describe("Вебхук автопродления", () => {
       )
       .run();
 
-    await handleWebhook(db(), webhookEnv(), succeededNotification("yk_noconsent"));
+    await notify(succeededNotification("yk_noconsent"));
 
     // Деньги списаны, но продлевать нечем: оформляем как обычную покупку периода
     // и поднимаем alert, а не продлеваем без согласия.
@@ -854,11 +874,7 @@ describe("Вебхук автопродления", () => {
       .prepare(`UPDATE subscriptions SET yookassa_payment_id = 'yk_year_r' WHERE id = 'sub_renew_year'`)
       .run();
 
-    await handleWebhook(
-      db(),
-      webhookEnv(),
-      succeededNotification("yk_year_r", { amountKopecks: BASE_YEAR }),
-    );
+    await notify(succeededNotification("yk_year_r", { amountKopecks: BASE_YEAR }));
 
     // Новой подписки на 9 месяцев не появилось, учебный год не продлён.
     const rows = await db()
