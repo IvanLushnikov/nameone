@@ -548,7 +548,7 @@ export async function handleWebhook(
   env: Env,
   body: YooKassaWebhookPayload,
   options: { fetcher?: typeof globalThis.fetch } = {},
-): Promise<{ handled: boolean }> {
+): Promise<{ handled: boolean; retry?: boolean }> {
   const fetcher = options.fetcher ?? globalThis.fetch;
   if (!body || body.type !== "notification" || !body.event || !body.object) {
     // eslint-disable-next-line no-console
@@ -621,7 +621,28 @@ export async function handleWebhook(
     }
 
     // ── Шаг 4. Живая сверка в API ЮKassa (defense in depth) ──────────────────
-    if (env.YOOKASSA_SHOP_ID && env.YOOKASSA_SECRET_KEY) {
+    //
+    // ЮKassa НЕ подписывает уведомления — проверить подпись нечем. Официальный
+    // способ проверки подлинности уведомления (документация ЮKassa, раздел
+    // «Notification authentication»): сверка текущего статуса объекта в API
+    // и allowlist IP-адресов, с которых приходят уведомления. Первое — здесь,
+    // второе — рекомендация владельцу на уровне Cloudflare (список адресов
+    // в отчёте по ревью).
+    //
+    // Пока сверка не выполнена — подписку НЕ активируем. Раньше при ответе
+    // `unknown` (сеть, 5xx, 401) активация всё равно проходила по данным БД и
+    // сумме из уведомления. То есть в тот день, когда API ЮKassa недоступен
+    // или ключи отозвали и заменили, поддельное `payment.succeeded`
+    // активировало подписку бесплатно.
+    if (!env.YOOKASSA_SHOP_ID || !env.YOOKASSA_SECRET_KEY) {
+      // Ключей нет — сверять нечем. В проде такого состояния быть не должно:
+      // без ключей платёж не создаётся, а значит и уведомления о нём не будет.
+      // eslint-disable-next-line no-console
+      console.error(
+        `[billing] ALERT: нет ключей ЮKassa — платёж подтверждён только нашей БД ` +
+          `и суммой из уведомления, без сверки с API yk_id=${ykId}. Проверьте ключи.`,
+      );
+    } else {
       const live = await fetchPaymentStatus(ykId, env, fetcher);
       if (live === "denied") {
         // API ответил и сказал, что платёж не succeeded.
@@ -630,13 +651,17 @@ export async function handleWebhook(
         return { handled: false };
       }
       if (live === "unknown") {
-        // Сеть/5xx — не отказываем в оплате (пункты 1-3 уже отработали),
-        // но поднимаем alert: возможно, ключи протухли.
+        // Сеть/5xx/401 — сверки нет, значит и подтверждения нет. Подписку не
+        // активируем и просим ЮKassa повторить уведомление: по её
+        // документации ответ с кодом не 2xx означает «не принято», и
+        // уведомление повторяется ещё 24 часа после события.
         // eslint-disable-next-line no-console
         console.error(
           `[billing] ALERT: не удалось сверить платёж с API ЮKassa yk_id=${ykId}. ` +
-            `Активация прошла по данным БД и сумме из уведомления. Проверьте ключи и доступность API.`,
+            `Подписка НЕ активирована: ждём повторного уведомления (ЮKassa повторяет ` +
+            `24 часа). Проверьте ключи и доступность API.`,
         );
+        return { handled: false, retry: true };
       }
     }
 

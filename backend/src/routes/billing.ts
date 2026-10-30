@@ -181,6 +181,15 @@ billingRouter.post("/yookassa-webhook", async (c) => {
   }
 
   const result = await handleWebhook(c.env.DB, c.env, body);
+
+  // Ответ с кодом не 2xx ЮKassa считает «не принято» и повторяет уведомление
+  // ещё 24 часа после события (её документация, раздел про уведомления).
+  // Это и есть очередь на повторную сверку: сверка с API не удалась, значит
+  // подтверждения нет — и подписка не активирована.
+  if (result.retry) {
+    return c.json({ handled: false, retry: true }, 503);
+  }
+
   return c.json(result);
 });
 
