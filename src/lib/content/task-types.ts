@@ -90,6 +90,11 @@ export interface TaskTypeSpec {
   needsOptions?: boolean;
   /** Нужна таблица или рисунок в задании (`table`). */
   needsTable?: boolean;
+  /**
+   * В тексте задания нужны буквенные метки второй колонки (а/б/в) — у matching.
+   * Проверка в `quality-filter.ts` по флагу, без разрозненных `if (type)`.
+   */
+  needsLetterLabelsInText?: boolean;
   /** Нужна картинка (`image`). */
   needsImage?: boolean;
   /**
@@ -193,10 +198,11 @@ const NEW_TASK_TYPES: TaskTypeSpec[] = [
     id: "matching",
     name: "Установите соответствие",
     whatTeacherAsks:
-      "Установите соответствие между двумя колонками и запишите пары. " +
-      "В `items` — элементы правой колонки, в `answer` — соответствие.",
+      "Установите соответствие между двумя колонками. Левая колонка с метками а), б), в) — " +
+      "в тексте задания; правая — нумерованный список в `items`. В `answer` — пары вида 1-а, 2-б.",
     answerKind: "order",
     weight: 2,
+    needsLetterLabelsInText: true,
     subjects: ["english", "german", "biology", "social", "chemistry", "history", "geography"],
     grades: [2, 11],
     printHints: ["элементы — нумерованным списком", "рядом с каждым — место для пары"],

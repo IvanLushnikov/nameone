@@ -65,7 +65,7 @@ const DEFAULT_TTL_SECONDS = 30 * DAY_SEC;
  *   2 — версия в ключе (эта). Ключ стал различать материалы, собранные по
  *       разным правилам.
  */
-export const FORMAT_VERSION = 2;
+export const FORMAT_VERSION = 3;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cache key

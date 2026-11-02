@@ -398,12 +398,47 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
                     <li key={task.number} className="flex items-start gap-2 worksheet-task">
                       <span className="worksheet-task-num">{task.number}</span>
                       <div className="flex-1">
-                        <div className="font-medium text-warm-950">
-                          Ответ:{" "}
-                          <span className="font-mono">
-                            <MathText text={task.answer ?? "—"} />
-                          </span>
-                        </div>
+                        {(() => {
+                          const criteriaList = Array.isArray(task.criteria)
+                            ? task.criteria.filter(
+                                (c): c is string => typeof c === "string" && c.trim().length > 0,
+                              )
+                            : [];
+                          const hasAnswer =
+                            task.answer != null && String(task.answer).trim().length > 0;
+                          return (
+                            <>
+                              {hasAnswer && (
+                                <div className="font-medium text-warm-950">
+                                  Ответ:{" "}
+                                  <span className="font-mono">
+                                    <MathText text={String(task.answer)} />
+                                  </span>
+                                </div>
+                              )}
+                              {!hasAnswer && criteriaList.length === 0 && (
+                                <div className="font-medium text-warm-950">
+                                  Ответ:{" "}
+                                  <span className="font-mono">
+                                    <MathText text="—" />
+                                  </span>
+                                </div>
+                              )}
+                              {criteriaList.length > 0 && (
+                                <div className="mt-1">
+                                  <div className="font-medium text-warm-950">Критерии:</div>
+                                  <ul className="mt-1 list-disc pl-5 text-warm-800 text-[13px] space-y-0.5">
+                                    {criteriaList.map((c, i) => (
+                                      <li key={i}>
+                                        <MathText text={c} />
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                         {withExplanations && task.explanation && (
                           <div className="mt-1 text-warm-600 text-[13px]">
                             <span className="font-medium text-warm-700">Пояснение: </span>
