@@ -34,6 +34,21 @@ jobs:
       - name: Install
         run: npm ci --no-fund
 
+      # Бэкенд-зависимости нужны и здесь, а не только в бэкенд-джобе.
+      #
+      # Почему: `tests/economics-inputs.test.ts` запускает адаптер
+      # `scripts/economics-inputs.mts`, а тот читает канонические нормы и квоты
+      # из `backend/src/services/usage.ts`. У того модуля есть статический
+      # импорт `services/alerts.ts` → пакет `resend`, а `resend` стоит только
+      # в бэкенд-зависимостях. Без их установки адаптер падает с
+      # ERR_MODULE_NOT_FOUND, и выкатка в прод падает не из-за кода, а из-за
+      # отсутствующего пакета.
+      #
+      # Ставить `resend` в корневые зависимости нельзя: фронт письма не шлёт.
+      - name: Install backend deps
+        run: npm ci --no-fund
+        working-directory: backend
+
       # Проверки блокирующие. Раньше их не было вовсе, и в прод уезжал код,
       # который мог не проходить даже typecheck.
       #
