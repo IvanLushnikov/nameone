@@ -76,21 +76,52 @@ export async function logWorksheetEvent(
     .run();
 }
 
+/**
+ * Прочитать сохранённый лист по id.
+ *
+ * ─── ЧТО ТУТ ВАЖНО (UL-D08) ─────────────────────────────────────────────────
+ * id и createdAt берутся ИЗ СТРОКИ БД, а не из payload. Раньше payload хранил
+ * ровно то, что прислал клиент, — без id. Поэтому сохранённый лист нельзя
+ * было открыть по ссылке: загрузчик на фронте требует `id` в артефакте и
+ * отказывался показывать такой лист («Лист не найден»), хотя строка в базе
+ * была.
+ *
+ * Теперь:
+ *   * id строки — авторитетный (клиентский id в payload не доверяем: по нему
+ *     нельзя было бы решить, чей это лист);
+ *   * createdAt — из строки, если в payload его нет (старые листы);
+ *   * всё остальное содержимое и тип артефакта сохраняются как были: план
+ *     урока остаётся планом, КТП — КТП.
+ *
+ * Битый JSON — как и раньше, null: выдумывать артефакт нельзя.
+ */
 export async function getWorksheetById(
   db: D1Database,
   id: string,
 ): Promise<Worksheet | null> {
   const row = await db
-    .prepare(`SELECT payload_json FROM worksheets WHERE id = ?1`)
+    .prepare(`SELECT id, payload_json, created_at FROM worksheets WHERE id = ?1`)
     .bind(id)
-    .first<{ payload_json: string }>();
+    .first<{ id: string; payload_json: string; created_at: number }>();
   if (!row) return null;
+
+  let payload: unknown;
   try {
-    return JSON.parse(row.payload_json) as Worksheet;
+    payload = JSON.parse(row.payload_json);
   } catch {
     return null;
-
   }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+
+  const stored = payload as Record<string, unknown>;
+  const createdAt =
+    typeof stored.createdAt === "string" && stored.createdAt
+      ? stored.createdAt
+      : new Date(row.created_at * 1000).toISOString();
+
+  return { ...stored, id: row.id, createdAt } as unknown as Worksheet;
 }
 
 /**

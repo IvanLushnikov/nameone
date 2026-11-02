@@ -178,8 +178,13 @@ export function WorksheetPreview({ worksheet, withAnswers, withExplanations, typ
    * Сколько страниц в материале. Критерии — отдельная страница ПОСЛЕ ключа,
    * и подвал должен считать её тоже: «Лист 1 из 2» при трёх страницах —
    * враньё, которое учитель видит на бумаге.
+   *
+   * СЧИТАЕМ ТОЛЬКО ТЕ СТРАНИЦЫ, КОТОРЫЕ РЕАЛЬНО ЕСТЬ (UL-D12). Страницы
+   * критериев — материал для учителя: в режиме ученика их нет, и в счётчик
+   * они не входят, иначе подвал обещал бы «Лист 1 из 3» в материале из
+   * одной страницы.
    */
-  const criteriaParts = evaluation ?? [];
+  const criteriaParts = withAnswers ? (evaluation ?? []) : [];
   const totalPages = 1 + (withAnswers ? 1 : 0) + criteriaParts.length;
 
   return (

@@ -51,6 +51,7 @@ import type { AppEnv, WorksheetTask } from "../types";
 import { requireAuth } from "../middleware/auth";
 import { rateLimitMiddleware, djb2 } from "../middleware/ratelimit";
 import { throwApiError } from "../lib/errors";
+import { checkImageSignature } from "../lib/file-signature";
 import { answerId as makeAnswerId, responseId as makeResponseId } from "../lib/shortid";
 import { gradeSubmission, parseCheckMeta, type StudentValue } from "../services/formGrading";
 import { PHOTO_RETENTION_SECONDS } from "../services/photoCheckGrading";
@@ -1523,9 +1524,21 @@ async function uploadStudentPhoto(
     throwApiError(415, "PHOTO_TYPE_UNSUPPORTED", "Пришлите фотографию или картинку");
   }
 
+  const bytes = await file.arrayBuffer();
+
+  // Тип из заголовка запроса — это строка, которую прислал клиент, и верить
+  // ей на слово нельзя: под видом фотографии проходит HTML или SVG.
+  // Сверяем с содержимым файла. Ревью безопасности 30.10.2026, находка №8.
+  const signature = checkImageSignature(bytes, mime === "image/jpg" ? "image/jpeg" : mime);
+  if (!signature.ok) {
+    throwApiError(415, "PHOTO_TYPE_UNSUPPORTED", "Пришлите фотографию или картинку");
+  }
+
   const key = `${studentPhotoKeyPrefix(link.student.token, form.token)}${makeAnswerId()}.jpg`;
-  await c.env.PDFS.put(key, await file.arrayBuffer(), {
-    httpMetadata: { contentType: "image/jpeg" },
+  await c.env.PDFS.put(key, bytes, {
+    // contentType — по содержимому, а не по заголовку клиента: в R2 лежит
+    // ровно то, что прислали.
+    httpMetadata: { contentType: signature.mime },
   });
 
   const deleteAt = now + PHOTO_RETENTION_SECONDS;
@@ -1536,7 +1549,8 @@ async function uploadStudentPhoto(
     subject: form.subject,
     grade: form.grade,
     r2Key: key,
-    mimeType: mime,
+    // Тип — по содержимому файла, а не по заголовку клиента.
+    mimeType: signature.mime,
     byteSize: file.size,
     deleteAt,
     createdAt: now,

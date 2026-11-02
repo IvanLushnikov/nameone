@@ -63,7 +63,7 @@ import {
 } from "../../src/services/usage";
 import { readMonthHistory, readMonthRow } from "../../src/db/free-usage";
 import { migrateFreeUsage } from "../../src/db/migrations/0007_free_usage";
-import { fingerprintHash } from "../../src/lib/antifraud";
+import { fingerprintHash, fingerprintSalt } from "../../src/lib/antifraud";
 import type { Env } from "../../src/env";
 
 const SALT = "test-salt-tz29";
@@ -230,7 +230,7 @@ describe("ТЗ-29: при исчерпанной квоте премиум-ти�
    * вычислить ключ счёта заранее и занять всю квоту до запроса.
    */
   async function exhaustQuotaFor(ip: string): Promise<string> {
-    const salt = env.FINGERPRINT_SALT ?? "dev-fingerprint-salt";
+    const salt = fingerprintSalt(env);
     const fingerprint = await fingerprintHash({ ip, userAgent: UA }, salt);
     const owner = freeQuotaOwnerKey(null, fingerprint);
     for (let i = 0; i < FREE_TOTAL_GENERATIONS; i++) {

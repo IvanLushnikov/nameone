@@ -23,6 +23,7 @@
 
 import type { D1Database } from "@cloudflare/workers-types";
 import { sha256Hex } from "./hash";
+import { ServiceMisconfiguredError } from "./errors";
 import { logLlmEvent } from "../llm/log";
 
 /** Cloudflare кладёт гео/устройство/сеть сюда; в dev её нет — всё будет fallback. */
@@ -34,6 +35,48 @@ export interface CfObject {
   os?: string;
   asn?: number | string;
   botManagement?: { verified?: boolean };
+}
+
+/**
+ * Соль для отпечатка.
+ *
+ * В production соль ОБЯЗАТЕЛЬНА. Без неё хэш от IP подбирается перебором за
+ * секунды, и таблица отпечатков сама становится справочником по IP — при том,
+ * что схема обещает обратное («сырые IP в таблицу не попадают»).
+ *
+ * Раньше в восьми местах стоял запасной вариант — константа из исходников, —
+ * и в проде молча использовался именно он: секрет FINGERPRINT_SALT на
+ * боевом воркере задан не был (ревью безопасности 30.10.2026, находка №2).
+ *
+ * Поэтому «запасного» варианта для прода здесь нет: соль не задана → падаем.
+ * Локальной разработке и тестам хватает константы: там отпечаток нужен
+ * только чтобы ключи счётчиков совпадали между роутом и тестом, и никто
+ * по нему никого не ищет.
+ *
+ * Локальная константа намеренно названа иначе, чем боевой «запасной» вариант
+ * из исходников: тот был опубликован вместе с кодом, и по нему можно было
+ * перебрать хэши боевой базы. Здесь — просто заглушка для dev и тестов.
+ */
+const LOCAL_DEV_SALT = "local-dev-only-salt";
+
+export function fingerprintSalt(env: { APP_ENV?: string; FINGERPRINT_SALT?: string }): string {
+  const salt = env.FINGERPRINT_SALT?.trim();
+  if (salt) return salt;
+
+  if (env.APP_ENV === "production") {
+    // Причина — в лог, клиенту — общий текст: состояние нашей конфигурации
+    // наружу не отдаём (так же устроен EmailDeliveryError).
+    // eslint-disable-next-line no-console
+    console.error(
+      "[config] КРИТИЧНО: FINGERPRINT_SALT не задан в production. Отпечаток посетителя " +
+        "считать нельзя: хэш с публичной солью перебирается за секунды, и таблица " +
+        "отпечатков становится справочником по IP. Задать: " +
+        "npx wrangler secret put FINGERPRINT_SALT --env production",
+    );
+    throw new ServiceMisconfiguredError();
+  }
+
+  return LOCAL_DEV_SALT;
 }
 
 export interface FingerprintInput {

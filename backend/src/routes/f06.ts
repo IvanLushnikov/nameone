@@ -23,7 +23,8 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { AppEnv } from "../types";
-import type { CfObject } from "../lib/antifraud";
+import { fingerprintSalt, type CfObject } from "../lib/antifraud";
+import { checkImageSignature } from "../lib/file-signature";
 import { requireAuth } from "../middleware/auth";
 import { rateLimitMiddleware } from "../middleware/ratelimit";
 import {
@@ -409,7 +410,7 @@ f06Router.post(
           ip: c.get("ip") ?? "0.0.0.0",
           userAgent: c.get("userAgent") ?? "",
           cf: readCf(c),
-          salt: c.env.FINGERPRINT_SALT ?? "dev-fingerprint-salt",
+          salt: fingerprintSalt(c.env),
           challengePassed: Boolean(c.req.header("cf-turnstile-response")),
           // Капча настроена на воркере? Если нет — требовать её нечем
           // (аудит 18.10.2026, BUG-013), и guardGeneration не откажет.
@@ -1552,7 +1553,21 @@ async function toPageImages(files: File[], pageOffset = 0): Promise<ParsedPhotoI
         `${pageLabel}больше 8 МБ. Снимите в меньшем разрешении или сожмите на устройстве`,
       );
     }
-    images.push({ bytes: await uploaded.arrayBuffer(), mimeType });
+    const bytes = await uploaded.arrayBuffer();
+
+    // Тип из заголовка запроса — это строка, которую прислал клиент, и верить
+    // ей на слово нельзя: под видом фотографии проходит HTML или SVG.
+    // Сверяем с содержимым файла. Ревью безопасности 30.10.2026, находка №8.
+    const signature = checkImageSignature(bytes, mimeType);
+    if (!signature.ok) {
+      throw new BadRequestError(
+        signature.problem === "not-an-image"
+          ? `${pageLabel}файл не похож на фотографию. Загрузите JPEG, PNG или WebP`
+          : `${pageLabel}файл не соответствует своему типу. Загрузите JPEG, PNG или WebP`,
+      );
+    }
+
+    images.push({ bytes, mimeType: signature.mime });
   }
   return images;
 }

@@ -45,7 +45,8 @@ import {
   readMonthGenerations,
   readMonthHistory,
   readMonthNoticeSent,
-  bumpMonthGenerations,
+  readMonthRow,
+  prepareMonthGenerationBump,
   markMonthNoticeSent,
   ensureFreeUsageTable,
   type FreeUsageMonthRow,
@@ -753,10 +754,21 @@ export interface FreeQuotaConsumeOptions {
 /**
  * Зачесть занятую попытку: снять «занятое» и записать «использовано».
  *
- * Снятие и запись идут одним `batch` (D1 выполняет пачку в одной транзакции),
- * поэтому «занято + использовано» не может разъезаться. Запись идёт в строку
+ * Снятие и запись идут ОДНИМ `batch` (D1 выполняет пачку в одной транзакции),
+ * поэтому «занято + использовано» не может разъехаться. Запись идёт в строку
  * ТЕКУЩЕГО МЕСЯЦА в `free_usage` и ограничена сверху тем же `generations < 5`:
  * даже если вызвать списание лишний раз, шестая генерация в счёт не попадёт.
+ *
+ * ─── Почему это один batch, а не две операции подряд (UL-D07) ───────────────
+ * Раньше списание шло так: сначала отдельной операцией снималось занятие, потом
+ * отдельной записывалось использование. Между этими двумя шагами другой запрос
+ * успевал увидеть состояние «слот освободился» и забрать его: учитель получал
+ * шестую генерацию при квоте в пять.
+ *
+ * Теперь оба изменения — одна транзакция. Наблюдатель снаружи видит либо
+ * «4 использовано + 1 занято» (5), либо «5 использовано + 0 занято» (5), и ни
+ * в одном из состояний свободного слота нет. Если транзакция не проходит,
+ * не происходит НИЧЕГО: занятие остаётся, лишней генерации не появляется.
  *
  * Прошлые месяцы не трогаются — это и есть «сброс 1-го числа без потери
  * истории»: новый месяц = новая строка.
@@ -771,22 +783,30 @@ export async function consumeFreeQuota(
   const month = monthKeyOf(nowMs);
   const prefix = freeHoldPrefix(ownerKey);
   await ensureFreeUsageTable(db);
-  await db.batch([
-    db
-      .prepare(
-        `DELETE FROM rate_limits WHERE rowid = (
-           SELECT rowid FROM rate_limits WHERE key >= ?1 AND key < ?2
-           ORDER BY window_start ASC LIMIT 1)`,
-      )
-      .bind(prefix, holdRangeEnd(prefix)),
-  ]);
-  const used = await bumpMonthGenerations(db, {
+
+  // Порядок в пачке: сначала прибавляем использование, потом снимаем занятие.
+  // Обе операции — в одной транзакции, поэтому порядок виден только изнутри
+  // неё: наружу состояние «слот освободился» не наблюдается никогда.
+  const bump = prepareMonthGenerationBump(db, {
     ownerKey,
     userId: options.userId ?? null,
     month,
     limit: FREE_TOTAL_GENERATIONS,
     nowSec,
   });
+  const releaseHold = db
+    .prepare(
+      `DELETE FROM rate_limits WHERE rowid = (
+         SELECT rowid FROM rate_limits WHERE key >= ?1 AND key < ?2
+         ORDER BY window_start ASC LIMIT 1)`,
+    )
+    .bind(prefix, holdRangeEnd(prefix));
+
+  await db.batch([bump, releaseHold]);
+
+  // Итоговое чтение — ПОСЛЕ транзакции, и письмо о квоте — тоже после неё.
+  const row = await readMonthRow(db, ownerKey, month);
+  const used = row?.generations ?? 0;
 
   // Письмо о квоте — только когда знаем, кому писать. Вызывающий без env/email
   // (аноним) просто ничего не отправляет: анониму писать некуда.

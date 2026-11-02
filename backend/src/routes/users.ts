@@ -31,6 +31,7 @@ import {
 } from "../services/usage";
 import {
   fingerprintHash,
+  fingerprintSalt,
   recordVisit,
   decideFraud,
   generationsInLastHour,
@@ -47,6 +48,7 @@ import {
   removeFavorite,
 } from "../db/userResources";
 import type { Worksheet, UserTemplate } from "../types";
+import { favoriteBodySchema } from "../schemas/worksheet";
 
 const usersRouter = new Hono<AppEnv>();
 
@@ -145,16 +147,46 @@ usersRouter.get("/favorites", async (c) => {
 
 usersRouter.post("/favorites", async (c) => {
   const auth = userOr401(c);
-  let body: { worksheet: Worksheet };
+  let body: unknown;
   try {
-    body = (await c.req.json()) as { worksheet: Worksheet };
+    body = await c.req.json();
   } catch {
     throw new BadRequestError("Invalid JSON body");
   }
-  if (!body.worksheet) throw new BadRequestError("Missing worksheet");
 
-  const result = await addFavorite(c.env.DB, auth.id, body.worksheet);
-  return c.json({ ok: true, ...result });
+  // Тело проверяется схемой, а не принимается как есть (находка №4 ревью
+  // 30.10.2026). Раньше здесь стояло `as { worksheet: Worksheet }`, и запрос
+  // без `tasks` падал в 500 на `worksheet.tasks.length`. Теперь мусор получает
+  // 400 с понятным списком проблем.
+  const parsed = favoriteBodySchema.parse(body);
+
+  const worksheet: Worksheet = {
+    id: parsed.worksheet.id,
+    title: parsed.worksheet.title,
+    subject: parsed.worksheet.subject,
+    grade: parsed.worksheet.grade,
+    topic: parsed.worksheet.topic,
+    difficulty: parsed.worksheet.difficulty,
+    tasks: parsed.worksheet.tasks as unknown as Worksheet["tasks"],
+    createdAt: parsed.worksheet.createdAt ?? new Date().toISOString(),
+    ...(parsed.worksheet.variant ? { variant: parsed.worksheet.variant } : {}),
+    ...(parsed.worksheet.chartSpec !== undefined ? { chartSpec: parsed.worksheet.chartSpec } : {}),
+    ...(parsed.worksheet.isDemo !== undefined ? { isDemo: parsed.worksheet.isDemo } : {}),
+  };
+
+  const result = await addFavorite(c.env.DB, auth.id, worksheet);
+
+  // Лист чужого учителя в избранное положить нельзя. Ответ — 404, а не 403:
+  // по коду ответа иначе можно перебором узнать, какие id существуют.
+  // Тот же policy, что в F-07 (`src/routes/f07.ts`).
+  if (result.forbidden) throw new NotFoundError("Worksheet not found");
+
+  return c.json({
+    ok: true,
+    favoriteId: result.favoriteId,
+    worksheetId: result.worksheetId,
+    alreadyFavorited: result.alreadyFavorited,
+  });
 });
 
 usersRouter.delete("/favorites/:id", async (c) => {
@@ -263,7 +295,7 @@ usersRouter.get("/usage", async (c) => {
     ip: c.get("ip") ?? "0.0.0.0",
     userAgent: c.get("userAgent") ?? "",
     cf: (c.req.raw as Request & { cf?: CfObject }).cf,
-    salt: c.env.FINGERPRINT_SALT ?? "dev-fingerprint-salt",
+    salt: fingerprintSalt(c.env),
   });
 
   return c.json({

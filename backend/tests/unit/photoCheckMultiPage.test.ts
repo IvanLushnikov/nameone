@@ -58,6 +58,29 @@ const MODEL_OUTPUT = JSON.stringify({
 });
 
 /**
+ * Настоящая сигнатура формата — по ней сервер определяет тип файла по
+ * содержимому (ревью безопасности 30.10.2026, находка №8).
+ *
+ * До этого правила в тесте стоял заполнитель (0x01, 0x02 …), и он годился:
+ * сервер верил заголовку клиента. Теперь заголовку не верят, и фейковый файл
+ * должен выглядеть как настоящая картинка — иначе тест проверял бы не то.
+ */
+const SIGNATURES: Record<string, number[]> = {
+  "image/jpeg": [0xff, 0xd8, 0xff],
+  "image/jpg": [0xff, 0xd8, 0xff],
+  "image/png": [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+  "image/webp": [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50],
+};
+
+/** Байты файла, который сервер примет как картинку указанного типа. */
+function bytesFor(type: string, size = 16): Uint8Array {
+  const bytes = new Uint8Array(size).fill(0x41);
+  const signature = SIGNATURES[type];
+  if (signature) bytes.set(signature, 0);
+  return bytes;
+}
+
+/**
  * Подсунуть фейковый файл в multipart.
  *
  * Настоящий `File` требует аллокации байтов, а нам нужно проверить границу
@@ -78,7 +101,10 @@ function fakeFile(type: string, size: number, fill = 0x41): FakeFile {
     size,
     async arrayBuffer() {
       // Заполняем через Uint8Array: у `ArrayBuffer` в workerd нет метода fill.
-      return new Uint8Array(size).fill(fill).buffer;
+      const bytes = new Uint8Array(size).fill(fill);
+      const signature = SIGNATURES[type];
+      if (signature) bytes.set(signature, 0);
+      return bytes.buffer;
     },
   };
 }
@@ -152,7 +178,7 @@ describe("readPhotoForm · сколько страниц принимаем", ()
       ["p2.jpg", "image/jpeg"],
       ["p3.png", "image/png"],
     ] as const) {
-      real.append("image", new File([new Uint8Array([1, 2, 3])], name, { type }));
+      real.append("image", new File([bytesFor(type)], name, { type }));
     }
     real.append("consent", "true");
     real.append("tasks", JSON.stringify(TASKS));

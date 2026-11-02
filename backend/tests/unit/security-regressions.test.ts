@@ -134,6 +134,10 @@ function prodEnv(overrides: Partial<Env> = {}): Env {
     // «прод» в тестах унаследовал бы разрешение на небезопасные режимы.
     ALLOW_DEV_MAGIC_URL: "false",
     ALLOW_DEMO_PAYMENTS: "false",
+    // Отмашка для небезопасных режимов в тестовой среде — в «проде» её быть
+    // не должно: иначе запрет изменяющих ручек (unsafeConfigurationGuard)
+    // не сработал бы там, где он нужен.
+    ALLOW_INSECURE_MODES: undefined,
     ...overrides,
   };
 }
@@ -158,6 +162,8 @@ function devEnv(overrides: Partial<Env> = {}): Env {
     // поэтому prodEnv обязан переопределить их ниже.
     ALLOW_DEV_MAGIC_URL: "true",
     ALLOW_DEMO_PAYMENTS: "true",
+    // Локальная машина: запрет изменяющих ручек здесь не нужен.
+    ALLOW_INSECURE_MODES: "true",
     ...overrides,
   };
 }
@@ -315,10 +321,15 @@ describe("К-1: подделка вебхука не выдаёт подписк
     // Контроль к предыдущим двум тестам: защита не должна ломать оплату.
     const { userId } = await seedSession("paying@uchlist.ru");
     const now = Math.floor(Date.now() / 1000);
+    // Платёж БЕЗ провайдера (yookassa_payment_id == наш id) — так выглядит
+    // демо-платёж, созданный без ключей ЮKassa. Именно этот путь доступен на
+    // уровне роутера: подставить провайдера в app.fetch нельзя.
+    // Путь «провайдер подтвердил оплату» проверяется отдельно, с
+    // инжектированным fetcher'ом, в tests/unit/billing-webhook-authenticity.test.ts.
     await db()
       .prepare(
         `INSERT INTO payments (id, user_id, plan, period, amount_rub, yookassa_payment_id, status, created_at)
-         VALUES ('pay_ok', ?1, 'plus', 'academicYear', 733000, 'yk_ok_1', 'pending', ?2)`,
+         VALUES ('pay_ok', ?1, 'plus', 'academicYear', 733000, 'pay_ok', 'pending', ?2)`,
       )
       .bind(userId, now)
       .run();
@@ -330,7 +341,7 @@ describe("К-1: подделка вебхука не выдаёт подписк
           type: "notification",
           event: "payment.succeeded",
           object: {
-            id: "yk_ok_1",
+            id: "pay_ok",
             status: "succeeded",
             // 7 330 ₽ — учебный год тарифа «Плюс» после снижения цен 12.10.2026.
             // Фикстура обязана совпадать с PRICES: код сверяет сумму вебхука с
@@ -340,6 +351,7 @@ describe("К-1: подделка вебхука не выдаёт подписк
         },
         origin: null,
       },
+      devEnv(),
     );
     expect(res.status).toBe(200);
 
@@ -390,10 +402,11 @@ describe("К-1: подделка вебхука не выдаёт подписк
   it("повторное уведомление не продлевает подписку заново (защита от replay)", async () => {
     const { userId } = await seedSession("replay@uchlist.ru");
     const now = Math.floor(Date.now() / 1000);
+    // Как и выше: платёж без провайдера, поэтому вебхук идёт по демо-ветке.
     await db()
       .prepare(
         `INSERT INTO payments (id, user_id, plan, period, amount_rub, yookassa_payment_id, status, created_at)
-         VALUES ('pay_replay', ?1, 'base', 'monthly', 24900, 'yk_replay_1', 'pending', ?2)`,
+         VALUES ('pay_replay', ?1, 'base', 'monthly', 24900, 'pay_replay', 'pending', ?2)`,
       )
       .bind(userId, now)
       .run();
@@ -402,14 +415,14 @@ describe("К-1: подделка вебхука не выдаёт подписк
       type: "notification",
       event: "payment.succeeded",
       object: {
-        id: "yk_replay_1",
+        id: "pay_replay",
         status: "succeeded",
         // 249 ₽ — месяц «Базового» после снижения цен 12.10.2026.
         amount: { value: "249.00", currency: "RUB" },
       },
     };
 
-    await call("/api/billing/yookassa-webhook", { body: notification, origin: null });
+    await call("/api/billing/yookassa-webhook", { body: notification, origin: null }, devEnv());
     const first = await db()
       .prepare("SELECT ends_at FROM subscriptions WHERE user_id = ?1")
       .bind(userId)
@@ -417,7 +430,7 @@ describe("К-1: подделка вебхука не выдаёт подписк
     expect(first, "первое уведомление должно активировать подписку").not.toBeNull();
 
     // Повтор: платёж уже succeeded — подписка не должна пересоздаваться.
-    await call("/api/billing/yookassa-webhook", { body: notification, origin: null });
+    await call("/api/billing/yookassa-webhook", { body: notification, origin: null }, devEnv());
     const second = await db()
       .prepare("SELECT ends_at FROM subscriptions WHERE user_id = ?1")
       .bind(userId)

@@ -212,6 +212,37 @@ describe("Блок 2 — открытие листа из истории по ?i
     expect(found?.origin).toBe("server");
   });
 
+  it("серверный ответ без id отвергается — ищем дальше (контракт сервера)", async () => {
+    // Контракт сервера (UL-D08): GET /api/worksheets/:id обязан отдать payload
+    // с id — именно этот id делает лист открываемым по ссылке. Если в ответе
+    // id нет, загрузчик не имеет права показывать такой артефакт: он пойдёт
+    // искать дальше (история, избранное) и, если не найдёт, честно скажет
+    // «Лист не найден», а не покажет половину листа.
+    setProfile(PROFILE);
+    addToHistory({
+      id: "w1",
+      type: "worksheet",
+      title: "Лист",
+      subject: "math",
+      grade: 5,
+      createdAt: new Date().toISOString(),
+      isFavorite: false,
+      artifact: makeWorksheet("w1"),
+    });
+
+    const payloadWithoutId = { ...makeWorksheet("w1") } as Record<string, unknown>;
+    delete payloadWithoutId.id;
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, worksheet: payloadWithoutId }),
+    });
+
+    const found = await findArtifact("w1");
+
+    expect(found?.origin).toBe("history");
+  });
+
   it("падает с сервера — всё равно находит лист в истории", async () => {
     setProfile(PROFILE);
     const ws = makeWorksheet("w1");

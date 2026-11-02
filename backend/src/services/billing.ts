@@ -12,7 +12,7 @@ import type { D1Database } from "@cloudflare/workers-types";
 import type { Env } from "../env";
 import { shortId } from "../lib/shortid";
 import { getUserById, updateUserPlan } from "../db/queries";
-import { InternalError, BadRequestError } from "../lib/errors";
+import { InternalError, BadRequestError, ApiError } from "../lib/errors";
 import { sendRenewalDoneEmail, sendRenewalFailedEmail } from "./email";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -313,34 +313,117 @@ function amountMatches(
 }
 
 /**
- * Живая сверка статуса платежа в API ЮKassa.
+ * Результат сверки платежа с провайдером.
  *
- * Три состояния, а не два, — это осознанно:
- *   * "succeeded" — подтверждено, можно активировать подписку;
- *   * "denied"    — API ответил, но оплату не подтверждает → отказ;
- *   * "unknown"   — сеть/5xx/невалидный ответ. Отказать нельзя: это отправит
- *                   ЮKassa в ретраи и может сорвать реальную оплату. Возвращаем
- *                   "unknown" и поднимаем alert — безопасность обеспечивают
- *                   проверки по нашей БД и по сумме, которые к этому моменту
- *                   уже пройдены.
+ * ТРИ состояния, и различать их обязательно:
+ *   * "confirmed"   — провайдер ответил и подтвердил оплату целиком
+ *                     (id, status, paid, сумма, валюта). Можно активировать.
+ *   * "rejected"    — провайдер ответил, но оплату не подтвердил (или ответил
+ *                     про другой платёж). Это ОКОНЧАТЕЛЬНЫЙ отказ: подписка не
+ *                     активируется, повтор не поможет.
+ *   * "unavailable" — состояние платежа НЕИЗВЕСТНО: сеть, таймаут, 5xx,
+ *                     невалидный JSON, неполные поля или нет ключей. Отказать
+ *                     нельзя (это сорвёт реальную оплату), но и активировать
+ *                     нельзя: неизвестное ≠ оплачено. Ответ — 503 и НИКАКИХ
+ *                     записей в БД, чтобы провайдер повторил уведомление.
  */
-async function fetchPaymentStatus(
+export type ProviderVerification =
+  | { kind: "confirmed"; providerId: string; amountKopecks: number; currency: string }
+  | { kind: "rejected"; reason: string }
+  | { kind: "unavailable"; reason: string };
+
+/**
+ * Живая сверка платежа в API ЮKassa.
+ *
+ * Проверяется ВЕСЬ канонический объект платежа, а не только `status`:
+ *   * `id`     — совпадает с тем, о чём уведомление (иначе это ответ про
+ *                чужой платёж, и подтверждать нечего);
+ *   * `status` — ровно "succeeded";
+ *   * `paid`   — ровно true (нет поля = неизвестно, а не «оплачено»);
+ *   * `amount.value` — сумма в целых копейках совпадает с каноничной ценой
+ *     тарифа из PRICES;
+ *   * `amount.currency` — RUB.
+ *
+ * Любое расхождение → "rejected" (окончательный отказ). Любая невозможность
+ * узнать состояние → "unavailable" (503 и без записи в БД).
+ */
+async function verifyPaymentWithProvider(
   ykId: string,
+  expectedKopecks: number,
   env: Env,
   fetcher: typeof globalThis.fetch = globalThis.fetch,
-): Promise<"succeeded" | "denied" | "unknown"> {
-  try {
-    const response = await fetcher(`${YOOKASSA_API}/${encodeURIComponent(ykId)}`, {
-      headers: {
-        Authorization: basicAuthHeader(env.YOOKASSA_SHOP_ID!, env.YOOKASSA_SECRET_KEY!),
-      },
-    });
-    if (!response.ok) return "unknown";
-    const data = (await response.json()) as { status?: string; paid?: boolean };
-    return data.status === "succeeded" && data.paid !== false ? "succeeded" : "denied";
-  } catch {
-    return "unknown";
+): Promise<ProviderVerification> {
+  const shopId = env.YOOKASSA_SHOP_ID;
+  const secretKey = env.YOOKASSA_SECRET_KEY;
+  if (!shopId || !secretKey) {
+    // Спросить провайдера нечем: подтвердить платёж нечем.
+    return { kind: "unavailable", reason: "no-provider-credentials" };
   }
+
+  let response: Response;
+  try {
+    response = await fetcher(`${YOOKASSA_API}/${encodeURIComponent(ykId)}`, {
+      headers: { Authorization: basicAuthHeader(shopId, secretKey) },
+    });
+  } catch (err) {
+    return {
+      kind: "unavailable",
+      reason: `provider-request-failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  if (!response.ok) {
+    // 5xx / 429 / сетевой ответ без статуса: состояние платежа неизвестно.
+    return { kind: "unavailable", reason: `provider-http-${response.status}` };
+  }
+
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    return { kind: "unavailable", reason: "provider-invalid-json" };
+  }
+  if (!data || typeof data !== "object") {
+    return { kind: "unavailable", reason: "provider-invalid-json" };
+  }
+
+  const provider = data as {
+    id?: unknown;
+    status?: unknown;
+    paid?: unknown;
+    amount?: unknown;
+  };
+
+  // Неполный ответ — состояние неизвестно, а не «оплачено» и не «отказ».
+  if (typeof provider.id !== "string" || typeof provider.status !== "string" || typeof provider.paid !== "boolean") {
+    return { kind: "unavailable", reason: "provider-incomplete-fields" };
+  }
+  if (provider.id !== ykId) {
+    return { kind: "rejected", reason: "provider-id-mismatch" };
+  }
+  if (provider.status !== "succeeded") {
+    return { kind: "rejected", reason: `provider-status-${provider.status}` };
+  }
+  if (provider.paid !== true) {
+    return { kind: "rejected", reason: "provider-not-paid" };
+  }
+
+  const amount = provider.amount as { value?: unknown; currency?: unknown } | undefined;
+  if (!amount || typeof amount.value !== "string" || typeof amount.currency !== "string") {
+    return { kind: "unavailable", reason: "provider-incomplete-amount" };
+  }
+  if (amount.currency !== "RUB") {
+    return { kind: "rejected", reason: `provider-currency-${amount.currency}` };
+  }
+  const gotKopecks = Math.round(Number(amount.value) * 100);
+  if (!Number.isFinite(gotKopecks)) {
+    return { kind: "unavailable", reason: "provider-amount-unparsable" };
+  }
+  if (gotKopecks !== expectedKopecks) {
+    return { kind: "rejected", reason: "provider-amount-mismatch" };
+  }
+
+  return { kind: "confirmed", providerId: provider.id, amountKopecks: gotKopecks, currency: amount.currency };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -535,12 +618,16 @@ export async function createPayment(
  *      Не совпала — подписка не активируется.
  *   3. Повторное уведомление по уже обработанному платежу игнорируется.
  *      Это закрывает replay: «заплатил раз, отменил, отправил уведомление заново».
- *   4. Если заданы ключи ЮKassa — дополнительно сверяем статус платежа живым
- *      запросом в API. Это defense in depth: главную защиту дают пункты 1-3,
- *      поэтому при недоступности сети мы не теряем оплату, а логируем alert.
+ *   4. Оплату подтверждает ПРОВАЙДЕР. Живой запрос в API ЮKassa и сверка
+ *      всего канонического объекта платежа (id, status, paid, сумма, валюта).
+ *      Если состояние платежа НЕИЗВЕСТНО (сеть, 5xx, битый JSON, неполные
+ *      поля, нет ключей) — БД не трогаем, отвечаем 503, чтобы уведомление
+ *      повторилось. Если провайдер ответил и оплату не подтвердил — отказ.
+ *      Прежнее поведение (alert в лог и продолжение активации) было дефектом
+ *      D02: сетевой сбой или подделка выдавали тариф.
  *
- * ЮKassa не подписывает уведомления, поэтому «подлинность» здесь = совпадение
- * с нашей канонической записью + сверка в API. IP-allowlist в личном кабинете
+ * ЮKassa не подписывает уведомления, поэтому «подлинность» здесь = сверка с
+ * провайдером по нашей канонической записи. IP-allowlist в личном кабинете
  * ЮKassa остаётся полезным дополнительным слоем.
  */
 export async function handleWebhook(
@@ -548,7 +635,7 @@ export async function handleWebhook(
   env: Env,
   body: YooKassaWebhookPayload,
   options: { fetcher?: typeof globalThis.fetch } = {},
-): Promise<{ handled: boolean }> {
+): Promise<{ handled: boolean; retry?: boolean }> {
   const fetcher = options.fetcher ?? globalThis.fetch;
   if (!body || body.type !== "notification" || !body.event || !body.object) {
     // eslint-disable-next-line no-console
@@ -569,7 +656,8 @@ export async function handleWebhook(
     // покупка / покупка с согласием / автопродление), см. paymentKindById.
     const payment = await db
       .prepare(
-        `SELECT id, user_id, plan, period, amount_rub, status FROM payments WHERE yookassa_payment_id = ?1`,
+        `SELECT id, user_id, plan, period, amount_rub, status, yookassa_payment_id
+         FROM payments WHERE yookassa_payment_id = ?1`,
       )
       .bind(ykId)
       .first<{
@@ -579,6 +667,7 @@ export async function handleWebhook(
         period: Period | null;
         amount_rub: number;
         status: string;
+        yookassa_payment_id: string | null;
       }>();
 
     if (!payment || !payment.user_id) {
@@ -620,23 +709,59 @@ export async function handleWebhook(
       return { handled: false };
     }
 
-    // ── Шаг 4. Живая сверка в API ЮKassa (defense in depth) ──────────────────
-    if (env.YOOKASSA_SHOP_ID && env.YOOKASSA_SECRET_KEY) {
-      const live = await fetchPaymentStatus(ykId, env, fetcher);
-      if (live === "denied") {
-        // API ответил и сказал, что платёж не succeeded.
-        // eslint-disable-next-line no-console
-        console.error(`[billing] REJECTED: API ЮKassa не подтвердило оплату yk_id=${ykId}`);
-        return { handled: false };
-      }
-      if (live === "unknown") {
-        // Сеть/5xx — не отказываем в оплате (пункты 1-3 уже отработали),
-        // но поднимаем alert: возможно, ключи протухли.
+    // ── Шаг 4. Подтверждение оплаты провайдером ─────────────────────────────
+    // Сверка больше не «defense in depth». Запись в БД и тело уведомления НЕ
+    // доказывают, что деньги пришли: обе стороны контролируются тем, кто
+    // прислал уведомление. Доказывает это только канонический объект платежа
+    // от провайдера.
+    //
+    // Отсюда три исхода:
+    //   * провайдер подтвердил (confirmed) → активируем;
+    //   * провайдер ответил «не оплачено» (rejected) → отказ, без активации;
+    //   * состояние неизвестно (unavailable: сеть/5xx/битый JSON/неполные поля/
+    //     нет ключей) → НИЧЕГО не пишем и отдаём 503, чтобы провайдер повторил
+    //     уведомление. Раньше здесь был alert и ПРОДОЛЖЕНИЕ активации — это и
+    //     был дефект D02: подделка или сетевой сбой выдавали тариф.
+    //
+    // ДЕМО-РЕЖИМ. Если платёж создан БЕЗ провайдера (см. createPayment: в
+    // dev-режиме yookassa_payment_id равен нашему же id), подтверждать его
+    // нечем и не у кого: провайдера не существует. Такой платёж оплачен по
+    // определению — он и есть симуляция. Ветка открыта только при явном
+    // ALLOW_DEMO_PAYMENTS=true, который в проде запрещён (см. самопроверку в
+    // index.ts), и только для платежей без провайдера. Боевой путь она не
+    // открывает: платёж с настоящим yk-id всегда сверяется с провайдером.
+    const isLocalDemoPayment = payment.yookassa_payment_id === payment.id;
+    const demoAllowed = env.ALLOW_DEMO_PAYMENTS === "true";
+
+    if (isLocalDemoPayment && demoAllowed) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[billing] демо-оплата активирована по нашей записи: id=${payment.id} user=${payment.user_id} ` +
+          `plan=${plan} (провайдера нет — платёж симулированный, ALLOW_DEMO_PAYMENTS=true)`,
+      );
+    } else {
+      const verification = await verifyPaymentWithProvider(ykId, expectedKopecks, env, fetcher);
+      if (verification.kind === "unavailable") {
+        // База НЕ трогаем: ни payments, ни subscriptions, ни users.
         // eslint-disable-next-line no-console
         console.error(
-          `[billing] ALERT: не удалось сверить платёж с API ЮKassa yk_id=${ykId}. ` +
-            `Активация прошла по данным БД и сумме из уведомления. Проверьте ключи и доступность API.`,
+          `[billing] ALERT: подтверждение платежа невозможно yk_id=${ykId} причина=${verification.reason}. ` +
+            `База не изменена, отвечаем 503 — ждём повторного уведомления.`,
         );
+        throw new ApiError(
+          503,
+          "PAYMENT_VERIFICATION_UNAVAILABLE",
+          "Платёж временно нельзя подтвердить",
+          { yookassaPaymentId: ykId, reason: verification.reason },
+        );
+      }
+      if (verification.kind === "rejected") {
+        // Окончательный отказ: провайдер ответил и оплату не подтвердил.
+        // eslint-disable-next-line no-console
+        console.error(
+          `[billing] REJECTED: провайдер не подтвердил оплату yk_id=${ykId} причина=${verification.reason}`,
+        );
+        return { handled: false };
       }
     }
 

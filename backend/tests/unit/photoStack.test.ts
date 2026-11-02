@@ -41,13 +41,41 @@ import type { ExpectedTask } from "../../src/services/photoCheckGrading";
 const TASKS: ExpectedTask[] = [{ number: 1, taskText: "5+7", correctAnswer: "12", maxPoints: 1 }];
 const CONSENT = { consent: ["true"], tasks: [JSON.stringify(TASKS)] };
 
-/** Файл-заглушка: парсер смотрит только в `type`, `size` и `arrayBuffer()`. */
+/**
+ * Настоящие сигнатуры форматов.
+ *
+ * С 30.10.2026 (ревью безопасности, находка №8) сервер определяет тип файла по
+ * содержимому, а не по заголовку клиента. До этого правила в тесте стоял
+ * просто заполнитель — и он годился, потому что сервер верил заголовку.
+ * Теперь фейковая страница должна выглядеть как настоящая картинка, иначе
+ * тест проверял бы не то.
+ */
+const SIGNATURES: Record<string, number[]> = {
+  "image/jpeg": [0xff, 0xd8, 0xff],
+  "image/jpg": [0xff, 0xd8, 0xff],
+  "image/png": [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+  "image/webp": [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50],
+};
+
+/**
+ * Метка страницы лежит ПОСЛЕ сигнатуры: первые байты теперь заняты форматом,
+ * а страницы различать надо по-прежнему.
+ */
+const PAGE_MARKER_OFFSET = 3;
+
+/**
+ * Файл-заглушка: парсер смотрит только в `type`, `size` и `arrayBuffer()`.
+ * Байты — с настоящей сигнатурой формата, иначе сервер отобьёт файл.
+ */
 function fakeFile(type: string, size: number, fill = 0x41): File {
   return {
     type,
     size,
     async arrayBuffer() {
-      return new Uint8Array(size).fill(fill).buffer;
+      const bytes = new Uint8Array(size).fill(fill);
+      const signature = SIGNATURES[type];
+      if (signature) bytes.set(signature, 0);
+      return bytes.buffer;
     },
   } as unknown as File;
 }
@@ -146,7 +174,7 @@ describe("порядок страниц", () => {
     const parsed = await readPhotoForm(ctxWithForm(formWithPages(10)));
 
     // Каждая страница помечена своим байтом — по нему порядок и проверяем.
-    expect(parsed.images.map((img) => new Uint8Array(img.bytes)[0])).toEqual([
+    expect(parsed.images.map((img) => new Uint8Array(img.bytes)[PAGE_MARKER_OFFSET])).toEqual([
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
     ]);
   });
@@ -154,7 +182,10 @@ describe("порядок страниц", () => {
   it("порядок сохраняется на настоящем multipart из десяти настоящих File", async () => {
     const real = new FormData();
     for (let i = 1; i <= 10; i += 1) {
-      real.append("image", new File([new Uint8Array([i])], `p${i}.jpg`, { type: "image/jpeg" }));
+      const bytes = new Uint8Array(PAGE_MARKER_OFFSET + 1);
+      bytes.set(SIGNATURES["image/jpeg"]!, 0);
+      bytes[PAGE_MARKER_OFFSET] = i;
+      real.append("image", new File([bytes], `p${i}.jpg`, { type: "image/jpeg" }));
     }
     real.append("consent", "true");
     real.append("tasks", JSON.stringify(TASKS));
@@ -162,7 +193,7 @@ describe("порядок страниц", () => {
     const parsed = await readPhotoForm(ctxWithForm(real));
 
     expect(parsed.images).toHaveLength(10);
-    expect(parsed.images.map((img) => new Uint8Array(img.bytes)[0])).toEqual([
+    expect(parsed.images.map((img) => new Uint8Array(img.bytes)[PAGE_MARKER_OFFSET])).toEqual([
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
     ]);
   });

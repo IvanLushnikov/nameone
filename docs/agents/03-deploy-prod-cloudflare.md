@@ -249,6 +249,68 @@ curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
 - самопроверка конфигурации в коде (`checkPublishedEnvironment`) — чтобы такое
   ловилось в логах при каждом деплое, а не при аудите.
 
+### Прод нельзя выкатить с настройками разработки (30.10.2026, nameone)
+
+Ревью безопасности от 30.10.2026, находка №3. Про то, как «просто выкатить
+иначе» дважды ломало боевое окружение, и что теперь этому мешает.
+
+**Было три пути, и все три вели на боевой воркер `rabochielisty-api`:**
+1. `npm run deploy:staging` — это был `wrangler deploy` без `--env`;
+2. `./scripts/deploy.sh staging` — та же команда из шелл-скрипта;
+3. `npx wrangler deploy` руками — то же самое.
+
+Причина в том, как работает wrangler: без `--env` публикуется ВЕРХНЕУРОВНЕВАЯ
+секция конфига, а `[env.production.vars]` в ней не участвует. Верхняя секция —
+это окружение разработки: `APP_ENV=development`, `FRONTEND_URL=http://localhost:3000`,
+`ALLOW_DEV_MAGIC_URL=true`, `ALLOW_DEMO_PAYMENTS=true`. То есть «выкатить
+не-бой» означало «выкатить бой с дырами»: вход отдавал ссылку прямо в ответе,
+подписку можно было получить без оплаты.
+
+**Что сделано (30.10.2026):**
+
+| Что | Где |
+|---|---|
+| Скрипт `deploy:staging` удалён | `backend/package.json` |
+| `./scripts/deploy.sh staging` отказывает и объясняет, что нужен свой воркер + своя D1 + свой R2 | `backend/scripts/deploy.sh` |
+| Верхнеуровневый воркер переименован в `rabochielisty-api-dev`: `npx wrangler deploy` без окружения больше не может выкатить `rabochielisty-api` | `backend/wrangler.toml` |
+| При `ALLOW_DEV_MAGIC_URL=true` или `ALLOW_DEMO_PAYMENTS=true` изменяющие ручки отвечают 503 (чтение продолжает работать) | `unsafeConfigurationGuard`, `backend/src/index.ts` |
+| `FINGERPRINT_SALT` добавлен в самопроверку секретов | `checkProductionConfig`, `backend/src/index.ts` |
+
+**Почему запрет отличается от «просто залогировать».** Самопроверка и раньше
+замечала опасную конфигурацию — но только писала в лог и продолжала работать.
+Теперь изменяющие ручки в такой конфигурации отвечают 503: вход без ссылки,
+оплата, генерация — всё, что меняет состояние. Чтение работает, сайт остаётся
+живым, чтобы поломку было видно.
+
+**Два исключения, чтобы не сломать локальную разработку:**
+- запрос с локального адреса (`localhost`) — это машина разработчика;
+- `ALLOW_INSECURE_MODES=true` — только для `wrangler dev --remote`, который
+  поднимает воркер на публичном адресе. Задаётся только в `.dev.vars`: этот
+  файл читает `wrangler dev` и НЕ читает деплой.
+
+**Как правильно деплоить:**
+```bash
+cd backend
+npm run deploy                 # = wrangler deploy --env production
+# или
+./scripts/deploy.sh            # typecheck → lint → тесты → миграции → деплой → проверка
+```
+Оба пути ведут в `--env production`. Проверка после деплоя — по фактическому
+состоянию воркера, а не по коду: `GET /accounts/{id}/workers/scripts/rabochielisty-api/settings`.
+
+**Секреты прод-окружения** задаются с `--env production`:
+```bash
+npx wrangler secret put FINGERPRINT_SALT --env production   # соль отпечатка, с 30.10.2026 обязательна
+npx wrangler secret put TURNSTILE_SECRET_KEY --env production # антифрод, когда появится виджет
+```
+Значение `FINGERPRINT_SALT` — случайная строка от 32 символов. Без неё в
+production генерация отвечает 503: отпечаток посетителя с публичной солью
+перебирается за секунды, и таблица отпечатков становится справочником по IP.
+
+**Побочный эффект смены соли:** старые отпечатки перестанут совпадать с новыми,
+счётчик бесплатных листов у тех, кто уже заходил, начнётся заново. Это не
+поломка, но знать об этом надо.
+
 ### Проверка шрифтов в статической сборке: ловушка хешированных имён (02.10.2026)
 
 Проверяя, доедут ли шрифты KaTeX в `out/`, легко получить ложный вывод
@@ -483,10 +545,11 @@ production-окружение воркера и перевёл бэк на `[env
 - `/healthz` больше не содержит поля `env` вообще
 
 **Адрес воркера:** канонический суффикс — `ivanlusnikov159.workers.dev`, точное
-имя `rabochielisty-api` в `backend/wrangler.toml` (`name = "rabochielisty-api"`,
-строка 17) и в `NEXT_PUBLIC_API_URL` локального `.env`. Догадываться по памяти
-`rabochielisty-api.workers.dev` неверно. Проверять адрес
-в `.env`/`wrangler.toml`, а не по памяти.
+имя `rabochielisty-api` в `backend/wrangler.toml` (`[env.production]`,
+`name = "rabochielisty-api"`) и в `NEXT_PUBLIC_API_URL` локального `.env`.
+Догадываться по памяти `rabochielisty-api.workers.dev` неверно. Проверять адрес
+в `.env`/`wrangler.toml`, а не по памяти. Верхнеуровневое `name = "rabochielisty-api-dev"`
+(с 30.10.2026) — это ДРУГОЙ воркер, локальный: продом он не является.
 
 **Как проверять прод-режим бэка без браузера** (curl, read-only):
 `/readyz` на `db:ok` + OPTIONS-запрос с `Origin: http://localhost:3000`.
