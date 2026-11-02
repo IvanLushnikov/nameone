@@ -21,7 +21,7 @@ export function generateMetadata({ params }: Props): Metadata {
   // ТЗ-21 п.14: было 140 + 46 = до 190 знаков. Режем по границе слова —
   // «почему эта тема важна» в сниппете важнее, чем приписка про генератор.
   const description = clipDescription(
-    `${topic.whyText} Сгенерируйте рабочий лист за минуту.`,
+    `${topic.whyText} Сгенерируйте лист из 10 заданий за минуту.`,
   );
   const canonical = absoluteUrl(`/theme/${topic.seoSlug}`);
 
@@ -84,10 +84,12 @@ export default function ThemePage({ params }: Props) {
                 Что вы получите
               </p>
               <ul className="space-y-2 text-sm text-warm-700">
-                <li>• PDF за минуту — без Word и шаблонов</li>
+                {/* ТЗ-37b: число 10 рядом с обещанием — иначе учитель выберет
+                    12 заданий и не дождётся минуты (замер: до 67,2 с). */}
+                <li>• Лист из 10 заданий в PDF — без Word и шаблонов</li>
                 <li>• По ФГОС 2021, привязка к конкретному разделу</li>
                 <li>• Для {topic.grade} класса, по программе</li>
-                <li>• С ответами — самопроверка за минуту</li>
+                <li>• С ответами — для самопроверки</li>
                 <li>• Без рекламы, без воды</li>
               </ul>
             </div>

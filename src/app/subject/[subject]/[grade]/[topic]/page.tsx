@@ -141,7 +141,7 @@ export function generateMetadata({ params }: Props): Metadata {
   const description = descriptionFromSentences([
     `Рабочие листы и тесты по теме ${quotedTopic(topicTitleWithUmk(topic.title, countTitles(params.subject, Number(params.grade)).get(topic.title.trim()) ?? 1, topic.fgosRef))} для ${grade.num} класса по ${subjectName}.`,
     `${examplesPhrase(topic.examples.length)} с ответами.`,
-    "Свой вариант — за минуту.",
+    "Свой вариант из 10 заданий — за минуту.",
   ]);
 
   // TZ-10 §5.1 / §9.7: canonical + og:type=article.
@@ -373,7 +373,7 @@ const neighbors = getTopicNeighbors(
                 Рабочий лист по теме {quotedTopic(topic.title)}
               </h1>
               <p className="mt-4 text-lg text-warm-600 text-pretty">
-                Готовые задания по ФГОС с ответами и пояснениями. Сгенерируйте свой вариант за минуту — ИИ подстроится по уровню ученика.
+                Готовые задания по ФГОС с ответами и пояснениями. Сгенерируйте свой вариант из 10 заданий за минуту — ИИ подстроится по уровню ученика.
               </p>
 
               <div className="mt-7 flex flex-wrap items-center gap-3">
@@ -681,7 +681,8 @@ const neighbors = getTopicNeighbors(
               Готовы сгенерировать лист по теме {quotedTopic(topic.title)}?
             </h2>
             <p className="mt-3 text-brand-100 max-w-xl mx-auto">
-              Минута — и PDF у вас. Можно скачать, распечатать или отправить ученику.
+              Лист из 10 заданий — за минуту. Сохраните в PDF (откроется печать) или скачайте
+              DOCX, распечатайте или отправьте ученику.
             </p>
             <div className="mt-7 flex flex-col sm:flex-row items-center justify-center gap-3">
               <Button

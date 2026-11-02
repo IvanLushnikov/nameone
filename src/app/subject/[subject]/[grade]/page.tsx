@@ -46,8 +46,12 @@ export function generateMetadata({ params }: Props): Metadata {
   // длинных названиях предметов («Финансовая грамотность», «Изобразительное
   // искусство») исходные 162–165 знаков целиком уходили за лимит сниппета,
   // и обрезанным оказывался хвост с обещанием «за минуту».
+  // ТЗ-37b: «за минуту» верно только для числа заданий, которое укладывается
+  // в минуту. Замер по прод-базе (30.10.2026, llm_logs за 30 дней): 10 заданий —
+  // 29,9–51,3 с (среднее 40,9 с), 12 заданий — до 67,2 с. Поэтому рядом с
+  // обещанием всегда называется 10 — дефолт конструктора.
   const description = clipDescription(
-    `Рабочие листы, тесты и карточки по ${subjectName} для ${gradeNum} класса. ${grade.topics.length} ${plural(grade.topics.length, "тема", "темы", "тем")} по ФГОС. PDF с ответами за минуту. Бесплатно — ${FREE_QUOTA_LABEL.toLowerCase()}.`,
+    `Рабочие листы, тесты и карточки по ${subjectName} для ${gradeNum} класса. ${grade.topics.length} ${plural(grade.topics.length, "тема", "темы", "тем")} по ФГОС. PDF: 10 заданий за минуту. Бесплатно — ${FREE_QUOTA_LABEL.toLowerCase()}.`,
   );
   const base = SITE_URL;
   const canonicalUrl = `${base}/subject/${subject.slug}/${gradeNum}`;
@@ -117,7 +121,7 @@ export default function GradeHubPage({ params }: Props) {
                 {subject.title}, {gradeNum} класс
               </h1>
               <p className="mt-3 text-lg text-warm-600 max-w-xl">
-                {grade.topics.length} {plural(grade.topics.length, "тема", "темы", "тем")} по ФГОС. Рабочие листы, тесты и карточки с ответами за минуту.
+                {grade.topics.length} {plural(grade.topics.length, "тема", "темы", "тем")} по ФГОС. Рабочие листы, тесты и карточки: лист из 10 заданий с ответами — за минуту.
               </p>
             </div>
             <Button

@@ -499,6 +499,165 @@ describe("ТЗ-37 · M-11: «за 30 секунд» — обещание про 
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ТЗ-37b (30.10.2026): три обещания, которые после волны 1 всё ещё расходились
+// с тем, что продукт делает.
+//
+// 1. ВОЗВРАТ. Три места называли разное: оферта (раздел 4, текст собирается
+//    из `legalPricingSentence()` в `src/lib/content/plans.ts`) — «возврат средств
+//    в течение 7 дней», тексты для ИИ — то же, FAQ на тарифах — «возврат по
+//    обращению, по существу». В бэкенде вызова возврата нет: ЮKassa вызывается
+//    только на POST /v3/payments (backend/src/services/billing.ts:193), запроса
+//    /v3/refunds в проекте нет вообще. Обработчик вебхука `refund.succeeded`
+//    (billing.ts:870) только принимает решение, сделанное вне продукта.
+//    «7 дней» — обещание без механизма: за него пришлось бы отвечать руками
+//    каждому написавему (ровно поэтому владелец убрал возврат из п. 6
+//    пользовательского соглашения 09.10.2026).
+//
+// 2. PDF. Генератора файла в проекте нет: `jspdf` лежит в зависимостях, но не
+//    импортируется ни одним файлом (проверено grep'ом по src/ и backend/src/).
+//    PDF получается печатью из браузера — `window.print()` (конструктор,
+//    constructor/page.tsx:1999), печатные стили задают A4 (@page в
+//    src/app/globals.css:176), ответы печатаются на отдельной странице
+//    (print:break-before-page в WorksheetPreview.tsx:372). Значит «PDF» —
+//    правда, а «PDF у вас» и «Скачать PDF» — обещание файла, которого не
+//    скачивают.
+//
+// 3. ВРЕМЯ. «За минуту» стояло в 32 местах. Замер по прод-базе (30.10.2026,
+//    llm_logs за 30 дней, сумма вызовов генерации на один лист): 10 заданий —
+//    29,9–51,3 с (среднее 40,9 с, n=8), 12 заданий — до 67,2 с (n=13).
+//    То есть «за минуту» верно для дефолтных 10 заданий и неверно для 12:
+//    имя числа рядом с обещанием — единственная честная форма.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("ТЗ-37b · возврат: три места называют одну формулировку", () => {
+  /** Формулировка, которая соответствует коду: решение по обращению, по существу. */
+  const RETURN_FORMULA = /по обращению[^.]{0,120}по существу/i;
+
+  const FILES = [
+    "src/lib/content/plans.ts", // раздел 4 публичной оферты
+    "public/llms.txt",
+    "public/llms-full.txt",
+    "src/app/pricing/page.tsx", // FAQ на тарифах
+  ];
+
+  it("нигде не осталось обещания возврата «7 дней»", () => {
+    for (const file of FILES) {
+      expect(userText(file), `${file}: обещание «возврат за 7 дней»`).not.toMatch(
+        /7\s+дн/i,
+      );
+    }
+  });
+
+  it("в оферте и в текстах для ИИ одна и та же формулировка", () => {
+    for (const file of [
+      "src/lib/content/plans.ts",
+      "public/llms.txt",
+      "public/llms-full.txt",
+      "src/app/pricing/page.tsx",
+    ]) {
+      expect(userText(file), `${file}: нет формулировки «возврат по обращению, по существу»`).toMatch(
+        RETURN_FORMULA,
+      );
+    }
+  });
+
+  it("тексты для ИИ больше не обещают вернуть деньги за ошибку", () => {
+    for (const file of ["public/llms.txt", "public/llms-full.txt"]) {
+      expect(userText(file), `${file}: обещание «вернём деньги»`).not.toMatch(
+        /верн[её]м?[^.]{0,40}деньги/i,
+      );
+    }
+  });
+});
+
+describe("ТЗ-37b · PDF: обещание соответствует тому, как файл получается", () => {
+  it("в продукте нет подписи «Скачать PDF» — кнопка печатает, а не скачивает файл", () => {
+    const offenders = tsFiles("src").filter((f) => /Скачать\s+PDF/i.test(userText(f)));
+    expect(
+      offenders,
+      `«Скачать PDF» вернулось в: ${offenders.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("нет формулировок, где файл «приходит сам»", () => {
+    for (const pattern of [/PDF\s+у\s+вас/i, /отда[её]т\s+(готовый\s+)?PDF/i, /выда[её]т\s+(готовый\s+)?PDF/i]) {
+      const offenders = tsFiles("src").filter((f) => pattern.test(userText(f)));
+      expect(offenders, `«${pattern}» вернулось в: ${offenders.join(", ")}`).toEqual([]);
+    }
+    for (const file of ["public/llms.txt", "public/llms-full.txt"]) {
+      expect(userText(file), `${file}: обещание «отдаёт PDF»`).not.toMatch(
+        /отда[её]т\s+(готовый\s+)?PDF/i,
+      );
+    }
+  });
+
+  it("обещание «PDF в формате A4» подкреплено печатными стилями (регресс-гард)", () => {
+    // Это проверка на то, что обещание не осталось без опоры: страница темы
+    // обещает A4 и шифр ответов на отдельной странице — печать обязана это
+    // обеспечивать. На старом коде проверка проходит: она охраняет опору, а не
+    // ловит само обещание.
+    expect(userText("src/app/subject/[subject]/[grade]/[topic]/page.tsx")).toMatch(
+      /PDF в формате A4/i,
+    );
+    const css = read("src/app/globals.css");
+    expect(css, "в печатных стилях нет A4").toMatch(/@page\s*\{[^}]*size:\s*A4/i);
+    expect(
+      read("src/components/constructor/WorksheetPreview.tsx"),
+      "ответы не печатаются на отдельной странице",
+    ).toMatch(/print:break-before-page/);
+  });
+});
+
+describe("ТЗ-37b · время: «за минуту» стоит рядом с числом заданий", () => {
+  /**
+   * Конструктор — исключение: там ожидание считается по числу заданий
+   * (конструктор показывает свою оценку), и волна 2 его трогает. См. §5
+   * отчёта docs/tz/37b-honest-claims-round-2-report.md.
+   */
+  const EXCLUDED = ["src/app/constructor/page.tsx"];
+
+  /** «10 заданий» в любом написании: «10 заданий», «10 таких заданий». */
+  const COUNT_TEN = /10\s+([а-яё]+\s+)?задани/i;
+
+  /** Обещание времени рядом с числом: окно ±160 символов вокруг совпадения. */
+  function timeClaimsWithoutCount(text: string): string[] {
+    const out: string[] = [];
+    const re = /за\s+минуту/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) {
+      const window = text.slice(Math.max(0, m.index - 160), m.index + m[0].length + 160);
+      if (!COUNT_TEN.test(window)) {
+        out.push(text.slice(Math.max(0, m.index - 70), m.index + 40).replace(/\s+/g, " "));
+      }
+    }
+    return out;
+  }
+
+  it("«за минуту» в коде страниц стоит только рядом с числом заданий", () => {
+    const offenders: string[] = [];
+    for (const file of tsFiles("src")) {
+      if (EXCLUDED.includes(file)) continue;
+      for (const claim of timeClaimsWithoutCount(userText(file))) {
+        offenders.push(`${file}: «…${claim.trim()}…»`);
+      }
+    }
+    expect(
+      offenders,
+      `«за минуту» без числа заданий: ${offenders.join(" | ")}`,
+    ).toEqual([]);
+  }, 60_000);
+
+  it("в файлах для ИИ-краулеров — тоже (регресс-гард)", () => {
+    for (const file of ["public/llms.txt", "public/llms-full.txt"]) {
+      expect(
+        timeClaimsWithoutCount(read(file)),
+        `${file}: «за минуту» без числа заданий`,
+      ).toEqual([]);
+    }
+  });
+});
+
 describe("ТЗ-37 · Q-09: страница «Методика» не обещает чередование форм", () => {
   const methodology = userText("src/app/methodology/page.tsx");
 
