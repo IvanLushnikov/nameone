@@ -14,7 +14,6 @@
 import type { D1Database } from "@cloudflare/workers-types";
 import type { UserTemplate, HistoryItem, SubscriptionView, Worksheet } from "../types";
 import { worksheetId, shortId } from "../lib/shortid";
-import { NotFoundError } from "../lib/errors";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // History — последние сгенерированные пользователем worksheets
@@ -137,6 +136,14 @@ export interface FavoriteRecord {
  * прежней версии, от ручного импорта или от чужого клиента, но payload
  * наружу не отдаётся (UL-D01).
  *
+ * Фильтр `w.user_id IS NULL OR w.user_id = ?1` — это защита на ЧТЕНИЕ.
+ * Находка №4 ревью 30.10.2026: раньше лист чужого учителя можно было
+ * положить в избранное, и `GET /api/users/favorites` отдавал его payload.
+ * Запись теперь запрещена (см. addFavorite), но строки, созданные ДО починки,
+ * в базе остались — без этого фильтра они продолжили бы отдавать чужой
+ * payload. Лист без владельца (user_id IS NULL, анонимная генерация) —
+ * обычное дело и фильтром не затрагивается.
+ *
  * LEFT JOIN + `w.user_id IS NULL` — это два разных случая, и оба допустимы:
  * анонимный лист (строка есть, владелец NULL) и удалённый лист (строки нет,
  * отдаётся stub "(удалено)"). Признак «строка есть, владелец чужой» — это
@@ -239,7 +246,13 @@ export async function addFavorite(
   db: D1Database,
   userId: string,
   worksheet: Worksheet,
-): Promise<{ favoriteId: string; worksheetId: string; alreadyFavorited: boolean }> {
+): Promise<{
+  favoriteId: string;
+  worksheetId: string;
+  alreadyFavorited: boolean;
+  /** Лист принадлежит другому учителю — в избранное его положить нельзя. */
+  forbidden: boolean;
+}> {
   const now = Math.floor(Date.now() / 1000);
   const wsId = worksheet.id || worksheetId();
 
@@ -249,9 +262,21 @@ export async function addFavorite(
     .bind(wsId)
     .first<{ id: string; user_id: string | null }>();
 
-  // Чужой приватный лист: 404, а не 403 — существование не подтверждаем.
+  // Чужой лист в избранное не кладём (находка №4 ревью 30.10.2026, UL-D01).
+  //
+  // Раньше тут было `SELECT id` — проверка только «существует ли такой id».
+  // Учитель Б мог положить в избранное лист учителя А, и `GET
+  // /api/users/favorites` отдавал ему payload листа А.
+  //
+  // Тот же policy, что в F-07 (`src/routes/f07.ts`): лист с владельцем, и
+  // владелец — не ты, недоступен. Лист без владельца (анонимная генерация)
+  // — обычное дело, его класть можно.
+  //
+  // Возвращаем признак `forbidden`, а не бросаем ошибку: HTTP-статус решает
+  // маршрут (`routes/users.ts` превращает его в 404 — существование листа
+  // подтверждать нельзя, по коду ответа чужие id не перебираются).
   if (existing && existing.user_id !== null && existing.user_id !== userId) {
-    throw new NotFoundError("Worksheet not found");
+    return { favoriteId: "", worksheetId: wsId, alreadyFavorited: false, forbidden: true };
   }
 
   if (!existing) {
@@ -298,10 +323,11 @@ export async function addFavorite(
       favoriteId: existingFav?.id ?? favId,
       worksheetId: wsId,
       alreadyFavorited: true,
+      forbidden: false,
     };
   }
 
-  return { favoriteId: favId, worksheetId: wsId, alreadyFavorited: false };
+  return { favoriteId: favId, worksheetId: wsId, alreadyFavorited: false, forbidden: false };
 }
 
 export async function removeFavorite(db: D1Database, userId: string, favoriteId: string): Promise<boolean> {

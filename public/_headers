@@ -10,6 +10,36 @@
 # Сайт грузит внешние шрифты и аналитику, и жёсткий CSP без полного списка
 # источников просто сломает страницы. CSP добавляем отдельным шагом вместе
 # с инвентаризацией внешних доменов — см. docs/SECURITY-REVIEW-2026-10-02.md.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# CSP В РЕЖИМЕ REPORT-ONLY (ревью безопасности 30.10.2026, находка №10)
+# ─────────────────────────────────────────────────────────────────────────────
+# Это НЕ enforce. В report-only браузер НИЧЕГО не блокирует, а сообщает о
+# каждом нарушении — страницы работают как раньше, но мы видим, каких
+# источников не хватает в политике. Включать enforce — решение владельца и
+# только после того, как отчёт покажет, что политика ничего не ломает.
+#
+# ИНВЕНТАРИЗАЦИЯ ВНЕШНИХ ДОМЕНОВ (откуда взяты):
+#   mc.yandex.ru            — Яндекс.Метрика: скрипт tag.js, пиксель watch/
+#                            и его beacon-запросы (connect-src).
+#   challenges.cloudflare.com — виджет капчи Turnstile: скрипт api.js и iframe.
+#   <API>                   — сам бэк: фронт ходит в API из браузера.
+#   ШРИФТЫ KaTeX — свои, не внешние: katex лежит в node_modules, его CSS
+#   подключается через @import, а файлы шрифтов попадают в сборку и раздаются
+#   с того же домена. Поэтому в font-src внешнего домена нет.
+#   schema.org, t.me, obuchai.com, neuroom.ru, ilushnikov.ru — не ресурсы:
+#   это разметка JSON-LD и обычные ссылки в тексте, CSP их не ограничивает.
+#
+# 'unsafe-inline' в script-src и style-src — потому что статический экспорт
+# Next.js вставляет инлайновые скрипты и стили. Для enforce это придётся
+# заменить на хэши или nonce — это отдельная работа.
+#
+# Отчёты уходят на воркер: POST /api/security/csp-report, там они пишутся в
+# лог (см. `wrangler tail`).
+/*
+  Content-Security-Policy-Report-Only: default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline' https://mc.yandex.ru https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://mc.yandex.ru; connect-src 'self' https://rabochielisty-api.ivanlusnikov159.workers.dev https://api.uchlist.ru https://mc.yandex.ru https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; report-uri https://rabochielisty-api.ivanlusnikov159.workers.dev/api/security/csp-report; report-to csp-endpoint
+  Reporting-Endpoints: csp-endpoint="https://rabochielisty-api.ivanlusnikov159.workers.dev/api/security/csp-report"
+
 
 # Не отдавать ссылку в Referer. На странице входа токен может стоять в query
 # (?token=...), и без этого правила он утекает в аналитику.

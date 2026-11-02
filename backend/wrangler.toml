@@ -1,31 +1,35 @@
 # Cloudflare Workers config — УчЛист backend.
 #
 # Deploy:    npm run deploy        → ПРОДАКШН (--env production)
-#            npm run deploy:staging → воркер из секции [vars], НЕ для боя
 # Dev local: npm run dev   (wrangler dev --local)
 #
-# ВНИМАНИЕ, и это не теория. Секция [vars] и [env.production] описывают
-# ОДИН И ТОТ ЖЕ воркер `rabochielisty-api`. Поэтому `wrangler deploy` без
-# `--env production` — это не «локальная сборка», а выкладка на боевой адрес
-# с development-переменными: ALLOW_DEV_MAGIC_URL=true, ALLOW_DEMO_PAYMENTS=true
-# и FRONTEND_URL=http://localhost:3000. Так уже случилось дважды: 02.10.2026
-# (это задеплоили, и защита по APP_ENV выключилась молча) и 04.10.2026 при
-# выкладке ТЗ-19/ТЗ-20. Поэтому `npm run deploy` жёстко указывает
-# `--env production`, а `deploy:staging` назван явно, чтобы никто не
-# запустил его, думая, что это боевой деплой.
+# ВНИМАНИЕ, и это не теория. Верхнеуровневая секция и секция [env.production]
+# описывают РАЗНЫЕ воркеры: верхняя — `rabochielisty-api-dev`, продовая —
+# `rabochielisty-api`. Раньше имя было одинаковым, и `wrangler deploy` без
+# `--env production` выкатывал боевой адрес с development-переменными:
+# ALLOW_DEV_MAGIC_URL=true, ALLOW_DEMO_PAYMENTS=true. Так случилось дважды:
+# 02.10.2026 и 04.10.2026. Теперь «голый» `wrangler deploy` физически не может
+# выкатить воркер `rabochielisty-api` — он создаёт/обновляет отдельный
+# dev-воркер, а прод живёт только под `--env production`.
+#
+# Скрипта `deploy:staging` больше нет: `wrangler deploy` без окружения —
+# это ровно тот путь, которым прод дважды выкатывали с настройками разработки.
+# Если понадобится отдельный стенд, у него должен быть СВОЙ воркер, СВОЯ база
+# D1 и свой бакет R2 — см. `docs/agents/03-deploy-prod-cloudflare.md`.
 #
 # Secrets (.dev.vars для локала, wrangler secret put для прода):
 #   OPENAI_API_KEY, ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY,
-#   RESEND_API_KEY, YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY, JWT_SECRET.
+#   RESEND_API_KEY, YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY, JWT_SECRET,
+#   FINGERPRINT_SALT.
 #
 # При первом деплое:
 #   1. wrangler d1 create rabochielisty       → подставить database_id ниже
 #   2. wrangler r2 bucket create rabochielisty-pdfs
-#   3. wrangler secret put <KEY>              → для каждого секрета
+#   3. wrangler secret put <KEY> --env production  → для каждого секрета
 #   4. npm run db:migrate:prod
 #   5. npm run deploy
 
-name = "rabochielisty-api"
+name = "rabochielisty-api-dev"
 main = "src/index.ts"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
@@ -46,6 +50,16 @@ APP_PUBLIC_URL = "http://localhost:3000"
 # включая прод. Именно «включено», а не «не запрещено»: 02.10.2026 выяснилось,
 # что боевой воркер задеплоен из секции [vars], поэтому защита, построенная на
 # APP_ENV, выключалась молча.
+#
+# Эти два флага нужны локальной разработке: без них нельзя войти на машине
+# (почты нет, ссылка для входа приходит в ответе) и нельзя проверить оплату.
+# Верхнеуровневая секция обслуживает локальную разработку, поэтому флаги
+# остаются включёнными.
+#
+# На опубликованном воркере с ALLOW_DEV_MAGIC_URL=true или
+# ALLOW_DEMO_PAYMENTS=true изменяющие ручки отвечают 503 — см.
+# `unsafeConfigurationGuard` в `src/index.ts`. Прод выкатывается только с
+# `--env production`, где оба флага выключены явно.
 ALLOW_DEV_MAGIC_URL = "true"
 ALLOW_DEMO_PAYMENTS = "true"
 # ТЗ-20: локально рекуррент проверяем, в проде он выключен до разрешения

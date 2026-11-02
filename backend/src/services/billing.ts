@@ -635,7 +635,7 @@ export async function handleWebhook(
   env: Env,
   body: YooKassaWebhookPayload,
   options: { fetcher?: typeof globalThis.fetch } = {},
-): Promise<{ handled: boolean }> {
+): Promise<{ handled: boolean; retry?: boolean }> {
   const fetcher = options.fetcher ?? globalThis.fetch;
   if (!body || body.type !== "notification" || !body.event || !body.object) {
     // eslint-disable-next-line no-console

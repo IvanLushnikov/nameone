@@ -1,24 +1,37 @@
 /**
- * UL-D01 (аудит T01): избранное не должно открывать чужой приватный материал.
+ * Избранное не должно открывать чужой приватный материал.
+ *
+ * Два независимых источника требований, слитых в один файл:
+ *
+ * 1. UL-D01 (аудит T01) — чужой лист это 404, а не 403. Тот же принцип, что у
+ *    GET /api/worksheets/:id: по коду ответа нельзя перебирать чужие id. Раньше
+ *    POST /api/users/favorites отдавал 200 и создавал связь favorites(B, wsA), а
+ *    GET /api/users/favorites отдавал B полный payload листа A.
+ *
+ * 2. Находка №4 ревью безопасности от 30.10.2026 — POST /api/users/favorites
+ *    проверял только «существует ли лист с таким id», но не «чей это лист».
  *
  * ─── ЧТО ЛОВИТ ЭТОТ ФАЙЛ ──────────────────────────────────────────────────
  *
- * D1. ЧУЖОЙ ЛИСТ — 404, А НЕ 403. Тот же принцип, что у GET /api/worksheets/:id:
- *     по коду ответа нельзя перебирать чужие id. Раньше POST /api/users/favorites
- *     отдавал 200 и создавал связь favorites(B, wsA), а GET /api/users/favorites
- *     отдавал B полный payload листа A.
- *
+ * D1. ЧУЖОЙ ЛИСТ — 404, А НЕ 403.
  * D2. ЧУЖОЙ PAYLOAD НЕ ВЫДАЁТСЯ В СПИСКЕ. Даже если связь уже есть в базе
  *     (заведённая до починки, руками, чужим импортом) — список обязан её
- *     отфильтровать. Проверяется оба пути listFavorites: с курсором и без.
- *
+ *     отфильтровать. Проверяются оба пути listFavorites: с курсором и без.
  * D3. СВОЁ РАБОТАЕТ КАК РАНЬШЕ. Свой лист добавляется дважды — связь одна и
  *     содержимое прежнее. Импорт нового payload сохраняется под своим
  *     владельцем. Анонимный лист (user_id IS NULL) остаётся доступным.
+ * D4. ТЕЛО ЗАПРОСА. Без tasks — 400, а не 500. Поля листа (text_latex, skill,
+ *     chartSpec, isDemo) не теряются на пути в payload_json и обратно.
  *
  * ─── ГРАНИЦЫ ТЕСТА ────────────────────────────────────────────────────────
  * Синтетические данные: два пользователя, один лист, никаких чужих материалов
  * и никаких детей. Провайдеры не зовутся — тест работает с D1 напрямую.
+ *
+ * Две обвязки в одном файле намеренно:
+ *   • через SELF.fetch + cookie-сессию — как ходит настоящий клиент;
+ *   • через app.fetch + заголовок X-Session-Token — как в auth.test.ts.
+ * Наборы тестов независимы и не делят состояние: у первого своя подготовка
+ * (beforeEach), у второго пользователи заводятся внутри самого теста.
  */
 
 /// <reference types="@cloudflare/vitest-plugin" />
@@ -27,6 +40,8 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import schemaSql from "../../src/db/schema.sql?raw";
 import { createSession, createUser } from "../../src/db/queries";
 import { listFavorites } from "../../src/db/userResources";
+import { app } from "../../src/index";
+import type { Env } from "../../src/env";
 
 const OWNER = "u_owner_fav";
 const OTHER = "u_other_fav";
@@ -124,11 +139,92 @@ async function countFavorites(userId: string): Promise<number> {
   return row?.n ?? 0;
 }
 
-describe("UL-D01: избранное не открывает чужой приватный лист", () => {
-  beforeAll(async () => {
-    await applyD1Migrations(env.DB, [{ name: "schema", queries: [schemaSql] }]);
-  });
+/**
+ * Окружение для запросов — development.
+ *
+ * Именно development: в проде без RESEND_API_KEY вход по magic-link не
+ * работает. Само вхождение здесь не нужно — пользователя и сессию мы заводим
+ * прямо в D1, — но окружение должно совпадать с локальным.
+ */
+function devEnv(): Env {
+  return {
+    ...(env as unknown as Env),
+    APP_ENV: "development",
+    ALLOW_DEV_MAGIC_URL: "true",
+    // Тестовая среда — не опубликованный воркер.
+    ALLOW_INSECURE_MODES: "true",
+  };
+}
 
+const db = () => (env as unknown as { DB: D1Database }).DB;
+
+/** Завести учителя и его сессию (как в auth.test.ts). */
+async function seedUser(email: string): Promise<{ id: string; sessionToken: string }> {
+  const userId = `usr_${crypto.randomUUID()}`;
+  const sessionToken = `sess_${crypto.randomUUID()}`;
+  const now = Math.floor(Date.now() / 1000);
+
+  await db()
+    .prepare(
+      `INSERT INTO users (id, email, name, plan, created_at, updated_at)
+       VALUES (?1, ?2, ?3, 'free', ?4, ?5)`,
+    )
+    .bind(userId, email, `Учитель ${email}`, now, now)
+    .run();
+  await db()
+    .prepare(
+      `INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES (?1, ?2, ?3, ?4)`,
+    )
+    .bind(sessionToken, userId, now + 86400, now)
+    .run();
+
+  return { id: userId, sessionToken };
+}
+
+async function call(
+  path: string,
+  init: { method?: string; body?: unknown; token?: string } = {},
+): Promise<Response> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (init.token) headers["X-Session-Token"] = init.token;
+
+  return app.fetch(
+    new Request(`https://api.test${path}`, {
+      method: init.method ?? "POST",
+      headers,
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    }),
+    devEnv() as never,
+  );
+}
+
+/** Лист, который фронт кладёт в избранное. */
+function worksheet(id: string, topic = "Дроби") {
+  return {
+    id,
+    title: "Лист по математике",
+    subject: "math",
+    grade: 5,
+    topic,
+    difficulty: "medium",
+    createdAt: new Date().toISOString(),
+    tasks: [
+      {
+        number: 1,
+        text: "Сложите 1/2 и 1/3",
+        type: "computation",
+        answer: "5/6",
+        points: 2,
+      },
+    ],
+  };
+}
+
+beforeAll(async () => {
+  await applyD1Migrations(env.DB, [{ name: "favorites-ownership", queries: [schemaSql] }]);
+});
+
+describe("UL-D01: избранное не открывает чужой приватный лист", () => {
   beforeEach(async () => {
     await seed();
   });
@@ -248,5 +344,149 @@ describe("UL-D01: избранное не открывает чужой прив
     // У B список пуст — чужого payload нет.
     const { raw } = await getFavorites(TOK_OTHER);
     expect(raw).not.toContain(SECRET_TITLE);
+  });
+});
+
+describe("избранное: чужой лист положить нельзя", () => {
+  it("учитель Б получает 404 на лист учителя А", async () => {
+    const a = await seedUser("a-owner@example.com");
+    const b = await seedUser("b-other@example.com");
+
+    // Учитель А добавляет свой лист.
+    const created = await call("/api/users/favorites", {
+      body: { worksheet: worksheet("ws-owner-a") },
+      token: a.sessionToken,
+    });
+    expect(created.status).toBe(200);
+
+    // Учитель Б пытается положить тот же лист в избранное.
+    const attempt = await call("/api/users/favorites", {
+      body: { worksheet: worksheet("ws-owner-a") },
+      token: b.sessionToken,
+    });
+    expect(attempt.status).toBe(404);
+  });
+
+  it("в избранном учителя Б нет листа учителя А", async () => {
+    const a = await seedUser("a-list@example.com");
+    const b = await seedUser("b-list@example.com");
+
+    await call("/api/users/favorites", {
+      body: { worksheet: worksheet("ws-list-a") },
+      token: a.sessionToken,
+    });
+    // Попытка учителя Б — чтобы проверить не только ответ, но и результат.
+    await call("/api/users/favorites", {
+      body: { worksheet: worksheet("ws-list-a") },
+      token: b.sessionToken,
+    });
+
+    const list = await call("/api/users/favorites", {
+      method: "GET",
+      token: b.sessionToken,
+    });
+    const body = (await list.json()) as { items: Array<{ worksheetId: string }> };
+
+    expect(list.status).toBe(200);
+    expect(body.items.map((item) => item.worksheetId)).not.toContain("ws-list-a");
+  });
+
+  it("учитель А свой лист добавить может", async () => {
+    const a = await seedUser("a-own@example.com");
+
+    const res = await call("/api/users/favorites", {
+      body: { worksheet: worksheet("ws-own-a") },
+      token: a.sessionToken,
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; worksheetId: string };
+    expect(body.ok).toBe(true);
+    expect(body.worksheetId).toBe("ws-own-a");
+  });
+
+  it("лист, которого ещё нет в базе, добавляется — обычный сценарий", async () => {
+    const b = await seedUser("b-new@example.com");
+
+    const res = await call("/api/users/favorites", {
+      body: { worksheet: worksheet("ws-brand-new") },
+      token: b.sessionToken,
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("анонимный лист (без владельца) добавляется — его не у кого отнимать", async () => {
+    const b = await seedUser("b-anon@example.com");
+    const now = Math.floor(Date.now() / 1000);
+
+    // Лист, созданный анонимной генерацией: владельца нет.
+    await db()
+      .prepare(
+        `INSERT INTO worksheets
+          (id, user_id, subject, grade, topic, difficulty, type, count, title, payload_json, created_at)
+         VALUES (?1, NULL, 'math', 5, 'Дроби', 'medium', 'worksheet', 1, 'Лист', ?2, ?3)`,
+      )
+      .bind("ws-anonymous", JSON.stringify(worksheet("ws-anonymous")), now)
+      .run();
+
+    const res = await call("/api/users/favorites", {
+      body: { worksheet: worksheet("ws-anonymous") },
+      token: b.sessionToken,
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("тело без tasks получает 400, а не 500", async () => {
+    const b = await seedUser("b-bad-body@example.com");
+
+    const res = await call("/api/users/favorites", {
+      body: { worksheet: { id: "ws-no-tasks", title: "Без заданий", subject: "math", grade: 5 } },
+      token: b.sessionToken,
+    });
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { ok: boolean; code: string };
+    expect(body.ok).toBe(false);
+    expect(body.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("поля листа не теряются: text_latex, skill, chartSpec, isDemo", async () => {
+    // Регрессия, которую вносит любая zod-схема: неизвестные ключи по
+    // умолчанию выбрасываются, а payload_json читается обратно — и потерянное
+    // поле теряется навсегда (дробь печатается в одну строку, водяной знак
+    // «заготовка» пропадает).
+    const b = await seedUser("b-fields@example.com");
+
+    const res = await call("/api/users/favorites", {
+      body: {
+        worksheet: {
+          ...worksheet("ws-fields"),
+          isDemo: true,
+          chartSpec: { kind: "bar", values: [1, 2, 3] },
+          tasks: [
+            {
+              ...worksheet("ws-fields").tasks[0],
+              text_latex: "Сократите дробь: $\\frac{8}{12}$",
+              skill: "Давление твёрдых тел",
+            },
+          ],
+        },
+      },
+      token: b.sessionToken,
+    });
+    expect(res.status).toBe(200);
+
+    const list = await call("/api/users/favorites", { method: "GET", token: b.sessionToken });
+    const body = (await list.json()) as {
+      items: Array<{ worksheet: { isDemo?: boolean; chartSpec?: unknown; tasks: Array<Record<string, unknown>> } }>;
+    };
+    const saved = body.items.find((item) => item.worksheet.tasks.length > 0)?.worksheet;
+
+    expect(saved?.isDemo).toBe(true);
+    expect(saved?.chartSpec).toEqual({ kind: "bar", values: [1, 2, 3] });
+    expect(saved?.tasks[0]?.text_latex).toBe("Сократите дробь: $\\frac{8}{12}$");
+    expect(saved?.tasks[0]?.skill).toBe("Давление твёрдых тел");
   });
 });

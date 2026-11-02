@@ -24,7 +24,9 @@ import type { Env } from "../../src/env";
 // Импорт самого приложения ОБЯЗАТЕЛЕН: без него SELF поднимает worker из
 // wrangler.toml, а не текущий src/index.ts, и роутов в нём может не быть.
 // Так делают остальные тесты с SELF (auth.test.ts, artifact-routes.test.ts).
-import app from "../../src/index";
+// Именованный импорт: default-экспорт воркера — это { fetch, scheduled },
+// а само Hono-приложение доступно как `app`.
+import { app } from "../../src/index";
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS users (

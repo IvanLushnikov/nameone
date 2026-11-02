@@ -17,7 +17,7 @@ import { availableModels } from "../llm/config";
 import { embed, verifySelfTask } from "../llm";
 import { BadRequestError } from "../lib/errors";
 import { rateLimitMiddleware } from "../middleware/ratelimit";
-import { fingerprintHash, type CfObject } from "../lib/antifraud";
+import { fingerprintHash, fingerprintSalt, type CfObject } from "../lib/antifraud";
 import { recordAnonymousAccess } from "../services/usage";
 
 // AppEnv, а не { Bindings: Env }: /verify читает тариф из сессии (c.get("user")).
@@ -73,7 +73,7 @@ async function noteAnonymousAccess(c: Context<AppEnv>, task: string): Promise<vo
       userAgent: c.get("userAgent") ?? "",
       cf: (c.req.raw as Request & { cf?: CfObject }).cf,
     },
-    c.env.FINGERPRINT_SALT ?? "dev-fingerprint-salt",
+    fingerprintSalt(c.env),
   );
   await recordAnonymousAccess(c.env.DB, {
     ownerKey: `fp:${fingerprint}`,

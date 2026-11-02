@@ -30,6 +30,7 @@ import type { AppEnv } from "../types";
 import { BadRequestError } from "../lib/errors";
 import {
   fingerprintHash,
+  fingerprintSalt,
   markChallengePassed,
   type CfObject,
 } from "../lib/antifraud";
@@ -140,7 +141,7 @@ turnstileRouter.post("/verify", async (c) => {
       userAgent: c.get("userAgent") ?? "",
       cf: (c.req.raw as Request & { cf?: CfObject }).cf,
     },
-    c.env.FINGERPRINT_SALT ?? "dev-fingerprint-salt",
+    fingerprintSalt(c.env),
   );
   await markChallengePassed(c.env.DB, fingerprint);
 
