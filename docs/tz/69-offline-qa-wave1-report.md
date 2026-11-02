@@ -121,7 +121,7 @@ kept 5 droppedForeignMath [ 6 ] rolledBack false
 
 ## 8. Git
 
-См. коммиты на ветке после `git log --oneline feat/offline-qa-wave1-70-72-71`.
+**Коммит:** `836201a` — `Offline QA vol.1: matching, язык, критерии в превью.`
 
 ```bash
 git status --short
