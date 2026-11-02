@@ -108,22 +108,46 @@ function succeededNotification(ykId: string): YooKassaWebhookPayload {
   };
 }
 
-/** Ответ API ЮKassa: платёж подтверждён. */
-function apiSaysSucceeded(): typeof globalThis.fetch {
+/**
+ * Ответ API ЮKassa: платёж подтверждён.
+ *
+ * Ответ повторяет id запрошенного платежа и содержит сумму — ровно так отвечает
+ * настоящий API. Раньше мок отдавал чужой id («yk_1» вместо id платежа) и не
+ * содержал суммы; сверка такое честно отвергает (чужой id — это не тот
+ * платёж, нет суммы — состояние неизвестно), и тест падал не из-за логики
+ * сверки, а из-за неправдоподобного ответа провайдера.
+ */
+function apiSaysSucceeded(ykId: string): typeof globalThis.fetch {
   return (async () =>
-    new Response(JSON.stringify({ id: "yk_1", status: "succeeded", paid: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    })) as unknown as typeof globalThis.fetch;
+    new Response(
+      JSON.stringify({
+        id: ykId,
+        status: "succeeded",
+        paid: true,
+        amount: { value: (BASE_MONTHLY / 100).toFixed(2), currency: "RUB" },
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    )) as unknown as typeof globalThis.fetch;
 }
 
 /** Ответ API ЮKassa: платёж не оплачен. */
-function apiSaysPending(): typeof globalThis.fetch {
+function apiSaysPending(ykId: string): typeof globalThis.fetch {
   return (async () =>
-    new Response(JSON.stringify({ id: "yk_1", status: "pending", paid: false }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    })) as unknown as typeof globalThis.fetch;
+    new Response(
+      JSON.stringify({
+        id: ykId,
+        status: "pending",
+        paid: false,
+        amount: { value: (BASE_MONTHLY / 100).toFixed(2), currency: "RUB" },
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    )) as unknown as typeof globalThis.fetch;
 }
 
 /** API недоступен: сеть или 5xx. */
@@ -176,7 +200,7 @@ describe("вебхук ЮKassa: подписка только после све�
       db(),
       prodEnv(),
       succeededNotification("yk_denied"),
-      { fetcher: apiSaysPending() },
+      { fetcher: apiSaysPending("yk_denied") },
     );
 
     expect(result.handled).toBe(false);
@@ -188,7 +212,7 @@ describe("вебхук ЮKassa: подписка только после све�
     await seedPayment("usr_ok", "yk_ok");
 
     const result = await handleWebhook(db(), prodEnv(), succeededNotification("yk_ok"), {
-      fetcher: apiSaysSucceeded(),
+      fetcher: apiSaysSucceeded("yk_ok"),
     });
 
     expect(result.handled).toBe(true);
