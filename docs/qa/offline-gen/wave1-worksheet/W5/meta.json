@@ -1,0 +1,15 @@
+{
+  "id": "W5",
+  "subject": "physics",
+  "grade": 7,
+  "topic": "Механическое движение. Скорость",
+  "topicRequested": "Скорость. Путь. Время",
+  "topicUsed": "Механическое движение. Скорость",
+  "taskCount": 10,
+  "difficulty": "mixed",
+  "difficultyInRequest": "medium",
+  "language": "ru",
+  "model": "composer-2.5",
+  "stage": "raw-model",
+  "createdAt": "2026-11-02T11:57:43.227Z"
+}

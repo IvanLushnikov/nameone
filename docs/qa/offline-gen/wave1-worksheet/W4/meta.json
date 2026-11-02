@@ -1,0 +1,15 @@
+{
+  "id": "W4",
+  "subject": "russian",
+  "grade": 8,
+  "topic": "Причастие. Причастный оборот",
+  "topicRequested": "Причастие",
+  "topicUsed": "Причастие. Причастный оборот",
+  "taskCount": 10,
+  "difficulty": "mixed",
+  "difficultyInRequest": "medium",
+  "language": "ru",
+  "model": "composer-2.5",
+  "stage": "raw-model",
+  "createdAt": "2026-11-02T11:57:43.226Z"
+}

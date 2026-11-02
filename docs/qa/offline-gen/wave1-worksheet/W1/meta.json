@@ -1,0 +1,15 @@
+{
+  "id": "W1",
+  "subject": "math",
+  "grade": 5,
+  "topic": "Обыкновенные дроби",
+  "topicRequested": "Обыкновенные дроби",
+  "topicUsed": "Обыкновенные дроби",
+  "taskCount": 12,
+  "difficulty": "mixed",
+  "difficultyInRequest": "medium",
+  "language": "ru",
+  "model": "composer-2.5",
+  "stage": "raw-model",
+  "createdAt": "2026-11-02T11:57:43.217Z"
+}

@@ -1,0 +1,121 @@
+{
+  "title": "Worksheet: Present Perfect (Grade 9)",
+  "subject": "english",
+  "grade": 9,
+  "topic": "Present Perfect",
+  "difficulty": "medium",
+  "tasks": [
+    {
+      "number": 1,
+      "text": "Complete: I ___ (already / finish) my project.",
+      "type": "fill-blank",
+      "answer": "have already finished",
+      "explanation": "Present Perfect: have/has + V3. To he adds -s on the verb (have finished).",
+      "points": 1,
+      "skill": "Present Perfect форма"
+    },
+    {
+      "number": 2,
+      "text": "Choose the correct sentence.",
+      "type": "multiple-choice",
+      "options": [
+        "I have seen him yesterday.",
+        "I saw him yesterday.",
+        "I have saw him yesterday.",
+        "I has seen him yesterday."
+      ],
+      "answer": "I saw him yesterday.",
+      "explanation": "With yesterday we use Past Simple, not Present Perfect.",
+      "points": 2,
+      "skill": "Past Simple vs PP"
+    },
+    {
+      "number": 3,
+      "text": "Make a question: she / ever / visit / London?",
+      "type": "short-answer",
+      "answer": "Has she ever visited London?",
+      "explanation": "Has + subject + ever + V3 for questions.",
+      "points": 2,
+      "skill": "вопросительная форма"
+    },
+    {
+      "number": 4,
+      "text": "Sample: I have never been to Paris. → Make a similar sentence about Tokyo.",
+      "type": "pattern",
+      "sample": "Sample: I have never been to Paris.",
+      "answer": "I have never been to Tokyo.",
+      "explanation": "Keep never + been to + place.",
+      "points": 2,
+      "skill": "never + been to"
+    },
+    {
+      "number": 5,
+      "text": "Match the sentence with its meaning.",
+      "type": "matching",
+      "items": ["1) I have lost my key", "2) I lost my key yesterday"],
+      "answer": "1 — result now; 2 — finished past time",
+      "explanation": "Present Perfect links past action to present result.",
+      "points": 2,
+      "skill": "смысл Present Perfect"
+    },
+    {
+      "number": 6,
+      "text": "Select ALL sentences in Present Perfect.",
+      "type": "multi-answer",
+      "options": [
+        "They have just arrived.",
+        "We went to Spain last year.",
+        "She has lived here since 2020.",
+        "He is reading now."
+      ],
+      "answer": "1, 3",
+      "explanation": "Just/since/for often signal Present Perfect.",
+      "points": 2,
+      "skill": "распознавание времени"
+    },
+    {
+      "number": 7,
+      "text": "Write 3–4 sentences about what you have done this week (school, hobbies).",
+      "type": "essay",
+      "answer": null,
+      "criteria": [
+        "Uses have/has + V3 at least twice",
+        "Sentences are about this week, not only past years"
+      ],
+      "explanation": "Check tense consistency and time markers (this week).",
+      "points": 3,
+      "skill": "письмо в PP"
+    },
+    {
+      "number": 8,
+      "text": "Explain when we use Present Perfect instead of Past Simple.",
+      "type": "open-ended",
+      "answer": null,
+      "criteria": [
+        "Mentions connection with present or unfinished time",
+        "Gives at least one example sentence"
+      ],
+      "explanation": "Look for contrast with finished past time (yesterday, in 2010).",
+      "points": 3,
+      "skill": "выбор времени"
+    },
+    {
+      "number": 9,
+      "text": "Correct the mistake: He have done his homework.",
+      "type": "error-fixing",
+      "answer": "He has done his homework.",
+      "explanation": "With he/she/it use has, not have.",
+      "points": 1,
+      "skill": "has/have"
+    },
+    {
+      "number": 10,
+      "text": "Translate: Я только что прочитал эту статью.",
+      "type": "short-answer",
+      "answer": "I have just read this article.",
+      "explanation": "Just + Present Perfect for very recent actions.",
+      "points": 2,
+      "skill": "перевод в PP"
+    }
+  ]
+}
