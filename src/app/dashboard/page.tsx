@@ -1181,7 +1181,7 @@ function HistoryCard({
           variant="secondary"
           size="sm"
           onClick={onDownload}
-          aria-label="Скачать PDF"
+          aria-label="Сохранить в PDF"
           data-testid="download-pdf"
           className="shrink-0 w-9 px-0"
         >
@@ -1253,7 +1253,7 @@ function FavoriteCard({
           variant="secondary"
           size="sm"
           onClick={onDownload}
-          aria-label="Скачать PDF"
+          aria-label="Сохранить в PDF"
           className="shrink-0 w-9 px-0"
         >
           <Download className="w-4 h-4" />
