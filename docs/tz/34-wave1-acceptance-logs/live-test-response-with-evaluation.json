@@ -1,0 +1,101 @@
+{
+ "worksheet": {
+  "id": "ws_ku5pp7n9ugqr",
+  "title": "Тест по теме «Обыкновенные дроби»",
+  "subject": "math",
+  "grade": 5,
+  "topic": "Обыкновенные дроби",
+  "difficulty": "medium",
+  "tasks": [
+   {
+    "number": 1,
+    "text": "Объясните, равны ли дроби 3/8 и 6/16. Обоснуйте ответ, указав, как получена вторая дробь из первой.",
+    "type": "open-ended",
+    "answer": null,
+    "explanation": null,
+    "points": 2,
+    "skill": "Равные дроби",
+    "criteria": [
+     "Указывает, что дроби 3/8 и 6/16 равны.",
+     "Объясняет, что числитель и знаменатель дроби 3/8 умножили на одно и то же число 2."
+    ]
+   },
+   {
+    "number": 2,
+    "text": "Вычислите: 2/9 + 5/9 - 3/9.",
+    "type": "computation",
+    "answer": "4/9",
+    "explanation": null,
+    "points": 2,
+    "skill": "Действия с дробями"
+   }
+  ],
+  "createdAt": "2026-10-29T15:05:49.762Z"
+ },
+ "secondVariant": null,
+ "quality": {
+  "requested": 2,
+  "delivered": 2,
+  "dropped": 0,
+  "droppedPatternRef": [],
+  "droppedForeignMath": [],
+  "cleanedAnswer": [],
+  "topUpAdded": 0,
+  "stillMissing": 0,
+  "filterBackedOff": true,
+  "repeatedSkills": 0,
+  "tasksWithoutAnswer": 0,
+  "typeDiversityViolations": [],
+  "criteriaMissing": false
+ },
+ "variants": {
+  "expected": 1,
+  "delivered": 1,
+  "degraded": false,
+  "retried": false
+ },
+ "evaluation": [
+  {
+   "variant": 1,
+   "title": "Тест по теме «Обыкновенные дроби»",
+   "criteria": [
+    {
+     "number": 1,
+     "criteria": [
+      "Указывает, что дроби 3/8 и 6/16 равны.",
+      "Объясняет, что числитель и знаменатель дроби 3/8 умножили на одно и то же число 2."
+     ],
+     "maxPoints": 3
+    }
+   ],
+   "typicalMistakes": [
+    "При получении равной дроби умножает числитель и знаменатель на разные числа.",
+    "При сложении или вычитании дробей с одинаковыми знаменателями складывает или вычитает знаменатели."
+   ],
+   "recommendation": "Разберите с классом, почему при умножении числителя и знаменателя на одно и то же число значение дроби не меняется, затем попросите проверить это на примере 3/8 и 6/16.",
+   "totalMaxPoints": 5,
+   "marks": [
+    {
+     "mark": 5,
+     "fromPercent": 85,
+     "toPercent": 100
+    },
+    {
+     "mark": 4,
+     "fromPercent": 70,
+     "toPercent": 84
+    },
+    {
+     "mark": 3,
+     "fromPercent": 50,
+     "toPercent": 69
+    },
+    {
+     "mark": 2,
+     "fromPercent": 0,
+     "toPercent": 49
+    }
+   ]
+  }
+ ]
+}

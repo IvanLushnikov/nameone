@@ -1,0 +1,1 @@
+{"ok":false,"error":"LLM: all providers failed (1 attempts). Last: polza HTTP 402: {\"error\":{\"code\":\"INSUFFICIENT_BALANCE\",\"message\":\"Недостаточно средств. Требуется: 13.21 ₽, доступно: 11.29 ₽ (баланс: 11.29 ₽, зарезервировано: 0.00 ₽). Пожалуйста, пополните баланс.\",\"trace_id\":\"d3","code":"INTERNAL","details":{"attempts":1}}

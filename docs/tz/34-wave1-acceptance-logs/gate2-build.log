@@ -1,0 +1,142 @@
+
+> nameone@0.1.0 build
+> npm run build:clean && tsc --noEmit && next build --no-lint && npm run build:prune
+
+
+> nameone@0.1.0 build:clean
+> node scripts/clean-export.mjs
+
+clean-export: каталог out/ очищен.
+clean-export: каталог .next/ очищен.
+ ⚠ Linting is disabled.
+  ▲ Next.js 14.2.35
+  - Environments: .env
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully
+   Checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/13884) ...
+   Generating static pages (3471/13884) 
+   Generating static pages (6942/13884) 
+   Generating static pages (10413/13884) 
+ ✓ Generating static pages (13884/13884)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                                                                      Size     First Load JS
+┌ ○ /                                                                                            20.7 kB         145 kB
+├ ○ /_not-found                                                                                  169 B          87.7 kB
+├ ○ /about                                                                                       1.91 kB        98.1 kB
+├ ○ /ai-dlya-uchitelya                                                                           1.91 kB        98.1 kB
+├ ○ /apple-icon.png                                                                              0 B                0 B
+├ ○ /auth/callback                                                                               8.63 kB         113 kB
+├ ○ /blog                                                                                        1.6 kB         97.8 kB
+├ ● /blog/[slug]                                                                                 1.6 kB         97.8 kB
+├   ├ /blog/kak-vesti-zhurnal-i-planirovanie-bez-rutiny
+├   ├ /blog/podgotovka-k-ege-po-russkomu
+├   ├ /blog/podgotovka-k-oge-bez-peregruzki
+├   └ [+5 more paths]
+├ ● /compare/[slug]                                                                              1.6 kB         97.8 kB
+├   ├ /compare/uchlist-ili-obuchay
+├   ├ /compare/uchlist-ili-neyrum
+├   └ /compare/uchlist-ili-chatgpt
+├ ○ /constructor                                                                                 85.8 kB        1.43 MB
+├ ○ /contact                                                                                     1.91 kB        98.1 kB
+├ ○ /dashboard                                                                                   23.1 kB         158 kB
+├ ○ /dashboard/interactives                                                                      10.8 kB         121 kB
+├ ○ /dashboard/settings                                                                          24.6 kB         146 kB
+├ ○ /demo-svg                                                                                    1.07 kB         235 kB
+├ ○ /exam                                                                                        1.6 kB         97.8 kB
+├ ● /exam/[exam]                                                                                 1.6 kB         97.8 kB
+├   ├ /exam/oge
+├   └ /exam/ege
+├ ● /exam/[exam]/[subject]                                                                       1.6 kB         97.8 kB
+├   ├ /exam/oge/math
+├   ├ /exam/oge/russian
+├   ├ /exam/oge/physics
+├   └ [+7 more paths]
+├ ● /exam/[exam]/[subject]/[number]                                                              1.6 kB         97.8 kB
+├   ├ /exam/oge/math/1
+├   ├ /exam/oge/math/2
+├   ├ /exam/oge/math/3
+├   └ [+215 more paths]
+├ ○ /form                                                                                        5.99 kB         117 kB
+├ ○ /icon.svg                                                                                    0 B                0 B
+├ ○ /journal                                                                                     15.5 kB         287 kB
+├ ○ /k                                                                                           4.11 kB         112 kB
+├ ● /ktp/[subject]/[grade]                                                                       1.6 kB         97.8 kB
+├   ├ /ktp/math/1
+├   ├ /ktp/math/2
+├   ├ /ktp/math/3
+├   └ [+138 more paths]
+├ ● /legal/[slug]                                                                                177 B          96.4 kB
+├   ├ /legal/offer
+├   ├ /legal/privacy
+├   ├ /legal/consent
+├   └ [+2 more paths]
+├ ○ /login                                                                                       9.37 kB         117 kB
+├ ● /material/[slug]                                                                             1.6 kB         97.8 kB
+├   ├ /material/samostoyatelnaya-rabota-po-matematike-klass-sbor-i-gruppirovka-dannyh-12b73701
+├   ├ /material/kartochki-dlya-zakrepleniya-temy-proverka-i-poisk-oshibki-matematike-k-c692f172
+├   ├ /material/onlayn-zadaniya-po-teme-zapolnenie-tablits-i-shem-matematike-klass-9fb4d9d7
+├   └ [+147 more paths]
+├ ○ /materials                                                                                   11.2 kB         116 kB
+├ ○ /methodology                                                                                 1.91 kB        98.1 kB
+├ ○ /oge                                                                                         14.2 kB        1.16 MB
+├ ○ /play                                                                                        23 kB           130 kB
+├ ● /presentation/[subject]/[grade]/[topic]                                                      1.6 kB         97.8 kB
+├   ├ /presentation/math/1/chisla-ot-1-do-10
+├   ├ /presentation/math/1/chisla-do-100-desyatki
+├   ├ /presentation/math/1/slozhenie-i-vychitanie-do-10
+├   └ [+6564 more paths]
+├ ○ /preview                                                                                     7.36 kB         298 kB
+├ ○ /pricing                                                                                     2.2 kB          119 kB
+├ ○ /register                                                                                    1.91 kB        98.1 kB
+├ ○ /robots.txt                                                                                  0 B                0 B
+├ ○ /sitemap.xml                                                                                 0 B                0 B
+├ ○ /subject                                                                                     1.6 kB         97.8 kB
+├ ● /subject/[subject]                                                                           1.6 kB         97.8 kB
+├   ├ /subject/math
+├   ├ /subject/algebra
+├   ├ /subject/geometry
+├   └ [+18 more paths]
+├ ● /subject/[subject]/[grade]                                                                   2.09 kB        98.3 kB
+├   ├ /subject/math/1
+├   ├ /subject/math/2
+├   ├ /subject/math/3
+├   └ [+138 more paths]
+├ ● /subject/[subject]/[grade]/[topic]                                                           2.09 kB        98.3 kB
+├   ├ /subject/math/1/chisla-ot-1-do-10
+├   ├ /subject/math/1/chisla-do-100-desyatki
+├   ├ /subject/math/1/slozhenie-i-vychitanie-do-10
+├   └ [+6564 more paths]
+├ ○ /superpower                                                                                  3.75 kB         100 kB
+├ ○ /superpower/generations                                                                      3.59 kB        91.2 kB
+├ ○ /superpower/money                                                                            4.04 kB        91.6 kB
+├ ○ /superpower/screens                                                                          3.55 kB        91.1 kB
+├ ○ /superpower/security                                                                         7.33 kB        94.9 kB
+└ ● /theme/[slug]                                                                                1.6 kB         97.8 kB
+    ├ /theme/drobi-5-klass-osen
+    ├ /theme/otritsatelnye-chisla-6-klass-oktyabr
+    ├ /theme/chereduyushchiesya-glasnye-5-klass-oktyabr
+    └ [+11 more paths]
++ First Load JS shared by all                                                                    87.6 kB
+  ├ chunks/2117-35a79f9f416d19af.js                                                              31.9 kB
+  ├ chunks/fd9d1056-2d498ee15e796f4a.js                                                          53.7 kB
+  └ other shared chunks (total)                                                                  2.04 kB
+
+
+○  (Static)  prerendered as static content
+●  (SSG)     prerendered as static HTML (uses getStaticProps)
+
+
+> nameone@0.1.0 build:prune
+> node scripts/prune-export.mjs
+
+prune-export: удалено RSC-копий 13876, сохранено служебных .txt 3. Файлов в сборке: 27970 → 14094.
+
+real	1m46.691s
+user	4m1.157s
+sys	0m43.099s
+EXIT=0
