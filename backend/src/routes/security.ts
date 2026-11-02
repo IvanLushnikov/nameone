@@ -63,6 +63,7 @@ const securityRouter = new Hono<AppEnv>();
 function sanitize(value: unknown): string | undefined {
   if (typeof value !== "string" && typeof value !== "number") return undefined;
   const cleaned = String(value)
+    // eslint-disable-next-line no-control-regex -- именно эти символы и чистим
     .replace(/[\u0000-\u001f\u007f]+/g, " ")
     .trim();
   if (!cleaned) return undefined;
