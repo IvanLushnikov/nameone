@@ -208,6 +208,39 @@ export async function readMonthNoticeSent(
 }
 
 /**
+ * Подготовить (но НЕ выполнить) прибавление одной генерации в месяц.
+ *
+ * Отдельная функция нужна для атомарного перехода «занято → использовано»:
+ * прибавление счётчика и снятие занятия должны быть ОДНОЙ транзакцией D1
+ * (см. `consumeFreeQuota` в `services/usage.ts`). Если прибавление выполнялось
+ * бы само по себе, между «сняли занятие» и «записали использование» другой
+ * запрос успевал бы увидеть свободный слот — и отдать шестой (UL-D07).
+ *
+ * Само прибавление по-прежнему ограничено сверху `generations < limit`:
+ * лишний вызов списания не создаст шестую генерацию.
+ */
+export function prepareMonthGenerationBump(
+  db: D1Database,
+  params: {
+    ownerKey: string;
+    userId?: string | null;
+    month: string;
+    limit: number;
+    nowSec: number;
+  },
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `INSERT INTO free_usage (owner_key, month, generations, user_id, updated_at)
+       VALUES (?1, ?2, 1, ?3, ?4)
+       ON CONFLICT(owner_key, month) DO UPDATE
+         SET generations = generations + 1, updated_at = ?4
+         WHERE generations < ?5`,
+    )
+    .bind(params.ownerKey, params.month, params.userId ?? null, params.nowSec, params.limit);
+}
+
+/**
  * Зачесть одну генерацию в месяц.
  *
  * `limit` в условии DO UPDATE — страховка от двойного списания: попытка
@@ -226,16 +259,7 @@ export async function bumpMonthGenerations(
   },
 ): Promise<number> {
   await ensureFreeUsageTable(db);
-  await db
-    .prepare(
-      `INSERT INTO free_usage (owner_key, month, generations, user_id, updated_at)
-       VALUES (?1, ?2, 1, ?3, ?4)
-       ON CONFLICT(owner_key, month) DO UPDATE
-         SET generations = generations + 1, updated_at = ?4
-         WHERE generations < ?5`,
-    )
-    .bind(params.ownerKey, params.month, params.userId ?? null, params.nowSec, params.limit)
-    .run();
+  await prepareMonthGenerationBump(db, params).run();
 
   const row = await readMonthRow(db, params.ownerKey, params.month);
   return row?.generations ?? 0;

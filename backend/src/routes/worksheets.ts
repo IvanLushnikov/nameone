@@ -634,8 +634,17 @@ worksheetsRouter.post("/save", async (c) => {
   // 5) payload_json — ВЕСЬ data (включая type + специфичные поля), чтобы при
   //    чтении через GET /api/worksheets/:id данные совпадали с тем, что прислал фронт.
   //    `source` остаётся аналитикой mock vs LLM для будущих фильтров.
+  //
+  //    ПЛЮС канонические id и createdAt (UL-D08). Раньше payload хранил ровно
+  //    то, что прислал клиент, — без id, и сохранённый лист было невозможно
+  //    открыть по ссылке: загрузчик на фронте требует id в артефакте и
+  //    отказывался показывать лист («Лист не найден»). Теперь id в payload —
+  //    тот же, что в строке БД, и клиент подделать его не может: id
+  //    назначает сервер.
   const newId = makeWorksheetId();
   const now = Math.floor(Date.now() / 1000);
+  const createdAt = new Date(now * 1000).toISOString();
+  const payloadJson = JSON.stringify({ ...data, id: newId, createdAt });
 
   // 6) INSERT. Если упал — counter НЕ инкрементим, пробрасываем 500.
   //
@@ -666,7 +675,7 @@ worksheetsRouter.post("/save", async (c) => {
         data.type,
         count,
         data.title,
-        JSON.stringify(data),
+        payloadJson,
         now,
       )
       .run();

@@ -26,6 +26,7 @@ import { LessonBundlePreview } from "@/components/constructor/LessonBundlePrevie
 import { PaywallModal } from "@/components/shared/PaywallModal";
 import { ArtifactTypePicker, ARTIFACT_TYPE_OPTIONS } from "@/components/constructor/ArtifactTypePicker";
 import { ArtifactTypePreview } from "@/components/constructor/ArtifactTypePreview";
+import { TopicSamplePreview } from "@/components/constructor/TopicSamplePreview";
 import {
   PresetGrid,
   PRESETS,
@@ -940,6 +941,8 @@ export default function ConstructorPage() {
 
   const subjectData = subject ? getSubject(subject) : null;
   const gradeData = subject && grade ? getGrade(subject, grade) : null;
+  /** Выбранная тема из каталога — по ней и показываем настоящие примеры (UL-I01). */
+  const selectedTopic = topic ? (gradeData?.topics.find((tt) => tt.slug === topic) ?? null) : null;
 
   const reset = () => {
     setStep("select");
@@ -2553,16 +2556,35 @@ export default function ConstructorPage() {
               !lessonBundle &&
               !generating &&
               !photoCheckOpen && (
-              <EmptyPreview
-                mode={mode}
-                subject={mode === "topic" ? subjectData : (examSubject ? getSubject(examSubject) : null)}
-                grade={mode === "topic" ? grade : (exam === "oge" ? 9 : exam === "ege" ? 11 : null)}
-                exam={mode === "exam" ? exam : null}
-                examNumbers={mode === "exam" ? examNumbers : []}
-                /** F-09: показываем превью выбранного типа, чтобы пользователь понимал,
-                    что получит после генерации. */
-                type={type}
-                onPickPopular={() => {
+              mode === "topic" && step === "configure" && selectedTopic ? (
+                /**
+                 * Шаг 4 (UL-I01): вместо общего рекламного превью — сводка
+                 * выбранных параметров и до двух НАСТОЯЩИХ примеров из
+                 * каталога тем. Ничего не генерируется, ничего не списывается,
+                 * результат не обещается: это примеры из той же темы.
+                 *
+                 * После генерации сюда приходит WorksheetPreview с готовым
+                 * материалом — он остаётся главным результатом.
+                 */
+                <TopicSamplePreview
+                  subject={subjectData ?? null}
+                  grade={grade}
+                  topic={selectedTopic}
+                  type={type}
+                  difficulty={difficulty}
+                  count={count}
+                />
+              ) : (
+                <EmptyPreview
+                  mode={mode}
+                  subject={mode === "topic" ? subjectData : (examSubject ? getSubject(examSubject) : null)}
+                  grade={mode === "topic" ? grade : (exam === "oge" ? 9 : exam === "ege" ? 11 : null)}
+                  exam={mode === "exam" ? exam : null}
+                  examNumbers={mode === "exam" ? examNumbers : []}
+                  /** F-09: показываем превью выбранного типа, чтобы пользователь понимал,
+                      что получит после генерации. */
+                  type={type}
+                  onPickPopular={() => {
                   /**
                    * «Попробовать» ведёт в ВЫБРАННЫЙ предмет (08.10.2026).
                    *
@@ -2587,7 +2609,8 @@ export default function ConstructorPage() {
                     setStep("configure");
                   }
                 }}
-              />
+                />
+              )
             )}
 
             {generating && <GeneratingState stage={progressStage} />}

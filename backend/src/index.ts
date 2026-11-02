@@ -275,13 +275,21 @@ app.notFound(notFoundHandler);
  *
  * Срабатывает раз в сутки, независимо от того, заходил ли учитель в ЛК.
  *
- * ─── Почему `app.scheduled`, а не отдельный `export default { scheduled }` ───
- * В Hono 4.13 метода `app.scheduled` нет вообще (проверено:
- * `typeof new Hono().scheduled === "undefined"`), cron-триггер вешается через
- * `app.fire("scheduled", event, env, ctx)` из обработчика Fetch. `scheduled` —
- * зарезервированное имя события воркера, поэтому навешиваем его вручную.
+ * ─── Почему отдельная функция `scheduled`, а не `app.fire` ──────────────────
+ * Раньше обработчик был навешан на `app.fire`. Это не cron-API Cloudflare:
+ * `fire` — механизм событий Hono, и сам рантайм его для триггера НЕ зовёт.
+ * Рантайм вызывает у объекта воркера метод `scheduled(event, env, ctx)`.
+ * Пока такого метода у воркера не было, триггер из `wrangler.toml` не
+ * срабатывал НИ РАЗУ: уборка ПДн и напоминания о продлении не запускались.
+ *
+ * Теперь `scheduled` — обычная экспортируемая функция, а воркер отдаётся
+ * наружу с ней через `Object.assign` (см. `worker` ниже).
  */
-app.fire = ((event: ScheduledEvent, env: AppEnv["Bindings"], ctx: ExecutionContext) => {
+export async function scheduled(
+  event: ScheduledEvent,
+  env: AppEnv["Bindings"],
+  ctx: ExecutionContext,
+): Promise<void> {
   // ── Какой это триггер ────────────────────────────────────────────────────
   // В `wrangler.toml` их два: суточный (уборка) и часовой (биллинг, ТЗ-20).
   // Без разведения уборка ездила бы раз в час — 24 полных обхода таблиц в
@@ -351,7 +359,17 @@ app.fire = ((event: ScheduledEvent, env: AppEnv["Bindings"], ctx: ExecutionConte
       }
     })(),
   );
-}) as typeof app.fire;
+}
 
-export default app;
+/**
+ * Объект воркера для Cloudflare: `fetch` (обычные запросы) + `scheduled`
+ * (cron-триггеры).
+ *
+ * `Object.assign` добавляет метод в тот же объект Hono, поэтому
+ * `worker.fetch`, `worker.request` и прежний `app` — это одно и то же
+ * поведение, ничего не поменялось для обычных запросов.
+ */
+const worker = Object.assign(app, { scheduled });
+
+export default worker;
 export { app };
