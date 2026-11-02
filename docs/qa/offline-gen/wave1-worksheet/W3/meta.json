@@ -1,0 +1,15 @@
+{
+  "id": "W3",
+  "subject": "english",
+  "grade": 9,
+  "topic": "Present Perfect",
+  "topicRequested": "Present Perfect",
+  "topicUsed": "Present Perfect",
+  "taskCount": 10,
+  "difficulty": "mixed",
+  "difficultyInRequest": "medium",
+  "language": "en",
+  "model": "composer-2.5",
+  "stage": "raw-model",
+  "createdAt": "2026-11-02T11:57:43.226Z"
+}

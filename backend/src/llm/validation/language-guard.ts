@@ -69,12 +69,46 @@ export function letterRatios(text: string): {
  * @param subject код предмета из SubjectSlug
  * @returns true если язык НЕ нарушен (текст проходит guard)
  */
+function isAsciiLatinLetter(ch: string): boolean {
+  const code = ch.codePointAt(0) ?? 0;
+  return (code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a);
+}
+
+function isCyrillicLetter(ch: string): boolean {
+  const code = ch.codePointAt(0) ?? 0;
+  return (
+    (code >= 0x0400 && code <= 0x04ff) ||
+    code === 0x0401 ||
+    code === 0x0451
+  );
+}
+
+/**
+ * Токен (непрерывные буквы) содержит и кириллицу, и латиницу — брак вроде «оргanelлу».
+ * Цельные термины `DNA`, `ribosoma` — один скрипт, не режем.
+ */
+export function hasMixedScriptToken(text: string): boolean {
+  const tokens = text.split(/[^a-zA-Zа-яА-ЯёЁ]+/).filter((t) => t.length > 0);
+  for (const token of tokens) {
+    let latin = false;
+    let cyrillic = false;
+    for (const ch of token) {
+      if (isAsciiLatinLetter(ch)) latin = true;
+      if (isCyrillicLetter(ch)) cyrillic = true;
+      if (latin && cyrillic) return true;
+    }
+  }
+  return false;
+}
+
 export function passesLanguageGuard(text: string, subject: SubjectSlug): boolean {
   if (FOREIGN_LANG_SUBJECTS.has(subject)) {
     // Для иностранных языков не валидируем — LLM должна писать на целевом языке,
     // а у нас нет строгого детектора англ./нем. vs кириллица-в-перемешку.
     return true;
   }
+
+  if (hasMixedScriptToken(text)) return false;
 
   const { latin, cyrillic, totalLetters } = letterRatios(text);
   // Слишком короткий текст — пропускаем, иначе детектор нестабилен.

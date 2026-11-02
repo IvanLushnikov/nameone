@@ -34,6 +34,8 @@
 import {
   getTaskTypeSpec,
 } from "../../../../src/lib/content/task-types";
+import type { SubjectSlug } from "../../types";
+import { passesLanguageGuard } from "./language-guard";
 /**
  * ТЗ-34: проверка конкретности критериев — в общем модуле оценивания.
  *
@@ -370,6 +372,51 @@ function cleanCriteria(task: RawTask): { criteria: string[]; changed: boolean } 
  * Причина возвращается текстом, а не флагом, потому что она попадает в лог
  * генерации: по логу должно быть видно, ЧТО именно не так с заданием.
  */
+
+/** Ответ matching вида «1-а», «2-в» — без такой формы метки в колонках не проверяем. */
+const MATCHING_ANSWER_LETTER_PAIR = /\d\s*[-–—:]\s*[а-яa-z]/iu;
+
+/** Метка буквенной колонки в text или items: «а)», «б.», «в —». */
+const MATCHING_LABEL_MARKER = /(^|[\s(;])[а-яa-z][)\].:—–-]/imu;
+
+function answerHasMatchingLetterPairs(answer: unknown): boolean {
+  return typeof answer === "string" && MATCHING_ANSWER_LETTER_PAIR.test(answer);
+}
+
+function hasMatchingLetterLabels(text: string, items: unknown): boolean {
+  const chunks: string[] = [text];
+  if (Array.isArray(items)) {
+    for (const it of items) {
+      if (typeof it === "string") chunks.push(it);
+    }
+  }
+  const combined = chunks.join("\n");
+  if (MATCHING_LABEL_MARKER.test(combined)) return true;
+  if (/[а-яa-z]\s*[)—–-]/iu.test(combined)) return true;
+  if (Array.isArray(items)) {
+    for (const it of items) {
+      if (typeof it === "string" && /^[а-яa-z][)\].:]/iu.test(it.trim())) return true;
+    }
+  }
+  return false;
+}
+
+/** Предметы, где задание «сколько букв» — нормальная тема урока (ТЗ-72). */
+const LETTER_COUNT_ALLOWED_SUBJECTS = new Set<string>([
+  "russian",
+  "literature",
+  "english",
+  "german",
+]);
+
+/**
+ * Задание на подсчёт букв в слове — чужая активность вне уроков языка.
+ * Правило 9 в промпте; без кода повторяется (offline QA W2).
+ */
+export function looksLikeLetterCountingTask(text: string): boolean {
+  return /сколько\s+букв|подсчитайте\s+букв|число\s+букв\s*[«"]/iu.test(text);
+}
+
 export function checkTaskTypeRequirements(task: RawTask): string | null {
   const rawType = typeof task.type === "string" ? task.type.trim() : "";
 
@@ -402,6 +449,15 @@ export function checkTaskTypeRequirements(task: RawTask): string | null {
     !hasNonEmptyList(task.items)
   ) {
     return `${rawType}-without-items`;
+  }
+  if (spec.needsLetterLabelsInText) {
+    const taskText = typeof task.text === "string" ? task.text : "";
+    if (
+      answerHasMatchingLetterPairs(task.answer) &&
+      !hasMatchingLetterLabels(taskText, task.items)
+    ) {
+      return "matching-without-right-column";
+    }
   }
   return null;
 }
@@ -548,8 +604,29 @@ export function filterTasks(
       return;
     }
 
+    // 1-бис. ТЗ-72: смешанный скрипт в токене и языковой guard на листе.
+    const langText = [
+      text,
+      ...(Array.isArray(task.options)
+        ? task.options.filter((o): o is string => typeof o === "string")
+        : []),
+    ].join(" ");
+    if (!passesLanguageGuard(langText, subject as SubjectSlug)) {
+      report.droppedForeignMath.push(index + 1);
+      return;
+    }
+
     // 2. Чужой предмет: несколько формул в задании по нематематике.
     if (looksLikeForeignMath(text, subject)) {
+      report.droppedForeignMath.push(index + 1);
+      return;
+    }
+
+    // 2-бис. ТЗ-72: «сколько букв» вне уроков языка — в droppedForeignMath (чужая активность).
+    if (
+      !LETTER_COUNT_ALLOWED_SUBJECTS.has(subject) &&
+      looksLikeLetterCountingTask(text)
+    ) {
       report.droppedForeignMath.push(index + 1);
       return;
     }

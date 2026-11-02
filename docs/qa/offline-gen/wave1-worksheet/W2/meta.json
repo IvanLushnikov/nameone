@@ -1,0 +1,15 @@
+{
+  "id": "W2",
+  "subject": "biology",
+  "grade": 7,
+  "topic": "Клеточное строение организмов",
+  "topicRequested": "Клетка",
+  "topicUsed": "Клеточное строение организмов",
+  "taskCount": 12,
+  "difficulty": "mixed",
+  "difficultyInRequest": "medium",
+  "language": "ru",
+  "model": "composer-2.5",
+  "stage": "raw-model",
+  "createdAt": "2026-11-02T11:57:43.225Z"
+}

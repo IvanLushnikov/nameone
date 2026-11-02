@@ -91,6 +91,18 @@ describe("TZ-13 language-guard", () => {
     expect(passesLanguageGuard(text, "math" as SubjectSlug)).toBe(true);
   });
 
+  it("ТЗ-72: смешанный скрипт в одном токене на biology — отказ", () => {
+    const text =
+      "Выберите оргanelлу клетки, которая синтезирует белок. Вариант ribosoma подходит.";
+    expect(passesLanguageGuard(text, "biology" as SubjectSlug)).toBe(false);
+  });
+
+  it("ТЗ-72: english со смешанным токеном не ужесточаем", () => {
+    expect(
+      passesLanguageGuard("Choose organelle ribosoma in the cell.", "english" as SubjectSlug),
+    ).toBe(true);
+  });
+
   it("короткий текст не даёт ложного срабатывания", () => {
     // Меньше 20 букв детектор нестабилен — пропускаем осознанно.
     expect(passesLanguageGuard("Ok", "physics" as SubjectSlug)).toBe(true);
