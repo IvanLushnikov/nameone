@@ -43,7 +43,7 @@ const canonicalUrl = `${SITE_URL}/register/`;
 export const metadata: Metadata = {
   title: "Регистрация — вход по ссылке из письма или по паролю",
   description: clipDescription(
-    `Регистрация в УчЛисте: почта и одноразовая ссылка из письма. ${FREE_QUOTA_LABEL} — без карты и без регистрации. Регистрация нужна для истории, избранного и шаблонов.`,
+    `Регистрация в УчЛисте: почта и одноразовая ссылка из письма. ${FREE_QUOTA_LABEL} после входа — без карты. Аккаунт нужен, чтобы создавать листы, хранить историю и шаблоны.`,
   ),
   alternates: { canonical: canonicalUrl },
   robots: { index: false, follow: true },
@@ -141,8 +141,8 @@ export default function RegisterPage() {
             Что даёт аккаунт
           </h2>
           <p className="mt-2 text-warm-600">
-            {FREE_QUOTA_LABEL} доступны без карты и без регистрации. Регистрация
-            нужна там, где результат должен сохраниться.
+            {FREE_QUOTA_LABEL} после входа — без карты. Аккаунт нужен, чтобы
+            создавать листы и сохранять результат.
           </p>
           <ul className="mt-6 grid gap-4 sm:grid-cols-3">
             {accountBenefits.map((benefit) => (

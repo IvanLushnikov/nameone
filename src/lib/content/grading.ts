@@ -109,7 +109,7 @@ export function marksScale(): { mark: number; fromPercent: number; toPercent: nu
  * Короткая строка не может быть критерием приёмки: в ней нет предмета
  * проверки. «Ответ есть» — это не критерий, это отсутствие критерия.
  */
-export const MIN_CRITERION_LENGTH = 15;
+export const MIN_CRITERION_LENGTH = 10;
 
 /**
  * ОБЩИЕ ФОРМУЛИРОВКИ — стоп-лист.

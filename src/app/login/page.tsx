@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
-import { Mail, ArrowRight, Sparkles, Rocket, Lock, AlertCircle } from "lucide-react";
+import { Mail, ArrowRight, Rocket, Lock, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { trackEvent } from "@/lib/track";
 import { requestMagicLink, loginWithPassword, LOGIN_REFUSED_TEXT } from "@/lib/auth/api";
@@ -18,6 +18,7 @@ import { PROFILE_CHANGED_EVENT } from "@/lib/events";
 import { setProfile } from "@/lib/utils/storage";
 import type { UserProfile } from "@/lib/types";
 import { DEMO_USER_NAME, enterDemoMode, isDemoLoginEnabled } from "@/lib/dev/demo-login";
+import { FREE_QUOTA_LABEL } from "@/lib/content/plans";
 
 /** Правила пароля (ТЗ §7.1): длина 8…128, обязательны буква и цифра. */
 const PASSWORD_MIN_LENGTH = 8;
@@ -279,7 +280,7 @@ export default function LoginPage() {
                   ? mode === "password"
                     ? "Введите почту и пароль — кабинет откроется сразу, письмо не понадобится."
                     : "Пришлём письмо со ссылкой — откроете её и войдёте в кабинет."
-                  : "Кабинет сохраняет ваши листы, избранное и историю. Пока его можно начать без регистрации."}
+                  : "Кабинет сохраняет ваши листы, избранное и историю. Чтобы создать лист, войдите в аккаунт."}
               </p>
             </div>
 
@@ -385,8 +386,8 @@ export default function LoginPage() {
                 </p>
                 <p className="mt-1.5 text-sm text-warm-600">
                   Мы подтверждаем адрес, с которого отправляем письма. Это займёт
-                  несколько дней. Листы можно создавать уже сейчас — регистрация для
-                  этого не нужна.
+                  несколько дней. Пока войдите по паролю — без входа лист не
+                  собрать.
                 </p>
               </div>
             )}
@@ -481,32 +482,13 @@ export default function LoginPage() {
               отметкой в форме входа — это самостоятельный документ, а не часть
               оферты.            </p>
 
-            {/* Пока входа нет, это главное действие страницы — поэтому кнопка
-                во всю ширину, а не мелкая ссылка внизу. */}
-            {MAGIC_LINK_READY ? (
-              <div className="mt-6 pt-6 border-t border-warm-100 text-center">
-                <Link
-                  href="/constructor"
-                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600 hover:text-brand-700 group"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  Создать лист без регистрации
-                  <span className="transition-transform group-hover:translate-x-0.5">→</span>
-                </Link>
-              </div>
-            ) : (
-              <Button
-                as="link"
-                href="/constructor"
-                variant="primary"
-                size="lg"
-                fullWidth
-                leftIcon={<Sparkles className="w-4 h-4" />}
-                rightIcon={<ArrowRight className="w-4 h-4" />}
-              >
-                Создать лист без регистрации
-              </Button>
-            )}
+            {/* D4: генерация только после входа — CTA ведёт в конструктор уже
+                после формы, а не обещает «лист без регистрации». */}
+            <div className="mt-6 pt-6 border-t border-warm-100 text-center">
+              <p className="text-sm text-warm-600">
+                {FREE_QUOTA_LABEL} — после входа в аккаунт, без карты.
+              </p>
+            </div>
 
             {/* Локальный демо-вход: только в dev-сборке (см. lib/dev/demo-login.ts).
                 Пишет профиль в localStorage и открывает /dashboard без почты. */}
@@ -527,7 +509,7 @@ export default function LoginPage() {
                   Войти как {DEMO_USER_NAME}
                 </Button>
                 <p className="mt-2 text-xs text-warm-500">
-                  Без регистрации и без письма. Демо-кабинет с историей, избранным и шаблонами.
+                  Локальный демо-вход без письма. Кабинет с историей, избранным и шаблонами.
                 </p>
               </div>
             )}

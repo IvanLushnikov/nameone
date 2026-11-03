@@ -31,6 +31,7 @@ import {
 import { fingerprintSalt, type CfObject } from "../lib/antifraud";
 import { moderateGenerationRequest } from "../llm/moderation";
 import { taskForArtifact, PLUS_ONLY_TASKS } from "../llm/router";
+import { requireAuth } from "../middleware/auth";
 import { guardGeneration, consumeGenerationQuota } from "../llm/ratelimit";
 import type { ArtifactRequest } from "../llm/prompts/artifact-gen";
 
@@ -185,6 +186,9 @@ export async function prepareArtifactGeneration(
   c: Context<AppEnv>,
   schema: z.ZodTypeAny,
 ): Promise<PreparedGeneration> {
+  // D4: free = вход сразу. Артефакты (КТП, карточки, …) — та же политика, что листы.
+  requireAuth(c);
+
   let raw: unknown;
   try {
     raw = await c.req.json();

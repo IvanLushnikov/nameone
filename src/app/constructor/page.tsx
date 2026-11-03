@@ -1413,6 +1413,13 @@ export default function ConstructorPage() {
      * генерации. Решение об оплате принимает бэк (402 → paywall), поэтому
      * клиентский чек — только против недопустимой генерации у бесплатного.
      */
+    // D4: free = вход сразу. Без аккаунта генерация не стартует — ни локальная
+    // квота, ни мок. Сервер тоже отдаёт 401; здесь говорим раньше и честнее.
+    if (!isLoggedIn) {
+      window.location.assign("/login?next=/constructor");
+      return;
+    }
+
     // Платный тариф = любой не «free». Список тарифов здесь намеренно не пишется:
     // 12.10.2026 стояло `base || plus`, и подписчик «Оптимального» упирался в
     // бесплатную квоту, хотя бэк его принимал.
@@ -1931,6 +1938,12 @@ export default function ConstructorPage() {
       // ОГЭ/ЕГЭ на тарифе «База» отдают 402, и показывать надо окно оплаты.
       if (err instanceof BackendError && err.isUpgradeRequired) {
         setShowPaywall(true);
+        return;
+      }
+
+      // D4: 401 — аккаунт обязателен. Не «попробуйте ещё раз», а вход.
+      if (err instanceof BackendError && err.isUnauthorized) {
+        window.location.assign("/login?next=/constructor");
         return;
       }
 

@@ -139,6 +139,10 @@ export class BackendError extends Error {
   get isGenerationForbidden(): boolean {
     return this.status === 403 && this.code === "GENERATION_FORBIDDEN";
   }
+  /** D4: генерация без входа закрыта — UI ведёт на /login. */
+  get isUnauthorized(): boolean {
+    return this.status === 401;
+  }
   /**
    * Капчу попросили, а пройти её нечем.
    *

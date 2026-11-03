@@ -39,7 +39,7 @@ export function Hero({ catalogTopics }: { catalogTopics: number }) {
         <div className="max-w-3xl mx-auto text-center">
           <Badge tone="brand" className="mb-5 animate-fade-in">
             <Sparkles className="w-3.5 h-3.5" />
-            Бета · {FREE_QUOTA_LABEL}, без регистрации
+            Бета · {FREE_QUOTA_LABEL} после входа
           </Badge>
 
           {/* TZ-1: убран animate-fade-in — он оставлял H1 на opacity:0 при первом кадре

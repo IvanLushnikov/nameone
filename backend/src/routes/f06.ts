@@ -93,6 +93,9 @@ import { logLlmEvent } from "../llm/log";
 const MONTHLY_LIMITS: Record<string, number> = {
   free: 10,
   base: 100,
+  // D3 / resheniya: Оптимальный (499 ₽) не должен быть хуже Базового (249 ₽).
+  // Раньше ключа `standard` не было → fallback на free=10.
+  standard: 200,
   plus: 500,
 };
 const ABSOLUTE_CEILING = 1000;

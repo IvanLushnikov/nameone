@@ -134,6 +134,9 @@ const validateLimit = rateLimitMiddleware({
 });
 
 worksheetsRouter.post("/generate", async (c) => {
+  // D4: free = вход сразу. Анонимная генерация закрыта — 401, фронт ведёт на /login.
+  requireAuth(c);
+
   let body: GenerateWorksheetRequest;
   try {
     body = (await c.req.json()) as GenerateWorksheetRequest;
@@ -308,6 +311,9 @@ worksheetsRouter.post("/generate", async (c) => {
 });
 
 worksheetsRouter.post("/validate", validateLimit, async (c) => {
+  // D4: та же политика, что у /generate — без аккаунта проверка недоступна.
+  requireAuth(c);
+
   let body: { worksheet: Worksheet; context: { subject: string; grade: number; topic: string } };
   try {
     body = (await c.req.json()) as typeof body;

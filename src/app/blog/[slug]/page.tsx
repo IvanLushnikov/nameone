@@ -160,8 +160,8 @@ export default function BlogPostPage({ params }: Props) {
         <Card className="bg-brand-50 border-brand-100">
           <h2 className="font-display font-bold text-warm-950 text-lg">Что дальше</h2>
           <p className="text-sm text-warm-700 mt-2">
-            Готовый лист по любой теме ФГОС можно собрать бесплатно — без регистрации даются
-            три листа. Это быстрее, чем верстать вёрстку в Word.
+            Готовый лист по любой теме ФГОС можно собрать бесплатно после входа —
+            пять листов в месяц без карты. Это быстрее, чем верстать в Word.
           </p>
           <div className="flex flex-wrap gap-3 mt-4">
             <Link

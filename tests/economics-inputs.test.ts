@@ -160,9 +160,9 @@ describe("UL-D14: экономика считается по коду проду
     expect(byId.standard?.academicYear.amountRub).toBe(3830);
     expect(byId.plus?.academicYear.amountRub).toBe(7330);
 
-    expect(byId.base?.normPerMonth.value).toBe(2_400_000);
-    expect(byId.standard?.normPerMonth.value).toBe(4_800_000);
-    expect(byId.plus?.normPerMonth.value).toBe(9_700_000);
+    expect(byId.base?.normPerMonth.value).toBe(1_280_000);
+    expect(byId.standard?.normPerMonth.value).toBe(2_560_000);
+    expect(byId.plus?.normPerMonth.value).toBe(5_173_333);
 
     expect(inputs().free.generationsPerMonth).toBe(5);
     expect(inputs().free.consistent).toBe(true);
@@ -235,21 +235,20 @@ describe("UL-D14: экономика считается по коду проду
     expect(res.stderr).toContain("единицы");
   });
 
-  it("D14-6: отрицательный вклад виден со знаком и не ломает расчёт", () => {
+  it("D14-6: вклад по фактической себестоимости считается и не ломает расчёт", () => {
     const tmp = mkdtempSync(path.join(tmpdir(), "uchlist-econ-run-"));
     const inputsPath = path.join(tmp, "inputs.json");
     writeFileSync(inputsPath, JSON.stringify(inputs(), null, 2));
 
     const res = tryEconomics(inputsPath);
-    // Расчёт завершился успешно: отрицательная экономика — факт, а не ошибка.
     expect(res.code).toBe(0);
 
-    // Знак виден: вклад отрицательный на «Базовом» (исторический замер
-    // 0,18 ₽ за лист против 249 ₽ выручки при 1500 листах нормы).
-    expect(res.stdout).toContain("ВКЛАД ОТРИЦАТЕЛЬНЫЙ");
-    expect(res.stdout).toMatch(/«base»: -\d+ ₽\/мес/);
-    // Формула и допущения названы.
+    // D3: при норме 800 листов вклад Базового по историческому замеру 0,18 ₽
+    // уже положительный (раньше при 1500 был минус). Не якорим знак —
+    // проверяем секцию, формулу и новую норму в таблице.
+    expect(res.stdout).toMatch(/ВКЛАД/i);
     expect(res.stdout).toContain("вклад = выручка за месяц");
     expect(res.stdout).toContain("ИСТОРИЧЕСКИЕ");
+    expect(res.stdout).toMatch(/base\s+1,280,000\s+800/);
   });
 });

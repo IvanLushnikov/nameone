@@ -1073,13 +1073,15 @@ export async function generateWorksheet(
           tasks?: unknown[];
         };
         const topUpVariants = Array.isArray(topUpParsed.variants) ? topUpParsed.variants : null;
+        // Второй вариант — только настоящий второй (variants[1]) или отдельный
+        // блок tasks. Нельзя брать variants[0] при одном варианте: это копия
+        // первого, и degraded/delivered врали бы «всё ок» (D5 после #61).
         const candidate =
           topUpVariants && topUpVariants.length >= 2
             ? topUpVariants[1]
-            : topUpVariants?.[0] ??
-              (Array.isArray(topUpParsed.tasks)
-                ? ({ tasks: topUpParsed.tasks } as Worksheet)
-                : undefined);
+            : !topUpVariants && Array.isArray(topUpParsed.tasks)
+              ? ({ tasks: topUpParsed.tasks } as Worksheet)
+              : undefined;
         const filled = readVariant(candidate);
         if (!filled || !Array.isArray(filled.tasks) || filled.tasks.length === 0) {
           throw new GenerationTruncatedError("Файл не собран: второй вариант не получен", {
@@ -2743,8 +2745,33 @@ function extractCachedArtifact(cached: unknown): CachedArtifact | null {
  * задания). Здесь артефакты пяти разных форм, поэтому проверяем текст целиком:
  * JSON без технических полей — это просто весь учебный текст документа.
  */
+/**
+ * Собрать человеческий текст артефакта для language-guard.
+ *
+ * Нельзя кормить guard'у `JSON.stringify(content)`: экранирование `\n` в JSON
+ * склеивает латинскую `n` с кириллическим словом (`nЗнаменатель`) и даёт
+ * ложный mixed-script на нормальном русском материале (D5 / materials).
+ */
+function collectArtifactText(value: unknown, out: string[] = []): string[] {
+  if (typeof value === "string") {
+    out.push(value);
+    return out;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectArtifactText(item, out);
+    return out;
+  }
+  if (value && typeof value === "object") {
+    for (const child of Object.values(value as Record<string, unknown>)) {
+      collectArtifactText(child, out);
+    }
+  }
+  return out;
+}
+
 function findArtifactLanguageViolation(content: unknown, subject: string): string | null {
-  if (!passesLanguageGuard(JSON.stringify(content), subject as SubjectSlug)) {
+  const text = collectArtifactText(content).join(" ");
+  if (!passesLanguageGuard(text, subject as SubjectSlug)) {
     return `subject=${subject} (требуется русский текст)`;
   }
   return null;
