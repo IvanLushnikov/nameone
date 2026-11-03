@@ -35,7 +35,7 @@ import {
   setUserPasswordWithPolicy,
 } from "../services/auth";
 import { createPendingToken, isTotpEnabled } from "../services/admin-totp";
-import { deleteSession, getUserPasswordState } from "../db/queries";
+import { deleteSession, getUserByEmail, getUserPasswordState } from "../db/queries";
 import { FREE_TOTAL_GENERATIONS } from "../services/usage";
 import type { UserRow } from "../db/queries";
 import { BadRequestError, RateLimitError, UnauthorizedError } from "../lib/errors";
@@ -44,6 +44,12 @@ import { setSessionCookie } from "../lib/session-cookie";
 import { djb2, rateLimitMiddleware } from "../middleware/ratelimit";
 import type { RateLimitOpts } from "../middleware/ratelimit";
 import { requireAuth } from "../middleware/auth";
+import {
+  authConsentsSchema,
+  hasAcceptedConsent,
+  recordAuthConsents,
+  type AuthConsents,
+} from "../lib/consents";
 
 const authRouter = new Hono<AppEnv>();
 
@@ -144,7 +150,18 @@ function loginRateLimitKey(c: Context<AppEnv>): string {
   return `ip:${djb2(c.get("ip") ?? "0.0.0.0")}`;
 }
 
-const magicLinkSchema = z.object({ email: emailSchema });
+const magicLinkSchema = z.object({
+  email: emailSchema,
+  consents: authConsentsSchema,
+});
+
+/** IP + UA для доказательной записи согласия. */
+function consentMetaFrom(c: Context<AppEnv>): { ip: string | null; ua: string | null } {
+  return {
+    ip: c.get("ip") ?? null,
+    ua: c.req.header("user-agent") ?? null,
+  };
+}
 
 authRouter.post(
   "/magic-link",
@@ -156,14 +173,28 @@ authRouter.post(
     } catch {
       throw new BadRequestError("Invalid JSON body");
     }
-    const { email } = magicLinkSchema.parse(body);
+    const { email, consents } = magicLinkSchema.parse(body);
 
     const result = await requestMagicLink(c.env.DB, email, c.env);
+
+    // Пользователь уже создан (find-or-create) — пишем согласия сразу.
+    // Без строки в user_consents галочка на экране ничего не доказывает.
+    const user = await getUserByEmail(c.env.DB, email);
+    if (user) {
+      await recordAuthConsents(c.env.DB, user.id, consents, consentMetaFrom(c));
+    }
+
     return c.json(result);
   },
 );
 
-const callbackSchema = z.object({ token: z.string().min(8).max(128) });
+const callbackSchema = z.object({
+  token: z.string().min(8).max(128),
+  // Согласия с /login (sessionStorage). Опциональны: запись уже сделана на
+  // /magic-link. Если пришли — перефиксируем (тот же UPSERT). Если нет
+  // (ссылку открыли на другом устройстве) — не затираем marketing отказом.
+  consents: authConsentsSchema.optional(),
+});
 
 authRouter.post("/callback", async (c) => {
   let body: unknown;
@@ -172,13 +203,27 @@ authRouter.post("/callback", async (c) => {
   } catch {
     throw new BadRequestError("Invalid JSON body");
   }
-  const { token } = callbackSchema.parse(body);
+  const { token, consents } = callbackSchema.parse(body);
 
   // Сначала узнаём, кто пришёл по ссылке, и только потом решаем, выдавать ли
   // сессию. Для обычного учителя это один шаг, для администратора с кодом
   // подтверждения — два, и второй обязателен.
   const user = await consumeMagicLinkAndLoadUser(c.env.DB, token);
   if (!user) throw new UnauthorizedError("Invalid or expired magic link");
+
+  // Повторная фиксация, если клиент прислал consents (тот же браузер, что /login).
+  // Без тела — требуем уже записанные offer+pdn (с /magic-link), иначе 400.
+  if (consents) {
+    await recordAuthConsents(c.env.DB, user.id, consents, consentMetaFrom(c));
+  } else {
+    const offerOk = await hasAcceptedConsent(c.env.DB, user.id, "offer");
+    const pdnOk = await hasAcceptedConsent(c.env.DB, user.id, "pdn");
+    if (!offerOk || !pdnOk) {
+      throw new BadRequestError(
+        "Нужны оферта и согласие на обработку персональных данных — запросите ссылку снова после отметок",
+      );
+    }
+  }
 
   // ─────────────────────────────────────────────────────────────────────
   // ВТОРОЙ ШАГ ДЛЯ АДМИНИСТРАТОРА (ТЗ-24 §8.1) — тот же, что и при входе
@@ -226,6 +271,7 @@ const loginSchema = z.object({
   // быть задан по старым правилам, и проверка заперла бы учителя в его же
   // кабинете. Здесь 400 означает только «не так устроено тело» (контракт §2).
   password: z.string().min(1).max(PASSWORD_MAX_LENGTH),
+  consents: authConsentsSchema,
 });
 
 authRouter.post(
@@ -244,12 +290,15 @@ authRouter.post(
     } catch {
       throw new BadRequestError("Invalid JSON body");
     }
-    const { email, password } = loginSchema.parse(body);
+    const { email, password, consents } = loginSchema.parse(body);
 
     const result = await loginWithPassword(c.env.DB, email, password);
     // ОДИН отказ на «нет аккаунта», «нет пароля» и «неверный пароль»: ручка
     // входа не должна быть способом проверить, зарегистрирован ли адрес.
     if (!result) throw new UnauthorizedError(LOGIN_FAILED_MESSAGE);
+
+    // Успешный вход — фиксируем согласия (в т.ч. отказ от рекламы).
+    await recordAuthConsents(c.env.DB, result.user.id, consents, consentMetaFrom(c));
 
     // ─────────────────────────────────────────────────────────────────────
     // ВТОРОЙ ШАГ ДЛЯ АДМИНИСТРАТОРА (ТЗ-24 §8.1)
@@ -280,6 +329,9 @@ authRouter.post(
     return c.json({ ok: true, user: toSessionUser(result.user) });
   },
 );
+
+// re-export типа для тестов / клиентов
+export type { AuthConsents };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Пароль: задать, сменить, убрать (ТЗ-23 §5)

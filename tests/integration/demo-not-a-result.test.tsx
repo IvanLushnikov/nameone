@@ -30,6 +30,7 @@ import {
   flushPageTimers,
   generateWorksheet,
   goToTopicStep,
+  seedLoggedInProfile,
   setDevice,
 } from "./helpers/constructor-flow";
 
@@ -76,6 +77,8 @@ beforeEach(() => {
   window.history.replaceState({}, "", "/constructor");
   toastCalls = [];
   setDevice({ coarse: false, touchPoints: 0, width: 1600 });
+  // D4: без профиля генерация уводит на /login — демо-путь тоже после входа.
+  seedLoggedInProfile();
 });
 
 describe("заготовка не выдаётся за результат", () => {

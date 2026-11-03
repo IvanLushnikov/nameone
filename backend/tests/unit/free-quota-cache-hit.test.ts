@@ -169,17 +169,41 @@ interface GenerateResponse {
   };
 }
 
-/** Запрос к роуту генерации от анонимного посетителя с заданного IP. */
+/** Free-сессия: D4 закрыл анонимную генерацию, квота по-прежнему по fingerprint. */
+async function seedFreeSession(token: string): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  const userId = `usr_fq_${token.slice(-8)}`;
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO users
+         (id, email, name, plan, generations_total, generations_today, is_admin, created_at, updated_at)
+       VALUES (?1, ?2, 'Учитель', 'free', 0, 0, 0, ?3, ?3)`,
+    )
+    .bind(userId, `${userId}@example.test`, now)
+    .run();
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO sessions (token, user_id, expires_at, created_at)
+       VALUES (?1, ?2, ?3, ?4)`,
+    )
+    .bind(token, userId, now + 86400, now)
+    .run();
+}
+
+/** Запрос к роуту генерации: free-сессия + IP (квота считается по отпечатку). */
 async function generate(
   ip: string,
   body: Record<string, unknown>,
 ): Promise<GenerateResponse> {
+  const session = `sess_fq_${ip.replace(/\W/g, "")}`;
+  await seedFreeSession(session);
   const res = await SELF.fetch("https://uchlist.test/api/worksheets/generate", {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "cf-connecting-ip": ip,
       "user-agent": UA,
+      cookie: `session=${session}`,
     },
     body: JSON.stringify(body),
   });

@@ -10,6 +10,7 @@ import type { UserProfile } from "@/lib/types";
 import { trackEvent } from "@/lib/track";
 import { verifyMagicLink, AuthApiError } from "@/lib/auth/api";
 import type { AuthUser } from "@/lib/auth/api";
+import { readPendingConsents } from "@/lib/auth/consents";
 import { verifyLoginCode } from "@/lib/superpower-totp-api";
 import { PROFILE_CHANGED_EVENT } from "@/lib/events";
 
@@ -73,7 +74,11 @@ export function AuthCallbackInner() {
     async (t: string) => {
       setState({ kind: "loading" });
       try {
-        const result = await verifyMagicLink(t);
+        // Согласия с /login (sessionStorage). Нет stash (другое устройство) —
+        // бэк уже записал их на /magic-link; сюда не шлём, чтобы не затереть
+        // marketing отказом по умолчанию.
+        const consents = readPendingConsents({ clear: true }) ?? undefined;
+        const result = await verifyMagicLink(t, consents);
         if (!result.ok) {
           trackEvent("auth_callback_error", { reason: "invalid_token" });
           setState({ kind: "expired", message: result.error });

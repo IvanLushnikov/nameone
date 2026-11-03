@@ -53,6 +53,7 @@ test.describe("ЛК: magic-link login flow", () => {
     // Кнопка заблокирована, пока не стоит согласие на обработку ПДн
     // (156-ФЗ, ч. 4 ст. 9 152-ФЗ). Без отметки magic link не отправляется.
 
+    await page.getByTestId("login-consent-offer").check();
     await page.getByTestId("login-consent-pdn").check();
     await page.getByRole("button", { name: /Получить ссылку/i }).click();
 
@@ -96,6 +97,7 @@ test.describe("ЛК: magic-link login flow", () => {
     await page.getByLabel(/Email/i).fill("teacher@school.ru");
     // Согласие на обработку ПДн обязательно — иначе запрос до API не дойдёт.
 
+    await page.getByTestId("login-consent-offer").check();
     await page.getByTestId("login-consent-pdn").check();
     await page.getByRole("button", { name: /Получить ссылку/i }).click();
 

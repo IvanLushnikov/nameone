@@ -20,6 +20,8 @@ import { expect, vi } from "vitest";
 import ConstructorPage from "@/app/constructor/page";
 import { subjects } from "@/lib/content/subjects";
 import type { SubjectSlug } from "@/lib/types";
+import { setProfile } from "@/lib/utils/storage";
+import type { UserProfile } from "@/lib/types";
 
 /**
  * Ставит сетевые стабы: страница на mount делает GET /api/users/usage и
@@ -160,8 +162,24 @@ export function setDevice(stub: DeviceStub): void {
   });
 }
 
+/** D4: без профиля конструктор уводит на /login — тесты сидят free-профиль. */
+export function seedLoggedInProfile(overrides: Partial<UserProfile> = {}): void {
+  setProfile({
+    id: "usr_test_constructor",
+    email: "teacher@example.test",
+    name: "Тест Учитель",
+    plan: "free",
+    generationsTotal: 0,
+    generationsToday: 0,
+    generationsLimit: 5,
+    createdAt: new Date().toISOString(),
+    ...overrides,
+  });
+}
+
 /** Рендерит конструктор и дожидается первого шага визарда. */
 export async function openConstructor(): Promise<UserEvent> {
+  seedLoggedInProfile();
   const user = userEvent.setup();
   render(createElement(ConstructorPage as ComponentType));
   await screen.findByText("Что и для кого");

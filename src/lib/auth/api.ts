@@ -14,7 +14,11 @@
  * generationsToday/Limit, поэтому эти поля опциональны.
  */
 
+import type { AuthConsentsPayload } from "./consents";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+
+export type { AuthConsentsPayload };
 
 export interface AuthUser {
   id: string;
@@ -112,12 +116,16 @@ interface ApiErr {
  *
  * Никогда не раскрывает, существует ли такой email (anti-enumeration).
  * Возвращает {ok:true} даже если email не дошёл (бэк логирует и шлёт 200).
+ *
+ * `consents` обязательны: без оферты и ПДн бэк отвечает 400. marketing
+ * уходит даже при false — отказ тоже пишем в БД.
  */
 export async function requestMagicLink(
   email: string,
+  consents: AuthConsentsPayload,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    const res = (await postJson("/api/auth/magic-link", { email })) as
+    const res = (await postJson("/api/auth/magic-link", { email, consents })) as
       | ApiOk
       | ApiErr;
     if (res.ok === true) return { ok: true };
@@ -153,11 +161,18 @@ export type MagicLinkResult =
  * кодом подтверждения вместо этого приходит {ok:true, mfaRequired, pendingToken} —
  * тогда сессии ещё нет, и её выдаст /api/admin/totp/verify.
  *
+ * `consents` желательны (повторная фиксация). Без них бэк опирается на запись
+ * с /magic-link — так ссылка с другого устройства не затирает marketing.
  * На 401/404 (просрочен или использован) — {ok:false, error}.
  */
-export async function verifyMagicLink(token: string): Promise<MagicLinkResult> {
+export async function verifyMagicLink(
+  token: string,
+  consents?: AuthConsentsPayload,
+): Promise<MagicLinkResult> {
   try {
-    const res = (await postJson("/api/auth/callback", { token })) as
+    const body: { token: string; consents?: AuthConsentsPayload } = { token };
+    if (consents) body.consents = consents;
+    const res = (await postJson("/api/auth/callback", body)) as
       | (ApiOk & {
           user?: AuthUser;
           mfaRequired?: unknown;
@@ -226,6 +241,7 @@ export const RATE_LIMITED_TEXT =
 export async function loginWithPassword(
   email: string,
   password: string,
+  consents: AuthConsentsPayload,
 ): Promise<
   | { ok: true; user: AuthUser }
   // Второй шаг для администратора (ТЗ-24 §8.1): пароль верен, но сессия ещё
@@ -235,7 +251,11 @@ export async function loginWithPassword(
   | { ok: false; error: string }
 > {
   try {
-    const res = (await postJson("/api/auth/login", { email, password })) as
+    const res = (await postJson("/api/auth/login", {
+      email,
+      password,
+      consents,
+    })) as
       | (ApiOk & { user: AuthUser; mfaRequired?: boolean; pendingToken?: string })
       | ApiErr;
     if (res.ok === true && res.mfaRequired === true && res.pendingToken) {

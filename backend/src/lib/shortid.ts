@@ -104,6 +104,15 @@ export function usageCounterId(): string {
 }
 
 /**
+ * ID записи согласия при входе: `ucon_<12>` (таблица user_consents).
+ *
+ * Префикс не `uc_` — тот уже занят usage_counters.
+ */
+export function userConsentId(): string {
+  return `ucon_${shortId()}`;
+}
+
+/**
  * Публичный токен формы: 32 символа (uppercase + lowercase + цифры).
  *
  * Это та же генерация, что у session/magic-link токенов — переиспользуем

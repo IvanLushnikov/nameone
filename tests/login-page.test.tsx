@@ -61,11 +61,24 @@ describe("Страница входа — вход по ссылке готов"
     const { container } = render(<LoginPage />);
     const labels = Array.from(container.querySelectorAll("button[disabled]"))
       .map((b) => b.textContent ?? "");
-    // Основная кнопка отправки тоже disabled — до отметки согласия на ПДн.
+    // Основная кнопка отправки тоже disabled — до отметок оферты и ПДн.
     // Соцкнопки отбираем по подписи, чтобы тест не зависел от её наличия.
     expect(labels).toEqual(
       expect.arrayContaining(["VKскоро", "Яндексскоро", "Telegramскоро"]),
     );
     expect(labels).toHaveLength(4);
+  });
+
+  it("показывает отдельные чекбоксы оферты, ПДн и рекламы без pre-check", () => {
+    render(<LoginPage />);
+    const offer = screen.getByTestId("login-consent-offer") as HTMLInputElement;
+    const pdn = screen.getByTestId("login-consent-pdn") as HTMLInputElement;
+    const marketing = screen.getByTestId(
+      "login-consent-marketing",
+    ) as HTMLInputElement;
+    expect(offer.checked).toBe(false);
+    expect(pdn.checked).toBe(false);
+    expect(marketing.checked).toBe(false);
+    expect(screen.getByTestId("login-submit")).toBeDisabled();
   });
 });
