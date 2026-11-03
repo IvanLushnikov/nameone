@@ -28,7 +28,12 @@
 
 import type { D1Database } from "@cloudflare/workers-types";
 import type { Env } from "../env";
-import { BadRequestError, InternalError, throwApiError } from "../lib/errors";
+import {
+  BadRequestError,
+  GenerationTruncatedError,
+  InternalError,
+  throwApiError,
+} from "../lib/errors";
 import { logLlmEvent } from "./log";
 import { moderateGenerationRequest } from "./moderation";
 import { checkLlmRateLimit, ipHashFromHeaders } from "./ratelimit";
@@ -771,6 +776,7 @@ export async function generateWorksheet(
       requestedMaxTokens: baseMaxTokens,
     });
     try {
+      // Один уже существующий повтор с потолком ×2 (teacher-flow п.1).
       resultFinal = await callProvider(system, user, baseMaxTokens * 2);
     } catch (e) {
       // Ретрай упал — дальше разбирать нечего, ответ заведомо неполный.
@@ -779,7 +785,7 @@ export async function generateWorksheet(
         subject: request.subject,
         error: String(e),
       });
-      throw new InternalError("LLM response truncated (finish_reason=length)", {
+      throw new GenerationTruncatedError("Файл не собран: ответ модели оборван", {
         subject: request.subject,
         type: request.type,
         maxTokens: baseMaxTokens * 2,
@@ -787,14 +793,11 @@ export async function generateWorksheet(
     }
   }
 
-  // Разрыв 4: и после поднятого потолка обрыва нет — материал заведомо неполный.
-  //
-  // Дальше — ОТКАЗ, а не отдача материала с флагом. Обрезанный JSON обычно и не
-  // парсится, поэтому «мягко» означало бы учителю ровно то же самое, от чего мы
-  // уходили: половину работы с молчаливым обрывом. Тихий успех здесь и был
-  // дефектом — и для русскоязычного предмета, и для иностранных.
+  // Разрыв 4 / teacher-flow п.1: и после поднятого потолка обрыв — 422,
+  // GENERATION_TRUNCATED. Одного «готового» варианта при обрыве нет.
+  // Лист и тест третьего вызова не получают.
   if (resultFinal.response.finishReason === "length") {
-    throw new InternalError("LLM response truncated (finish_reason=length)", {
+    throw new GenerationTruncatedError("Файл не собран: ответ модели оборван", {
       subject: request.subject,
       type: request.type,
       tokensOut: resultFinal.response.tokensOut,
@@ -1040,11 +1043,62 @@ export async function generateWorksheet(
         });
       }
     } else if (!secondParsed) {
-      // Разрыв 3: модель не вернула `variants[1]` вообще. Раньше это молча
-      // превращалось в `secondVariant: null` без следа — фронт не отличал
-      // «второй не нужен» от «второй не получился».
-      degraded = true;
-      degradedReason = "модель вернула один вариант вместо двух";
+      // teacher-flow п.1: первый целый, второй срезан/отсутствует → один
+      // дозапрос второго варианта на 8192 БЕЗ ещё одного ×2. Успех — два
+      // варианта. Провал — 422 GENERATION_TRUNCATED, одного варианта нет.
+      logLlmEvent("warn", "worksheet-gen: control second variant missing, top-up at 8192", {
+        subject: request.subject,
+        grade: request.grade,
+      });
+      const v1Texts = worksheet.tasks
+        .map((t) => (t as { text?: unknown }).text)
+        .filter((t): t is string => typeof t === "string");
+      const topUpPrompt = buildVariantRetryPrompt(
+        request,
+        [],
+        v1Texts,
+        "второй вариант отсутствует или срезан — нужен полный второй вариант",
+      );
+      try {
+        const topUp = await callProvider(topUpPrompt.system, topUpPrompt.user, baseMaxTokens);
+        if (topUp.response.finishReason === "length") {
+          throw new GenerationTruncatedError("Файл не собран: второй вариант оборван", {
+            subject: request.subject,
+            type: request.type,
+            maxTokens: baseMaxTokens,
+          });
+        }
+        const topUpParsed = JSON.parse(topUp.response.content) as {
+          variants?: Worksheet[];
+          tasks?: unknown[];
+        };
+        const topUpVariants = Array.isArray(topUpParsed.variants) ? topUpParsed.variants : null;
+        const candidate =
+          topUpVariants && topUpVariants.length >= 2
+            ? topUpVariants[1]
+            : topUpVariants?.[0] ??
+              (Array.isArray(topUpParsed.tasks)
+                ? ({ tasks: topUpParsed.tasks } as Worksheet)
+                : undefined);
+        const filled = readVariant(candidate);
+        if (!filled || !Array.isArray(filled.tasks) || filled.tasks.length === 0) {
+          throw new GenerationTruncatedError("Файл не собран: второй вариант не получен", {
+            subject: request.subject,
+            type: request.type,
+          });
+        }
+        secondParsed = filled;
+      } catch (e) {
+        if (e instanceof GenerationTruncatedError) throw e;
+        logLlmEvent("error", "worksheet-gen: second variant top-up failed", {
+          subject: request.subject,
+          error: String(e),
+        });
+        throw new GenerationTruncatedError("Файл не собран: второй вариант не получен", {
+          subject: request.subject,
+          type: request.type,
+        });
+      }
     }
   }
 
@@ -2149,6 +2203,15 @@ export async function generateExam(
       env,
     );
 
+    // teacher-flow п.1: ОГЭ/ЕГЭ при обрыве — GENERATION_TRUNCATED; потолок 6000.
+    if (result.response.finishReason === "length") {
+      throw new GenerationTruncatedError("Файл не собран: ответ модели оборван", {
+        exam,
+        subject,
+        maxTokens: 6000,
+      });
+    }
+
     try {
       const parsed = JSON.parse(result.response.content) as ExamVariant;
       variant = {
@@ -2237,6 +2300,13 @@ export async function generateExam(
     ).catch(() => null);
 
     if (retry) {
+      if (retry.response.finishReason === "length") {
+        throw new GenerationTruncatedError("Файл не собран: ответ модели оборван", {
+          exam,
+          subject,
+          maxTokens: 6000,
+        });
+      }
       try {
         const parsed = JSON.parse(retry.response.content) as ExamVariant;
         const retryVariant: ExamVariant = {
@@ -2505,6 +2575,15 @@ export async function generateStructuredArtifact<T extends object>(
       env,
       { task, userId, plan },
     );
+
+    // teacher-flow п.1: КТП/презентация/прочие артефакты при обрыве —
+    // та же GENERATION_TRUNCATED; потолки (КТП 16000 и др.) не поднимаем.
+    if (result.response.finishReason === "length") {
+      throw new GenerationTruncatedError("Файл не собран: ответ модели оборван", {
+        artifactType,
+        maxTokens: spec.maxTokens,
+      });
+    }
 
     // 5. Parse + нормализация.
     let parsed: unknown;

@@ -151,6 +151,23 @@ export function buildLessonPlanPrompt(req: ArtifactRequest): {
 }
 
 /**
+ * Практика, в которой единственное действие — «только подписать».
+ *
+ * С 7 класса такую практику не отдаём (teacher-flow п.4): для средней школы
+ * это пустая отработка. Текст практики НЕ переписываем — стадию просто
+ * не включаем в план.
+ */
+export function isSignOnlyPractice(text: string): boolean {
+  const normalized = text.replace(/\s+/g, " ").trim().toLowerCase();
+  if (!normalized) return false;
+  // Целиком «только подписать» / «подписать» без другого действия.
+  return (
+    /^(?:ученики?\s+)?только\s+подписать[.!]?\s*$/u.test(normalized) ||
+    normalized === "только подписать"
+  );
+}
+
+/**
  * Разобрать ответ модели в план урока.
  *
  * @returns план БЕЗ `id`/`createdAt` — их проставляет сервер.
@@ -164,6 +181,7 @@ export function normalizeLessonPlan(raw: unknown, req: ArtifactRequest): LessonP
     throw new Error("lesson-plan: ответ модели не объект");
   }
 
+  const grade = asIntInRange(obj.grade, 1, 11) ?? req.grade;
   const stages: LessonStage[] = [];
   if (Array.isArray(obj.stages)) {
     for (const item of obj.stages) {
@@ -177,6 +195,17 @@ export function normalizeLessonPlan(raw: unknown, req: ArtifactRequest): LessonP
       // Стадия без названия или без действий учителя — не стадия. Метка kind
       // вне списка — тоже: подставить соседнее значит выдумать смысл.
       if (!kind || !title || !teacherActions || !studentActions || durationMin === null) continue;
+      // С 7 класса единственная практика «только подписать» не отдаётся.
+      // Текст не переписываем — отбрасываем стадию целиком.
+      if (
+        grade >= 7 &&
+        kind === "practice" &&
+        (isSignOnlyPractice(teacherActions) ||
+          isSignOnlyPractice(studentActions) ||
+          isSignOnlyPractice(title))
+      ) {
+        continue;
+      }
       const materials = asTextList(stage.materials);
       stages.push({
         kind,
@@ -206,7 +235,7 @@ export function normalizeLessonPlan(raw: unknown, req: ArtifactRequest): LessonP
   return {
     title: asText(obj.title) || `План урока · ${req.topic}`,
     subject: asText(obj.subject) || req.subject,
-    grade: asIntInRange(obj.grade, 1, 11) ?? req.grade,
+    grade,
     topic: asText(obj.topic) || req.topic,
     ...(fgosRef ? { fgosRef } : {}),
     goals: {
