@@ -4,7 +4,7 @@
  *
  * Покрывает функции через `vi.stubGlobal('fetch', vi.fn())`:
  *   1. requestMagicLink(email) — POST /api/auth/magic-link
- *   2. verifyMagicLink(token)  — POST /api/auth/callback
+ *   2. verifyMagicLink(token, CONSENTS)  — POST /api/auth/callback
  *   3. getCurrentUser()        — GET  /api/auth/me
  *   4. getUsage()              — GET  /api/users/usage
  *   5. signOutFromApi()        — POST /api/auth/logout (silent fail)
@@ -64,6 +64,9 @@ import LoginPage from "@/app/login/page";
 
 const API_URL = "https://api.example.test";
 
+/** Обязательные согласия D2: оферта+ПДн; marketing=false тоже уходит на бэк. */
+const CONSENTS = { offer: true as const, pdn: true as const, marketing: false };
+
 const okResponse = (body: unknown, status = 200) =>
   ({
     ok: true,
@@ -98,7 +101,7 @@ describe("requestMagicLink", () => {
     const fetchMock = vi.fn().mockResolvedValue(okResponse({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const r = await requestMagicLink("a@b.c");
+    const r = await requestMagicLink("a@b.c", CONSENTS);
 
     expect(r).toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -110,7 +113,7 @@ describe("requestMagicLink", () => {
       vi.fn().mockResolvedValue(failResponse(500, { error: "rate_limited" })),
     );
 
-    const r = await requestMagicLink("a@b.c");
+    const r = await requestMagicLink("a@b.c", CONSENTS);
 
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toBe("rate_limited");
@@ -119,7 +122,7 @@ describe("requestMagicLink", () => {
   it("ok=false с fallback message при response.ok=false без error", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(failResponse(500, {})));
 
-    const r = await requestMagicLink("a@b.c");
+    const r = await requestMagicLink("a@b.c", CONSENTS);
 
     expect(r.ok).toBe(false);
     if (!r.ok) {
@@ -134,7 +137,7 @@ describe("requestMagicLink", () => {
       vi.fn().mockRejectedValue(new TypeError("fetch failed")),
     );
 
-    const r = await requestMagicLink("a@b.c");
+    const r = await requestMagicLink("a@b.c", CONSENTS);
 
     expect(r.ok).toBe(false);
     if (!r.ok) {
@@ -147,13 +150,16 @@ describe("requestMagicLink", () => {
     const fetchMock = vi.fn().mockResolvedValue(okResponse({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await requestMagicLink("teacher@school.ru");
+    await requestMagicLink("teacher@school.ru", CONSENTS);
 
     const [calledUrl, calledInit] = fetchMock.mock.calls[0]!;
     expect(calledUrl).toBe(`${API_URL}/api/auth/magic-link`);
     expect(calledInit.method).toBe("POST");
     expect(calledInit.credentials).toBe("include");
-    expect(JSON.parse(calledInit.body)).toEqual({ email: "teacher@school.ru" });
+    expect(JSON.parse(calledInit.body)).toEqual({
+      email: "teacher@school.ru",
+      consents: CONSENTS,
+    });
     expect(calledInit.headers["Content-Type"]).toBe("application/json");
     expect(calledInit.headers.Accept).toBe("application/json");
     expect(calledInit.cache).toBe("no-store");
@@ -181,7 +187,7 @@ describe("verifyMagicLink", () => {
       ),
     );
 
-    const r = await verifyMagicLink("tok-123");
+    const r = await verifyMagicLink("tok-123", CONSENTS);
 
     expect(r.ok).toBe(true);
     // Сужаем до ветки «сессия выдана»: у администратора по ссылке вместо неё
@@ -207,7 +213,7 @@ describe("verifyMagicLink", () => {
       ),
     );
 
-    const r = await verifyMagicLink("tok-123");
+    const r = await verifyMagicLink("tok-123", CONSENTS);
 
     expect(r.ok).toBe(true);
     if (r.ok && "mfaRequired" in r) {
@@ -225,7 +231,7 @@ describe("verifyMagicLink", () => {
       vi.fn().mockResolvedValue(failResponse(401, { error: "invalid_token" })),
     );
 
-    const r = await verifyMagicLink("expired");
+    const r = await verifyMagicLink("expired", CONSENTS);
 
     expect(r.ok).toBe(false);
     if (!r.ok) {
@@ -244,7 +250,7 @@ describe("verifyMagicLink", () => {
       ),
     );
 
-    const r = await verifyMagicLink("x");
+    const r = await verifyMagicLink("x", CONSENTS);
 
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toBe("invalid_token");
@@ -256,7 +262,7 @@ describe("verifyMagicLink", () => {
       vi.fn().mockRejectedValue(new TypeError("fetch failed")),
     );
 
-    const r = await verifyMagicLink("any");
+    const r = await verifyMagicLink("any", CONSENTS);
 
     expect(r.ok).toBe(false);
   });
@@ -270,11 +276,14 @@ describe("verifyMagicLink", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await verifyMagicLink("abc-token");
+    await verifyMagicLink("abc-token", CONSENTS);
 
     const [calledUrl, calledInit] = fetchMock.mock.calls[0]!;
     expect(calledUrl).toBe(`${API_URL}/api/auth/callback`);
-    expect(JSON.parse(calledInit.body)).toEqual({ token: "abc-token" });
+    expect(JSON.parse(calledInit.body)).toEqual({
+      token: "abc-token",
+      consents: CONSENTS,
+    });
     expect(calledInit.method).toBe("POST");
     expect(calledInit.credentials).toBe("include");
   });
@@ -497,7 +506,7 @@ describe("loginWithPassword", () => {
       vi.fn().mockResolvedValue(okResponse({ ok: true, user: loginUser })),
     );
 
-    const r = await loginWithPassword("teacher@school.ru", "uchlist2026");
+    const r = await loginWithPassword("teacher@school.ru", "uchlist2026", CONSENTS);
 
     expect(r.ok).toBe(true);
     // «user» в r, а не просто r.ok: со вторым шагом для администратора
@@ -514,7 +523,7 @@ describe("loginWithPassword", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await loginWithPassword("teacher@school.ru", "uchlist2026");
+    await loginWithPassword("teacher@school.ru", "uchlist2026", CONSENTS);
 
     const [calledUrl, calledInit] = fetchMock.mock.calls[0]!;
     expect(calledUrl).toBe(`${API_URL}/api/auth/login`);
@@ -523,6 +532,7 @@ describe("loginWithPassword", () => {
     expect(JSON.parse(calledInit.body)).toEqual({
       email: "teacher@school.ru",
       password: "uchlist2026",
+      consents: CONSENTS,
     });
   });
 
@@ -536,13 +546,13 @@ describe("loginWithPassword", () => {
       "fetch",
       vi.fn().mockResolvedValue(failResponse(401, { error: "bad_password" })),
     );
-    const wrongPassword = await loginWithPassword("teacher@school.ru", "uchlist2026");
+    const wrongPassword = await loginWithPassword("teacher@school.ru", "uchlist2026", CONSENTS);
 
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(failResponse(401, { error: "no_user" })),
     );
-    const noAccount = await loginWithPassword("test@example.com", "uchlist2026");
+    const noAccount = await loginWithPassword("test@example.com", "uchlist2026", CONSENTS);
 
     expect(wrongPassword.ok).toBe(false);
     expect(noAccount.ok).toBe(false);
@@ -559,7 +569,7 @@ describe("loginWithPassword", () => {
       vi.fn().mockResolvedValue(failResponse(400, { error: "password_hash_mismatch" })),
     );
 
-    const r = await loginWithPassword("teacher@school.ru", "uchlist2026");
+    const r = await loginWithPassword("teacher@school.ru", "uchlist2026", CONSENTS);
 
     expect(r.ok).toBe(false);
     if (!r.ok) {
@@ -574,7 +584,7 @@ describe("loginWithPassword", () => {
       vi.fn().mockResolvedValue(okResponse({ ok: false, error: "no_user" })),
     );
 
-    const r = await loginWithPassword("teacher@school.ru", "uchlist2026");
+    const r = await loginWithPassword("teacher@school.ru", "uchlist2026", CONSENTS);
 
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toBe(LOGIN_REFUSED_TEXT);
@@ -586,7 +596,7 @@ describe("loginWithPassword", () => {
       vi.fn().mockResolvedValue(failResponse(429, { error: "too_many" })),
     );
 
-    const r = await loginWithPassword("teacher@school.ru", "uchlist2026");
+    const r = await loginWithPassword("teacher@school.ru", "uchlist2026", CONSENTS);
 
     expect(r.ok).toBe(false);
     if (!r.ok) {
@@ -601,7 +611,7 @@ describe("loginWithPassword", () => {
       vi.fn().mockRejectedValue(new TypeError("fetch failed")),
     );
 
-    const r = await loginWithPassword("teacher@school.ru", "uchlist2026");
+    const r = await loginWithPassword("teacher@school.ru", "uchlist2026", CONSENTS);
 
     expect(r.ok).toBe(false);
     if (!r.ok) {
@@ -791,7 +801,7 @@ const authUrls = (fetchMock: FetchMock): string[] =>
 const isPasswordProbe = (url: string): boolean =>
   /has[-_]?password|password[-_]?(exists|check|has|is[-_]?set)/i.test(url);
 
-/** Включает путь «пароль», заполняет оба поля и отмечает согласие. */
+/** Включает путь «пароль», заполняет оба поля и отмечает обязательные согласия. */
 const fillPasswordPath = async (
   user: ReturnType<typeof userEvent.setup>,
   password: string,
@@ -800,7 +810,9 @@ const fillPasswordPath = async (
   await user.click(screen.getByTestId("login-mode-password"));
   await user.type(screen.getByLabelText(/^email$/i), email);
   await user.type(screen.getByTestId("login-password"), password);
+  await user.click(screen.getByTestId("login-consent-offer"));
   await user.click(screen.getByTestId("login-consent-pdn"));
+  // marketing не трогаем — default false, отказ тоже уходит на бэк.
   // Кнопка отправки ищется по data-testid, а не по названию: после приведения
   // подписей к формулировкам ТЗ §6 слово «Войти по паролю» стоит и на пункте
   // переключателя, и на кнопке — поиск по названию находит две кнопки.
@@ -957,6 +969,7 @@ describe("Страница входа — переключатель двух п
     renderLogin();
 
     await user.type(screen.getByLabelText(/^email$/i), "teacher@school.ru");
+    await user.click(screen.getByTestId("login-consent-offer"));
     await user.click(screen.getByTestId("login-consent-pdn"));
     await user.click(screen.getByTestId("login-submit"));
 
@@ -966,6 +979,12 @@ describe("Страница входа — переключатель двух п
     // magic-link падала, хотя ручка звалась верно. Строгость та же — ровно
     // один запрос авторизации, и это именно magic-link.
     expect(authUrls(fetchMock)).toEqual([`${API_URL}/api/auth/magic-link`]);
+    const magicBody = JSON.parse(
+      fetchMock.mock.calls.find((c) =>
+        String(c[0]).includes("/api/auth/magic-link"),
+      )![1].body,
+    );
+    expect(magicBody.consents).toEqual(CONSENTS);
     expect(routerPush).not.toHaveBeenCalled();
   });
 
@@ -975,6 +994,7 @@ describe("Страница входа — переключатель двух п
     renderLogin();
 
     await user.type(screen.getByLabelText(/^email$/i), "teacher@school.ru");
+    await user.click(screen.getByTestId("login-consent-offer"));
     await user.click(screen.getByTestId("login-consent-pdn"));
     await user.click(screen.getByTestId("login-submit"));
     await screen.findByText(/проверьте почту/i);

@@ -7,10 +7,11 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
-import { Mail, ArrowRight, Sparkles, Rocket, Lock, AlertCircle } from "lucide-react";
+import { Mail, ArrowRight, Rocket, Lock, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { trackEvent } from "@/lib/track";
 import { requestMagicLink, loginWithPassword, LOGIN_REFUSED_TEXT } from "@/lib/auth/api";
+import { buildAuthConsents, stashPendingConsents } from "@/lib/auth/consents";
 import { verifyLoginCode } from "@/lib/superpower-totp-api";
 import type { AuthUser } from "@/lib/auth/api";
 import { MAGIC_LINK_READY } from "@/lib/auth/magic-link-status";
@@ -18,6 +19,7 @@ import { PROFILE_CHANGED_EVENT } from "@/lib/events";
 import { setProfile } from "@/lib/utils/storage";
 import type { UserProfile } from "@/lib/types";
 import { DEMO_USER_NAME, enterDemoMode, isDemoLoginEnabled } from "@/lib/dev/demo-login";
+import { FREE_QUOTA_LABEL } from "@/lib/content/plans";
 
 /** Правила пароля (ТЗ §7.1): длина 8…128, обязательны буква и цифра. */
 const PASSWORD_MIN_LENGTH = 8;
@@ -73,10 +75,11 @@ export default function LoginPage() {
   const [mfaError, setMfaError] = React.useState<string | null>(null);
   /** Отказ сервера или сети. Текст единственный — см. loginWithPassword. */
   const [loginError, setLoginError] = React.useState<string | null>(null);
-  // С 01.09.2025 (156-ФЗ, ч. 4 ст. 9 152-ФЗ) согласие на обработку ПДн —
-  // отдельный документ, а не строчка в оферте. Без явной отметки magic link
-  // не отправляем: это и есть отправка ПДн за границу без согласия.
+  // D2: оферта и ПДн — отдельные обязательные чекбоксы без pre-check.
+  // Реклама (38-ФЗ) — необязательная, off по умолчанию; отказ тоже уходит в БД.
+  const [consentOffer, setConsentOffer] = React.useState(false);
   const [consentPdn, setConsentPdn] = React.useState(false);
+  const [consentMarketing, setConsentMarketing] = React.useState(false);
 
   React.useEffect(() => {
     trackEvent("login_view");
@@ -114,16 +117,18 @@ export default function LoginPage() {
     setPasswordError(null);
   };
 
-  /** Одно требование согласия на оба пути: текст зависит от выбранного пути. */
+  /** Обязательные согласия на оба пути: оферта + ПДн (реклама не блокирует). */
   const consentToast = () =>
     toast({
-      title: "Нужно согласие на обработку данных",
+      title: "Нужны согласия",
       description:
         mode === "password"
-          ? "Отметьте согласие на обработку персональных данных — без него мы не пустим в кабинет."
-          : "Отметьте согласие на обработку персональных данных — без него мы не можем отправить ссылку на почту.",
+          ? "Отметьте оферту и согласие на обработку персональных данных — без них мы не пустим в кабинет."
+          : "Отметьте оферту и согласие на обработку персональных данных — без них мы не можем отправить ссылку на почту.",
       tone: "error",
     });
+
+  const requiredConsentsOk = consentOffer && consentPdn;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,16 +144,19 @@ export default function LoginPage() {
       });
       return;
     }
-    if (!consentPdn) {
+    if (!requiredConsentsOk) {
       consentToast();
       return;
     }
     const emailDomain = email.split("@")[1] ?? "unknown";
     trackEvent("login_submit", { emailDomain });
 
+    const consents = buildAuthConsents(consentMarketing);
+    stashPendingConsents(consents);
+
     setLoading(true);
     trackEvent("magic_link_requested", { emailDomain });
-    const result = await requestMagicLink(email);
+    const result = await requestMagicLink(email, consents);
     setLoading(false);
 
     if (result.ok) {
@@ -191,7 +199,7 @@ export default function LoginPage() {
       setLoginError(LOGIN_REFUSED_TEXT);
       return;
     }
-    if (!consentPdn) {
+    if (!requiredConsentsOk) {
       consentToast();
       return;
     }
@@ -201,7 +209,11 @@ export default function LoginPage() {
     setLoading(true);
     const emailDomain = email.split("@")[1] ?? "unknown";
     trackEvent("login_password_submit", { emailDomain });
-    const result = await loginWithPassword(email, password);
+    const result = await loginWithPassword(
+      email,
+      password,
+      buildAuthConsents(consentMarketing),
+    );
     setLoading(false);
 
     if (result.ok) {
@@ -279,7 +291,7 @@ export default function LoginPage() {
                   ? mode === "password"
                     ? "Введите почту и пароль — кабинет откроется сразу, письмо не понадобится."
                     : "Пришлём письмо со ссылкой — откроете её и войдёте в кабинет."
-                  : "Кабинет сохраняет ваши листы, избранное и историю. Пока его можно начать без регистрации."}
+                  : "Кабинет сохраняет ваши листы, избранное и историю. Чтобы создать лист, войдите в аккаунт."}
               </p>
             </div>
 
@@ -316,9 +328,28 @@ export default function LoginPage() {
                   />
                 )}
 
-                {/* Согласие на обработку ПДн — отдельная форма, отдельный документ.
-                    Не прячем в текст оферты: так требует ч. 4 ст. 9 152-ФЗ. */}
-                <div className="rounded-xl border border-warm-200 bg-warm-50/60 p-3.5">
+                {/* D2.1–D2.3: оферта + ПДн отдельно, реклама необязательная off.
+                    Без pre-check. ПДн не прячем в оферту (ч. 4 ст. 9 152-ФЗ). */}
+                <div className="rounded-xl border border-warm-200 bg-warm-50/60 p-3.5 space-y-3">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={consentOffer}
+                      onChange={(e) => setConsentOffer(e.target.checked)}
+                      data-testid="login-consent-offer"
+                      className="w-5 h-5 mt-0.5 accent-brand-500 shrink-0"
+                    />
+                    <span className="text-sm text-warm-700">
+                      Принимаю{" "}
+                      <Link
+                        href="/legal/offer"
+                        className="text-brand-600 hover:text-brand-700 underline"
+                      >
+                        публичную оферту
+                      </Link>
+                    </span>
+                  </label>
+
                   <label className="flex items-start gap-3 cursor-pointer">
                     <input
                       type="checkbox"
@@ -330,8 +361,6 @@ export default function LoginPage() {
                     <span className="text-sm text-warm-700">
                       Согласен на обработку персональных данных
                       <span className="block text-xs text-warm-600 mt-1">
-                        {/* Формулировка общая для обоих путей: почта нужна и чтобы
-                            получить ссылку, и чтобы войти по паролю. */}
                         Мы используем адрес электронной почты, чтобы войти
                         в кабинет и сохранить вашу историю генераций. Текст
                         согласия — отдельный документ,{" "}
@@ -345,6 +374,23 @@ export default function LoginPage() {
                       </span>
                     </span>
                   </label>
+
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={consentMarketing}
+                      onChange={(e) => setConsentMarketing(e.target.checked)}
+                      data-testid="login-consent-marketing"
+                      className="w-5 h-5 mt-0.5 accent-brand-500 shrink-0"
+                    />
+                    <span className="text-sm text-warm-700">
+                      Согласен получать новости и предложения УчЛиста
+                      <span className="block text-xs text-warm-600 mt-1">
+                        Необязательно. Рассылки можно не включать — отметку
+                        всё равно сохраним. Отозвать можно в любой момент.
+                      </span>
+                    </span>
+                  </label>
                 </div>
 
                 <Button
@@ -353,7 +399,7 @@ export default function LoginPage() {
                   size="lg"
                   fullWidth
                   loading={loading}
-                  disabled={!consentPdn}
+                  disabled={!requiredConsentsOk}
                   rightIcon={<ArrowRight className="w-4 h-4" />}
                   data-testid="login-submit"
                 >
@@ -385,8 +431,8 @@ export default function LoginPage() {
                 </p>
                 <p className="mt-1.5 text-sm text-warm-600">
                   Мы подтверждаем адрес, с которого отправляем письма. Это займёт
-                  несколько дней. Листы можно создавать уже сейчас — регистрация для
-                  этого не нужна.
+                  несколько дней. Пока войдите по паролю — без входа лист не
+                  собрать.
                 </p>
               </div>
             )}
@@ -469,44 +515,21 @@ export default function LoginPage() {
             </div>
 
             <p className="mt-6 text-xs text-warm-500 text-center">
-              {MAGIC_LINK_READY ? "Оформляя вход" : "Используя сервис"}, вы
-              принимаете{" "}              <Link href="/legal/offer" className="text-brand-600 hover:text-brand-700">
-                публичную оферту
-              </Link>{" "}
-              и{" "}
+              Акцепт оферты и согласие на ПДн — отдельные отметки в форме выше.
+              Политика конфиденциальности —{" "}
               <Link href="/legal/privacy" className="text-brand-600 hover:text-brand-700">
-                политику конфиденциальности
+                отдельный документ
               </Link>
-              . Согласие на обработку персональных данных даётся отдельной
-              отметкой в форме входа — это самостоятельный документ, а не часть
-              оферты.            </p>
+              .
+            </p>
 
-            {/* Пока входа нет, это главное действие страницы — поэтому кнопка
-                во всю ширину, а не мелкая ссылка внизу. */}
-            {MAGIC_LINK_READY ? (
-              <div className="mt-6 pt-6 border-t border-warm-100 text-center">
-                <Link
-                  href="/constructor"
-                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600 hover:text-brand-700 group"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  Создать лист без регистрации
-                  <span className="transition-transform group-hover:translate-x-0.5">→</span>
-                </Link>
-              </div>
-            ) : (
-              <Button
-                as="link"
-                href="/constructor"
-                variant="primary"
-                size="lg"
-                fullWidth
-                leftIcon={<Sparkles className="w-4 h-4" />}
-                rightIcon={<ArrowRight className="w-4 h-4" />}
-              >
-                Создать лист без регистрации
-              </Button>
-            )}
+            {/* D4: генерация только после входа — CTA ведёт в конструктор уже
+                после формы, а не обещает «лист без регистрации». */}
+            <div className="mt-6 pt-6 border-t border-warm-100 text-center">
+              <p className="text-sm text-warm-600">
+                {FREE_QUOTA_LABEL} — после входа в аккаунт, без карты.
+              </p>
+            </div>
 
             {/* Локальный демо-вход: только в dev-сборке (см. lib/dev/demo-login.ts).
                 Пишет профиль в localStorage и открывает /dashboard без почты. */}
@@ -527,7 +550,7 @@ export default function LoginPage() {
                   Войти как {DEMO_USER_NAME}
                 </Button>
                 <p className="mt-2 text-xs text-warm-500">
-                  Без регистрации и без письма. Демо-кабинет с историей, избранным и шаблонами.
+                  Локальный демо-вход без письма. Кабинет с историей, избранным и шаблонами.
                 </p>
               </div>
             )}

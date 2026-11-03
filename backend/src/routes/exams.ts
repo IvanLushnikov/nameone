@@ -22,6 +22,7 @@ import {
 import { checkExamAnswers, saveExamAttempt } from "../services/exam";
 import { getExamMinutes } from "../db/examProfiles";
 import { BadRequestError, ForbiddenError, PaymentRequiredError } from "../lib/errors";
+import { requireAuth } from "../middleware/auth";
 import type { AppEnv, SubjectSlug, CheckExamRequest } from "../types";
 
 const examsRouter = new Hono<AppEnv>();
@@ -37,6 +38,9 @@ const generateSchema = z.object({
 });
 
 examsRouter.post("/generate", async (c) => {
+  // D4: free = вход сразу (как у листов и артефактов).
+  requireAuth(c);
+
   let body: z.infer<typeof generateSchema>;
   try {
     body = generateSchema.parse({ ...((await c.req.json()) as object) });

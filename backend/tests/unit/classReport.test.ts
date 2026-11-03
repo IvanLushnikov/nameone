@@ -532,7 +532,7 @@ describe("ведомость по классу (лист 3.1.3)", () => {
       await env.DB
         .prepare(
           `INSERT INTO users (id, email, name, plan, generations_total, generations_today, is_admin, created_at, updated_at)
-           VALUES (?1, ?2, 'Учитель', 'base', 0, 0, 0, ?3, ?3)`,
+           VALUES (?1, ?2, 'Учитель', 'school', 0, 0, 0, ?3, ?3)`,
         )
         .bind(id, email, now)
         .run();

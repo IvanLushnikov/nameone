@@ -401,22 +401,19 @@ describe("кейсы 2, 3: одинаковые варианты → ретра�
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("кейс 4: без второго варианта", () => {
-  it("в ответе есть признак, а не просто отсутствующее поле", async () => {
+  it("один вариант после дозапроса — 422, а не тихий один лист", async () => {
+    // teacher-flow п.1 / D5: первый целый, второго нет → один дозапрос;
+    // если дозапрос снова без второго — GENERATION_TRUNCATED, не degraded.
+    // stubProvider крутит один и тот же ответ: дозапрос тоже без variants[1].
     stubProvider(variantsBlock(tasks(4))); // только один вариант
 
-    const res = await generateWorksheet(
-      { ...ARGS, request: makeRequest({ count: 4 }) },
-      FAKE_ENV,
-      fakeDb() as never,
-    );
-
-    // `secondVariant` действительно null (формат ответа не изменился), но рядом
-    // всегда идёт `variants`, где сказано: просили 2, пришёл 1.
-    expect(res.secondVariant).toBeNull();
-    expect(res.variants.expected).toBe(2);
-    expect(res.variants.delivered).toBe(1);
-    expect(res.variants.degraded).toBe(true);
-    expect(res.variants.degradedReason).toBeTruthy();
+    await expect(
+      generateWorksheet(
+        { ...ARGS, request: makeRequest({ count: 4 }) },
+        FAKE_ENV,
+        fakeDb() as never,
+      ),
+    ).rejects.toThrow(/второй вариант|оборван|не получен/i);
   });
 });
 
@@ -441,7 +438,7 @@ describe("кейсы 5, 12: обрыв ответа по finish_reason — дл�
 
     await expect(
       generateWorksheet({ ...ARGS, request }, FAKE_ENV, fakeDb() as never),
-    ).rejects.toThrow(/truncated/i);
+    ).rejects.toThrow(/оборван|truncated/i);
   });
 
   it("кейс 5: РУССКИЙ предмет, обрыв по токенам — тоже не проходит как норма", async () => {
@@ -455,7 +452,7 @@ describe("кейсы 5, 12: обрыв ответа по finish_reason — дл�
 
     await expect(
       generateWorksheet({ ...ARGS, request }, FAKE_ENV, fakeDb() as never),
-    ).rejects.toThrow(/truncated/i);
+    ).rejects.toThrow(/оборван|truncated/i);
   });
 
   it("обрыв, который разобрался после поднятого потолка, материалом считается", async () => {

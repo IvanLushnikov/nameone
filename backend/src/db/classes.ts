@@ -34,9 +34,31 @@ import { shortId } from "../lib/shortid";
 export const MAX_CLASS_NAME = 40;
 export const MAX_STUDENT_NAME = 120;
 export const MAX_CLASSES_PER_TEACHER = 30;
+/**
+ * Абсолютный потолок на класс (импорт / защита от злоупотребления).
+ * Рабочий лимит учителя — по тарифу: см. `studentLimitForPlan`.
+ */
 export const MAX_STUDENTS_PER_CLASS = 200;
 /** Сколько строк принимаем за один импорт списка. */
 export const MAX_STUDENTS_PER_IMPORT = 200;
+
+/**
+ * Лимит учеников в кабинете по тарифу (D3 / resheniya: 5 / 10 / 20).
+ * Free и неизвестный план — как Базовый (5): кабинет без подписки не шире.
+ * School — без лимита в рамках MAX_STUDENTS_PER_CLASS.
+ */
+export const STUDENTS_PER_CLASS_BY_PLAN: Record<string, number> = {
+  free: 5,
+  base: 5,
+  standard: 10,
+  plus: 20,
+  school: MAX_STUDENTS_PER_CLASS,
+};
+
+export function studentLimitForPlan(plan: string | null | undefined): number {
+  if (!plan) return STUDENTS_PER_CLASS_BY_PLAN.free!;
+  return STUDENTS_PER_CLASS_BY_PLAN[plan] ?? STUDENTS_PER_CLASS_BY_PLAN.free!;
+}
 /**
  * Длина персонального токена: 32 символа base36 ≈ 165 бит.
  *
@@ -418,6 +440,8 @@ export async function addStudents(
   userId: string,
   classId_: string,
   rawNames: unknown,
+  /** Тариф учителя — лимит 5/10/20. Без значения — как free/base. */
+  plan?: string | null,
 ): Promise<ClassResult<{ added: StudentRow[]; skipped: number }>> {
   const owned = await loadOwnClass(db, userId, classId_);
   if (!owned.ok) return owned;
@@ -425,11 +449,12 @@ export async function addStudents(
   if (!Array.isArray(rawNames)) return fail("validation");
   if (rawNames.length > MAX_STUDENTS_PER_IMPORT) return fail("limit");
 
+  const planLimit = Math.min(studentLimitForPlan(plan), MAX_STUDENTS_PER_CLASS);
   const live = await db
     .prepare("SELECT COUNT(*) AS cnt FROM class_students WHERE class_id = ?1 AND removed_at IS NULL")
     .bind(classId_)
     .first<{ cnt: number }>();
-  if ((live?.cnt ?? 0) + rawNames.length > MAX_STUDENTS_PER_CLASS) return fail("limit");
+  if ((live?.cnt ?? 0) + rawNames.length > planLimit) return fail("limit");
 
   const seen = new Set<string>();
   const names: string[] = [];

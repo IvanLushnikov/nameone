@@ -68,6 +68,7 @@ import {
   generateWorksheet,
   goToTopicStep,
   mockApi,
+  seedLoggedInProfile,
   setDevice,
 } from "./helpers/constructor-flow";
 
@@ -196,6 +197,8 @@ beforeEach(() => {
   toastCalls = [];
   mockApi();
   setDevice({ coarse: false, touchPoints: 0, width: 1600 });
+  // D4: без профиля генерация уводит на /login.
+  seedLoggedInProfile();
 });
 
 describe("восстановление листа после перезагрузки (З1)", () => {

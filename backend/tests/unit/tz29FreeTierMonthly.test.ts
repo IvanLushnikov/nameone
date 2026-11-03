@@ -241,19 +241,42 @@ describe("ТЗ-29: при исчерпанной квоте премиум-ти�
     return owner;
   }
 
-  const headers = (ip: string) => ({
+  async function seedFreeSession(token: string): Promise<void> {
+    const now = Math.floor(Date.now() / 1000);
+    const userId = `usr_tz29_${token.slice(-6)}`;
+    await db
+      .prepare(
+        `INSERT OR REPLACE INTO users
+           (id, email, name, plan, generations_total, generations_today, is_admin, created_at, updated_at)
+         VALUES (?1, ?2, 'Учитель', 'free', 0, 0, 0, ?3, ?3)`,
+      )
+      .bind(userId, `${userId}@example.test`, now)
+      .run();
+    await db
+      .prepare(
+        `INSERT OR REPLACE INTO sessions (token, user_id, expires_at, created_at)
+         VALUES (?1, ?2, ?3, ?4)`,
+      )
+      .bind(token, userId, now + 86400, now)
+      .run();
+  }
+
+  const headers = (ip: string, session: string) => ({
     "Content-Type": "application/json",
     "cf-connecting-ip": ip,
     "user-agent": UA,
+    cookie: `session=${session}`,
   });
 
   it("КТП отвечает UPGRADE_REQUIRED, а не «лимит исчерпан»", async () => {
     const ip = "203.0.113.200";
     await exhaustQuotaFor(ip);
+    const session = "sess_tz29_ktp";
+    await seedFreeSession(session);
 
     const res = await SELF.fetch("https://uchlist.test/api/ktp/generate", {
       method: "POST",
-      headers: headers(ip),
+      headers: headers(ip, session),
       body: JSON.stringify({
         request: {
           subject: "math",
@@ -277,10 +300,12 @@ describe("ТЗ-29: при исчерпанной квоте премиум-ти�
   it("презентация — тот же 402, а не 429 по квоте", async () => {
     const ip = "203.0.113.201";
     await exhaustQuotaFor(ip);
+    const session = "sess_tz29_pres";
+    await seedFreeSession(session);
 
     const res = await SELF.fetch("https://uchlist.test/api/presentations/generate", {
       method: "POST",
-      headers: headers(ip),
+      headers: headers(ip, session),
       body: JSON.stringify({
         request: {
           subject: "math",
@@ -297,10 +322,12 @@ describe("ТЗ-29: при исчерпанной квоте премиум-ти�
   it("контроль: квота действительно исчерпана — обычный лист даёт отказ по квоте", async () => {
     const ip = "203.0.113.202";
     await exhaustQuotaFor(ip);
+    const session = "sess_tz29_ws";
+    await seedFreeSession(session);
 
     const res = await SELF.fetch("https://uchlist.test/api/worksheets/generate", {
       method: "POST",
-      headers: headers(ip),
+      headers: headers(ip, session),
       body: JSON.stringify({
         request: {
           subject: "math",

@@ -63,10 +63,10 @@ import {
   explainError,
   loadRoster,
   loadTeacherForms,
-  MAX_STUDENTS_PER_CLASS,
   MAX_STUDENTS_PER_IMPORT,
   MAX_STUDENT_NAME,
   parseRosterPaste,
+  studentLimitForPlan,
   removeRosterStudent,
   renameRosterStudent,
   restoreRosterStudent,
@@ -74,6 +74,7 @@ import {
   type RosterRemovedStudent,
   type TeacherForm,
 } from "@/lib/lk/classes-api";
+import { getProfile } from "@/lib/utils/storage";
 
 interface Props {
   /** Есть ли аккаунт. Без него персональные ссылки не показываем — и говорим почему. */
@@ -96,6 +97,8 @@ function key(name: string): string {
 
 export function ClassRosterSection({ hasAccount, knownClassNames }: Props) {
   const { toast } = useToast();
+  // Тариф из профиля на устройстве (зеркало серверной сессии). Без значения — free/5.
+  const studentCap = studentLimitForPlan(getProfile()?.plan);
 
   const [classes, setClasses] = React.useState<RosterClass[]>([]);
   const [removed, setRemoved] = React.useState<RosterRemovedStudent[]>([]);
@@ -252,7 +255,7 @@ export function ClassRosterSection({ hasAccount, knownClassNames }: Props) {
     const overLimit = names.length > MAX_STUDENTS_PER_IMPORT;
     const take = overLimit ? names.slice(0, MAX_STUDENTS_PER_IMPORT) : names;
     const dropped = tooLong + (names.length - take.length);
-    const room = active ? MAX_STUDENTS_PER_CLASS - active.students.length : MAX_STUDENTS_PER_CLASS;
+    const room = active ? studentCap - active.students.length : studentCap;
     const batch = take.length > room ? take.slice(0, room) : take;
     const notFitted = dropped + (take.length - batch.length);
 
@@ -262,7 +265,7 @@ export function ClassRosterSection({ hasAccount, knownClassNames }: Props) {
         title: "Не добавлено",
         description: tooLong
           ? `Все имена длиннее ${MAX_STUDENT_NAME} символов — проверьте список`
-          : `В классе уже ${MAX_STUDENTS_PER_CLASS} учеников — больше не помещается`,
+          : `В классе уже ${studentCap} учеников — больше не помещается на вашем тарифе`,
       });
       return;
     }

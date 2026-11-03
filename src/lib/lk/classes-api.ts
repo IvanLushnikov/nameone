@@ -48,8 +48,25 @@ export const MAX_STUDENT_NAME = 120;
 /** Сколько строк принимает одна вставка списка. */
 export const MAX_STUDENTS_PER_IMPORT = 200;
 
-/** Сколько учеников может быть в одном классе. */
+/**
+ * Абсолютный потолок на класс (зеркало backend/src/db/classes.ts).
+ * Рабочий лимит — по тарифу: `studentLimitForPlan`.
+ */
 export const MAX_STUDENTS_PER_CLASS = 200;
+
+/** Лимит учеников по тарифу (D3: 5 / 10 / 20). */
+export const STUDENTS_PER_CLASS_BY_PLAN: Record<string, number> = {
+  free: 5,
+  base: 5,
+  standard: 10,
+  plus: 20,
+  school: MAX_STUDENTS_PER_CLASS,
+};
+
+export function studentLimitForPlan(plan: string | null | undefined): number {
+  if (!plan) return STUDENTS_PER_CLASS_BY_PLAN.free!;
+  return STUDENTS_PER_CLASS_BY_PLAN[plan] ?? STUDENTS_PER_CLASS_BY_PLAN.free!;
+}
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Типы

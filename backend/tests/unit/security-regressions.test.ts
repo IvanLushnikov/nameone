@@ -115,7 +115,22 @@ CREATE TABLE IF NOT EXISTS worksheets (
   payload_json TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS user_consents (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  version TEXT NOT NULL,
+  accepted INTEGER NOT NULL,
+  accepted_at INTEGER NOT NULL,
+  ip TEXT,
+  ua TEXT,
+  UNIQUE(user_id, type, version)
+);
 `;
+
+/** D2: magic-link без offer+pdn → 400. Тесты безопасности шлют валидные согласия. */
+const AUTH_CONSENTS = { offer: true, pdn: true, marketing: false } as const;
 
 // ── Хелперы ──────────────────────────────────────────────────────────────────
 
@@ -214,7 +229,11 @@ beforeEach(async () => {
 
 /** Завести пользователя, сессию и вернуть токен сессии. */
 async function seedSession(email: string): Promise<{ userId: string; token: string }> {
-  await call("/api/auth/magic-link", { body: { email }, origin: null }, devEnv());
+  await call(
+    "/api/auth/magic-link",
+    { body: { email, consents: AUTH_CONSENTS }, origin: null },
+    devEnv(),
+  );
 
   const user = await db()
     .prepare("SELECT id FROM users WHERE email = ?1")
@@ -455,7 +474,7 @@ describe("К-2: в production ссылка для входа не уходит �
 
     const res = await call(
       "/api/auth/magic-link",
-      { body: { email: "delivery-failure@rabochielisty.ru" }, origin: null },
+      { body: { email: "delivery-failure@rabochielisty.ru", consents: AUTH_CONSENTS }, origin: null },
       failing,
     );
     const raw = await res.text();
@@ -476,7 +495,7 @@ describe("К-2: в production ссылка для входа не уходит �
 
     const res = await call(
       "/api/auth/magic-link",
-      { body: { email: "delivery-503@uchlist.ru" }, origin: null },
+      { body: { email: "delivery-503@uchlist.ru", consents: AUTH_CONSENTS }, origin: null },
       failing,
     );
     const body = (await res.json()) as { ok?: boolean; code?: string; error?: string };
@@ -494,7 +513,7 @@ describe("К-2: в production ссылка для входа не уходит �
     // отличить «сломан Resend» от «не задан ключ».
     const res = await call(
       "/api/auth/magic-link",
-      { body: { email: "nokey-503@uchlist.ru" }, origin: null },
+      { body: { email: "nokey-503@uchlist.ru", consents: AUTH_CONSENTS }, origin: null },
       prodEnv({ RESEND_API_KEY: undefined }),
     );
     const body = (await res.json()) as { code?: string; error?: string };
@@ -518,7 +537,7 @@ describe("К-2: в production ссылка для входа не уходит �
     const failing = prodEnv({ RESEND_API_KEY: "re_invalid_key_for_test" });
     const res = await call(
       "/api/auth/magic-link",
-      { body: { email: "definitely-registered@rabochielisty.ru" }, origin: null },
+      { body: { email: "definitely-registered@rabochielisty.ru", consents: AUTH_CONSENTS }, origin: null },
       failing,
     );
     const raw = await res.text();
@@ -530,7 +549,7 @@ describe("К-2: в production ссылка для входа не уходит �
   it("в production ссылка для входа не возвращается в ответе", async () => {
     const res = await call(
       "/api/auth/magic-link",
-      { body: { email: "noletter@uchlist.ru" }, origin: null },
+      { body: { email: "noletter@uchlist.ru", consents: AUTH_CONSENTS }, origin: null },
       prodEnv(), // RESEND_API_KEY отсутствует — именно этот случай был дырой
     );
     const raw = await res.text();
@@ -553,7 +572,7 @@ describe("К-2: в production ссылка для входа не уходит �
 
     const res = await call(
       "/api/auth/magic-link",
-      { body: { email: "misdeployed@uchlist.ru" }, origin: null },
+      { body: { email: "misdeployed@uchlist.ru", consents: AUTH_CONSENTS }, origin: null },
       misdeployed,
     );
     expect(res.status, "ссылка входа обязана быть закрыта при неверном APP_ENV").toBeGreaterThanOrEqual(400);
@@ -584,7 +603,7 @@ describe("К-2: в production ссылка для входа не уходит �
     });
     const res = await call(
       "/api/auth/magic-link",
-      { body: { email: "badurl@uchlist.ru" }, origin: null },
+      { body: { email: "badurl@uchlist.ru", consents: AUTH_CONSENTS }, origin: null },
       broken,
     );
     expect(res.status).toBeGreaterThanOrEqual(400);
@@ -593,7 +612,7 @@ describe("К-2: в production ссылка для входа не уходит �
   it("в production без настроенной почты вход закрывается, а не выдаётся", async () => {
     const res = await call(
       "/api/auth/magic-link",
-      { body: { email: "failclosed@uchlist.ru" }, origin: null },
+      { body: { email: "failclosed@uchlist.ru", consents: AUTH_CONSENTS }, origin: null },
       prodEnv(),
     );
 
@@ -609,7 +628,7 @@ describe("К-2: в production ссылка для входа не уходит �
   it("в development ссылка возвращается — локальная разработка не сломана", async () => {
     const res = await call(
       "/api/auth/magic-link",
-      { body: { email: "dev@uchlist.ru" }, origin: null },
+      { body: { email: "dev@uchlist.ru", consents: AUTH_CONSENTS }, origin: null },
       devEnv(),
     );
     const body = (await res.json()) as { devMagicUrl?: string };
@@ -619,7 +638,7 @@ describe("К-2: в production ссылка для входа не уходит �
   it("сессионный токен не возвращается в теле ответа (С-1)", async () => {
     await call(
       "/api/auth/magic-link",
-      { body: { email: "cookie@uchlist.ru" }, origin: null },
+      { body: { email: "cookie@uchlist.ru", consents: AUTH_CONSENTS }, origin: null },
       devEnv(),
     );
     const row = await db()
@@ -750,7 +769,7 @@ describe("Конфигурация: отсутствие секретов не �
     const bad = prodEnv({ RESEND_API_KEY: undefined, YOOKASSA_SHOP_ID: undefined, YOOKASSA_SECRET_KEY: undefined });
 
     // Вход: должен отказать, а не выдать ссылку.
-    const login = await call("/api/auth/magic-link", { body: { email: "cfg@uchlist.ru" }, origin: null }, bad);
+    const login = await call("/api/auth/magic-link", { body: { email: "cfg@uchlist.ru", consents: AUTH_CONSENTS }, origin: null }, bad);
     expect(login.status).toBeGreaterThanOrEqual(400);
 
     // Оплата: должна отказать, а не создать фиктивный платёж.

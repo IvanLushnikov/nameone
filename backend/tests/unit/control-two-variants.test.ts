@@ -318,8 +318,10 @@ describe("контрольная: старая запись кэша не дол
    * тест), и обе стороны должны быть зафиксированы тестом: правило легко
    * «упростить» до одного из двух краёв при следующей правке кэша.
    */
-  it("деградированная запись с флагом результата выживает и не перегенерируется", async () => {
-    // Один вариант вместо двух = деградация с признаком (разрыв 3).
+  it("один вариант без добора второго — 422, в кэш не кладётся", async () => {
+    // teacher-flow п.1 / D5: одного варианта после дозапроса недостаточно —
+    // бросаем GENERATION_TRUNCATED. Провальный ответ в semantic_cache не пишем,
+    // иначе учитель 30 дней платил бы за повтор той же неудачи.
     stubProvider({
       variants: [
         {
@@ -336,18 +338,10 @@ describe("контрольная: старая запись кэша не дол
     });
     const db = fakeDb();
 
-    const first = await generateWorksheet(ARGS, FAKE_ENV, db as never);
-    // Признак обязан быть в ответе: «модель вернула один вариант».
-    expect(first.variants.degraded).toBe(true);
-    expect(first.variants.expected).toBe(2);
-    expect(first.variants.delivered).toBe(1);
-
-    // Второй запрос — из кэша, денег не тратит.
-    const second = await generateWorksheet(ARGS, FAKE_ENV, db as never);
-    expect(second.meta.cached).toBe(true);
-    // И возвращает ТОТ ЖЕ флаг деградации, а не молчаливый «всё хорошо».
-    expect(second.variants.degraded).toBe(true);
-    expect(second.quality.requested).toBe(first.quality.requested);
+    await expect(generateWorksheet(ARGS, FAKE_ENV, db as never)).rejects.toThrow(
+      /второй вариант|оборван|не получен/i,
+    );
+    expect(db.cache.size).toBe(0);
   });
 
   it("обычный лист со старой формой ответа из кэша не перегенерируется зря", async () => {

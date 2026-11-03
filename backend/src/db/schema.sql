@@ -69,6 +69,30 @@ CREATE TABLE IF NOT EXISTS user_passwords (
   updated_at INTEGER NOT NULL
 );
 
+-- Согласия при входе / регистрации (D2.4): оферта, ПДн, реклама.
+--
+-- Отдельная таблица, а НЕ колонки в users — та же причина, что у user_roles
+-- и user_passwords: повторный прогон schema.sql идемпотентен. F-06
+-- photo_checks.consent_version сюда НЕ входит — это другой контур.
+--
+-- UNIQUE(user_id, type, version): одна запись на версию документа. Повторный
+-- вход с той же версией обновляет строку (UPSERT); смена юртекста = новый
+-- version → новая строка. Реклама пишется и при отказе (accepted=0).
+CREATE TABLE IF NOT EXISTS user_consents (
+  id           TEXT PRIMARY KEY,               -- ucon_<12>
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type         TEXT NOT NULL,                 -- 'offer' | 'pdn' | 'marketing'
+  version      TEXT NOT NULL,                 -- slug версии, напр. '1'
+  accepted     INTEGER NOT NULL,              -- 1 = да, 0 = отказ (marketing)
+  accepted_at  INTEGER NOT NULL,              -- unix seconds
+  ip           TEXT,
+  ua           TEXT,
+  UNIQUE(user_id, type, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_consents_user
+  ON user_consents(user_id, accepted_at DESC);
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Код подтверждения администратора (ТЗ-24, раздел 8.1)
 --

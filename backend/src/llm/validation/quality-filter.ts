@@ -617,7 +617,9 @@ export function filterTasks(
 
     // 0-бис. «Найдите/подчеркните/…» + фраза в «ёлочках» + пустой answer.
     //    Эталон из критерия не дописываем — чинить нечем, задание выпадает.
-    if (shouldDropFindQuoteEmptyAnswer(task)) {
+    //    Только когда ответы ОБЯЗАТЕЛЬНЫ: при withAnswers=false пустой answer
+    //    законен (D5 / ТЗ-26 Ф-5), иначе съедаем весь лист без ключей.
+    if (requireAnswer && shouldDropFindQuoteEmptyAnswer(task)) {
       report.droppedNoAnswer.push(index + 1);
       return;
     }

@@ -74,31 +74,23 @@ function fakeDb(sub: Record<string, unknown> | null, counters: Map<string, numbe
 }
 
 describe("нормы тарифа", () => {
-  it("Плюс: норма покрывает сценарий В с запасом ×1,5", () => {
-    // ОБНОВЛЕНО 12.10.2026 под решение о снижении цен
-    // (docs/36-price-cut-implementation-plan-2026-10-12.md §1).
-    //
-    // Раньше тест требовал 14,9 млн — это расчётная величина для СЦЕНАРИЯ «24
-    // урока/нед» из docs/04-pricing-economics-v2.md §7.1. Владелец выбрал базой
-    // для решений СЦЕНАРИЙ В (20 уроков/нед), и норма «Плюса» сознательно
-    // опущена до 9,7 млн — это потолок, при котором маржа держится 70%.
-    //
-    // Значение ниже — взвешенная нагрузка сценария В из источника истины
-    // scripts/margin-matrix.mjs. Сценарий «24 урока/нед» теперь НЕ входит в
-    // норму: держать под ним маржу 70% при цене 999 ₽ нельзя, и это было
-    // осознанным решением, а не просчётом.
-    const scenarioB = 5_595_806;
-    expect(PLAN_NORM_PER_MONTH.plus).toBeGreaterThan(scenarioB * 1.5);
+  it("Плюс: норма = пропорция от Базового 800 листов (D3)", () => {
+    // D3: Базовый = 800 × 1600 = 1 280 000; Плюс в той же пропорции цен
+    // 249:999 ≈ ×4.04 → 5 173 333. Старый пол сценария В×1.5 (~8.39M) снят.
+    expect(PLAN_NORM_PER_MONTH.base).toBe(800 * TOKENS_PER_WORKSHEET);
+    expect(PLAN_NORM_PER_MONTH.plus).toBe(5_173_333);
+    expect(PLAN_NORM_PER_MONTH.plus / PLAN_NORM_PER_MONTH.base).toBeCloseTo(
+      999 / 249,
+      1,
+    );
   });
 
-  it("Плюс: норма не выше потолка, при котором маржа держится 70%", () => {
-    // Потолок из docs/36 §1: 9 721 361. Норма округлена вниз до 9 700 000,
-    // чтобы запас оставался тонким, а не превращался в убыток при дешевой
-    // самопроверке.
+  it("Плюс: норма не выше потолка маржи 70% (исторический потолок docs/36)", () => {
     expect(PLAN_NORM_PER_MONTH.plus).toBeLessThanOrEqual(9_721_361);
   });
 
-  it("Базовый: норма с запасом на 150-300 листов в месяц", () => {
+  it("Базовый: норма = 800 листов (D3), с запасом над 150–300", () => {
+    expect(PLAN_NORM_PER_MONTH.base).toBe(800 * TOKENS_PER_WORKSHEET);
     const threeHundredWorksheets = 300 * TOKENS_PER_WORKSHEET;
     expect(PLAN_NORM_PER_MONTH.base).toBeGreaterThan(threeHundredWorksheets);
   });

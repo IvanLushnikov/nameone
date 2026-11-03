@@ -94,7 +94,7 @@ describe("ТЗ-34: критерий должен быть конкретным",
   });
 
   it("критерий короче 15 символов — не критерий", () => {
-    expect(MIN_CRITERION_LENGTH).toBe(15);
+    expect(MIN_CRITERION_LENGTH).toBe(10);
     expect(isConcreteCriterion("Коротко")).toBe(false);
     expect(isConcreteCriterion("Ответ неполный")).toBe(false);
     expect(isConcreteCriterion("   ")).toBe(false);

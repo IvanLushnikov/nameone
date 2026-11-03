@@ -61,10 +61,36 @@ function bodyWithType(type: string) {
   };
 }
 
+async function seedFreeSession(): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const userId = "usr_retired_art";
+  const token = "sess_retired_art";
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO users
+         (id, email, name, plan, generations_total, generations_today, is_admin, created_at, updated_at)
+       VALUES (?1, ?2, 'Учитель', 'free', 0, 0, 0, ?3, ?3)`,
+    )
+    .bind(userId, "retired-art@example.test", now)
+    .run();
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO sessions (token, user_id, expires_at, created_at)
+       VALUES (?1, ?2, ?3, ?4)`,
+    )
+    .bind(token, userId, now + 86400, now)
+    .run();
+  return token;
+}
+
 async function postWorksheet(type: string) {
+  const token = await seedFreeSession();
   const res = await SELF.fetch("https://uchlist.test/api/worksheets/generate", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      cookie: `session=${token}`,
+    },
     body: JSON.stringify(bodyWithType(type)),
   });
   return { status: res.status, json: await res.json().catch(() => null) };

@@ -16,7 +16,31 @@ describe("teacher-flow · find+ёлочки empty answer", () => {
     expect(looksLikeFindQuoteTask("Сколько будет 2+2?")).toBe(false);
   });
 
-  it("выкидывает задание с пустым answer", () => {
+  it("выкидывает задание с пустым answer при requireAnswer", () => {
+    const { tasks, report } = filterTasks(
+      [
+        {
+          number: 1,
+          text: "Найдите в тексте фразу «вечный двигатель»",
+          answer: null,
+          type: "short-answer",
+        },
+        {
+          number: 2,
+          text: "Сколько будет 3+5?",
+          answer: "8",
+          type: "short-answer",
+        },
+      ],
+      "russian",
+      { requireAnswer: true },
+    );
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]?.text).toContain("3+5");
+    expect(report.droppedNoAnswer).toContain(1);
+  });
+
+  it("при requireAnswer:false find+ёлочки без ответа оставляет (D5)", () => {
     const { tasks, report } = filterTasks(
       [
         {
@@ -35,9 +59,8 @@ describe("teacher-flow · find+ёлочки empty answer", () => {
       "russian",
       { requireAnswer: false },
     );
-    expect(tasks).toHaveLength(1);
-    expect(tasks[0]?.text).toContain("3+5");
-    expect(report.droppedNoAnswer).toContain(1);
+    expect(tasks).toHaveLength(2);
+    expect(report.droppedNoAnswer ?? []).not.toContain(1);
   });
 
   it("не дописывает эталон из criteria в answer — задание выпадает среди других", () => {
@@ -57,7 +80,7 @@ describe("teacher-flow · find+ёлочки empty answer", () => {
         { number: 3, text: "Подберите синоним", answer: "дом — жилище", type: "short-answer" },
       ],
       "russian",
-      { requireAnswer: false },
+      { requireAnswer: true },
     );
     expect(tasks.every((t) => t.number !== 1)).toBe(true);
     expect(tasks.some((t) => typeof t.answer === "string" && t.answer.includes("корень"))).toBe(

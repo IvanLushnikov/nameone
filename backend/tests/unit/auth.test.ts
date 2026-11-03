@@ -81,6 +81,21 @@ CREATE TABLE IF NOT EXISTS user_passwords (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS user_consents (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type         TEXT NOT NULL,
+  version      TEXT NOT NULL,
+  accepted     INTEGER NOT NULL,
+  accepted_at  INTEGER NOT NULL,
+  ip           TEXT,
+  ua           TEXT,
+  UNIQUE(user_id, type, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_consents_user
+  ON user_consents(user_id, accepted_at DESC);
+
 CREATE TABLE IF NOT EXISTS magic_links (
   token       TEXT PRIMARY KEY,
   email       TEXT NOT NULL,
@@ -545,9 +560,17 @@ function setPasswordViaApi(
   );
 }
 
+/** Обязательные согласия login-контура (D2). marketing=false тоже пишется. */
+const DEFAULT_CONSENTS = { offer: true as const, pdn: true as const, marketing: false };
+
 /** Попытка входа по паролю. */
-function login(email: string, password: string, ip?: string): Promise<Response> {
-  return call("/api/auth/login", { body: { email, password }, ip });
+function login(
+  email: string,
+  password: string,
+  ip?: string,
+  consents: typeof DEFAULT_CONSENTS = DEFAULT_CONSENTS,
+): Promise<Response> {
+  return call("/api/auth/login", { body: { email, password, consents }, ip });
 }
 
 /**

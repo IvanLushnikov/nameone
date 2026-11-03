@@ -225,7 +225,13 @@ classesRouter.post("/:id/students", async (c) => {
   const body = StudentsBody.parse(raw);
   const names = "names" in body ? body.names : [body.name];
 
-  const result = await addStudents(c.env.DB, user.id, c.req.param("id"), names);
+  const result = await addStudents(
+    c.env.DB,
+    user.id,
+    c.req.param("id"),
+    names,
+    user.plan,
+  );
   if (!result.ok) fail(result);
 
   return c.json(

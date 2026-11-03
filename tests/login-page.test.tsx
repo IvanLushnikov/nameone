@@ -10,9 +10,8 @@
  *      страница показывала честное «входа пока нет» — и тест это фиксировал.
  *      7 октября 2026 домен подтверждён (Resend verified, живая отправка отдаёт
  *      {"ok":true}), форма вернулась.
- *   2. Путь «создать лист без регистрации» остаётся на странице в любом
- *      состоянии: пока входа нет — это главное действие, после — ссылка в
- *      подвале под формой. Регистрация для создания листа не нужна.
+ *   2. D4: генерация только после входа — на странице нет CTA
+ *      «создать лист без регистрации».
  *   3. Незаблокированные кнопки ВК/Яндекс/Telegram подписаны «скоро» ВИДИМО.
  *      Молчаливый `disabled` без подписи выглядит как сломанная кнопка.
  *
@@ -51,25 +50,35 @@ describe("Страница входа — вход по ссылке готов"
     expect(screen.queryByText(/вход по ссылке из письма — пока недоступен/i)).toBeNull();
   });
 
-  it("оставляет создание листа без регистрации доступным и на странице входа", () => {
+  it("не обещает создать лист без регистрации", () => {
     const { container } = render(<LoginPage />);
-    // С входом работающим эта ссылка перестаёт быть главным действием и уходит
-    // в подвал под формой — рабочий путь «создать лист без регистрации»
-    // при этом сохраняется, поэтому проверяем наличие, а не размер кнопки.
-    const cta = container.querySelector('a[href="/constructor"]');
-    expect(cta).not.toBeNull();
-    expect(cta?.textContent).toMatch(/создать лист без регистрации/i);
+    // D4: free = вход сразу. CTA «создать лист без регистрации» убран.
+    expect(container.textContent).not.toMatch(/создать лист без регистрации/i);
+    expect(container.textContent).toMatch(/после входа/i);
   });
 
   it("подписывает соцкнопки «скоро» прямо на кнопке", () => {
     const { container } = render(<LoginPage />);
     const labels = Array.from(container.querySelectorAll("button[disabled]"))
       .map((b) => b.textContent ?? "");
-    // Основная кнопка отправки тоже disabled — до отметки согласия на ПДн.
+    // Основная кнопка отправки тоже disabled — до отметок оферты и ПДн.
     // Соцкнопки отбираем по подписи, чтобы тест не зависел от её наличия.
     expect(labels).toEqual(
       expect.arrayContaining(["VKскоро", "Яндексскоро", "Telegramскоро"]),
     );
     expect(labels).toHaveLength(4);
+  });
+
+  it("показывает отдельные чекбоксы оферты, ПДн и рекламы без pre-check", () => {
+    render(<LoginPage />);
+    const offer = screen.getByTestId("login-consent-offer") as HTMLInputElement;
+    const pdn = screen.getByTestId("login-consent-pdn") as HTMLInputElement;
+    const marketing = screen.getByTestId(
+      "login-consent-marketing",
+    ) as HTMLInputElement;
+    expect(offer.checked).toBe(false);
+    expect(pdn.checked).toBe(false);
+    expect(marketing.checked).toBe(false);
+    expect(screen.getByTestId("login-submit")).toBeDisabled();
   });
 });

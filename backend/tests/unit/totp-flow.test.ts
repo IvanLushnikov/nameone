@@ -123,6 +123,18 @@ CREATE TABLE IF NOT EXISTS magic_links (
   used_at    INTEGER,
   created_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS user_consents (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type         TEXT NOT NULL,
+  version      TEXT NOT NULL,
+  accepted     INTEGER NOT NULL,
+  accepted_at  INTEGER NOT NULL,
+  ip           TEXT,
+  ua           TEXT,
+  UNIQUE(user_id, type, version)
+);
 `;
 
 const ADMIN_TOKEN = "tok_admin_mfa";
@@ -171,6 +183,23 @@ async function seed() {
       .bind(id, salt, now)
       .run();
   }
+
+  // D2: callback без consents в теле требует уже записанные offer+pdn.
+  for (const userId of ["u_mfa_admin", "u_mfa_teacher"] as const) {
+    for (const [type, version] of [
+      ["offer", "1"],
+      ["pdn", "1"],
+      ["marketing", "1"],
+    ] as const) {
+      await env.DB.prepare(
+        `INSERT INTO user_consents
+           (id, user_id, type, version, accepted, accepted_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+      )
+        .bind(`ucon_${userId}_${type}`, userId, type, version, type === "marketing" ? 0 : 1, now)
+        .run();
+    }
+  }
 }
 
 /** Код из приложения для заданного секрета (тест выступает за приложение). */
@@ -206,6 +235,7 @@ beforeEach(async () => {
     "admin_login_pending",
     "sessions",
     "user_passwords",
+    "user_consents",
     "rate_limits",
     "admin_audit_log",
     "magic_links",
