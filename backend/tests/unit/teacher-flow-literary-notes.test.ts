@@ -69,7 +69,6 @@ describe("teacher-flow · literary notes", () => {
         grade: 6,
         topic: "Басни",
         count: 10,
-        type: "presentation",
         difficulty: "medium",
         withAnswers: true,
         withExplanations: false,

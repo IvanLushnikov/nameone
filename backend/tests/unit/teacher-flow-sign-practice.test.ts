@@ -49,7 +49,7 @@ describe("teacher-flow · только подписать", () => {
         stages: baseStages,
         homework: { text: "№ 12" },
       },
-      { subject: "geometry", grade: 7, topic: "Треугольники", count: 10, type: "lesson-plan", difficulty: "medium", withAnswers: true, withExplanations: false },
+      { subject: "geometry", grade: 7, topic: "Треугольники", count: 10, difficulty: "medium", withAnswers: true, withExplanations: false },
     );
     expect(plan.stages.some((s) => s.kind === "practice")).toBe(false);
     expect(plan.stages.find((s) => s.kind === "homework")?.teacherActions).toBe(
@@ -69,7 +69,7 @@ describe("teacher-flow · только подписать", () => {
         stages: baseStages,
         homework: { text: "№ 3" },
       },
-      { subject: "math", grade: 5, topic: "Дроби", count: 10, type: "lesson-plan", difficulty: "medium", withAnswers: true, withExplanations: false },
+      { subject: "math", grade: 5, topic: "Дроби", count: 10, difficulty: "medium", withAnswers: true, withExplanations: false },
     );
     expect(plan.stages.some((s) => s.kind === "practice")).toBe(true);
   });

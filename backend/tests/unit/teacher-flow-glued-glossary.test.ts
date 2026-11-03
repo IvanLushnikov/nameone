@@ -40,7 +40,6 @@ describe("teacher-flow · glued glossary", () => {
         grade: 6,
         topic: "Клетка",
         count: 10,
-        type: "materials",
         difficulty: "medium",
         withAnswers: true,
         withExplanations: false,
