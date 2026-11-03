@@ -128,6 +128,17 @@ export function buildMaterialsPrompt(req: ArtifactRequest): { system: string; us
 }
 
 /**
+ * Склеенный словарь без переноса строк в комплект не входит (teacher-flow п.5).
+ * Запятую в определение не вставляем — чинить склейку так нельзя.
+ */
+export function isGluedGlossary(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed) return true;
+  // Нет ни одного перевода строки → термины склеены в одну кашу.
+  return !trimmed.includes("\n");
+}
+
+/**
  * Разобрать ответ модели в комплект материалов.
  *
  * @returns комплект БЕЗ `id`/`createdAt`; идентификаторы файлов проставлены
@@ -152,6 +163,8 @@ export function normalizeMaterialBundle(
       const title = asText(file.title);
       const content = asText(file.content);
       if (!kind || !title || !content) continue;
+      // Склеенный словарь без \n — не чиним запятыми, просто не берём.
+      if (kind === "glossary" && isGluedGlossary(content)) continue;
       files.push({
         // Идентификатор файла — только серверный. Модель их не знает, а на
         // фронте id идёт в ZIP-архив, и два одинаковых id от модели дали бы

@@ -178,20 +178,49 @@ export default function MaterialPage({ params }: Props) {
                 <div className="h-2.5 w-full rounded-full bg-warm-100" />
                 <div className="h-2.5 w-2/3 rounded-full bg-warm-100" />
                 <div className="mt-5 rounded-xl border border-dashed border-brand-200 bg-brand-50/50 p-4 text-sm text-brand-800">
-                  {material.count} заданий · {material.topicTitle}
+                  {material.artifactType === "presentation" ||
+                  material.artifactType === "ktp" ||
+                  material.artifactType === "interactive" ||
+                  material.artifactType === "lesson-plan"
+                    ? material.topicTitle
+                    : `${material.count} заданий · ${material.topicTitle}`}
                 </div>
               </div>
 
               <div className="mt-6 border-t border-warm-100 pt-5">
                 <p className="text-sm font-semibold text-warm-900 mb-3">Что вы получите</p>
+                {/* teacher-flow п.7: презентация/КТП/интерактив не обещают
+                    задания+ответы+PDF; «за минуту» на карточке нет. */}
                 <ul className="space-y-2 text-sm text-warm-700">
-                  <li>• {material.count} заданий по теме {quotedTopic(material.topicTitle)}</li>
-                  <li>• Ответы с разбором — для самопроверки и проверки дома</li>
-                  <li>• По программе {material.grade} класса{topic?.fgosRef ? `, раздел «${topic.fgosRef}»` : ""}</li>
-                  {/* ТЗ-37b: время здесь не называем — в каталоге материалы на
-                      8–14 заданий, а «за минуту» верно только до 10 (замер:
-                      12 заданий — до 67,2 с). Число заданий названо строкой выше. */}
-                  <li>• Готовый PDF — без Word и шаблонов</li>
+                  {material.artifactType === "presentation" ? (
+                    <>
+                      <li>• Презентация по теме {quotedTopic(material.topicTitle)}</li>
+                      <li>• Слайды с тезисами и заметками для учителя</li>
+                      <li>• По программе {material.grade} класса{topic?.fgosRef ? `, раздел «${topic.fgosRef}»` : ""}</li>
+                      <li>• Файл PPTX — без картинок из нейросети</li>
+                    </>
+                  ) : material.artifactType === "ktp" ? (
+                    <>
+                      <li>• КТП по теме {quotedTopic(material.topicTitle)}</li>
+                      <li>• Календарно-тематическое планирование на год</li>
+                      <li>• По программе {material.grade} класса{topic?.fgosRef ? `, раздел «${topic.fgosRef}»` : ""}</li>
+                      <li>• Документ для правки под свой класс</li>
+                    </>
+                  ) : material.artifactType === "interactive" ? (
+                    <>
+                      <li>• Интерактив по теме {quotedTopic(material.topicTitle)}</li>
+                      <li>• Игра для класса с мгновенной проверкой</li>
+                      <li>• По программе {material.grade} класса{topic?.fgosRef ? `, раздел «${topic.fgosRef}»` : ""}</li>
+                      <li>• Ссылка для учеников — без печати PDF</li>
+                    </>
+                  ) : (
+                    <>
+                      <li>• {material.count} заданий по теме {quotedTopic(material.topicTitle)}</li>
+                      <li>• Ответы с разбором — для самопроверки и проверки дома</li>
+                      <li>• По программе {material.grade} класса{topic?.fgosRef ? `, раздел «${topic.fgosRef}»` : ""}</li>
+                      <li>• Готовый PDF — без Word и шаблонов</li>
+                    </>
+                  )}
                 </ul>
               </div>
             </div>
@@ -202,11 +231,21 @@ export default function MaterialPage({ params }: Props) {
                 Бесплатно
               </p>
               <h2 className="mt-2 text-xl font-display font-bold text-warm-950">
-                Сгенерировать такой лист
+                {material.artifactType === "presentation"
+                  ? "Сгенерировать такую презентацию"
+                  : material.artifactType === "ktp"
+                    ? "Сгенерировать такое КТП"
+                    : material.artifactType === "interactive"
+                      ? "Сгенерировать такой интерактив"
+                      : "Сгенерировать такой лист"}
               </h2>
               <p className="mt-3 text-sm text-warm-700 leading-relaxed">
                 Откроется конструктор с уже выбранными предметом, классом, темой и форматом.
-                Соберёте свой вариант из 10 заданий за минуту.
+                {material.artifactType === "presentation" ||
+                material.artifactType === "ktp" ||
+                material.artifactType === "interactive"
+                  ? " Соберёте свой вариант под класс."
+                  : " Соберёте свой вариант из 10 заданий за минуту."}
               </p>
 
               <ul className="mt-4 space-y-2 text-sm text-warm-700">
@@ -216,7 +255,12 @@ export default function MaterialPage({ params }: Props) {
                 </li>
                 <li className="flex items-center gap-2">
                   <FileText className="w-4 h-4 text-brand-500 shrink-0" aria-hidden />
-                  {materialArtifactLabel(material.artifactType)}, {material.count} заданий
+                  {materialArtifactLabel(material.artifactType)}
+                  {material.artifactType === "presentation" ||
+                  material.artifactType === "ktp" ||
+                  material.artifactType === "interactive"
+                    ? ""
+                    : `, ${material.count} заданий`}
                 </li>
               </ul>
 
@@ -230,7 +274,13 @@ export default function MaterialPage({ params }: Props) {
                 leftIcon={<Sparkles className="w-4 h-4" />}
                 rightIcon={<ArrowRight className="w-4 h-4" />}
               >
-                Сгенерировать такой лист
+                {material.artifactType === "presentation"
+                  ? "Сгенерировать такую презентацию"
+                  : material.artifactType === "ktp"
+                    ? "Сгенерировать такое КТП"
+                    : material.artifactType === "interactive"
+                      ? "Сгенерировать такой интерактив"
+                      : "Сгенерировать такой лист"}
               </Button>
 
               <p className="mt-3 text-xs text-warm-500 text-center">

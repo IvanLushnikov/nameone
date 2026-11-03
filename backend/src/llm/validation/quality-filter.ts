@@ -273,6 +273,30 @@ export function hasUsableAnswer(answer: unknown): boolean {
 }
 
 /**
+ * Задание вида «Найдите / подчеркните / выпишите / выделите» с фразой в
+ * «ёлочках» и пустым answer — в лист не идёт.
+ *
+ * Эталон из критерия сюда НЕ дописывается: чинить нечем, фраза в кавычках
+ * уже задаёт, что искать, а пустой ключ означает, что модель не знала ответа.
+ */
+// `\b` не видит кириллицу как «слово» — границы через начало/не-букву.
+const FIND_QUOTE_VERB =
+  /(?:^|[^\p{L}\p{N}_])(?:найдите|найди|подчеркните|подчеркни|выпишите|выпиши|выделите|выдели)(?=[^\p{L}\p{N}_]|$)/iu;
+const HAS_GUILLEMET_PHRASE = /«[^»]{1,200}»/;
+
+export function looksLikeFindQuoteTask(text: string): boolean {
+  if (!text) return false;
+  return FIND_QUOTE_VERB.test(text) && HAS_GUILLEMET_PHRASE.test(text);
+}
+
+/** Пустой answer у find+ёлочки → выкинуть (teacher-flow п.3). */
+export function shouldDropFindQuoteEmptyAnswer(task: RawTask): boolean {
+  const text = typeof task.text === "string" ? task.text : "";
+  if (!looksLikeFindQuoteTask(text)) return false;
+  return !hasUsableAnswer(task.answer);
+}
+
+/**
  * ТЗ-33: непустой список строк.
  *
  * Отдельная проверка вместо `Array.isArray(x) && x.length > 0` — потому что
@@ -588,6 +612,13 @@ export function filterTasks(
       } else {
         report.droppedTypeMismatch.push(index + 1);
       }
+      return;
+    }
+
+    // 0-бис. «Найдите/подчеркните/…» + фраза в «ёлочках» + пустой answer.
+    //    Эталон из критерия не дописываем — чинить нечем, задание выпадает.
+    if (shouldDropFindQuoteEmptyAnswer(task)) {
+      report.droppedNoAnswer.push(index + 1);
       return;
     }
 

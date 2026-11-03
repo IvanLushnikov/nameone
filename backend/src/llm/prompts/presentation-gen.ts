@@ -142,6 +142,33 @@ export function buildPresentationPrompt(req: ArtifactRequest): {
 }
 
 /**
+ * Чужие литературные примеры, которые модель иногда тащит в заметки слайда
+ * «с потолка» (teacher-flow п.6). Если примера нет в заголовке/пунктах
+ * слайда — вырезаем из notes. Замены другим названием кодом не делаем.
+ */
+export const FOREIGN_LITERARY_EXAMPLES = [
+  "Любитель-садовод",
+  "Слон и Моська",
+] as const;
+
+/** Убрать из заметок чужие примеры, которых нет на самом слайде. */
+export function sanitizeSlideNotes(
+  notes: string,
+  slideText: string,
+): string | undefined {
+  if (!notes.trim()) return undefined;
+  let cleaned = notes;
+  for (const example of FOREIGN_LITERARY_EXAMPLES) {
+    if (slideText.includes(example)) continue;
+    const escaped = example.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`[«"']?${escaped}[»"']?`, "g");
+    cleaned = cleaned.replace(re, "");
+  }
+  cleaned = cleaned.replace(/\s{2,}/g, " ").replace(/\s+([.,;:!?])/g, "$1").trim();
+  return cleaned.length > 0 ? cleaned : undefined;
+}
+
+/**
  * Разобрать ответ модели в презентацию.
  *
  * @returns презентация БЕЗ `id`/`createdAt`.
@@ -165,7 +192,9 @@ export function normalizePresentation(
       const title = asText(slide.title);
       if (!kind || !title) continue;
       const bullets = asTextList(slide.bullets);
-      const notes = asText(slide.notes);
+      const rawNotes = asText(slide.notes);
+      const slideText = [title, ...bullets].join("\n");
+      const notes = rawNotes ? sanitizeSlideNotes(rawNotes, slideText) : undefined;
       slides.push({
         kind,
         title,

@@ -135,6 +135,21 @@ export class InternalError extends ApiError {
   }
 }
 
+/**
+ * 422: ответ модели оборван по потолку токенов (`finish_reason=length`).
+ *
+ * Не 500: это ожидаемый отказ конвейера, а не баг в коде. Учитель должен
+ * увидеть «Файл не собран», а не «готово» с половиной материала и не общий
+ * Internal. Код `GENERATION_TRUNCATED` отличает этот случай от прочих 4xx:
+ * на /oge демо при нём НЕ открывается.
+ */
+export class GenerationTruncatedError extends ApiError {
+  constructor(message = "Файл не собран: ответ модели оборван", details?: unknown) {
+    super(422, "GENERATION_TRUNCATED", message, details);
+    this.name = "GenerationTruncatedError";
+  }
+}
+
 /** Удобный helper для ad-hoc ошибок. */
 export function throwApiError(status: number, code: string, message: string, details?: unknown): never {
   throw new ApiError(status, code, message, details);

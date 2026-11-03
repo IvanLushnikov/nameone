@@ -150,6 +150,10 @@ export class BackendError extends Error {
   get isChallengeUnavailable(): boolean {
     return this.status === 409 && this.code === "CHALLENGE_UNAVAILABLE";
   }
+  /** Ответ модели оборван — файл не собран (teacher-flow п.1). */
+  get isGenerationTruncated(): boolean {
+    return this.status === 422 && this.code === "GENERATION_TRUNCATED";
+  }
 }
 
 /**

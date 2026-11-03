@@ -427,6 +427,8 @@ export default function ConstructorPage() {
   const [type, setType] = React.useState<TaskType>("worksheet");
   const [difficulty, setDifficulty] = React.useState<Difficulty>("medium");
   const [count, setCount] = React.useState<number>(10);
+  /** teacher-flow п.10: у презентации — выбор 5/10/15/20, поле slideCount. */
+  const [slideCount, setSlideCount] = React.useState<5 | 10 | 15 | 20>(10);
   const [withAnswers, setWithAnswers] = React.useState(true);
   const [withExplanations, setWithExplanations] = React.useState(true);
 
@@ -1377,6 +1379,7 @@ export default function ConstructorPage() {
         count,
         withAnswers,
         withExplanations,
+        ...(type === "presentation" ? { slideCount } : {}),
       };
     } else {
       if (!subject || !grade || !topic) return;
@@ -1389,6 +1392,7 @@ export default function ConstructorPage() {
         count,
         withAnswers,
         withExplanations,
+        ...(type === "presentation" ? { slideCount } : {}),
         // TZ-08: пробрасываем УМК в метаданные для мок-генератора
         // (будущая передача в LLM-prompt в backend). Используем существующее
         // поле `meta` чтобы не расширять контракт GenerationRequest.
@@ -1951,6 +1955,17 @@ export default function ConstructorPage() {
         return;
       }
 
+      // teacher-flow п.1: обрыв модели — «Файл не собран», без заготовки.
+      if (err instanceof BackendError && err.isGenerationTruncated) {
+        toast({
+          tone: "error",
+          title: "Файл не собран",
+          description: "Ответ модели оборвался. Попробуйте ещё раз",
+        });
+        console.error("[generate] failed: truncated", err);
+        return;
+      }
+
       if (isTimeoutError(err)) {
         toast({
           tone: "error",
@@ -2074,6 +2089,11 @@ export default function ConstructorPage() {
     const blob = await generateWorksheetDocx(worksheet, {
       withAnswers,
       withExplanations,
+      // teacher-flow п.2: шапка Тест / Контрольная / Рабочий лист.
+      kind:
+        type === "test" || type === "control" || type === "worksheet"
+          ? type
+          : "worksheet",
       // ТЗ-34: страница «Критерии оценивания» — ПОСЛЕ ключа. Для рабочего
       // листа блок пустой, и страницы в файле не будет: лист учитель раздаёт,
       // а не оценивает.
@@ -2415,6 +2435,8 @@ export default function ConstructorPage() {
                 setDifficulty={setDifficulty}
                 count={count}
                 setCount={setCount}
+                slideCount={slideCount}
+                setSlideCount={setSlideCount}
                 withAnswers={withAnswers}
                 setWithAnswers={setWithAnswers}
                 withExplanations={withExplanations}
@@ -3594,6 +3616,8 @@ function ConfigureStep({
   setDifficulty,
   count,
   setCount,
+  slideCount,
+  setSlideCount,
   withAnswers,
   setWithAnswers,
   withExplanations,
@@ -3620,6 +3644,8 @@ function ConfigureStep({
   setDifficulty: (d: Difficulty) => void;
   count: number;
   setCount: (n: number) => void;
+  slideCount: 5 | 10 | 15 | 20;
+  setSlideCount: (n: 5 | 10 | 15 | 20) => void;
   withAnswers: boolean;
   setWithAnswers: (b: boolean) => void;
   withExplanations: boolean;
@@ -3662,8 +3688,8 @@ function ConfigureStep({
       case "lesson-plan": return "План урока";
       case "presentation": return "Презентация";
       case "ktp": return "КТП";
-      case "oge": return "Вариант ОГЭ";
-      case "ege": return "Вариант ЕГЭ";
+      case "oge": return "Лист по номерам ОГЭ";
+      case "ege": return "Лист по номерам ЕГЭ";
       // TZ-16: новые типы. Preset'ов с такими типами пока нет (PresetGrid —
       // out of scope TZ-16 §11), но switch исчерпывающий по TaskType, и без
       // этих веток подпись была бы пустой строкой.
@@ -3810,28 +3836,57 @@ function ConfigureStep({
           </div>
         </div>
 
-        {/* Количество: слайдер с инлайн-меткой на одной строке. */}
-        <div>
-          <div className="flex items-baseline justify-between mb-1.5">
-            <label className="text-xs font-medium text-warm-500 uppercase tracking-wider">Количество</label>
-            <span className="text-sm font-semibold text-brand-600">{count}</span>
+        {/* teacher-flow п.10: презентация — выбор 5/10/15/20 (slideCount);
+            лист и прочие — ползунок count 5–30. Без обещания картинок. */}
+        {type === "presentation" ? (
+          <div>
+            <label className="text-xs font-medium text-warm-500 uppercase tracking-wider mb-1.5 block">
+              Слайдов
+            </label>
+            <div className="flex gap-1 p-1 bg-warm-100 rounded-xl" role="group" aria-label="Число слайдов">
+              {([5, 10, 15, 20] as const).map((n) => {
+                const isSelected = slideCount === n;
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setSlideCount(n)}
+                    aria-pressed={isSelected}
+                    className={`flex-1 h-9 rounded-lg text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
+                      isSelected
+                        ? "bg-white text-warm-950 shadow-soft"
+                        : "text-warm-600 hover:text-warm-900"
+                    }`}
+                  >
+                    {n}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <input
-            type="range"
-            min={5}
-            max={30}
-            step={1}
-            value={count}
-            onChange={(e) => setCount(Number(e.target.value))}
-            className="w-full accent-brand-500"
-            aria-label="Количество заданий"
-          />
-          <div className="flex justify-between text-[10px] text-[color:var(--text-muted)] mt-0.5">
-            <span>5</span>
-            <span>15</span>
-            <span>30</span>
+        ) : (
+          <div>
+            <div className="flex items-baseline justify-between mb-1.5">
+              <label className="text-xs font-medium text-warm-500 uppercase tracking-wider">Количество</label>
+              <span className="text-sm font-semibold text-brand-600">{count}</span>
+            </div>
+            <input
+              type="range"
+              min={5}
+              max={30}
+              step={1}
+              value={count}
+              onChange={(e) => setCount(Number(e.target.value))}
+              className="w-full accent-brand-500"
+              aria-label="Количество заданий"
+            />
+            <div className="flex justify-between text-[10px] text-[color:var(--text-muted)] mt-0.5">
+              <span>5</span>
+              <span>15</span>
+              <span>30</span>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Опции: 2 chip-toggle кнопки в ряд. */}
         <div className="flex gap-1.5">
@@ -3994,19 +4049,19 @@ function EmptyPreview({
     },
     presentation: {
       label: "Презентация",
-      desc: "5–20 слайдов в PPTX. Иллюстрации и тезисы подбираются автоматически.",
+      desc: "5, 10, 15 или 20 слайдов в PPTX: тезисы и заметки учителю, без картинок из нейросети.",
     },
     ktp: {
       label: "КТП",
       desc: "Календарно-тематическое планирование на учебный год.",
     },
     oge: {
-      label: "Вариант ОГЭ",
-      desc: "Полный вариант ОГЭ по номерам заданий ФИПИ.",
+      label: "Лист по номерам ОГЭ",
+      desc: "Рабочий лист по выбранным номерам заданий ФИПИ. Полный вариант — на странице ОГЭ.",
     },
     ege: {
-      label: "Вариант ЕГЭ",
-      desc: "Полный вариант ЕГЭ по номерам заданий ФИПИ.",
+      label: "Лист по номерам ЕГЭ",
+      desc: "Рабочий лист по выбранным номерам заданий ФИПИ. Полный вариант — на странице ЕГЭ.",
     },
     // TZ-16: 4 новых типа. Типизация Record<TaskType, …> требует ВСЕХ ключей —
     // забытый ключ = ошибка компиляции (нам это и нужно, ключи не обходим).

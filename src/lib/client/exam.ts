@@ -44,6 +44,7 @@ export type ExamFailureReason =
   | "forbidden" // 403 GENERATION_FORBIDDEN — вход ученический
   | "rate_limit" // 429 — бесплатная квота исчерпана
   | "challenge" // 409 TURNSTILE_REQUIRED — подтвердить, что не робот
+  | "truncated" // 422 GENERATION_TRUNCATED — файл не собран, демо не открываем
   | "unavailable"; // 5xx, сеть, нет NEXT_PUBLIC_API_URL, кривой ответ
 
 /**
@@ -251,6 +252,10 @@ function toExamError(status: number, body: unknown): ExamApiError {
   if (status === 409) return new ExamApiError("challenge", status, code, message);
   if (status === 429) {
     return new ExamApiError("rate_limit", status, code, message, kind === "free_total");
+  }
+  // teacher-flow п.1: при GENERATION_TRUNCATED демо на /oge не открывается.
+  if (status === 422 && code === "GENERATION_TRUNCATED") {
+    return new ExamApiError("truncated", status, code, message ?? "Файл не собран");
   }
 
   // 5xx и всё неожиданное.

@@ -272,6 +272,23 @@ export default function OgeHubInner() {
         setPhase({ kind: "ready", variant, demo: false, target });
       } catch (err) {
         const failure = toFailure(err);
+        // teacher-flow п.1: при GENERATION_TRUNCATED демо не открывается.
+        if (failure.reason === "truncated") {
+          clearPending();
+          setPhase({
+            kind: "blocked",
+            reason: "truncated",
+            target,
+            serverMessage: failure.serverMessage ?? "Файл не собран",
+            quotaIsTotal: false,
+          });
+          toast({
+            tone: "error",
+            title: "Файл не собран",
+            description: "Ответ модели оборвался. Попробуйте ещё раз.",
+          });
+          return;
+        }
         if (failure.reason === "unavailable") {
           // Демо тоже стоит бесплатной попытки — см. settleGeneration().
           settleGeneration({ isDemo: true });
@@ -687,6 +704,14 @@ function BlockedNotice({
       ],
       cta: "Попробовать ещё раз",
     },
+    truncated: {
+      title: "Файл не собран",
+      text: [
+        "Ответ модели оборвался — демонстрационный вариант не открываем.",
+        "Нажмите «Попробовать ещё раз», чтобы собрать настоящий вариант.",
+      ],
+      cta: "Попробовать ещё раз",
+    },
   };
   const c = copy[reason];
   const showPricing = reason === "upgrade" || reason === "rate_limit";
@@ -715,7 +740,7 @@ function BlockedNotice({
                   Остаться на странице
                 </Button>
               </>
-            ) : reason === "challenge" ? (
+            ) : reason === "challenge" || reason === "truncated" ? (
               <Button variant="primary" size="md" onClick={onRetry}>
                 {c.cta}
               </Button>

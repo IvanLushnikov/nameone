@@ -874,12 +874,26 @@ function criteriaForTask(task: Worksheet["tasks"][number]): string[] {
   return typed.criteria.filter((c) => typeof c === "string" && c.trim().length > 0);
 }
 
+/** Шапка DOCX по виду материала (teacher-flow п.2). */
+export function sheetHeaderTitle(
+  kind: "worksheet" | "test" | "control" | undefined,
+): "Тест" | "Контрольная" | "Рабочий лист" {
+  if (kind === "test") return "Тест";
+  if (kind === "control") return "Контрольная";
+  return "Рабочий лист";
+}
+
 export async function generateWorksheetDocx(
   worksheet: Worksheet,
   options: {
     withAnswers?: boolean;
     withExplanations?: boolean;
     isDemo?: boolean;
+    /**
+     * Вид материала для шапки: тест → «Тест», контрольная → «Контрольная»,
+     * иначе → «Рабочий лист» (teacher-flow п.2).
+     */
+    kind?: "worksheet" | "test" | "control";
     /**
      * ТЗ-34: критерии оценивания и шкала отметок.
      *
@@ -890,7 +904,7 @@ export async function generateWorksheetDocx(
     evaluation?: EvaluationPart[];
   } = {},
 ): Promise<Blob> {
-  const { withAnswers = true, withExplanations = true, isDemo = false } = options;
+  const { withAnswers = true, withExplanations = true, isDemo = false, kind } = options;
 
   const children: Array<Paragraph | Table> = [];
 
@@ -931,10 +945,10 @@ export async function generateWorksheetDocx(
     );
   }
 
-  // Шапка листа
+  // Шапка листа — по виду: Тест / Контрольная / Рабочий лист (teacher-flow п.2).
   children.push(
     new Paragraph({
-      text: "Рабочий лист",
+      text: sheetHeaderTitle(kind),
       heading: HeadingLevel.HEADING_1,
       alignment: AlignmentType.LEFT,
       spacing: { after: 60 },
