@@ -89,7 +89,13 @@ export async function recordAuthConsents(
            (id, user_id, type, version, accepted, accepted_at, ip, ua)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT(user_id, type, version) DO UPDATE SET
-           accepted = excluded.accepted,
+           -- marketing: false с UI (default off) не затирает ранее принятое true.
+           -- Отозвать рекламу отдельным UI позже; с формы входа только усиление.
+           accepted = CASE
+             WHEN excluded.accepted = 1 THEN 1
+             WHEN user_consents.accepted = 1 THEN 1
+             ELSE 0
+           END,
            accepted_at = excluded.accepted_at,
            ip = excluded.ip,
            ua = excluded.ua`,

@@ -124,11 +124,17 @@ async function call(
 async function consentsFor(userId: string) {
   const rows = await db()
     .prepare(
-      `SELECT type, version, accepted FROM user_consents
+      `SELECT type, version, accepted, accepted_at, ip FROM user_consents
        WHERE user_id = ?1 ORDER BY type`,
     )
     .bind(userId)
-    .all<{ type: string; version: string; accepted: number }>();
+    .all<{
+      type: string;
+      version: string;
+      accepted: number;
+      accepted_at: number;
+      ip: string | null;
+    }>();
   return rows.results ?? [];
 }
 
@@ -199,14 +205,19 @@ describe("D2.4 — persist согласий при auth", () => {
     expect(user?.id).toBeTruthy();
 
     const rows = await consentsFor(user!.id);
-    expect(rows).toEqual(
+    expect(rows).toHaveLength(3);
+    expect(rows.map((r) => ({ type: r.type, version: r.version, accepted: r.accepted }))).toEqual(
       expect.arrayContaining([
         { type: "offer", version: OFFER_DOC_VERSION, accepted: 1 },
         { type: "pdn", version: PDN_DOC_VERSION, accepted: 1 },
         { type: "marketing", version: MARKETING_CONSENT_VERSION, accepted: 0 },
       ]),
     );
-    expect(rows).toHaveLength(3);
+    const before = Math.floor(Date.now() / 1000) - 5;
+    for (const r of rows) {
+      expect(r.accepted_at).toBeGreaterThanOrEqual(before);
+      expect(r.ip).toBe("203.0.113.10");
+    }
     expect(await hasAcceptedConsent(db(), user!.id, "offer")).toBe(true);
     expect(await hasAcceptedConsent(db(), user!.id, "pdn")).toBe(true);
   });
@@ -271,5 +282,45 @@ describe("D2.4 — persist согласий при auth", () => {
     const rows = await consentsFor(userId);
     expect(rows).toHaveLength(3);
     expect(rows.find((r) => r.type === "marketing")?.accepted).toBe(0);
+  });
+
+  it("повторный login с marketing=false не затирает ранее принятое true", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const userId = "usr_mkt_keep";
+    await db()
+      .prepare(
+        `INSERT INTO users (id, email, name, plan, created_at, updated_at)
+         VALUES (?1, 'keep@example.com', 'Keep', 'free', ?2, ?2)`,
+      )
+      .bind(userId, now)
+      .run();
+    await setUserPasswordWithPolicy(db(), userId, "uchlist2026");
+
+    const first = await call("/api/auth/login", {
+      body: {
+        email: "keep@example.com",
+        password: "uchlist2026",
+        consents: { offer: true, pdn: true, marketing: true },
+      },
+    });
+    expect(first.status).toBe(200);
+
+    const second = await call("/api/auth/login", {
+      body: {
+        email: "keep@example.com",
+        password: "uchlist2026",
+        consents: { offer: true, pdn: true, marketing: false },
+      },
+    });
+    expect(second.status).toBe(200);
+
+    const marketing = await db()
+      .prepare(
+        `SELECT accepted FROM user_consents
+         WHERE user_id = ?1 AND type = 'marketing' AND version = ?2`,
+      )
+      .bind(userId, MARKETING_CONSENT_VERSION)
+      .first<{ accepted: number }>();
+    expect(marketing?.accepted).toBe(1);
   });
 });
