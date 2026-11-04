@@ -4,7 +4,6 @@ import { WeeklyTopicBlock } from "@/components/landing/WeeklyTopic";
 import { RealStats } from "@/components/landing/Stats";
 import { getLandingMetrics } from "@/lib/content/landing-metrics";
 import { Features } from "@/components/landing/Features";
-import { Limitations } from "@/components/landing/Limitations";
 import { HiddenFeatures } from "@/components/landing/HiddenFeatures";
 import { Seasonal } from "@/components/landing/Seasonal";
 import { OgeTeaser } from "@/components/exam/OgeTeaser";
@@ -153,9 +152,6 @@ export default function Home() {
       <Hero catalogTopics={metrics.topics} />
       <RealStats metrics={metrics} />
       <Features />
-      {/* Аудит 11.10, Д-5: честный блок ограничений сразу после обещаний —
-          обещаний больше трёх, ограничения читаются до оплаты, а не после. */}
-      <Limitations />
       {/* ТЗ-21 п.3: четыре функции, которые работают, но на сайт не выведены. */}
       <HiddenFeatures />
       <Seasonal />
