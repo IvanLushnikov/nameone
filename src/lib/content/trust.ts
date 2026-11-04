@@ -37,6 +37,7 @@ import {
   OPERATOR_ADDRESS,
   OPERATOR_INN,
   OPERATOR_NAME,
+  OPERATOR_OGRNIP,
   SUPPORT_EMAIL,
 } from "../site";
 import { plural } from "../utils/cn";
@@ -201,6 +202,7 @@ export const operator = {
     "ОГРНИП и адрес регистрации публикуются после заполнения из выписки ЕГРИП. Пока в env пусто — в текстах плейсхолдер, не выдуманный номер.",
   name: filled(OPERATOR_NAME, NEEDS_FILL_LABEL),
   inn: filled(OPERATOR_INN, NEEDS_FILL_LABEL),
+  ogrnip: filled(OPERATOR_OGRNIP, NEEDS_FILL_LABEL),
   address: filled(OPERATOR_ADDRESS, NEEDS_FILL_LABEL),
 };
 
@@ -226,6 +228,7 @@ export const NEEDS_FILL = [
   { page: "/about/", label: "Имя и роль автора проекта", placeholder: NOT_PUBLISHED_LABEL },
   { page: "/about/", label: "Фото автора проекта", placeholder: NOT_PUBLISHED_LABEL },
   { page: "/contact/", label: "ИНН исполнителя", placeholder: NEEDS_FILL_LABEL },
+  { page: "/contact/", label: "ОГРНИП", placeholder: NEEDS_FILL_LABEL },
   { page: "/contact/", label: "Адрес регистрации", placeholder: NEEDS_FILL_LABEL },
 ] as const;
 

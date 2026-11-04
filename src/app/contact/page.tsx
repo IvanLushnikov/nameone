@@ -117,17 +117,16 @@ export default function ContactPage() {
               <DetailRow label="Режим налогообложения" value={operator.regime} />
               <DetailRow label="ФИО" value={operator.name} />
               <DetailRow label="ИНН" value={operator.inn} />
+              <DetailRow label="ОГРНИП" value={operator.ogrnip} />
               <DetailRow label="Адрес регистрации" value={operator.address} />
               <DetailRow label="Связь" value={supportEmail} />
             </dl>
             <p className="mt-4 text-sm text-warm-600">{operator.regimeNote}</p>
-            {/* ТЗ-26 Б-3: раньше здесь стояла служебная записка
-                «[вписывает владелец]» — на публичной странице она читалась
-                как незакрытый TODO. Теперь пометка честная и часть документа:
-                ИНН и адрес публикуются по запросу. */}
+            {/* ТЗ-26 Б-3: пометка честная — реквизиты из ЕГРИП через env,
+                без выдуманных номеров. Пока пусто — «по запросу». */}
             <p className="mt-3 text-sm text-warm-500">
-              ИНН и адрес регистрации не опубликованы на сайте — предоставляются
-              по запросу на почту поддержки.
+              ИНН, ОГРНИП и адрес регистрации публикуются из выписки ЕГРИП.
+              Пока поля пустые — предоставляются по запросу на почту поддержки.
             </p>
           </Card>
         </div>

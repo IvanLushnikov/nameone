@@ -83,7 +83,7 @@ export function Hero({ catalogTopics }: { catalogTopics: number }) {
           </div>
 
           <p className="mt-4 text-sm text-warm-500 animate-fade-in" style={{ animationDelay: "0.3s", animationFillMode: "both" }}>
-            Без регистрации · PDF или DOCX · Подходит для&nbsp;печати
+            После входа · PDF или DOCX · Подходит для&nbsp;печати
           </p>
 
           <div className="mt-12 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm animate-fade-in" style={{ animationDelay: "0.4s", animationFillMode: "both" }}>

@@ -3934,7 +3934,7 @@ function ConfigureStep({
                 : "Создать рабочий лист"}
           </Button>
           <p className="text-xs text-warm-500 text-center mt-2">
-            Готовый PDF примерно за минуту. Без регистрации.
+            Готовый PDF примерно за минуту. Нужен вход в аккаунт.
           </p>
         </div>
           </>

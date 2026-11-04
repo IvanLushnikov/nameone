@@ -63,7 +63,7 @@ import {
  * в FAQ и на /about/. В сниппете её место заняла цена — это и было целью.
  */
 const homeDescription = clipDescription(
-  `Рабочие листы по любому предмету 1–11 классов. PDF с ответами по ФГОС 2021 (1-9) и ФГОС СОО (10-11). От ${priceShort("base", "month")}. Без регистрации — ${FREE_GENERATIONS} бесплатно.`,
+  `Рабочие листы по любому предмету 1–11 классов. PDF с ответами по ФГОС 2021 (1-9) и ФГОС СОО (10-11). От ${priceShort("base", "month")}. После входа — ${FREE_GENERATIONS} бесплатно без карты.`,
 );
 
 export const metadata: Metadata = {
