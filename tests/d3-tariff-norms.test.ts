@@ -43,13 +43,16 @@ describe("D3 · тариф 800 + resheniya", () => {
     expect(all).not.toMatch(/Семейный\s+доступ/i);
   });
 
-  it("лимиты учеников 5/10/20", () => {
+  it("лимиты учеников 5/10/20 в коде, в карточке — одна строка про ЛК", () => {
+    // AD-2: бэкенд-лимиты не трогаем; в features — без цифр 5/10/20.
     expect(STUDENTS_PER_CLASS_BY_PLAN.base).toBe(5);
     expect(STUDENTS_PER_CLASS_BY_PLAN.standard).toBe(10);
     expect(STUDENTS_PER_CLASS_BY_PLAN.plus).toBe(20);
-    expect(PLANS.base.features.some((f) => /Учеников.*5/.test(f))).toBe(true);
-    expect(PLANS.standard.features.some((f) => /Учеников.*10/.test(f))).toBe(true);
-    expect(PLANS.plus.features.some((f) => /Учеников.*20/.test(f))).toBe(true);
+    const lk = "Расширенные возможности личного кабинета";
+    expect(PLANS.base.features).toContain(lk);
+    expect(PLANS.standard.features).toContain(lk);
+    expect(PLANS.plus.features).toContain(lk);
+    expect(PLANS.base.features.join("\n")).not.toMatch(/Учеников в кабинете/i);
   });
 
   it("порог критерия = 10", () => {
