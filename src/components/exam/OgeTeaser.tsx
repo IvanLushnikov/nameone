@@ -43,7 +43,7 @@ export function OgeTeaser() {
               {ogeTotal} {plural(ogeTotal, "задание", "задания", "заданий")} по{" "}
               {ogeSubjects.length}{" "}
               {plural(ogeSubjects.length, "предмету", "предметам", "предметам")} —
-              номера как в&nbsp;кодификаторе ФИПИ. Откройте номер, и&nbsp;конструктор
+              наш список номеров. Откройте номер, и&nbsp;конструктор
               соберёт лист по&nbsp;нему.
             </p>
             <Link

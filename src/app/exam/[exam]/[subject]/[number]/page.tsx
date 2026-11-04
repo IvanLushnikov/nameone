@@ -200,7 +200,7 @@ export default function ExamNumberPage({ params }: Props) {
       "@type": "AlignmentObject",
       alignmentType: "educationalFramework",
       targetName: item.fgosRef,
-      educationalFramework: "ФИПИ",
+      educationalFramework: "Программа экзамена",
     };
   }
 
@@ -234,7 +234,7 @@ export default function ExamNumberPage({ params }: Props) {
                 </Badge>
                 <Badge tone="neutral">{subjectLabel}</Badge>
                 <Badge tone="warm">
-                  <span className="text-warm-500">Раздел ФИПИ:</span>
+                  <span className="text-warm-500">Раздел программы:</span>
                   <span className="ml-1">{item.fgosRef}</span>
                 </Badge>
                 <Badge tone="brand" className="bg-brand-50 text-brand-700 ring-brand-200">
@@ -246,7 +246,7 @@ export default function ExamNumberPage({ params }: Props) {
                 Задание {item.number}. {item.title}
               </h1>
               <p className="mt-4 text-lg text-warm-600 text-pretty">
-                Тренировка по конкретному номеру {examLabel.full} — задание {item.number} из кодификатора ФИПИ.
+                Тренировка по конкретному номеру {examLabel.full} — задание {item.number} из нашего списка.
                 Сгенерируйте лист из 10 заданий за минуту и отработайте именно этот тип.
               </p>
 
@@ -274,7 +274,7 @@ export default function ExamNumberPage({ params }: Props) {
               <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-warm-600">
                 <span className="inline-flex items-center gap-1.5">
                   <Check className="w-4 h-4 text-brand-500" />
-                  По кодификатору ФИПИ
+                  По нашему списку номеров
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <Check className="w-4 h-4 text-brand-500" />
@@ -325,7 +325,7 @@ export default function ExamNumberPage({ params }: Props) {
                 Что проверяется
               </h2>
               <p className="text-warm-600 mb-6">
-                Содержание задания {item.number} соответствует разделу ФИПИ «{item.fgosRef}».
+                Содержание задания {item.number} относится к разделу «{item.fgosRef}».
                 Это {examLabel.classHint}, предмет — {subjectLabel.toLowerCase()}.
               </p>
               <Card className="bg-warm-50/60 border-warm-100">
@@ -340,7 +340,7 @@ export default function ExamNumberPage({ params }: Props) {
               <p className="text-warm-600 mb-4">
                 {exampleBlock.kind === "examples"
                   ? "Такие же задания встречаются в вариантах экзамена. Примеры взяты из тем школьной программы — по каждой теме есть отдельная страница с разбором."
-                  : "Готовых примеров по этому номеру у нас пока нет — не будем придумывать. Ниже — что именно проверяет задание по кодификатору ФИПИ."}
+                  : "Готовых примеров по этому номеру у нас пока нет — не будем придумывать. Ниже — что именно проверяет это задание по нашему списку."}
               </p>
 
               {exampleBlock.kind === "examples" ? (
@@ -378,7 +378,7 @@ export default function ExamNumberPage({ params }: Props) {
                     {exampleBlock.block.checks}
                   </p>
                   <p className="mt-3 text-sm text-warm-600">
-                    Раздел ФИПИ: {exampleBlock.block.fgosRef}
+                    Раздел программы: {exampleBlock.block.fgosRef}
                   </p>
                 </Card>
               )}
@@ -522,7 +522,7 @@ export default function ExamNumberPage({ params }: Props) {
               {
                 icon: Sparkles,
                 title: "Родителям",
-                text: "Понятный тренажёр под кодификатор ФИПИ: ребёнок решает именно то, что будет на экзамене.",
+                text: "Понятный тренажёр по номерам заданий: ребёнок отрабатывает именно тот тип, что будет на экзамене.",
               },
             ].map((p) => (
               <Card key={p.title}>
@@ -545,7 +545,7 @@ export default function ExamNumberPage({ params }: Props) {
               Другие номера {examLabel.full} · {subjectLabel}
             </h2>
             <p className="text-warm-600 mb-6">
-              Тренируйтесь по соседним заданиям — это закрывает смежные темы из кодификатора.
+              Тренируйтесь по соседним заданиям — это закрывает смежные темы из списка номеров.
             </p>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {related.map((r) => (
