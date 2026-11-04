@@ -523,8 +523,7 @@ export default function LoginPage() {
               .
             </p>
 
-            {/* D4: генерация только после входа — CTA ведёт в конструктор уже
-                после формы, а не обещает «лист без регистрации». */}
+            {/* D4: генерация только после входа; квота — после аккаунта. */}
             <div className="mt-6 pt-6 border-t border-warm-100 text-center">
               <p className="text-sm text-warm-600">
                 {FREE_QUOTA_LABEL} — после входа в аккаунт, без карты.

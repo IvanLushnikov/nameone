@@ -6,6 +6,7 @@ import {
   OPERATOR_ADDRESS,
   OPERATOR_INN,
   OPERATOR_NAME,
+  OPERATOR_OGRNIP,
   OPERATOR_SITE,
   SUPPORT_EMAIL,
 } from "@/lib/site";
@@ -61,21 +62,24 @@ type LegalDoc = {
 function operatorSentence(): string {
   const name = OPERATOR_NAME?.trim();
   const inn = OPERATOR_INN?.trim();
+  const ogrnip = OPERATOR_OGRNIP?.trim();
   const address = OPERATOR_ADDRESS?.trim();
 
   // Фильтр отсекает и null, и пустую строку: секрет в CI бывает задан, но
   // пустой (это и был прод — «Исполнитель услуг: .»). Проверка только на
   // null оставляла "" в списке и снова давала двоеточие с пробелом.
+  // ОГРНИП/адрес — только из ЕГРИП через env; выдуманные значения запрещены.
   const known = [
     name || null,
     inn ? `ИНН ${inn}` : null,
+    ogrnip ? `ОГРНИП ${ogrnip}` : null,
     address ? `адрес: ${address}` : null,
   ].filter((item): item is string => Boolean(item));
   if (known.length === 0) {
     return "реквизиты предоставляются по запросу";
   }
 
-  if (name && inn && address) return known.join(", ");
+  if (name && inn && ogrnip && address) return known.join(", ");
 
   // Имя или ИНН есть, но не все. Не перечисляем, чего именно не хватает
   // служебными словами — просто отсылаем за полными реквизитами.
@@ -270,7 +274,7 @@ const docs: Record<string, LegalDoc> = {
         // и счёт обнуляется 1-го числа. Юридический документ описывал другой
         // продукт. Число и период взяты из кода: FREE_TOTAL_GENERATIONS = 5
         // (backend/src/services/usage.ts), месячная граница — free_usage.
-        p: "Без регистрации и без карты доступны 5 листов в месяц. Счёт обновляется 1-го числа: неиспользованные листы переходят в следующий месяц. Регистрация нужна, чтобы история, избранное и тарифы работали как задумано; лимит при этом тот же. Очистка cookies, выход из аккаунта и повторный вход не дают новых листов: счёт ведётся на сервере.",
+        p: "После входа в аккаунт без карты доступны 5 листов в месяц. Счёт обновляется 1-го числа по аккаунту. Очистка cookies, выход и повторный вход не дают новых листов: счёт ведётся на сервере.",
       },
       {
         h: "4. Один аккаунт — одно лицо",
