@@ -195,11 +195,37 @@ export const contactChannels = [
  *
  * Режим — ИП (решение владельца 03.11.2026). ОГРНИП и адрес — только из
  * выписки ЕГРИП через env; выдуманные значения не подставляем.
+ *
+ * Подписи под таблицей зависят от того, что реально задано в env: иначе после
+ * заполнения секретов на странице остаётся ложь «пока поля пустые».
  */
+const hasInn = Boolean(OPERATOR_INN.trim());
+const hasOgrnip = Boolean(OPERATOR_OGRNIP.trim());
+const hasAddress = Boolean(OPERATOR_ADDRESS.trim());
+const hasCoreRequisites = hasInn && hasOgrnip;
+
+function operatorRegimeNote(): string {
+  if (hasCoreRequisites && hasAddress) {
+    return "УчЛист ведёт индивидуальный предприниматель. ИНН и ОГРНИП — из выписки ЕГРИП; адрес регистрации — из env владельца.";
+  }
+  if (hasCoreRequisites) {
+    return "УчЛист ведёт индивидуальный предприниматель. ИНН и ОГРНИП — из выписки ЕГРИП.";
+  }
+  return "ОГРНИП и адрес регистрации публикуются после заполнения из выписки ЕГРИП. Пока в env пусто — в текстах плейсхолдер, не выдуманный номер.";
+}
+
+function operatorFillNote(): string | null {
+  if (hasCoreRequisites && hasAddress) return null;
+  if (hasCoreRequisites && !hasAddress) {
+    return `Адрес регистрации в открытой выписке ЕГРИП не публикуется — в таблице стоит «${NEEDS_FILL_LABEL}». Для документов напишите на ${supportEmail}.`;
+  }
+  return "ИНН, ОГРНИП и адрес регистрации публикуются из выписки ЕГРИП. Пока поля пустые — предоставляются по запросу на почту поддержки.";
+}
+
 export const operator = {
   regime: "индивидуальный предприниматель (ИП)",
-  regimeNote:
-    "ОГРНИП и адрес регистрации публикуются после заполнения из выписки ЕГРИП. Пока в env пусто — в текстах плейсхолдер, не выдуманный номер.",
+  regimeNote: operatorRegimeNote(),
+  fillNote: operatorFillNote(),
   name: filled(OPERATOR_NAME, NEEDS_FILL_LABEL),
   inn: filled(OPERATOR_INN, NEEDS_FILL_LABEL),
   ogrnip: filled(OPERATOR_OGRNIP, NEEDS_FILL_LABEL),
@@ -214,23 +240,28 @@ export const operator = {
 export const launchDate = NOT_PUBLISHED_LABEL;
 
 /**
- * СПИСОК ВСЕГО, ЧТО ДОЛЖЕН ВПИСАТЬ ВЛАДЕЛЕЦ ПЕРЕД ПУБЛИКАЦИЕЙ.
+ * СПИСОК ВСЕГО, ЧТО ЕЩЁ НЕ ЗАПОЛНЕНО.
  *
- * Один список на все три страницы, чтобы нельзя было заполнить `/contact/`
- * и забыть про `/about/`. Тест `tests/trust-pages.test.ts` проверяет, что
- * каждая пометка из списка действительно отрисована на своей странице.
+ * Один список на все три страницы. Пункты contact пропадают, когда
+ * соответствующий `NEXT_PUBLIC_OPERATOR_*` задан — иначе после секретов
+ * тест требовал бы плейсхолдер рядом с уже опубликованным ИНН.
  *
- * `placeholder` у всех полей один и тот же — смысл несёт `label`: по подписи
- * строки («ИНН», «Адрес регистрации») видно, что именно не заполнено.
+ * `placeholder` у реквизитов один — смысл несёт `label`.
  */
 export const NEEDS_FILL = [
   { page: "/about/", label: "Дата запуска сервиса", placeholder: launchDate },
   { page: "/about/", label: "Имя и роль автора проекта", placeholder: NOT_PUBLISHED_LABEL },
   { page: "/about/", label: "Фото автора проекта", placeholder: NOT_PUBLISHED_LABEL },
-  { page: "/contact/", label: "ИНН исполнителя", placeholder: NEEDS_FILL_LABEL },
-  { page: "/contact/", label: "ОГРНИП", placeholder: NEEDS_FILL_LABEL },
-  { page: "/contact/", label: "Адрес регистрации", placeholder: NEEDS_FILL_LABEL },
-] as const;
+  ...(!hasInn
+    ? ([{ page: "/contact/", label: "ИНН исполнителя", placeholder: NEEDS_FILL_LABEL }] as const)
+    : []),
+  ...(!hasOgrnip
+    ? ([{ page: "/contact/", label: "ОГРНИП", placeholder: NEEDS_FILL_LABEL }] as const)
+    : []),
+  ...(!hasAddress
+    ? ([{ page: "/contact/", label: "Адрес регистрации", placeholder: NEEDS_FILL_LABEL }] as const)
+    : []),
+];
 
 /** Собирает все пометки страницы — используется тестом. */
 export function placeholdersOf(page: string): string[] {

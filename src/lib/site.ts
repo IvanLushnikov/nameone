@@ -44,10 +44,12 @@ export const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "hello@uch
  * берутся только из выписки ЕГРИП через NEXT_PUBLIC_OPERATOR_* — выдумывать
  * нельзя. Пока env пустые, в текстах остаётся плейсхолдер / «по запросу».
  *
- * ⚠️ ДЕФОЛТЫ — ПЛЕЙСХОЛДЕРЫ. Перед продом проставь ФИО, ИНН, ОГРНИП и адрес
- * через NEXT_PUBLIC_OPERATOR_*.
+ * ⚠️ ИНН / ОГРНИП / адрес в дефолтах кода НЕ хардкодим (гейт ogrnip-source).
+ * На прод их задают GitHub Secrets на шаге Build. ФИО можно держать дефолтом:
+ * оно публичное и уже было в репозитории.
  */
-export const OPERATOR_NAME = process.env.NEXT_PUBLIC_OPERATOR_NAME ?? "Лушников Иван";
+export const OPERATOR_NAME =
+  process.env.NEXT_PUBLIC_OPERATOR_NAME ?? "Лушников Иван Сергеевич";
 
 /**
  * Адрес оператора. Раньше здесь стояла подставная строка

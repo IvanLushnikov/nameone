@@ -22,7 +22,7 @@ import { clipDescription, ogImages, twitterCard } from "@/lib/seo/metadata";
  * а в подвале стоял только адрес почты — этого недостаточно.
  *
  * Реквизиты НЕ выдуманы. Что не задано переменной окружения, выводится
- * пометкой «[вписывает владелец]» (см. `operator` в `src/lib/content/trust.ts`).
+ * пометкой «предоставляется по запросу» (см. `operator` в trust.ts).
  * ОГРНИП и адрес — из env (выписка ЕГРИП). Пока пусто — плейсхолдер,
  * выдуманный номер не показываем.
  */
@@ -122,12 +122,10 @@ export default function ContactPage() {
               <DetailRow label="Связь" value={supportEmail} />
             </dl>
             <p className="mt-4 text-sm text-warm-600">{operator.regimeNote}</p>
-            {/* ТЗ-26 Б-3: пометка честная — реквизиты из ЕГРИП через env,
-                без выдуманных номеров. Пока пусто — «по запросу». */}
-            <p className="mt-3 text-sm text-warm-500">
-              ИНН, ОГРНИП и адрес регистрации публикуются из выписки ЕГРИП.
-              Пока поля пустые — предоставляются по запросу на почту поддержки.
-            </p>
+            {/* Подпись пропусков — только если что-то ещё не задано в env. */}
+            {operator.fillNote ? (
+              <p className="mt-3 text-sm text-warm-500">{operator.fillNote}</p>
+            ) : null}
           </Card>
         </div>
       </section>
