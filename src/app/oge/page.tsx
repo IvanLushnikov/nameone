@@ -628,7 +628,7 @@ export default function OgeHubInner() {
             href="/exam/oge/"
             className="inline-flex items-center gap-1.5 text-sm text-brand-700 hover:text-brand-900"
           >
-            Все задания ОГЭ по номерам ФИПИ
+            Все задания ОГЭ по номерам
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
           <Link

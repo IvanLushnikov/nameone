@@ -69,7 +69,7 @@ export function generateMetadata({ params }: Props): Metadata {
   const first = subject.numbers[0];
   const last = subject.numbers[subject.numbers.length - 1];
   const description = clipDescription(
-    `Все ${numbersCountText(subject)} ${hub.full} по предмету «${label}»: от «${first.title}» до «${last.title}». Номера как в кодификаторе ФИПИ, лист собирается по любому.`,
+    `Все ${numbersCountText(subject)} ${hub.full} по предмету «${label}»: от «${first.title}» до «${last.title}». Номера из нашего списка, лист собирается по любому.`,
   );
 
   return {
@@ -145,7 +145,7 @@ export default function ExamSubjectHubPage({ params }: Props) {
             Задания {hub.full} — {label}
           </h1>
           <p className="mt-4 text-warm-600 max-w-2xl">
-            {numbersCountText(subject)}, номера как в кодификаторе ФИПИ. Откройте
+            {numbersCountText(subject)}, номера из нашего списка. Откройте
             номер — конструктор откроется с уже выбранным заданием.
           </p>
 

@@ -33,9 +33,9 @@ const ALL_SUBJECTS_COUNT = countNumbers(
   EXAM_KINDS.flatMap((kind) => subjectsOfExam(kind)),
 );
 
-const title = "Задания ОГЭ и ЕГЭ по номерам ФИПИ";
+const title = "Задания ОГЭ и ЕГЭ по номерам";
 const description = clipDescription(
-  `Все ${ALL_SUBJECTS_COUNT} ${plural(ALL_SUBJECTS_COUNT, "задание", "задания", "заданий")} ОГЭ и ЕГЭ, разложенные по предметам и номерам ФИПИ. Откройте номер — конструктор подставит его в лист.`,
+  `Все ${ALL_SUBJECTS_COUNT} ${plural(ALL_SUBJECTS_COUNT, "задание", "задания", "заданий")} ОГЭ и ЕГЭ, разложенные по предметам и номерам. Откройте номер — конструктор подставит его в лист.`,
 );
 
 export const metadata: Metadata = {
@@ -104,7 +104,7 @@ export default function ExamIndexPage() {
             Задания экзамена по номерам
           </h1>
           <p className="mt-4 text-warm-600 max-w-2xl">
-            Номера те же, что в кодификаторе ФИПИ. Выберите экзамен, потом
+            Номера из нашего списка заданий. Выберите экзамен, потом
             предмет и номер — конструктор откроется с уже выбранным заданием.
           </p>
         </div>

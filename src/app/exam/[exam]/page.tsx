@@ -46,7 +46,7 @@ export function generateMetadata({ params }: Props): Metadata {
 
   const subjects = subjectsOfExam(hub.kind);
   const total = countNumbers(subjects);
-  const title = `Задания ${hub.full} по номерам ФИПИ`;
+  const title = `Задания ${hub.full} по номерам`;
   // Число предметов и список под ним считаются из одного массива `subjects`.
   // Раньше строка была ручной: на `/exam/oge/` обещало «по 5 предметам», а
   // перечисляло четыре — обществознание с 24 страницами выпало, и описание
@@ -66,7 +66,7 @@ export function generateMetadata({ params }: Props): Metadata {
       url: absoluteUrl(`/exam/${hub.kind}`),
       siteName: "УчЛист",
       locale: "ru_RU",
-      images: ogImages(undefined, `УчЛист — задания ${hub.full} по номерам ФИПИ`),
+      images: ogImages(undefined, `УчЛист — задания ${hub.full} по номерам`),
     },
     twitter: twitterCard(undefined),
   };
@@ -82,7 +82,7 @@ export default function ExamHubPage({ params }: Props) {
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "CollectionPage",
-    name: `Задания ${hub.full} по номерам ФИПИ`,
+    name: `Задания ${hub.full} по номерам`,
     inLanguage: "ru-RU",
     url: absoluteUrl(`/exam/${hub.kind}`),
     educationalLevel: hub.grade,
@@ -120,8 +120,8 @@ export default function ExamHubPage({ params }: Props) {
           <p className="mt-4 text-warm-600 max-w-2xl">
             {subjects.length}{" "}
             {plural(subjects.length, "предмет", "предмета", "предметов")}, {total}{" "}
-            {plural(total, "задание", "задания", "заданий")}. Номера — как в
-            кодификаторе ФИПИ. Нажмите на номер, чтобы собрать лист по нему.
+            {plural(total, "задание", "задания", "заданий")}. Номера — из нашего списка.
+            Нажмите на номер, чтобы собрать лист по нему.
           </p>
 
           <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">

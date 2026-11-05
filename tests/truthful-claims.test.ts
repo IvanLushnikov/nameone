@@ -266,26 +266,12 @@ describe("Д-4 — главная вокруг рабочих листов", () 
   });
 });
 
-describe("Д-5 — честный блок «чего мы не умеем»", () => {
-  it("блок есть на главной и в нём три ограничения", () => {
-    const src = read("src/components/landing/Limitations.tsx");
-    const items = src.match(/const limitations = \[[\s\S]*?\n\];/)?.[0] ?? "";
-    expect(items).toMatch(/title:/);
-    expect((items.match(/title:/g) ?? []).length).toBe(3);
-    expect(src).toMatch(/export function Limitations/);
-  });
-
-  it("ограничения настоящие: учебник, PDF, устные ответы", () => {
-    const text = userText("src/components/landing/Limitations.tsx");
-    expect(text).toMatch(/алгебра/i);
-    expect(text).toMatch(/PDF не редактируется/i);
-    expect(text).toMatch(/Устные ответы не слышны/i);
-  });
-
-  it("главная подключает блок", () => {
+describe("Д-5 — блока «Ограничения» на главной больше нет", () => {
+  it("главная не импортирует и не рендерит Limitations", () => {
     const page = read("src/app/page.tsx");
-    expect(page).toMatch(/import \{ Limitations \}/);
-    expect(page).toMatch(/<Limitations \/>/);
+    expect(page).not.toMatch(/import \{ Limitations \}/);
+    expect(page).not.toMatch(/<Limitations \/>/);
+    expect(userText("src/app/page.tsx")).not.toMatch(/Ограничения|Чего мы не умеем/i);
   });
 });
 
@@ -418,9 +404,9 @@ describe("ТЗ-37 · M-10: карточка «Школа» не рисует г�
 
     // А на том, что работает сегодня, — есть.
     const liveItem = html.match(
-      /<li[^>]*>(?:(?!<\/li>)[\s\S])*Админка учителя(?:(?!<\/li>)[\s\S])*<\/li>/,
+      /<li[^>]*>(?:(?!<\/li>)[\s\S])*Расширенные возможности личного кабинета(?:(?!<\/li>)[\s\S])*<\/li>/,
     )?.[0] ?? "";
-    expect(liveItem, "пункт «Админка учителя с отчётами» не найден").not.toBe("");
+    expect(liveItem, "пункт «Расширенные возможности личного кабинета» не найден").not.toBe("");
     expect(liveItem, "у работающего пункта нет галочки").toContain("lucide-check");
     // SSR-рендер страницы тарифов после волны 1 стал тяжелее (в ней появилась
     // таблица сравнения по всем предметам) и перестал укладываться в дефолтные

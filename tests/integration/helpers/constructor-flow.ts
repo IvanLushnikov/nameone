@@ -187,11 +187,10 @@ export async function openConstructor(): Promise<UserEvent> {
 }
 
 /**
- * Прогоняет визард до шага «Выберите тему»: предмет → класс → «Свой вариант»
- * → «Перейти к выбору темы».
+ * Прогоняет визард до шага «Выберите тему»: предмет → класс.
  *
- * Путь именно такой, потому что с лета 2026 между шагом 1 и шагом «Тема»
- * стоит выбор сценария (PresetGrid, F-02).
+ * AD-1 (constructor honesty UX): экран «Сценарий» / PresetGrid убран с
+ * основного пути — после класса сразу открывается список тем.
  */
 export async function goToTopicStep(
   user: UserEvent,
@@ -203,8 +202,6 @@ export async function goToTopicStep(
 
   await user.click(screen.getByTitle(subject.title));
   await user.click(screen.getByTitle(`${grade} класс`));
-  await user.click(await screen.findByRole("tab", { name: "Свой вариант" }));
-  await user.click(screen.getByRole("button", { name: /Перейти к выбору темы/ }));
   await screen.findByText("Выберите тему");
 }
 

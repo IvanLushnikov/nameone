@@ -27,12 +27,9 @@ import { PaywallModal } from "@/components/shared/PaywallModal";
 import { ArtifactTypePicker, ARTIFACT_TYPE_OPTIONS } from "@/components/constructor/ArtifactTypePicker";
 import { ArtifactTypePreview } from "@/components/constructor/ArtifactTypePreview";
 import { TopicSamplePreview } from "@/components/constructor/TopicSamplePreview";
-import {
-  PresetGrid,
-  PRESETS,
-  type Preset,
-  type PresetMode,
-} from "@/components/constructor/PresetGrid";
+// PresetGrid на основном пути не рендерится (AD-1), но PRESETS нужны для
+// подписи «задано шаблоном» в ConfigureStep, если presetId когда-то выставлен.
+import { PRESETS } from "@/components/constructor/PresetGrid";
 import {
   Sparkles,
   Loader2,
@@ -47,6 +44,7 @@ import {
   Camera,
   Send,
   LayoutTemplate,
+  Search,
 } from "lucide-react";
 import { subjects, getSubject, getGrade, getTopic } from "@/lib/content/subjects";
 // ТЗ-26 Ф-3: ключ предмета (`algebra`) не должен попадать ни в имя файла,
@@ -443,13 +441,9 @@ export default function ConstructorPage() {
   // (`controlVariant2`), а подпись показывает выбранный (`controlVariant`).
   // У остальных типов варианта нет — и подписи тоже нет.
 
-  // F-02 (Q4 2026): режим выбора параметров на шаге 1.
-  // template = сетка из 5 preset-карточек, custom = пойти к теме и настроить параметры вручную.
-  const [presetMode, setPresetMode] = React.useState<PresetMode>("template");
-  // Запоминаем выбранный preset — чтобы при возврате с шага «Тема» подсветить карточку.
+  // F-02: selectedPresetId оставлен для ConfigureStep (chip «задано шаблоном»).
+  // На основном пути PresetGrid не рендерится (AD-1), id обычно null.
   const [selectedPresetId, setSelectedPresetId] = React.useState<string | null>(null);
-  // Тип работы в режиме «Свой вариант» — по умолчанию worksheet.
-  const [customType, setCustomType] = React.useState<TaskType>("worksheet");
 
   /** F-04-C: режим wizard. «По теме» — старый flow, «По номеру» — экзамен-флоу. */
   const [mode, setMode] = React.useState<Mode>("topic");
@@ -974,43 +968,6 @@ export default function ConstructorPage() {
     setExamNumbers([]);
     // F-02: сброс выбора preset'а.
     setSelectedPresetId(null);
-    setPresetMode("template");
-    setCustomType("worksheet");
-  };
-
-  // F-02: выбор шаблонного preset'а. Заполняем параметры и переходим на шаг «Тема».
-  // Событие `trackPresetSelected` уже пишется внутри PresetGrid.handleSelect.
-  const handleSelectPreset = (preset: Preset) => {
-    setSelectedPresetId(preset.id);
-    setPresetMode("template");
-    setCount(preset.count);
-    setDifficulty(preset.difficulty);
-    setType(preset.type);
-    if (preset.withAnswers !== undefined) setWithAnswers(preset.withAnswers);
-    if (preset.withExplanations !== undefined) setWithExplanations(preset.withExplanations);
-    // Синхронизируем customType — если юзер переключится на «Свой», тип подхватится.
-    setCustomType(preset.type);
-    // Параметры выставлены — переходим к выбору темы.
-    setStep("topic");
-  };
-
-  // F-02: режим «Свой вариант» → пропускаем заполнение параметров, тема и настройка дальше.
-  const handleSkipPresetToTopic = () => {
-    setSelectedPresetId(null);
-    setStep("topic");
-  };
-
-  // F-02: смена типа в режиме «Свой вариант» — лимит мы не держим тут, тип применится на configure.
-  const handleCustomTypeChange = (t: TaskType) => {
-    setCustomType(t);
-    setType(t);
-  };
-
-  // F-02: возврат с шага «Сценарий» к выбору предмета/класса (сбрасывает только выбор preset'а,
-  // subject/grade остаются — пользователь может поменять их через SelectStep-кнопки).
-  const handleBackFromPresets = () => {
-    setSelectedPresetId(null);
-    setPresetMode("template");
   };
 
   /**
@@ -1048,32 +1005,6 @@ export default function ConstructorPage() {
     setSavedWorksheetId(null);
   }, []);
 
-  /**
-   * Смена типа материала на шаге 1 (блок «Что делаем»).
-   *
-   * Отличие от `handleArtifactTypeChange`: снимает выбранный сценарий.
-   * Сценарий фиксирует тип (`typeFixedByPreset = Boolean(selectedPresetId)`),
-   * и учитель, выбравший сценарий и потом ткнувший другой тип на первом шаге,
-   * увидел бы, что тип не меняется, — без единого объяснения. Здесь явный
-   * выбор типа и означает «сценарий больше не задан», поэтому возвращаем
-   * параметры к значениям по умолчанию и снимаем блокировку.
-   */
-  const handleStep1TypeChange = React.useCallback(
-    (next: TaskType) => {
-      handleArtifactTypeChange(next);
-      setCustomType(next);
-      if (selectedPresetId) {
-        setSelectedPresetId(null);
-        setPresetMode("template");
-        setDifficulty("medium");
-        setCount(10);
-        setWithAnswers(true);
-        setWithExplanations(true);
-      }
-    },
-    [handleArtifactTypeChange, selectedPresetId]
-  );
-
   /** F-04-C: переключение режима wizard. Доступно на любом шаге. */
   const handleModeChange = (next: Mode) => {
     if (next === mode) return;
@@ -1108,10 +1039,16 @@ export default function ConstructorPage() {
   };
 
   // Смена grade внутри шага 1 — UMK и topic сбрасываются (они зависели от старого grade).
+  // AD-1: после предмета и класса сразу тема — без экрана «Сценарий».
   const handleGradeChangeInline = (g: number) => {
     setGrade(g);
     setUmk(null);
     setTopic(null);
+    if (subject) {
+      const umkList = getUMK(subject, g);
+      if (umkList.length === 1) setUmk(umkList[0].id);
+      setStep("topic");
+    }
   };
 
   // Возврат с topic-шага в «select» (для UMK и смены предмета/класса).
@@ -2284,66 +2221,13 @@ export default function ConstructorPage() {
               examLabel={mode === "exam" && exam ? (exam === "oge" ? "ОГЭ" : "ЕГЭ") : null}
             />
 
-            {/* ====== Topic-mode шаги (компактный 3-шаговый flow) ====== */}
+            {/* ====== Topic-mode шаги (предмет → класс → тема → формат) ======
 
-            {/* Шаг 1, блок «Что делаем». 15.10.2026.
-
-                ЗАЧЕМ. Тип материала был виден только на шаге 3 («Параметры»),
-                а на первом шаге — три значения (Лист/Тест/Карточки) и то за
-                переключателем «Свой вариант». Учитель, которому нужен план
-                урока или КТП, не мог узнать, что они есть: он обязан был
-                пройти путь рабочего листа до последнего шага.
-
-                ПОЧЕМУ ЗДЕМ, А НЕ В САМОМ SelectStep. SelectStep исчезает, как
-                только выбраны предмет и класс, а блок ниже (сценарий) —
-                появляется. Тип должен быть виден и до, и после этого выбора,
-                иначе он снова спрячется. Отдельная карточка над обоими
-                блоками — единственное место, которое живёт весь шаг 1.
-
-                Повтор на шаге «Параметры» НЕ убран: там тип меняют вплотную к
-                настройкам, и это привычный ход. Два входа в одну настройку
-                лучше одного невидимого. */}
+                AD-1 (constructor honesty UX): основной путь — без экрана
+                «Сценарий» и без PresetGrid. PresetGrid остаётся в репо
+                (компонент + хендлеры ниже), но на обязательном пути не
+                рендерится. Тип материала выбирается один раз на configure. */}
             {mode === "topic" && step === "select" && (
-              <Card className="mb-4">
-                <div className="flex items-baseline justify-between gap-3 mb-3">
-                  <h1 className="text-lg font-semibold text-warm-950">Что делаем</h1>
-                  <span className="text-xs text-warm-500 shrink-0">
-                    {/* ТЗ-32 B7. Раньше здесь стояло голое «8 форматов», и оно
-                        вводило в заблуждение: план урока, презентация и КТП
-                        доступны только в тарифе «Плюс», то есть из восьми на
-                        бесплатном тарифе доступно пять. Число оставляем —
-                        оно правдивое, — но добавляем вторую часть, чтобы
-                        учитель не обежал покупать подписку ради рабочего листа
-                        и не потерял три формата в конце списка. */}
-                    {ARTIFACT_TYPE_OPTIONS.length + 1} форматов, три — в тарифе «Плюс»
-                  </span>
-                </div>
-                <ArtifactTypePicker
-                  value={type}
-                  onChange={handleStep1TypeChange}
-                  hasPlus={serverUsage?.plan === "plus"}
-                />
-                {/* Интерактив — рабочий тип, но живёт вне ARTIFACT_TYPE_OPTIONS
-                    (см. комментарий в ConfigureStep): на шаге 1 он тоже должен
-                    быть виден, иначе игра снова останется секретом. */}
-                <button
-                  type="button"
-                  onClick={() => handleStep1TypeChange("interactive")}
-                  aria-pressed={type === "interactive"}
-                  data-testid="pick-type-interactive-step1"
-                  className={`mt-1.5 w-full h-10 px-3 rounded-lg text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 flex items-center gap-2 ${
-                    type === "interactive"
-                      ? "bg-brand-700 text-white"
-                      : "border border-warm-200 bg-white text-warm-900 hover:border-warm-300 hover:bg-warm-50"
-                  }`}
-                >
-                  <span aria-hidden>🎮</span>
-                  <span>Интерактив</span>
-                </button>
-              </Card>
-            )}
-
-            {mode === "topic" && step === "select" && (!subject || grade === null) && (
               <SelectStep
                 subject={subject}
                 grade={grade}
@@ -2354,50 +2238,10 @@ export default function ConstructorPage() {
                   setTopic(null);
                   // F-02: смена предмета сбрасывает выбор preset'а (мог быть для другого предмета).
                   setSelectedPresetId(null);
-                  setPresetMode("template");
                 }}
                 onGrade={handleGradeChangeInline}
                 onNext={handleSelectNext}
               />
-            )}
-
-            {/* F-02: шаг выбора preset'а появляется на шаге 1 после того, как юзер выбрал и предмет, и класс.
-                Заменяет кнопку «Далее» — теперь выбор шаблона = переход на «Тема». */}
-            {mode === "topic" && step === "select" && subject && grade !== null && (
-              <Card>
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <h1 className="text-lg font-semibold text-warm-950">Сценарий</h1>
-                    <p className="text-xs text-warm-500 mt-0.5">
-                      Выбраны: {getSubject(subject)?.title} · {grade} кл. Можно поменять в шаге «Что».
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      // Возврат к выбору предмета/класса.
-                      setGrade(null);
-                      setUmk(null);
-                      setTopic(null);
-                      handleBackFromPresets();
-                    }}
-                    leftIcon={<ArrowLeft className="w-3.5 h-3.5" />}
-                  >
-                    Назад
-                  </Button>
-                </div>
-                <PresetGrid
-                  grade={grade}
-                  mode={presetMode}
-                  onModeChange={setPresetMode}
-                  onSelectPreset={handleSelectPreset}
-                  onSkipToTopic={handleSkipPresetToTopic}
-                  selectedPresetId={selectedPresetId}
-                  customType={customType}
-                  onCustomTypeChange={handleCustomTypeChange}
-                />
-              </Card>
             )}
 
             {mode === "topic" && step === "topic" && subjectData && gradeData && (
@@ -2472,7 +2316,6 @@ export default function ConstructorPage() {
                 }
                 onClearPresetLock={() => {
                   setSelectedPresetId(null);
-                  setPresetMode("custom");
                 }}
                 summary={mode === "topic"
                   ? subjectData && grade
@@ -3209,6 +3052,7 @@ function StepHeader({
    * `key` отделён от `step`: два пункта ведут в один `step`, но это разные
    * экраны, и React не должен получать одинаковые ключи.
    */
+  // AD-1: topic-mode — три шага без «Сценария» (предмет → тема → параметры).
   const items: Array<{ key: string; step: Step; label: string }> = mode === "exam"
     ? [
         { key: "exam", step: "exam-select", label: "Экзамен" },
@@ -3217,23 +3061,18 @@ function StepHeader({
         { key: "configure", step: "configure", label: "Параметры" },
       ]
     : [
-        { key: "what", step: "select", label: "Что" },
-        { key: "scenario", step: "select", label: "Сценарий" },
+        { key: "what", step: "select", label: "Предмет" },
         { key: "topic", step: "topic", label: "Тема" },
         { key: "configure", step: "configure", label: "Параметры" },
       ];
   const currentIdx =
     mode === "exam"
       ? Math.max(0, items.findIndex((i) => i.step === step))
-      : // «Что» и «Сценарий» — два экрана одного `step`: показываем тот,
-        // на котором учитель реально стоит.
-        step === "select"
-        ? subject && grade !== null
-          ? 1
-          : 0
+      : step === "select"
+        ? 0
         : step === "topic"
-          ? 2
-          : 3;
+          ? 1
+          : 2;
 
   return (
     <div>
@@ -3348,46 +3187,11 @@ function SelectStep({
     <Card>
       <div className="flex items-baseline justify-between mb-3">
         <h1 className="text-lg font-semibold text-warm-950">Что и для кого</h1>
-        <span className="text-xs text-warm-500">Темы по ФГОС, 1–11 классов</span>
+        <span className="text-xs text-warm-500">Темы по программе, 1–11 классов</span>
       </div>
 
-      {/* Секция 1: КЛАСС — поднял наверх для видимости без скролла. */}
-      <div className="mb-2 pb-2 border-b border-warm-100 flex items-center gap-1.5 flex-wrap">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-warm-500 shrink-0">
-          Класс
-          {subjectData && (
-            <span className="ml-1 normal-case font-medium text-warm-700">· {subjectData.shortTitle}</span>
-          )}
-        </span>
-        <div className="flex flex-wrap gap-1">
-          {(subjectData ? gradeNums : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]).map((g) => {
-            const isSelected = grade === g;
-            const disabled = !subjectData;
-            return (
-              <button
-                key={g}
-                type="button"
-                onClick={() => onGrade(g)}
-                aria-pressed={isSelected}
-                disabled={disabled}
-                title={subjectData ? `${g} класс` : "Сначала выберите предмет"}
-                className={`h-6 w-6 rounded-full grid place-items-center text-[10px] font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 ${
-                  disabled
-                    ? "bg-warm-50 text-warm-500 border border-warm-100 cursor-not-allowed"
-                    : isSelected
-                      ? "bg-brand-500 text-white border border-brand-500"
-                      : "bg-white text-warm-950 border border-warm-200 hover:border-brand-400 hover:bg-brand-50"
-                }`}
-              >
-                {g}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Секция 2: предмет — все категории в одном dense-grid (7 колонок на десктопе). */}
-      <div className="space-y-1">
+      {/* AD-1: предмет визуально выше класса (класс без предмета всё равно disabled). */}
+      <div className="space-y-1 mb-2">
         {SUBJECT_CATEGORIES.map((cat) => (
           <section key={cat.title}>
             <h3 className="text-[10px] font-semibold uppercase tracking-wider text-[color:var(--text-muted)] mb-0.5">
@@ -3425,14 +3229,49 @@ function SelectStep({
 
       {/* Сокращения предметов в школе и в каталоге — разные. Без этой строки
           учитель, который ищет «ОБЗР» или «Окр. мир», не находит свой предмет. */}
-      <p className="text-[11px] leading-snug text-warm-500">
+      <p className="text-[11px] leading-snug text-warm-500 mb-2">
         Сокращения: ОБЖ — основы безопасности жизнедеятельности (в документах —
         ОБЗР), Окр. мир — окружающий мир, Фин. грамотность — финансовая
         грамотность, Физ-ра — физическая культура, ИЗО — изобразительное
         искусство.
       </p>
 
-      {/* CTA: «Далее» доступен только когда оба выбраны. Sticky снизу. */}
+      <div className="mb-2 pt-2 border-t border-warm-100 flex items-center gap-1.5 flex-wrap">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-warm-500 shrink-0">
+          Класс
+          {subjectData && (
+            <span className="ml-1 normal-case font-medium text-warm-700">· {subjectData.shortTitle}</span>
+          )}
+        </span>
+        <div className="flex flex-wrap gap-1">
+          {(subjectData ? gradeNums : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]).map((g) => {
+            const isSelected = grade === g;
+            const disabled = !subjectData;
+            return (
+              <button
+                key={g}
+                type="button"
+                onClick={() => onGrade(g)}
+                aria-pressed={isSelected}
+                disabled={disabled}
+                title={subjectData ? `${g} класс` : "Сначала выберите предмет"}
+                className={`h-6 w-6 rounded-full grid place-items-center text-[10px] font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 ${
+                  disabled
+                    ? "bg-warm-50 text-warm-500 border border-warm-100 cursor-not-allowed"
+                    : isSelected
+                      ? "bg-brand-500 text-white border border-brand-500"
+                      : "bg-white text-warm-950 border border-warm-200 hover:border-brand-400 hover:bg-brand-50"
+                }`}
+              >
+                {g}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* CTA: «Далее» — запасной путь, если класс уже выбран (возврат с темы).
+          Основной путь: клик по классу сразу ведёт на шаг «Тема». */}
       <div className="mt-1.5 pt-1.5 border-t border-warm-100 flex items-center justify-end gap-3 sticky bottom-0 bg-white/85 backdrop-blur -mx-5 px-5 -mb-5 pb-3 rounded-b-2xl">
         {!(subject && grade !== null) && (
           <span className="mr-auto text-xs text-warm-500">Выберите предмет и класс</span>
@@ -3502,16 +3341,30 @@ function TopicStep({
    * обрезался по `max-h`, а класс `scrollbar-hide` прятал полосу прокрутки.
    */
   const [showAllTopics, setShowAllTopics] = React.useState(false);
-  // Смена предмета/класса/учебника = новый список → снова сворачиваем.
+  const [topicQuery, setTopicQuery] = React.useState("");
+  // Смена предмета/класса/учебника = новый список → снова сворачиваем и чистим поиск.
   React.useEffect(() => {
     setShowAllTopics(false);
+    setTopicQuery("");
   }, [subjectData.slug, gradeData.num, umk]);
 
-  const topicsTotal = filteredTopics.length;
-  const visibleTopics = showAllTopics
-    ? filteredTopics
-    : filteredTopics.slice(0, TOPICS_PREVIEW_COUNT);
-  const canShowMore = !showAllTopics && topicsTotal > TOPICS_PREVIEW_COUNT;
+  const queryNorm = topicQuery.trim().toLowerCase();
+  const searchedTopics = queryNorm
+    ? filteredTopics.filter((t) => {
+        const title = t.title.toLowerCase();
+        const fgos = (t.fgosRef ?? "").toLowerCase();
+        return title.includes(queryNorm) || fgos.includes(queryNorm);
+      })
+    : filteredTopics;
+
+  const topicsTotal = searchedTopics.length;
+  // Пустой поиск = прежнее поведение (срез 6 + «Показать все»).
+  // С активным поиском показываем все совпадения без среза.
+  const visibleTopics =
+    queryNorm || showAllTopics
+      ? searchedTopics
+      : searchedTopics.slice(0, TOPICS_PREVIEW_COUNT);
+  const canShowMore = !queryNorm && !showAllTopics && topicsTotal > TOPICS_PREVIEW_COUNT;
 
   return (
     <Card>
@@ -3552,6 +3405,19 @@ function TopicStep({
         </div>
       )}
 
+      <label className="relative block mb-3">
+        <span className="sr-only">Поиск темы</span>
+        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-warm-500" aria-hidden />
+        <input
+          type="search"
+          value={topicQuery}
+          onChange={(e) => setTopicQuery(e.target.value)}
+          placeholder="Поиск по названию или разделу программы"
+          data-testid="topic-search"
+          className="w-full h-10 pl-9 pr-3 rounded-lg border border-warm-200 bg-white text-sm text-warm-950 placeholder:text-warm-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+        />
+      </label>
+
       {/* З8: счётчик «Показано N из M» — пользователь сразу видит, что список
           обрезан. Полосу прокрутки убрали (`scrollbar-hide` её прятал). */}
       {topicsTotal > 0 && (
@@ -3568,7 +3434,9 @@ function TopicStep({
       >
         {topicsTotal === 0 ? (
           <div className="text-sm text-warm-500 py-6 text-center">
-            Для выбранного учебника нет тем. Попробуйте сбросить выбор учебника — кнопка «Назад».
+            {queryNorm
+              ? "Ничего не нашлось. Попробуйте другое слово или очистите поиск."
+              : "Для выбранного учебника нет тем. Попробуйте сбросить выбор учебника — кнопка «Назад»."}
           </div>
         ) : visibleTopics.map((t) => (
           <button
@@ -4070,11 +3938,11 @@ function EmptyPreview({
     },
     oge: {
       label: "Лист по номерам ОГЭ",
-      desc: "Рабочий лист по выбранным номерам заданий ФИПИ. Полный вариант — на странице ОГЭ.",
+      desc: "Рабочий лист по выбранным номерам заданий. Полный вариант — на странице ОГЭ.",
     },
     ege: {
       label: "Лист по номерам ЕГЭ",
-      desc: "Рабочий лист по выбранным номерам заданий ФИПИ. Полный вариант — на странице ЕГЭ.",
+      desc: "Рабочий лист по выбранным номерам заданий. Полный вариант — на странице ЕГЭ.",
     },
     // TZ-16: 4 новых типа. Типизация Record<TaskType, …> требует ВСЕХ ключей —
     // забытый ключ = ошибка компиляции (нам это и нужно, ключи не обходим).
@@ -4104,7 +3972,7 @@ function EmptyPreview({
         </h2>
         <p className="text-warm-600 max-w-md mb-6">
           {isExam
-            ? "Завершите выбор номеров и параметров. Сгенерируем рабочий лист по выбранным заданиям ФИПИ."
+            ? "Завершите выбор номеров и параметров. Сгенерируем рабочий лист по выбранным заданиям."
             : subject
               ? "Завершите выбор темы и параметров, и через минуту у вас будет готовый PDF."
               : "ИИ создаст рабочий лист, проверит ответы сам и пришлёт готовый файл."}
@@ -4319,7 +4187,7 @@ function ExamSelectStep({
   return (
     <Card>
       <h1 className="text-xl font-semibold text-warm-950 mb-1">Выберите экзамен</h1>
-      <p className="text-sm text-warm-500 mb-5">Формат и нумерация заданий по ФИПИ</p>
+      <p className="text-sm text-warm-500 mb-5">Формат и нумерация заданий по нашему списку номеров</p>
       <div className="grid grid-cols-2 gap-3">
         {([
           { id: "oge" as const, label: "ОГЭ", sub: "9 класс" },

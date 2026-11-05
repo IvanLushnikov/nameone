@@ -268,7 +268,7 @@ const obuchay: ComparePage = {
           note: CHILDREN_FOOT,
         },
         {
-          feature: "Варианты ОГЭ и ЕГЭ по номерам ФИПИ",
+          feature: "Варианты ОГЭ и ЕГЭ по номерам",
           ours: "есть",
           theirs: "есть",
         },
@@ -452,7 +452,7 @@ const neyrum: ComparePage = {
         {
           feature: "Программа",
           ours: `ФГОС по каждой теме: ${TOPICS_WITH_FGOS_LABEL}`,
-          theirs: "1–11 класс, ФГОС и ФИПИ",
+          theirs: "1–11 класс, ФГОС и экзаменационные номера",
         },
         {
           feature: "Как платить",
@@ -480,7 +480,7 @@ const neyrum: ComparePage = {
           note: CHILDREN_FOOT,
         },
         {
-          feature: "Варианты ОГЭ и ЕГЭ по номерам ФИПИ",
+          feature: "Варианты ОГЭ и ЕГЭ по номерам",
           ours: "есть",
           theirs: "есть",
         },
@@ -656,9 +656,9 @@ const chatgpt: ComparePage = {
           note: "Тему можно искать в поиске и попасть на готовый разбор с ответами.",
         },
         {
-          feature: "Варианты ОГЭ и ЕГЭ по номерам ФИПИ",
+          feature: "Варианты ОГЭ и ЕГЭ по номерам",
           ours: "есть",
-          theirs: "по запросу, без привязки к номерам ФИПИ",
+          theirs: "по запросу, без привязки к номерам заданий",
         },
         {
           feature: "Плата",

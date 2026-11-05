@@ -287,29 +287,14 @@ const comparison = [
     school: "PDF · DOCX · PPTX",
   },
   {
-    // Строка добавлена в SEO-аудите (ТЗ-21 п.4) вместе с тарифом «Оптимальный».
-    // D3: лимиты 5/10/20 заведены в backend/src/db/classes.ts (studentLimitForPlan).
-    feature: "Учеников в кабинете",
-    free: "5",
-    base: "5",
-    standard: "10",
-    plus: "20",
-    school: "∞",
-  },
-  {
-    feature: "Админка учителя",
-    free: "—",
-    base: "—",
-    standard: "—",
-    plus: "—",
-    school: "✓",
-  },
-  {
-    feature: "Отчёты по классу",
-    free: "—",
-    base: "—",
-    standard: "—",
-    plus: "—",
+    // AD-2: три старые строки ЛК («Учеников…», «Админка…», «Отчёты…»)
+    // схлопнуты в одну. Цифры 5/10/20 в этой строке не показываем —
+    // бэкенд-лимиты studentLimitForPlan не трогаем.
+    feature: "Расширенные возможности личного кабинета",
+    free: "✓",
+    base: "✓",
+    standard: "✓",
+    plus: "✓",
     school: "✓",
   },
   {
