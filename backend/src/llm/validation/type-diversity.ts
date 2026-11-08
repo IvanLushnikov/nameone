@@ -28,6 +28,7 @@
  */
 
 import { diversityLimits } from "../../../../src/lib/content/task-types";
+import { nativeFormsFor } from "./type-sequence";
 
 /** Задание в том виде, в каком оно лежит в листе. */
 export interface TypedTaskLike {
@@ -96,14 +97,38 @@ export function typeHistogram(tasks: readonly TypedTaskLike[]): Map<string, numb
  * Проверка идёт по каждой группе ОТДЕЛЬНО. Для контрольной это два варианта
  * плюс работа суммой: восемь заданий контрольной — это восемь, а не четыре.
  */
+/**
+ * Настройки проверки разнообразия.
+ *
+ * `workType` — вид работы. Он нужен для одной вещи: у работы может быть СВОЙ
+ * формат, заданный самим видом (тест с автопроверкой — это задания с выбором
+ * ответа; ОГЭ/ЕГЭ — часть 1 с краткими ответами). Для таких видов предел
+ * «не больше N заданий одного типа» неприменим: однотипность здесь не
+ * дефект, а формат. Раньше правило разнообразия применялось и к ним, и
+ * заставляло модель мешать в тест другие форматы — автопроверка после этого
+ * переставала работать.
+ *
+ * Понятие «свой формат вида работы» берётся из одного места —
+ * `nativeFormsFor()` в `validation/type-sequence.ts`, чтобы два правила
+ * (разнообразия по количеству и по последовательности) не разошлись.
+ */
+export interface TypeDiversityOptions {
+  /** Вид работы: `test`, `oge`, `ege`, `control`, `worksheet` и т. д. */
+  workType?: string | null;
+}
+
 export function findTypeDiversityViolations(
   groups: readonly DiversityGroup[],
+  options: TypeDiversityOptions = {},
 ): TypeDiversityViolation[] {
+  const nativeForms = nativeFormsFor(options.workType);
   const violations: TypeDiversityViolation[] = [];
   for (const group of groups) {
     const limits = diversityLimits(group.count);
     const histogram = typeHistogram(group.tasks);
     for (const [type, actual] of histogram) {
+      // Форма, заданная самим видом работы, разнообразием не ломается.
+      if (nativeForms.includes(type)) continue;
       if (actual > limits.maxSameType) {
         violations.push({
           type,

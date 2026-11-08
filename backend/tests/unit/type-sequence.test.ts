@@ -206,6 +206,16 @@ const RUN_TYPES = [
   "multiple-choice",
 ];
 
+/**
+ * Заготовка листа.
+ *
+ * 08.11.2026: задание с выбором ответа теперь обязано нести `options`.
+ * Фильтр качества (реестр типов задания, `checkTaskTypeRequirements`) режет
+ * `multiple-choice` без вариантов — и режет правильно: у учителя в листе
+ * было бы задание «выберите вариант», а выбирать не из чего. Заготовка ниже
+ * это учитывает; раньше она молчала, и три задания вылетали из листа ещё до
+ * проверки последовательности форм.
+ */
 function sheetWith(types: readonly string[], texts: readonly string[] = CLEAN_TEXTS) {
   return {
     title: "Лист по истории",
@@ -218,6 +228,16 @@ function sheetWith(types: readonly string[], texts: readonly string[] = CLEAN_TE
       text: texts[i] ?? `Задание ${i + 1}`,
       type,
       answer: `Ответ ${i + 1}`,
+      ...(type === "multiple-choice"
+        ? {
+            options: [
+              `Вариант ${i + 1}-А`,
+              `Вариант ${i + 1}-Б`,
+              `Вариант ${i + 1}-В`,
+              `Вариант ${i + 1}-Г`,
+            ],
+          }
+        : {}),
     })),
   };
 }

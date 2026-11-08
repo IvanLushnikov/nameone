@@ -325,7 +325,10 @@ describe("ТЗ-39: якорь — часть ключа кэша", () => {
     expect(makeCacheKey(makeRequest())).toBe(
       makeCacheKey({ ...makeRequest(), topic: makeRequest().topic }),
     );
-    expect(makeCacheKey(makeRequest())).toBe("3d5e2bec1670ef72");
+    // 08.11.2026: значение пересчитано после подъёма FORMAT_VERSION 3 → 4
+    // (волна 2 меняет сборку ответа). Структурные проверки выше не изменились:
+    // якорь по-прежнему НЕ участвует в ключе для запроса без якоря.
+    expect(makeCacheKey(makeRequest())).toBe("626e4779fa907691");
   });
 
   it("смена якоря даёт другую запись кэша, а не предыдущий лист", async () => {

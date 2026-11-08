@@ -2178,7 +2178,7 @@ export async function generateWorksheet(
   const DIVERSITY_MAX_ATTEMPTS = 2;
   let diversityAttempts = 0;
   while (diversityAttempts < DIVERSITY_MAX_ATTEMPTS) {
-    const violations = findTypeDiversityViolations(diversityGroups());
+    const violations = findTypeDiversityViolations(diversityGroups(), { workType: request.type });
     if (violations.length === 0) break;
     // Берём самое грубое нарушение: у него больше всего «лишних» заданий.
     const violation = violations.reduce((worst, v) =>
@@ -2256,7 +2256,7 @@ export async function generateWorksheet(
 
   // Нарушения, которые остались после попыток починить. Показываем их честно:
   // лучше однообразный лист с пометкой, чем лист, который выглядит правильным.
-  const typeDiversityViolations = findTypeDiversityViolations(diversityGroups());
+  const typeDiversityViolations = findTypeDiversityViolations(diversityGroups(), { workType: request.type });
   if (typeDiversityViolations.length > 0) {
     logLlmEvent("warn", "worksheet-gen: type diversity violation left in sheet", {
       subject: request.subject,
