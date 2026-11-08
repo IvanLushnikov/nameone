@@ -28,6 +28,7 @@
 
 import type { GenerationRequest } from "../../types";
 import { buildUmkBlock, umkIdFromRequest } from "./umk-block";
+import { buildFgosBlock, FGOS_REF } from "./fgos-block";
 
 // Нормализатор учебника живёт в `umk-block` (лист 2.1.7 — общий блок на шесть
 // типов), но продолжает экспортироваться отсюда: его уже импортируют отсюда
@@ -347,6 +348,7 @@ export function buildWorksheetPrompt(
   user: string;
 } {
   const umk = umkIdFromRequest(req);
+  const fgos = buildFgosBlock(req.meta);
   const user = JSON.stringify(
     {
       задача: "Сгенерируй рабочий лист по параметрам ниже",
@@ -360,6 +362,32 @@ export function buildWorksheetPrompt(
         withAnswers: req.withAnswers,
         withExplanations: req.withExplanations,
       },
+      // ───────────────────────────────────────────────────────────────────
+      // ТЗ-39: ФГОС-ЯКОРЬ — раздел программы и один пример формулировки.
+      //
+      // Без него модель получает только название темы и выдумывает навыки сама
+      // (главный дефект качества из исследования 29.10.2026, Q-10). Якорь
+      // говорит ей, ЧТО проверять (раздел программы) и КАК это звучит (один
+      // пример из этого раздела).
+      //
+      // Якорь идёт ПЕРЕД учебником: раздел программы — это о ЧЕМ урок, а
+      // учебник — о том, по какому пособию его ведут. Порядок чтения должен
+      // совпадать с порядком значимости.
+      //
+      // Блок едет ТОЛЬКО когда раздел есть: у темы, введённой руками, раздела
+      // программы нет, и придумывать его нельзя.
+      // ───────────────────────────────────────────────────────────────────
+      ...(fgos
+        ? {
+            ФГОС_ЯКОРЬ: {
+              // Латинский маркер рядом с кириллическим ключом — по нему видно
+              // в логах и в тестах, что якорь дошёл до промпта. Тот же приём,
+              // что у `umk_ref` и `plan_ref`.
+              fgos_ref: FGOS_REF,
+              ориентир: fgos,
+            },
+          }
+        : {}),
       // УМК идёт ДО плана — по порядку чтения. Честное ограничение: план
       // собирается ОТДЕЛЬНЫМ вызовом (`buildPlanPrompt`, стадия за флагом
       // PLAN=1), и учебник в него не попадает — при включённой стадии план
@@ -487,6 +515,7 @@ export function buildTopUpPrompt(
   usedSkills: readonly string[] = [],
 ): { system: string; user: string } {
   const umk = umkIdFromRequest(req);
+  const fgos = buildFgosBlock(req.meta);
   const user = JSON.stringify(
     {
       задача:
@@ -501,6 +530,17 @@ export function buildTopUpPrompt(
         withAnswers: req.withAnswers,
         withExplanations: req.withExplanations,
       },
+      // Дозапрос без якоря собрал бы лист из двух почерков: основные задания
+      // по разделу программы, добавленные — по программе вообще. Тот же
+      // дефект, что и с учебником ниже, только по разделам.
+      ...(fgos
+        ? {
+            ФГОС_ЯКОРЬ: {
+              fgos_ref: FGOS_REF,
+              ориентир: fgos,
+            },
+          }
+        : {}),
       // Дозапрос без учебника собрал бы лист из двух почерков: основные
       // задания по Виленкину, добавленные — по программе вообще. Учитель это
       // видит сразу, поэтому учебник едет и сюда.
@@ -568,6 +608,7 @@ export function buildVariantRetryPrompt(
   reason: string,
 ): { system: string; user: string } {
   const umk = umkIdFromRequest(req);
+  const fgos = buildFgosBlock(req.meta);
   const user = JSON.stringify(
     {
       задача:
@@ -589,6 +630,16 @@ export function buildVariantRetryPrompt(
       // Ретрай переписывает ОБА варианта целиком — учебник без него теряется
       // во всей контрольной, а не в одном задании.
       ...(umk ? { УМК: buildUmkBlock(umk, "worksheet") } : {}),
+      // Якорь — по той же причине: ретрай переписывает варианты целиком, и без
+      // раздела программы второй вариант собрался бы по другой программе.
+      ...(fgos
+        ? {
+            ФГОС_ЯКОРЬ: {
+              fgos_ref: FGOS_REF,
+              ориентир: fgos,
+            },
+          }
+        : {}),
       требования: {
         оба_варианта_по_count: req.count,
         варианты_разные:

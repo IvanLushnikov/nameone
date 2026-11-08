@@ -41,6 +41,11 @@ import {
   normalizeUmkId,
   sanitizeTextLatex,
 } from "./prompts/worksheet-gen";
+import {
+  dropAnchorCopies,
+  fgosAnchorFromRequest,
+  fgosAnchorId,
+} from "./prompts/fgos-block";
 import { buildExamPrompt } from "./prompts/exam-gen";
 import type { ArtifactRequest } from "./prompts/artifact-gen";
 import {
@@ -406,6 +411,44 @@ export function dropRemainingDupes(tasks: CleanTask[]): {
 }
 
 /**
+ * Тема, по которой строится ключ кэша рабочего листа.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ЗАЧЕМ ОТДЕЛЬНАЯ ФУНКЦИЯ, А НЕ СТРОКА В `generateWorksheet`
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Ключ кэша перечисляет поля запроса явно, а `meta` в этот список не входит.
+ * Поэтому выбор учителя (учебник, якорь по ФГОС) дописывается к теме
+ * ВСПИСОМ: `topic` входит в ключ, `request.topic` при этом не меняется, и в
+ * `semantic_cache` пишется настоящая тема.
+ *
+ * Без этого «поставил галочку — никакой разницы»: учитель меняет учебник или
+ * появляется якорь, а получает из кэша лист по ПРЕДЫДУЩЕМУ выбору.
+ *
+ * Функция вынесена наружу, потому что это ПРАВИЛО, а не деталь реализации:
+ * тест проверяет ровно то, что делает сервер, а не повторяет строку формата
+ * (повтор формата — это тест, который проверяет себя).
+ *
+ * Правильное место для всего этого — `CacheKeyInput` в `llm/cache.ts`, но
+ * файл ключа принадлежит другой задаче (ТЗ-35), и трогать его здесь нельзя.
+ */
+export function cacheTopicForRequest(request: GenerationRequest): string {
+  const umkId = normalizeUmkId(request.meta?.umk);
+  // ФГОС-ЯКОРЬ (ТЗ-39) — ТОЖЕ ЧАСТЬ КЛЮЧА, ровно как учебник. Лист, собранный
+  // с якорем, нельзя отдавать тому, у кого якоря не было: у него другая опора
+  // и другой материал.
+  //
+  // Хвост `[fgos:<id>]` — это хэш раздела и примера: длинный раздел (до 300
+  // знаков) в ключ не пускаем, а одинаковый якорь даёт одинаковый ключ, и
+  // повторный запрос по той же теме остаётся бесплатным (попадание в кэш).
+  const fgosId = fgosAnchorId(fgosAnchorFromRequest(request));
+  return [
+    request.topic,
+    ...(umkId ? [`[umk:${umkId}]`] : []),
+    ...(fgosId ? [`[fgos:${fgosId}]`] : []),
+  ].join(" ");
+}
+
+/**
  * Сгенерировать рабочий лист через LLM с кэшем, rate-limit, fallback.
  */
 export async function generateWorksheet(
@@ -445,10 +488,19 @@ export async function generateWorksheet(
   // этом листе. Дописываем id к теме: `topic` входит в ключ, `request.topic`
   // при этом не меняется, и в `semantic_cache` пишется настоящая тема.
   // Правильное место для этого — `CacheKeyInput` отдельной правкой.
-  const umkId = normalizeUmkId(request.meta?.umk);
+  //
+  // Учебник и ФГОС-якорь (ТЗ-39) — ТОЖЕ ЧАСТЬ КЛЮЧА. Лист, собранный с
+  // якорем, нельзя отдавать тому, у кого якоря не было: у него другая опора
+  // и другой материал. Без этого «поставил галочку — никакой разницы»
+  // повторился бы на второй попытке, только в другой одежде.
+  const fgosAnchor = fgosAnchorFromRequest(request);
+  // Текст примера-якоря: по нему проверяется, не скопировала ли модель
+  // пример в задание (см. `dropAnchorCopies`).
+  const anchorExampleText = fgosAnchor?.example?.text ?? null;
+  const cacheTopic = cacheTopicForRequest(request);
   const cacheKey = makeCacheKey({
     ...request,
-    ...(umkId ? { topic: `${request.topic} [umk:${umkId}]` } : {}),
+    ...(cacheTopic !== request.topic ? { topic: cacheTopic } : {}),
     userId,
   });
   if (!bypassCache) {
@@ -794,6 +846,22 @@ export async function generateWorksheet(
         )
       : { tasks: [] as CleanTask[], report: null };
 
+    // ТЗ-39: ЗАДАНИЕ, ДОСЛОВНО ПОВТОРЯЮЩЕЕ ПРИМЕР ЯКОРЯ, — ВЫБРАСЫВАЕМ.
+    //
+    // Пример в промпте назван стилем, а не шаблоном, но просьба — это просьба.
+    // Скопированное задание учитель уже видел на странице темы.
+    //
+    // Выброшенное задание не пропадает: дальше работает обычный механизм
+    // дозапроса (`ensureCount`), который доберёт недостающее количество.
+    const primaryCleaned = dropAnchorCopies(primaryFiltered.tasks, anchorExampleText);
+    if (primaryCleaned.dropped.length > 0) {
+      logLlmEvent("warn", "worksheet-gen: task copied the fgos anchor example", {
+        subject: request.subject,
+        stage: "worksheet.variant1",
+        dropped: primaryCleaned.dropped,
+      });
+    }
+
     if (primaryFiltered.report) {
       filterReports.push(primaryFiltered.report);
       logFilterReport({
@@ -816,7 +884,7 @@ export async function generateWorksheet(
     // Кандидатов нет → сеть не трогается: 0 токенов. Модель ответила ерундой →
     // задание остаётся текстом, а причина видна в логе (`svg-graph-gen:`).
     const withCharts = await attachChartSpecs({
-      tasks: primaryFiltered.tasks as unknown as RawSheetTask[],
+      tasks: primaryCleaned.tasks as unknown as RawSheetTask[],
       subject: request.subject,
       grade: request.grade,
       topic: request.topic,
@@ -853,7 +921,16 @@ export async function generateWorksheet(
         report: filtered.report,
       });
     }
-    return { tasks: filtered.tasks, report: filtered.report, raw };
+    // ТЗ-39: второй вариант контрной — те же правила, что и у первого.
+    const cleaned = dropAnchorCopies(filtered.tasks, anchorExampleText);
+    if (cleaned.dropped.length > 0) {
+      logLlmEvent("warn", "worksheet-gen: task copied the fgos anchor example", {
+        subject: request.subject,
+        stage: "worksheet.variant2",
+        dropped: cleaned.dropped,
+      });
+    }
+    return { tasks: cleaned.tasks, report: filtered.report, raw };
   };
 
   let secondParsed = readVariant(controlVariants?.[1]);
@@ -1008,7 +1085,18 @@ export async function generateWorksheet(
           report: topUpFiltered.report,
         });
       }
-      const usable = topUpFiltered.tasks.slice(0, missing);
+      // ТЗ-39: дозапрос проходит ту же проверку на копию примера. Иначе
+      // модель, увидевшая тот же якорь, вернула бы то же скопированное
+      // задание — и мы бы вернули учителю ровно то, что выбросили.
+      const topUpCleaned = dropAnchorCopies(topUpFiltered.tasks, anchorExampleText);
+      if (topUpCleaned.dropped.length > 0) {
+        logLlmEvent("warn", "worksheet-gen: top-up task copied the fgos anchor example", {
+          subject: request.subject,
+          stage,
+          dropped: topUpCleaned.dropped,
+        });
+      }
+      const usable = topUpCleaned.tasks.slice(0, missing);
       topUpAdded += usable.length;
       return [...current, ...usable];
     } catch (e) {
@@ -1092,10 +1180,13 @@ export async function generateWorksheet(
       );
       const res = await callProvider(prompt.system, prompt.user, 4096);
       const parsed = JSON.parse(res.response.content) as Worksheet;
-      const fresh = filterAndReport(
-        Array.isArray(parsed.tasks) ? parsed.tasks : [],
-        request.subject,
-        request.withAnswers,
+      const fresh = dropAnchorCopies(
+        filterAndReport(
+          Array.isArray(parsed.tasks) ? parsed.tasks : [],
+          request.subject,
+          request.withAnswers,
+        ).tasks,
+        anchorExampleText,
       ).tasks;
 
       // Дозапрос может вернуть задание, которое само дублирует оставшееся.
