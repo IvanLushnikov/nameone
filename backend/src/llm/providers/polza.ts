@@ -18,18 +18,44 @@
  *   2. Добавить retry / circuit breaker (как у openai.ts).
  *   3. Перенести тарифы из llm/config.ts в llm/cost.ts, чтобы они применялись
  *      и в провайдере, а не только в роутере.
+ *
+ * ── PROMPT CACHE (ТЗ-41) ────────────────────────────────────────────────────
+ *
+ * polza.ai — единственный провайдер в проде, и до ТЗ-41 кэш промпта не
+ * просил НИКТО: флаг `cacheSystemPrompt` выставлял `llm/index.ts`, а читала
+ * его только `providers/anthropic.ts` — провайдер, который в проде не
+ * используется. Здесь флаг читается по-настоящему: system-сообщение уходит
+ * массивом content-parts с `cache_control: {type: "ephemeral"}` — тот формат,
+ * который polza.ai документирует для Claude в OpenAI-совместимом
+ * `/chat/completions` (https://polza.ai/docs/osobennosti/caching).
+ *
+ * Если провайдер такой формат отвергает (400) — запрос повторяется в
+ * плоском виде, генерация не падает, а кэш в этом воркере выключается
+ * (см. `cacheControlRejected`).
  */
 
 import { InternalError } from "../../lib/errors";
 import { calcCost } from "../cost";
-import { getBaseUrl, MODEL_CATALOG } from "../config";
+import { getBaseUrl, MODEL_CATALOG, MODEL_COSTS } from "../config";
 import { logLlmEvent } from "../log";
+import { cachedTextBlock, shouldRequestPromptCache } from "./cache-control";
 import type { Env } from "../../env";
 import type { LLMResponse, Provider } from "../types";
 
 interface PolzaProviderState {
   baseUrl: string;
   apiKey: string;
+  /**
+   * Провайдер отверг `cache_control` (400) — в этом воркере кэш больше не
+   * просим.
+   *
+   * Флаг живёт в состоянии провайдера (singleton на изолят), а не в
+   * конфигурации: решение «здесь кэш не работает» — это факт о провайдере
+   * в этом окружении, а не о коде. Провайдер отверг кэш один раз — дальше
+   * запросы идут без него, иначе каждый вызов платил бы за заведомо
+   * обречённый 400-й запрос.
+   */
+  cacheControlRejected: boolean;
 }
 
 let cached: PolzaProviderState | null = null;
@@ -48,7 +74,7 @@ function getState(env: Env): PolzaProviderState {
   // POLZA_API_KEY, поля POLZA_BASE_URL не существует. Раньше здесь стояло
   // env.POLZA_BASE_URL — файл не компилировался.
   const baseUrl = getBaseUrl(env, "polza");
-  cached = { baseUrl, apiKey };
+  cached = { baseUrl, apiKey, cacheControlRejected: false };
   return cached;
 }
 
@@ -71,44 +97,110 @@ export function getPolzaProvider(env: Env): Provider {
     name: "Polza.ai (OpenAI-compat)",
     async complete(args, _env, _opts): Promise<LLMResponse> {
       void _env;
-      const body: Record<string, unknown> = {
-        // В polza уходит apiName из MODEL_CATALOG (`openai/gpt-6-luna`), а не
-        // наш внутренний id (`gpt-6-luna`). Раньше сюда уезжал внутренний id,
-        // и поле `apiName`, объявленное в каталоге, не читалось НИГДЕ — то есть
-        // оно было мёртвым, а провайдер получал имя, которое мы ему не обещали.
-        // Сейчас оно единственный источник имени для провайдера; если модели
-        // нет в каталоге, уходит id как раньше — это лучше, чем упасть.
-        model: apiNameFor(args.model),
-        // TZ-11 §4.4: content может быть строкой (все существующие задачи) или
-        // массивом content-part с картинкой (photo-check). Провайдер polza
-        // OpenAI-совместимый, поэтому массив уходит без преобразований —
-        // ровно в том формате, который ждёт /chat/completions.
-        messages: args.messages.map((m) => ({ role: m.role, content: m.content })),
-        max_tokens: args.maxTokens ?? 4096,
-        temperature: args.temperature ?? 0.7,
+      /**
+       * Собрать тело запроса.
+       *
+       * `withCache` — просить ли кэш у провайдера. Разница между двумя
+       * вариантами ОДНА: system-сообщение либо строка, либо массив
+       * content-parts с `cache_control`. Всё остальное (модель, max_tokens,
+       * temperature, response_format) — одинаково.
+       *
+       * Кэш ставится ТОЛЬКО на первом system-сообщении: кэшируется ПРЕФИКС
+       * запроса, то есть всё, что стоит до точки кэширования. Точек больше
+       * одной не делаем: у Anthropic их максимум четыре, а смысла ставить вторую
+       * у нас нет (system у нас один).
+       */
+      const buildBody = (withCache: boolean): Record<string, unknown> => {
+        let cachePointUsed = false;
+        const messages = args.messages.map((m) => {
+          // TZ-11 §4.4: content может быть строкой (все существующие задачи) или
+          // массивом content-part с картинкой (photo-check). Провайдер polza
+          // OpenAI-совместимый, поэтому массив уходит без преобразований —
+          // ровно в том формате, который ждёт /chat/completions.
+          if (!withCache || cachePointUsed || m.role !== "system" || typeof m.content !== "string") {
+            return { role: m.role, content: m.content };
+          }
+          cachePointUsed = true;
+          // System как content-parts с `cache_control` — формат, который
+          // polza.ai документирует для Claude в OpenAI-совместимом пути
+          // (https://polza.ai/docs/osobennosti/caching).
+          return { role: m.role, content: [cachedTextBlock(m.content, true)] };
+        });
+
+        const body: Record<string, unknown> = {
+          // В polza уходит apiName из MODEL_CATALOG (`openai/gpt-6-luna`), а не
+          // наш внутренний id (`gpt-6-luna`). Раньше сюда уезжал внутренний id,
+          // и поле `apiName`, объявленное в каталоге, не читалось НИГДЕ — то есть
+          // оно было мёртвым, а провайдер получал имя, которое мы ему не обещали.
+          // Сейчас оно единственный источник имени для провайдера; если модели
+          // нет в каталоге, уходит id как раньше — это лучше, чем упасть.
+          model: apiNameFor(args.model),
+          messages,
+          max_tokens: args.maxTokens ?? 4096,
+          temperature: args.temperature ?? 0.7,
+        };
+        if (args.responseFormat === "json") body.response_format = { type: "json_object" };
+        return body;
       };
-      if (args.responseFormat === "json") body.response_format = { type: "json_object" };
+
+      // Кэш просим, только если: (1) вызывающий выставил флаг, (2) модель его
+      // держит (есть цена чтения в MODEL_COSTS), (3) провайдер в этом воркере
+      // его ещё не отверг.
+      const wantCache =
+        shouldRequestPromptCache(args.model, args.cacheSystemPrompt) && !state.cacheControlRejected;
 
       const start = Date.now();
-      let res: Response;
-      try {
-        res = await fetch(`${state.baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${state.apiKey}`,
-          },
-          body: JSON.stringify(body),
-        });
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        logLlmEvent("error", "polza network error", {
+
+      const send = async (body: Record<string, unknown>): Promise<Response> => {
+        try {
+          return await fetch(`${state.baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${state.apiKey}`,
+            },
+            body: JSON.stringify(body),
+          });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          logLlmEvent("error", "polza network error", {
+            provider: "polza",
+            model: args.model,
+            error: msg,
+            latencyMs: Date.now() - start,
+          });
+          throw new InternalError(`polza network error: ${msg}`);
+        }
+      };
+
+      let res = await send(buildBody(wantCache));
+
+      // ── ОТКАТ ПРИ ОТКАЗЕ В ФОРМАТЕ ───────────────────────────────────────
+      // Если провайдер не принимает content-parts с `cache_control` — он
+      // отвечает 400. Это НЕ повод ронять генерацию: повторяем запрос в
+      // плоском формате (без кэша, зато гарантированно рабочем) и дальше в
+      // этом воркере кэш не просим.
+      //
+      // Откат срабатывает только на «плохой запрос» (400/422). На 5xx мы не
+      // откатываемся: это не про формат, это про провайдера, и прятать 5xx под
+      // «плоский формат» нельзя — потеряется причина отказа.
+      if (!res.ok && wantCache && (res.status === 400 || res.status === 422)) {
+        const rejected = await res.text().catch(() => "");
+        logLlmEvent("warn", "polza: cache_control отклонён — откат на плоский формат", {
           provider: "polza",
           model: args.model,
-          error: msg,
+          status: res.status,
+          error: rejected.slice(0, 200),
           latencyMs: Date.now() - start,
         });
-        throw new InternalError(`polza network error: ${msg}`);
+        res = await send(buildBody(false));
+        if (res.ok) {
+          state.cacheControlRejected = true;
+          logLlmEvent("warn", "polza: cache_control в этом воркере отключён — запросы идут без кэша", {
+            provider: "polza",
+            model: args.model,
+          });
+        }
       }
 
       if (!res.ok) {
@@ -136,7 +228,16 @@ export function getPolzaProvider(env: Env): Provider {
           prompt_tokens?: number;
           completion_tokens?: number;
           total_tokens?: number;
-          prompt_tokens_details?: { cached_tokens?: number };
+          /**
+           * Счётчики prompt cache.
+           *
+           * `cached_tokens` — сколько входа прочитано из кэша провайдера,
+           * `cache_write_tokens` — сколько в кэш записано этим вызовом.
+           * Оба лежат ВНУТРИ `prompt_tokens`, то есть `prompt_tokens` — это
+           * весь вход целиком, а эти два поля лишь расшифровывают его части
+           * (https://polza.ai/docs/osobennosti/usage).
+           */
+          prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
           /**
            * Токены внутреннего размышления. OpenAI-совместимое поле — у одних
            * провайдеров `usage.completion_tokens_details.reasoning_tokens`,
@@ -171,14 +272,37 @@ export function getPolzaProvider(env: Env): Provider {
       const tokensIn = data.usage?.prompt_tokens ?? 0;
       const tokensOut = data.usage?.completion_tokens ?? 0;
       const cachedTokens = data.usage?.prompt_tokens_details?.cached_tokens ?? 0;
+      const cacheWriteTokens = data.usage?.prompt_tokens_details?.cache_write_tokens ?? 0;
       const latencyMs = Date.now() - start;
 
+      // ── ДЕНЬГИ ───────────────────────────────────────────────────────────
       // Ключевой момент: тариф берём по ID модели из MODEL_CATALOG, а не по
       // имени провайдера. Раньше здесь было calcCost("polza", model, ...) —
       // первый аргумент попадал в параметр `model`, MODEL_COSTS["polza"]
       // не существует, и ВСЕ вызовы polza тарифицировались как 0 USD.
       // Подробности: docs/tz/11-photo-check.md §2.5 (расхождение №2).
-      const costUsd = calcCost(args.model, tokensIn, tokensOut);
+      //
+      // С КЭШОМ вход делится на части. polza отдаёт `prompt_tokens` = весь
+      // вход ЦЕЛИКОМ, а `cached_tokens` / `cache_write_tokens` — часть этого
+      // входа. Калькулятор (`llm/cost.ts`) считает кэш по семантике
+      // Anthropic: `cacheRead` и `cacheWrite` идут СВЕРХ `tokensIn`. Если
+      // отдать ему полный вход И счётчики кэша, кэшированная часть
+      // посчитается дважды — и «экономия» превратится в переплату. Поэтому в
+      // `tokensIn` уходит только то, что в кэш не попало.
+      //
+      // Если цену кэша в MODEL_COSTS мы не знаем (у модели нет
+      // `cacheReadPer1M`) — считаем весь вход по полной цене. Это завышает
+      // оценку, но не занижает: переоценка расхода видна, а выдуманная
+      // экономия — нет.
+      const cachePart = cachedTokens + cacheWriteTokens;
+      const cachePriced = MODEL_COSTS[args.model]?.cacheReadPer1M != null;
+      const cacheCounted = cachePart > 0 && cachePart <= tokensIn && cachePriced;
+      const costUsd = calcCost(
+        args.model,
+        cacheCounted ? tokensIn - cachePart : tokensIn,
+        tokensOut,
+        cacheCounted ? { cacheRead: cachedTokens, cacheWrite: cacheWriteTokens } : undefined,
+      );
 
       // Фактическое списание от провайдера. Если поля нет (старый ответ,
       // другой формат) — остаётся null, и работа продолжается на расчёте по
@@ -202,6 +326,10 @@ export function getPolzaProvider(env: Env): Provider {
         model: data.model ?? args.model,
         inputTokens: tokensIn,
         outputTokens: tokensOut,
+        // Только числа: сколько входа провайдер прочитал из кэша и сколько
+        // записал. Текста промпта в логе нет и не должно быть.
+        cachedTokens,
+        cacheWriteTokens,
         costUsd,
         costRub,
         latencyMs,
@@ -258,6 +386,11 @@ export function getPolzaProvider(env: Env): Provider {
         content,
         tokensIn,
         tokensOut,
+        // ТЗ-41: счётчики кэша доезжают до вызывающего. Раньше провайдер их
+        // читал, но в ответ не клал — деньги за кэш нельзя было ни посчитать,
+        // ни показать.
+        cacheReadTokens: cachedTokens,
+        cacheWriteTokens: cacheWriteTokens,
         costUsd,
         costRub,
         latencyMs,
