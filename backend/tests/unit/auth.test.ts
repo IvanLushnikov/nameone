@@ -232,20 +232,6 @@ CREATE TABLE IF NOT EXISTS rate_limits (
 
 CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start);
 
-CREATE TABLE IF NOT EXISTS model_routing (
-  task             TEXT NOT NULL,
-  plan             TEXT NOT NULL,
-  primary_model    TEXT NOT NULL,
-  primary_provider TEXT NOT NULL,
-  fallback_json    TEXT NOT NULL DEFAULT '[]',
-  enabled          INTEGER NOT NULL DEFAULT 1,
-  updated_at       INTEGER NOT NULL,
-  updated_by       TEXT,
-  PRIMARY KEY (task, plan)
-);
-
-CREATE INDEX IF NOT EXISTS idx_model_routing_enabled ON model_routing(enabled);
-
 CREATE TABLE IF NOT EXISTS admin_audit_log (
   id          TEXT PRIMARY KEY,
   actor_id    TEXT,

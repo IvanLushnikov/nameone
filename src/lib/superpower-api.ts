@@ -47,6 +47,19 @@ async function load<T>(path: string): Promise<LoadResult<T>> {
   }
 }
 
+/**
+ * Баланс кошелька у провайдера (ТЗ-43).
+ *
+ * `at` — unix-время снимка баланса. Поле необязательное: сервер отдаёт его
+ * с 29.10.2026, а фронт может быть выкачен раньше бэка. Без даты снимка
+ * экран честно говорит «дата снимка неизвестна» и НЕ придумывает свежесть.
+ */
+export interface ProviderBalance {
+  amountRub: number;
+  availableRub: number | null;
+  at?: number | null;
+}
+
 /** Экран 1 — светофор. */
 export interface Overview {
   month: string;
@@ -61,7 +74,7 @@ export interface Overview {
     divergenceAlert: boolean;
   };
   activeSubscriptions: number;
-  providerBalance: { amountRub: number; availableRub: number | null } | null;
+  providerBalance: ProviderBalance | null;
 }
 
 export const loadOverview = (month?: string): Promise<LoadResult<Overview & { ok: true }>> =>
@@ -94,7 +107,18 @@ export interface Money {
   month: string;
   summary: Overview["money"];
   providerBalance: Overview["providerBalance"];
-  topups: { count: number; totalRub: number; byDay: Array<{ date: string; amountRub: number }> };
+  topups: {
+    count: number;
+    /**
+     * null — снимков баланса за период было меньше двух, и рост кошелька
+     * не виден в принципе. Это НЕ «пополнений не было»: один снимок не
+     * знает, что было до него.
+     */
+    totalRub: number | null;
+    byDay: Array<{ date: string; amountRub: number }>;
+    /** Сколько снимков баланса попало в период. */
+    snapshots?: number;
+  };
   costByUser: Array<{
     userId: string | null;
     email: string | null;
@@ -169,4 +193,62 @@ export function formatPercent(value: number | null | undefined): string {
 export function formatDay(ts: number): string {
   const d = new Date(ts * 1000);
   return d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+}
+
+/** Время снимка: `03:00`. */
+export function formatClock(ts: number): string {
+  return new Date(ts * 1000).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Дата и время снимка: `27 октября, 03:00`. */
+export function formatSnapshotTime(ts: number): string {
+  return `${formatDay(ts)}, ${formatClock(ts)}`;
+}
+
+/**
+ * Что экран говорит о балансе провайдера (ТЗ-43).
+ *
+ * ТРИ СОСТОЯНИЯ, И ВСЕ ОНИ РАЗНЫЕ:
+ *
+ *   • снимка нет вообще        — механизм ещё ни разу не отработал;
+ *   • снимок есть, но не за сегодня — механизм работает, но сегодняшнего
+ *     снимка ещё нет (крон снимает в 03:00 UTC);
+ *   • снимок за сегодня        — цифра свежая.
+ *
+ * Раньше на экране было одно «Снимков баланса ещё нет» на все три случая, и
+ * по нему нельзя было понять: сломался крон или просто ещё не наступило
+ * время снятия. Это разные вещи, и владелец должен видеть разные слова.
+ */
+export function balanceSnapshotText(
+  balance: ProviderBalance | null,
+  nowMs: number = Date.now(),
+): { fresh: boolean; text: string } {
+  if (!balance) {
+    return {
+      fresh: false,
+      text: "Сегодня ещё не снимали: снимков баланса пока нет вообще — суточный крон ещё ни разу не отработал.",
+    };
+  }
+
+  const at = balance.at;
+  if (at === undefined || at === null) {
+    return {
+      fresh: false,
+      text: "Снимок есть, но его дата неизвестна: сервер отдаёт баланс без времени снятия.",
+    };
+  }
+
+  const atMs = at * 1000;
+  const utcDay = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+  if (utcDay(atMs) === utcDay(nowMs)) {
+    return { fresh: true, text: `Снято сегодня в ${formatClock(at)}.` };
+  }
+
+  const ageHours = Math.floor((nowMs - atMs) / 3_600_000);
+  const tail =
+    ageHours >= 48 ? " (больше двух суток назад — крон, похоже, не отрабатывает)" : "";
+  return {
+    fresh: false,
+    text: `Сегодня ещё не снимали. Последний снимок — ${formatSnapshotTime(at)}${tail}.`,
+  };
 }

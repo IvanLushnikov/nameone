@@ -7,6 +7,7 @@ import {
   loadErrorText,
   formatRub,
   formatPercent,
+  balanceSnapshotText,
   type Overview,
   type LoadResult,
 } from "@/lib/superpower-api";
@@ -48,6 +49,7 @@ export default function SuperpowerOverviewPage() {
 
   const data = result.data!;
   const { money } = data;
+  const snapshot = balanceSnapshotText(data.providerBalance);
 
   const costTone = !money.costShare
     ? "default"
@@ -114,7 +116,7 @@ export default function SuperpowerOverviewPage() {
           {data.providerBalance ? (
             <div className="space-y-3">
               <StatCard
-                label="На балансе"
+                label={snapshot.fresh ? "На балансе" : "На балансе по последнему снимку"}
                 value={formatRub(data.providerBalance.amountRub)}
                 tone={data.providerBalance.amountRub < 500 ? "warn" : "default"}
               />
@@ -124,6 +126,7 @@ export default function SuperpowerOverviewPage() {
                   балансом — деньги, зарезервированные под текущие запросы.
                 </div>
               ) : null}
+              <div className="text-xs text-warm-500">{snapshot.text}</div>
               <Link
                 href="/superpower/money"
                 className="inline-block text-sm text-brand-700 hover:text-brand-800"
@@ -132,7 +135,7 @@ export default function SuperpowerOverviewPage() {
               </Link>
             </div>
           ) : (
-            <EmptyState text="Снимков баланса ещё нет — они появятся после первого запроса к провайдеру" />
+            <EmptyState text={snapshot.text} />
           )}
         </Panel>
 

@@ -51,6 +51,7 @@ import { classesRouter, publicClassLinksRouter } from "./routes/classes";
 import { purgeExpiredPhotos } from "./jobs/purgeExpiredPhotos";
 import { refreshWeeklyTopicState } from "./jobs/weeklyTopic";
 import { purgeExpiredForms } from "./jobs/purgeExpiredForms";
+import { recordBalanceSnapshot } from "./services/polza-balance";
 import { sendRenewalReminders, chargeDueSubscriptions } from "./jobs/billingRecurring";
 import { journalRouter } from "./routes/journal";
 import { interactivesRouter } from "./routes/interactives";
@@ -280,6 +281,18 @@ app.notFound(notFoundHandler);
  * `typeof new Hono().scheduled === "undefined"`), cron-триггер вешается через
  * `app.fire("scheduled", event, env, ctx)` из обработчика Fetch. `scheduled` —
  * зарезервированное имя события воркера, поэтому навешиваем его вручную.
+ *
+ * ─── ГЛАВНОЕ: обработчик обязан быть ДОСТИЖИМ извне (ТЗ-43) ─────────────
+ * До 29.10.2026 `app.fire` не вызывался НИОТКДА: триггер в `wrangler.toml`
+ * был объявлен, обработчик был написан — а рантайм Cloudflare не знал, куда
+ * обратиться. Рантайм вызывает у объекта по умолчанию метод `scheduled`
+ * (документация Cloudflare: `export default { fetch, scheduled }`), поэтому
+ * ниже метод навешивается на приложение вручную. Без этого крон срабатывал
+ * и НИЧЕГО НЕ ДЕЛАЛ: фото тетрадей не удалялись, ответы учеников не
+ * вычищались, тема недели не обновлялась, баланс у провайдера не снимался.
+ *
+ * Проверяется тестом `tests/unit/balance-snapshot-cron.test.ts`: он зовёт
+ * `scheduled` у объекта по умолчанию — ровно так, как это делает рантайм.
  */
 app.fire = ((event: ScheduledEvent, env: AppEnv["Bindings"], ctx: ExecutionContext) => {
   // ── Какой это триггер ────────────────────────────────────────────────────
@@ -325,6 +338,23 @@ app.fire = ((event: ScheduledEvent, env: AppEnv["Bindings"], ctx: ExecutionConte
         } catch (e) {
           console.error("[cron] purgeExpiredForms failed", e);
         }
+
+        // 4) Баланс кошелька у провайдера (ТЗ-43).
+        //
+        //    Зачем: провайдер у нас один (polza.ai), и 100 % трафика идёт
+        //    через него. Если у него кончится баланс, узнаём об этом от
+        //    учителей («лист не генерится»), а не от себя. Снимок раз в
+        //    сутки — деньги на кошельке не заканчиваются за час (AD-2 ТЗ-43).
+        //
+        //    Снимок — ТЕЛЕМЕТРИЯ, а не условие работы: сама функция глотает
+        //    ошибки провайдера, и обёртка ниже не даёт упасть остальным
+        //    задачам крона. Генерация от снимка не зависит ничем.
+        try {
+          const balance = await recordBalanceSnapshot(env.DB, env);
+          console.info("[cron] recordBalanceSnapshot", JSON.stringify(balance));
+        } catch (e) {
+          console.error("[cron] recordBalanceSnapshot failed", e);
+        }
       }
 
       // 3) Биллинг (ТЗ-20) — отдельный триггер, раз в час. Подписку нельзя
@@ -352,6 +382,37 @@ app.fire = ((event: ScheduledEvent, env: AppEnv["Bindings"], ctx: ExecutionConte
     })(),
   );
 }) as typeof app.fire;
+
+/**
+ * Точка входа cron-триггера для рантайма Cloudflare.
+ *
+ * Рантайм вызывает у объекта по умолчанию метод `scheduled(event, env, ctx)`
+ * (документация Cloudflare: `export default { fetch, scheduled }`). У Hono
+ * такого метода нет, поэтому навешиваем его на приложение — тем же приёмом,
+ * которым навешен `app.fire`.
+ *
+ * ПОЧЕМУ ЭТО НЕ ПУСТОЕ УКРАШЕНИЕ. Пока `scheduled` не был объявлен, крон в
+ * `wrangler.toml` срабатывал вхолостую: обработчик был написан, но до него
+ * не доходил никто. Это стоило не только снимков баланса (ТЗ-43), но и
+ * уборки персональных данных по retention-политике (ТЗ-11, ТЗ-12) — то есть
+ * фото тетрадей и ответы учеников копились бы в базе без срока.
+ *
+ * `ctx.waitUntil` внутри — как в самом обработчике: работа крона продолжается
+ * после того, как рантайм отпустил событие.
+ */
+const scheduledHandler = (
+  event: ScheduledEvent,
+  env: AppEnv["Bindings"],
+  ctx: ExecutionContext,
+): void => {
+  (app.fire as unknown as (
+    e: ScheduledEvent,
+    e2: AppEnv["Bindings"],
+    c: ExecutionContext,
+  ) => void)(event, env, ctx);
+};
+
+(app as unknown as { scheduled: typeof scheduledHandler }).scheduled = scheduledHandler;
 
 export default app;
 export { app };

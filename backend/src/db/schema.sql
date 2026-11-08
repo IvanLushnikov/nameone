@@ -414,28 +414,21 @@ CREATE TABLE IF NOT EXISTS fraud_signals (
 CREATE INDEX IF NOT EXISTS idx_fraud_signals_last_seen ON fraud_signals(last_seen);
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Admin: model routing + audit log (для /api/admin/*)
+-- Admin: журнал действий (аудит) — для /api/admin/*
 -- ─────────────────────────────────────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS model_routing (
-  task             TEXT NOT NULL,             -- worksheet-gen | exam-gen | validate | embed | image-gen
-  plan             TEXT NOT NULL,             -- free | base | plus | '*' (для задач без плана, embed/validate)
-  primary_model    TEXT NOT NULL,             -- model id из MODEL_CATALOG (env-side)
-  primary_provider TEXT NOT NULL,             -- 'polza' | 'openai' | 'anthropic' | ...
-  fallback_json    TEXT NOT NULL DEFAULT '[]',-- JSON-массив {provider, model} для callWithFallback
-  enabled          INTEGER NOT NULL DEFAULT 1,
-  updated_at       INTEGER NOT NULL,
-  updated_by       TEXT,                      -- user_id админа, кто поменял
-  PRIMARY KEY (task, plan)
-);
-
-CREATE INDEX IF NOT EXISTS idx_model_routing_enabled ON model_routing(enabled);
+--
+-- Таблицы `model_routing` здесь больше нет (ТЗ-43): роутинг моделей живёт в
+-- коде (`backend/src/llm/router.ts`, константа PRIMARY_BY_TASK). Таблица была
+-- объявлена, но ничем не наполнялась — ни одной строки за всё время и ни
+-- одной строчки кода записи. Для того, кто смотрел в базу, это выглядело как
+-- «данные есть, но потерялись», а на деле данных не было никогда. Убрана
+-- миграцией 0010_drop_model_routing.
 
 CREATE TABLE IF NOT EXISTS admin_audit_log (
   id          TEXT PRIMARY KEY,
   actor_id    TEXT,                           -- user_id админа (может быть NULL если не залогинен)
-  action      TEXT NOT NULL,                  -- 'routing.update' | 'user.toggle_admin' | ...
-  target_type TEXT,                           -- 'model_routing' | 'user' | ...
+  action      TEXT NOT NULL,                  -- 'user.toggle_admin' | 'superpower.money.view' | ...
+  target_type TEXT,                           -- 'user' | 'finance' | 'worksheet' | ...
   target_id   TEXT,                           -- PK или описание
   payload_json TEXT,                          -- детали изменения
   created_at  INTEGER NOT NULL

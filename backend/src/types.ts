@@ -573,17 +573,13 @@ export interface ApiOk<T> {
  */
 export type AdminGenerationTask = "worksheet-gen" | "exam-gen" | "validate" | "embed";
 
-/** Текущая конфигурация раскладки моделей. Одна запись = (task, plan). */
-export interface ModelRoutingEntry {
-  task: AdminGenerationTask;
-  plan: string; // "free" | "base" | "standard" | "plus" | "*"
-  primaryProvider: string;
-  primaryModel: string;
-  fallback: Array<{ provider: string; model: string }>;
-  enabled: boolean;
-  updatedAt: string | null;
-  updatedBy: string | null;
-}
+/*
+ * Контрактов управления роутингом моделей из базы здесь больше нет (ТЗ-43).
+ * Таблица `model_routing` удалена миграцией 0010: кода записи в неё не было
+ * никогда, а роутинг живёт в коде (`backend/src/llm/router.ts`). Контракт без
+ * эндпоинта — та же ложная точка наблюдаемости, что и пустая таблица: он
+ * обещает возможность, которой нет.
+ */
 
 export interface AdminMeResponse {
   ok: true;
@@ -727,22 +723,6 @@ export interface AdminEventsResponse {
     data: unknown;
     createdAt: string;
   }>;
-}
-
-export interface UpdateModelRoutingRequest {
-  entries: Array<{
-    task: AdminGenerationTask;
-    plan: string;
-    primaryProvider: string;
-    primaryModel: string;
-    fallback: Array<{ provider: string; model: string }>;
-    enabled: boolean;
-  }>;
-}
-
-export interface UpdateModelRoutingResponse {
-  ok: true;
-  updated: number;
 }
 
 export interface TrackEventRequest {
