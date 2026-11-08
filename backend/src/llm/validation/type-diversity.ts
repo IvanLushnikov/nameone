@@ -28,7 +28,7 @@
  */
 
 import { diversityLimits } from "../../../../src/lib/content/task-types";
-import { nativeFormsFor } from "./type-sequence";
+import { nativeFormsFor, type WorkType } from "./type-sequence";
 
 /** Задание в том виде, в каком оно лежит в листе. */
 export interface TypedTaskLike {
@@ -114,21 +114,24 @@ export function typeHistogram(tasks: readonly TypedTaskLike[]): Map<string, numb
  */
 export interface TypeDiversityOptions {
   /** Вид работы: `test`, `oge`, `ege`, `control`, `worksheet` и т. д. */
-  workType?: string | null;
+  workType?: WorkType | null;
 }
 
 export function findTypeDiversityViolations(
   groups: readonly DiversityGroup[],
   options: TypeDiversityOptions = {},
 ): TypeDiversityViolation[] {
-  const nativeForms = nativeFormsFor(options.workType);
+  // Тип задания приходит от модели свободным текстом, поэтому сравниваем
+  // строки: `Set<string>` снимает расхождение узкого списка `TaskTypeName`
+  // и реальной строки в гистограмме.
+  const nativeForms = new Set<string>(nativeFormsFor(options.workType));
   const violations: TypeDiversityViolation[] = [];
   for (const group of groups) {
     const limits = diversityLimits(group.count);
     const histogram = typeHistogram(group.tasks);
     for (const [type, actual] of histogram) {
       // Форма, заданная самим видом работы, разнообразием не ломается.
-      if (nativeForms.includes(type)) continue;
+      if (nativeForms.has(type)) continue;
       if (actual > limits.maxSameType) {
         violations.push({
           type,
