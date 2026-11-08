@@ -102,6 +102,30 @@ export interface GenerationRequestMeta {
    * непохожее на идентификатор = обычный путь, работаем как без учебника.
    */
   umk?: string | null;
+  /**
+   * РАЗДЕЛ ФЕДЕРАЛЬНОЙ ПРОГРАММЫ по теме (ТЗ-39) — человекочитаемое
+   * название, например «Дроби» или «Средневековая Русь».
+   *
+   * Приходит из таксономии фронта (`topic.fgosRef`). Это ОПОРНАЯ точка
+   * запроса: без неё модель получает только название темы и придумывает
+   * навыки сама — то есть по памяти о школьной программе, а не по программе,
+   * которую продукт собрал и проверил.
+   *
+   * Бэкенд значение не проверяет по таксономии (её у него нет) — он его
+   * нормализует и кладёт в промпт (см. `llm/prompts/fgos-block.ts`). Пустое
+   * значение = обычный путь, работаем как без якоря.
+   */
+  fgosRef?: string | null;
+  /**
+   * ОДИН пример формулировки из этой темы (ТЗ-39) — якорь СТИЛЯ, не шаблон.
+   *
+   * Примеры написаны по содержанию раздела программы, поэтому показывают
+   * модели, как эта тема звучит у учителя. Ровно один: два примера сужают
+   * формулировки сильнее, чем нужно (AD-1 в ТЗ-39).
+   *
+   * Ответ примера — необязательный: он показывает, как записывается ответ.
+   */
+  fgosExample?: { text: string; answer?: string } | null;
 }
 
 export interface GenerationRequest {
@@ -569,17 +593,13 @@ export interface ApiOk<T> {
  */
 export type AdminGenerationTask = "worksheet-gen" | "exam-gen" | "validate" | "embed";
 
-/** Текущая конфигурация раскладки моделей. Одна запись = (task, plan). */
-export interface ModelRoutingEntry {
-  task: AdminGenerationTask;
-  plan: string; // "free" | "base" | "standard" | "plus" | "*"
-  primaryProvider: string;
-  primaryModel: string;
-  fallback: Array<{ provider: string; model: string }>;
-  enabled: boolean;
-  updatedAt: string | null;
-  updatedBy: string | null;
-}
+/*
+ * Контрактов управления роутингом моделей из базы здесь больше нет (ТЗ-43).
+ * Таблица `model_routing` удалена миграцией 0010: кода записи в неё не было
+ * никогда, а роутинг живёт в коде (`backend/src/llm/router.ts`). Контракт без
+ * эндпоинта — та же ложная точка наблюдаемости, что и пустая таблица: он
+ * обещает возможность, которой нет.
+ */
 
 export interface AdminMeResponse {
   ok: true;
@@ -723,22 +743,6 @@ export interface AdminEventsResponse {
     data: unknown;
     createdAt: string;
   }>;
-}
-
-export interface UpdateModelRoutingRequest {
-  entries: Array<{
-    task: AdminGenerationTask;
-    plan: string;
-    primaryProvider: string;
-    primaryModel: string;
-    fallback: Array<{ provider: string; model: string }>;
-    enabled: boolean;
-  }>;
-}
-
-export interface UpdateModelRoutingResponse {
-  ok: true;
-  updated: number;
 }
 
 export interface TrackEventRequest {

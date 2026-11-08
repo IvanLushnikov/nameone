@@ -48,6 +48,11 @@ import {
   normalizeUmkId,
   sanitizeTextLatex,
 } from "./prompts/worksheet-gen";
+import {
+  dropAnchorCopies,
+  fgosAnchorFromRequest,
+  fgosAnchorId,
+} from "./prompts/fgos-block";
 import { buildExamPrompt } from "./prompts/exam-gen";
 import type { ArtifactRequest } from "./prompts/artifact-gen";
 import {
@@ -125,6 +130,15 @@ import {
   findSkillDupes,
   type SkillTaskLike,
 } from "./validation/skill-dupes";
+import {
+  countDistinctSkills,
+  findDefectRuns,
+  isAutoGradedType,
+  normalizeType,
+  replacementTypeOrder,
+  runTailNumbers,
+  type TaskTypeName,
+} from "./validation/type-sequence";
 import { reconcileSelfVerifyVerdict } from "./validation/answer-check";
 import { callPolzaEmbedding } from "./providers/polza";
 import {
@@ -465,6 +479,44 @@ export function dropRemainingDupes(tasks: CleanTask[]): {
 }
 
 /**
+ * Тема, по которой строится ключ кэша рабочего листа.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ЗАЧЕМ ОТДЕЛЬНАЯ ФУНКЦИЯ, А НЕ СТРОКА В `generateWorksheet`
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Ключ кэша перечисляет поля запроса явно, а `meta` в этот список не входит.
+ * Поэтому выбор учителя (учебник, якорь по ФГОС) дописывается к теме
+ * ВСПИСОМ: `topic` входит в ключ, `request.topic` при этом не меняется, и в
+ * `semantic_cache` пишется настоящая тема.
+ *
+ * Без этого «поставил галочку — никакой разницы»: учитель меняет учебник или
+ * появляется якорь, а получает из кэша лист по ПРЕДЫДУЩЕМУ выбору.
+ *
+ * Функция вынесена наружу, потому что это ПРАВИЛО, а не деталь реализации:
+ * тест проверяет ровно то, что делает сервер, а не повторяет строку формата
+ * (повтор формата — это тест, который проверяет себя).
+ *
+ * Правильное место для всего этого — `CacheKeyInput` в `llm/cache.ts`, но
+ * файл ключа принадлежит другой задаче (ТЗ-35), и трогать его здесь нельзя.
+ */
+export function cacheTopicForRequest(request: GenerationRequest): string {
+  const umkId = normalizeUmkId(request.meta?.umk);
+  // ФГОС-ЯКОРЬ (ТЗ-39) — ТОЖЕ ЧАСТЬ КЛЮЧА, ровно как учебник. Лист, собранный
+  // с якорем, нельзя отдавать тому, у кого якоря не было: у него другая опора
+  // и другой материал.
+  //
+  // Хвост `[fgos:<id>]` — это хэш раздела и примера: длинный раздел (до 300
+  // знаков) в ключ не пускаем, а одинаковый якорь даёт одинаковый ключ, и
+  // повторный запрос по той же теме остаётся бесплатным (попадание в кэш).
+  const fgosId = fgosAnchorId(fgosAnchorFromRequest(request));
+  return [
+    request.topic,
+    ...(umkId ? [`[umk:${umkId}]`] : []),
+    ...(fgosId ? [`[fgos:${fgosId}]`] : []),
+  ].join(" ");
+}
+
+/**
  * Сгенерировать рабочий лист через LLM с кэшем, rate-limit, fallback.
  */
 export async function generateWorksheet(
@@ -504,10 +556,19 @@ export async function generateWorksheet(
   // этом листе. Дописываем id к теме: `topic` входит в ключ, `request.topic`
   // при этом не меняется, и в `semantic_cache` пишется настоящая тема.
   // Правильное место для этого — `CacheKeyInput` отдельной правкой.
-  const umkId = normalizeUmkId(request.meta?.umk);
+  //
+  // Учебник и ФГОС-якорь (ТЗ-39) — ТОЖЕ ЧАСТЬ КЛЮЧА. Лист, собранный с
+  // якорем, нельзя отдавать тому, у кого якоря не было: у него другая опора
+  // и другой материал. Без этого «поставил галочку — никакой разницы»
+  // повторился бы на второй попытке, только в другой одежде.
+  const fgosAnchor = fgosAnchorFromRequest(request);
+  // Текст примера-якоря: по нему проверяется, не скопировала ли модель
+  // пример в задание (см. `dropAnchorCopies`).
+  const anchorExampleText = fgosAnchor?.example?.text ?? null;
+  const cacheTopic = cacheTopicForRequest(request);
   const cacheKey = makeCacheKey({
     ...request,
-    ...(umkId ? { topic: `${request.topic} [umk:${umkId}]` } : {}),
+    ...(cacheTopic !== request.topic ? { topic: cacheTopic } : {}),
     userId,
   });
   if (!bypassCache) {
@@ -885,6 +946,22 @@ export async function generateWorksheet(
         )
       : { tasks: [] as CleanTask[], report: null };
 
+    // ТЗ-39: ЗАДАНИЕ, ДОСЛОВНО ПОВТОРЯЮЩЕЕ ПРИМЕР ЯКОРЯ, — ВЫБРАСЫВАЕМ.
+    //
+    // Пример в промпте назван стилем, а не шаблоном, но просьба — это просьба.
+    // Скопированное задание учитель уже видел на странице темы.
+    //
+    // Выброшенное задание не пропадает: дальше работает обычный механизм
+    // дозапроса (`ensureCount`), который доберёт недостающее количество.
+    const primaryCleaned = dropAnchorCopies(primaryFiltered.tasks, anchorExampleText);
+    if (primaryCleaned.dropped.length > 0) {
+      logLlmEvent("warn", "worksheet-gen: task copied the fgos anchor example", {
+        subject: request.subject,
+        stage: "worksheet.variant1",
+        dropped: primaryCleaned.dropped,
+      });
+    }
+
     if (primaryFiltered.report) {
       filterReports.push(primaryFiltered.report);
       logFilterReport({
@@ -907,7 +984,7 @@ export async function generateWorksheet(
     // Кандидатов нет → сеть не трогается: 0 токенов. Модель ответила ерундой →
     // задание остаётся текстом, а причина видна в логе (`svg-graph-gen:`).
     const withCharts = await attachChartSpecs({
-      tasks: primaryFiltered.tasks as unknown as RawSheetTask[],
+      tasks: primaryCleaned.tasks as unknown as RawSheetTask[],
       subject: request.subject,
       grade: request.grade,
       topic: request.topic,
@@ -944,7 +1021,16 @@ export async function generateWorksheet(
         report: filtered.report,
       });
     }
-    return { tasks: filtered.tasks, report: filtered.report, raw };
+    // ТЗ-39: второй вариант контрной — те же правила, что и у первого.
+    const cleaned = dropAnchorCopies(filtered.tasks, anchorExampleText);
+    if (cleaned.dropped.length > 0) {
+      logLlmEvent("warn", "worksheet-gen: task copied the fgos anchor example", {
+        subject: request.subject,
+        stage: "worksheet.variant2",
+        dropped: cleaned.dropped,
+      });
+    }
+    return { tasks: cleaned.tasks, report: filtered.report, raw };
   };
 
   let secondParsed = readVariant(controlVariants?.[1]);
@@ -1156,7 +1242,18 @@ export async function generateWorksheet(
           report: topUpFiltered.report,
         });
       }
-      const usable = topUpFiltered.tasks.slice(0, missing);
+      // ТЗ-39: дозапрос проходит ту же проверку на копию примера. Иначе
+      // модель, увидевшая тот же якорь, вернула бы то же скопированное
+      // задание — и мы бы вернули учителю ровно то, что выбросили.
+      const topUpCleaned = dropAnchorCopies(topUpFiltered.tasks, anchorExampleText);
+      if (topUpCleaned.dropped.length > 0) {
+        logLlmEvent("warn", "worksheet-gen: top-up task copied the fgos anchor example", {
+          subject: request.subject,
+          stage,
+          dropped: topUpCleaned.dropped,
+        });
+      }
+      const usable = topUpCleaned.tasks.slice(0, missing);
       topUpAdded += usable.length;
       return [...current, ...usable];
     } catch (e) {
@@ -1240,10 +1337,13 @@ export async function generateWorksheet(
       );
       const res = await callProvider(prompt.system, prompt.user, 4096);
       const parsed = JSON.parse(res.response.content) as Worksheet;
-      const fresh = filterAndReport(
-        Array.isArray(parsed.tasks) ? parsed.tasks : [],
-        request.subject,
-        request.withAnswers,
+      const fresh = dropAnchorCopies(
+        filterAndReport(
+          Array.isArray(parsed.tasks) ? parsed.tasks : [],
+          request.subject,
+          request.withAnswers,
+        ).tasks,
+        anchorExampleText,
       ).tasks;
 
       // Дозапрос может вернуть задание, которое само дублирует оставшееся.
@@ -1441,6 +1541,315 @@ export async function generateWorksheet(
     return post.tasks;
   };
 
+  /**
+   * Убрать хвосты серий, которые остались после замены.
+   *
+   * Вызов провайдера здесь НЕ делается намеренно (см. комментарий выше): этот
+   * путь — редкий, а деньги за замену уже потрачены. Лист становится короче,
+   * и `stillMissing` говорит учителю правду.
+   *
+   * Бюджет удаления — тот же, что у чистки дублей (`dropBudgetOf`): лучше
+   * короткий лист, чем пустой.
+   */
+  const dropRunTails = (sheet: CleanTask[], stage: string): CleanTask[] => {
+    let current = sheet;
+    let budget = dropBudgetOf(sheet.length);
+    while (budget > 0) {
+      const runs = findDefectRuns(
+        current as unknown as { type?: unknown; skill?: unknown }[],
+        { workType: request.type, topic: request.topic },
+      );
+      if (runs.length === 0) break;
+      const toDrop = runTailNumbers(runs).slice(0, budget);
+      if (toDrop.length === 0) break;
+      current = current.filter((_, index) => !toDrop.includes(index + 1));
+      budget -= toDrop.length;
+      logLlmEvent("warn", "worksheet-gen: repeated task types left, dropping", {
+        subject: request.subject,
+        stage,
+        dropped: toDrop,
+        left: current.length,
+      });
+    }
+    return current;
+  };
+
+  /**
+   * ЧИСТКА ПОСЛЕДОВАТЕЛЬНОСТИ ФОРМ (ТЗ-40, Q-09).
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   * ЗАЧЕМ
+   * ─────────────────────────────────────────────────────────────────────────────
+   * Страница «Методика» обещала, что одинаковые формы подряд не идут. В живых
+   * прогонах 29.10.2026 серия была в 7 листах из 10, и НИКТО ЭТОГО НЕ
+   * ПРОВЕРЯЛ: правило промпта «Не пиши 5 одинаковых задач подряд» — просьба к
+   * модели, а не гарантия. Теперь гарантию даёт код.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   * МЕСТО В КОНВЕЙЕРЕ: ПОСЛЕ ПОСТУСЛОВИЯ ЧИСТКИ, ДО НУМЕРАЦИИ
+   * ─────────────────────────────────────────────────────────────────────────────
+   * Порядок листа теперь такой:
+   *   фильтр → добор → чистка дублей → добор → ПОСТУСЛОВИЕ чистки (ТЗ-34) →
+   *   ПОСЛЕДОВАТЕЛЬНОСТЬ ФОРМ (эта функция) → нумерация.
+   *
+   * Почему не раньше: постусловие чистки УБИРАЕТ задания, и удаление может
+   * СВЕСТИ две одинаковые формы вместе (было «вычисление, выбор ответа,
+   * вычисление, вычисление» — стало три вычисления подряд). Значит, серии
+   * надо искать на ИТОГОВОМ списке — ровно так же, как дубли считает
+   * `dropRemainingDupes`.
+   *
+   * Почему постусловие чистки вызывается ВНУТРИ этой функции: замена может
+   * породить новый дубль, и снять его обязан тот же механизм ТЗ-34. Постусловие
+   * в конвейере одно на весь лист.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   * ЧТО СЧИТАЕТСЯ ДЕФЕКТОМ
+   * ─────────────────────────────────────────────────────────────────────────────
+   * Решает детектор `validation/type-sequence.ts`. Коротко: серия из трёх и
+   * более одинаковых типов подряд, кроме двух случаев, которые детектор
+   * считает нормальной методикой (отстройка одного навыка и форма, заданная
+   * самим типом работы — тест, ОГЭ, ЕГЭ). Там — почему.
+   */
+  /**
+   * ЗАМЕНИТЬ ХВОСТЫ СЕРИЙ (ТЗ-40, шаг «замена»).
+   *
+   * Один вызов провайдера на лист: модель должна вернуть столько новых
+   * заданий, сколько стоит в хвостах серий, и КАЖДОЕ — другой формы.
+   *
+   * Место, для которого замены не нашлось, УДАЛЯЕТСЯ (ТЗ-40, AD-3: сначала
+   * чистота, потом длина). Лист становится короче, и учитель видит честное
+   * «получено 10 из 12» в `quality.stillMissing`.
+   */
+  const replaceRunTails = async (
+    current: CleanTask[],
+    runs: readonly { start: number; length: number; type: TaskTypeName }[],
+    stage: string,
+  ): Promise<CleanTask[]> => {
+    // Меняем ХВОСТ каждой серии: всё, кроме первого задания. Первое уже стоит
+    // в листе и выглядит уместно — менять его значит ломать лист сильнее,
+    // чем нужно (та же логика, что у `tasksToReplace`).
+    const replaceNumbers = runTailNumbers(runs);
+    if (replaceNumbers.length === 0) return current;
+
+    // План типов-замен: по одному на заменяемое задание, и они РАЗНЫЕ.
+    //
+    // Разные — потому что заменённый кусок иначе сам станет серией: три
+    // задания одного типа подряд — тот же дефект, только в новом месте. Тип
+    // самой серии исключён (замена должна быть ДРУГОЙ формы), а остальное
+    // выбирается по принципу «наименее использованный в листе»: так замена не
+    // добавляет ещё одну порцию той же формы.
+    const slotRunType: TaskTypeName[] = [];
+    const plan: TaskTypeName[] = [];
+    for (const run of runs) {
+      const order = replacementTypeOrder(current, run.type, request.type, request.subject);
+      if (order.length === 0) continue;
+      for (let i = 1; i < run.length; i += 1) {
+        const slot = replaceNumbers.indexOf(run.start + i);
+        if (slot < 0) continue;
+        const wanted = order[(i - 1) % order.length];
+        if (!wanted) continue;
+        slotRunType[slot] = run.type;
+        plan[slot] = wanted;
+      }
+    }
+    if (plan.length === 0 || plan.some((type) => !type)) return current;
+
+    logLlmEvent("warn", "worksheet-gen: same task types in a row, replacing", {
+      subject: request.subject,
+      stage,
+      runs: runs.map((run) => `${run.type}:${run.start}+${run.length}`),
+      replacing: replaceNumbers,
+      types: plan,
+    });
+
+    const picked: (CleanTask | null)[] = new Array(replaceNumbers.length).fill(null);
+    const usedIndexes = new Set<number>();
+
+    /**
+     * Собрать лист с кандидатом на одном из мест.
+     *
+     * Незаполненные места остаются со СТАРЫМИ заданиями: это нужно, чтобы
+     * увидеть, появится ли новая серия. Проверка идёт по виртуальному ряду,
+     * а не по итоговому листу.
+     */
+    const sheetWith = (slot: number, candidate: CleanTask): CleanTask[] => {
+      const out: CleanTask[] = [];
+      current.forEach((task, index) => {
+        const number = index + 1;
+        const slotOf = replaceNumbers.indexOf(number);
+        if (slotOf < 0) {
+          out.push(task);
+          return;
+        }
+        if (slotOf === slot) {
+          out.push(candidate);
+          return;
+        }
+        out.push(picked[slotOf] ?? task);
+      });
+      return out;
+    };
+
+    /** Появится ли из-за кандидата серия — с ним или без него. */
+    const createsRun = (slot: number, candidate: CleanTask): boolean => {
+      const sheet = sheetWith(slot, candidate);
+      const number = replaceNumbers[slot] ?? 0;
+      return findDefectRuns(
+        sheet as unknown as { type?: unknown; skill?: unknown }[],
+        { workType: request.type, topic: request.topic },
+      ).some((run) => number >= run.start && number < run.start + run.length);
+    };
+
+    try {
+      const prompt = buildTopUpPrompt(
+        request,
+        replaceNumbers.length,
+        current
+          .map((t) => (t as { text?: unknown }).text)
+          .filter((t): t is string => typeof t === "string"),
+        undefined,
+        plan,
+      );
+      const res = await callProvider(prompt.system, prompt.user, 4096);
+      const parsed = JSON.parse(res.response.content) as Worksheet;
+      const fresh = filterAndReport(
+        Array.isArray(parsed.tasks) ? parsed.tasks : [],
+        request.subject,
+        request.withAnswers,
+      ).tasks;
+
+      // Отбор кандидатов. Сначала строго по плану типов (модель дала то, что
+      // просили), потом — мягко: любой другой тип, лишь бы лист не остался
+      // серией.
+      const take = (slot: number, strict: boolean): void => {
+        if (picked[slot]) return;
+        const index = fresh.findIndex((candidate, i) => {
+          if (usedIndexes.has(i)) return false;
+          const type = normalizeType(candidate.type);
+          if (!type) return false;
+          // Та же форма — серия не разорвана, смысла в такой замене нет.
+          if (type === slotRunType[slot]) return false;
+          // В тесте с автопроверкой проверяет учитель всё, что не считается
+          // автоматически: такое задание в тест не годится.
+          if (request.type === "test" && !isAutoGradedType(type)) return false;
+          if (strict && type !== plan[slot]) return false;
+          return true;
+        });
+        if (index < 0) return;
+        const candidate = fresh[index];
+        if (!candidate) return;
+        // Кандидат не должен создать новую серию — ни своей формой, ни тем,
+        // что рядом с ним встанет такой же.
+        if (createsRun(slot, candidate)) return;
+        usedIndexes.add(index);
+        picked[slot] = candidate;
+      };
+
+      for (let slot = 0; slot < picked.length; slot += 1) take(slot, true);
+      for (let slot = 0; slot < picked.length; slot += 1) take(slot, false);
+    } catch (e) {
+      logLlmEvent("error", "worksheet-gen: task type replacement failed", {
+        subject: request.subject,
+        stage,
+        error: String(e),
+      });
+    }
+
+    // Подстановка.
+    const replaced: CleanTask[] = [];
+    current.forEach((task, index) => {
+      const number = index + 1;
+      const slot = replaceNumbers.indexOf(number);
+      if (slot < 0) {
+        replaced.push(task);
+        return;
+      }
+      const candidate = picked[slot];
+      if (candidate) replaced.push(candidate);
+    });
+    const replacedCount = picked.filter(Boolean).length;
+    const deleted = replaceNumbers.length - replacedCount;
+
+    logLlmEvent("warn", "worksheet-gen: task type runs fixed", {
+      subject: request.subject,
+      stage,
+      runs: runs.length,
+      replaced: replacedCount,
+      deleted,
+      left: replaced.length,
+      // Разнообразие навыков после замены не должно упасть: если модель вернула
+      // задание с уже занятой меткой, меток станет меньше — это видно в логе.
+      skillsBefore: countDistinctSkills(current),
+      skillsAfter: countDistinctSkills(replaced),
+    });
+
+    return replaced;
+  };
+
+  /**
+   * ЧИСТКА ПОСЛЕДОВАТЕЛЬНОСТИ ФОРМ (ТЗ-40, Q-09).
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   * ЗАЧЕМ
+   * ─────────────────────────────────────────────────────────────────────────────
+   * Страница «Методика» обещала, что одинаковые формы подряд не идут. В живых
+   * прогонах 29.10.2026 серия была в 7 листах из 10, и НИКТО ЭТОГО НЕ
+   * ПРОВЕРЯЛ: правило промпта «Не пиши 5 одинаковых задач подряд» — просьба к
+   * модели, а не гарантия. Теперь гарантию даёт код.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   * МЕСТО В КОНВЕЙЕРЕ: ПОСЛЕ ПОСТУСЛОВИЯ ЧИСТКИ, ДО НУМЕРАЦИИ
+   * ─────────────────────────────────────────────────────────────────────────────
+   * Порядок листа теперь такой:
+   *   фильтр → добор → чистка дублей → добор → ПОСТУСЛОВИЕ чистки (ТЗ-34) →
+   *   ПОСЛЕДОВАТЕЛЬНОСТЬ ФОРМ (эта функция) → нумерация.
+   *
+   * Почему не раньше: постусловие чистки УБИРАЕТ задания, и удаление может
+   * СВЕСТИ две одинаковые формы вместе (было «вычисление, выбор ответа,
+   * вычисление, вычисление» — стало три вычисления подряд). Значит, серии
+   * надо искать на ИТОГОВОМ списке — ровно так же, как дубли считает
+   * `dropRemainingDupes`.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   * ПОРЯДОК ВНУТРИ И ПОЧЕМУ ПРОХОДОВ ДВА
+   * ─────────────────────────────────────────────────────────────────────────────
+   *   1. замена хвостов серий (один вызов провайдера);
+   *   2. ПОСТУСЛОВИЕ чистки (ТЗ-34): замена могла породить дубль — его снимает
+   *      тот же механизм, что и весь остальной конвейер;
+   *   3. если постусловие СВЕЛО две одинаковые формы вместе (оно удалило
+   *      задание между ними) — серия собралась заново, и тогда нужен ВТОРОЙ
+   *      проход замены. Без него пришлось бы удалять задания, а это минус
+   *      материал у учителя;
+   *   4. если и после второго прохода серия осталась (модель не дала другой
+   *      формы) — хвост серии УДАЛЯЕТСЯ. Это последний рубеж: лист без
+   *      серии честнее листа с серией, а `stillMissing` скажет учителю правду.
+   */
+  const fixTypeSequences = async (
+    current: CleanTask[],
+    stage: string,
+  ): Promise<CleanTask[]> => {
+    let tasks = current;
+    for (let round = 1; round <= 2; round += 1) {
+      const runs = findDefectRuns(
+        tasks as unknown as { type?: unknown; skill?: unknown }[],
+        {
+          workType: request.type,
+          topic: request.topic,
+        },
+      );
+      if (runs.length === 0) break;
+      const replaced = await replaceRunTails(tasks, runs, `${stage}#r${round}`);
+      tasks = applyPostcondition(replaced, `${stage}#r${round}#post`);
+    }
+    // Последний рубеж: серия, которую не смогли ни заменить, ни разорвать
+    // постусловием. Удаляем хвост БЕЗ вызова провайдера — деньги за замену
+    // уже потрачены, а этот путь редкий.
+    const dropped = dropRunTails(tasks, `${stage}#drop`);
+    // И постусловие ещё раз: удаление могло свести два ОДИНАКОВЫХ задания
+    // вместе — это тот же дефект (дубль), только с другой стороны.
+    return applyPostcondition(dropped, `${stage}#post2`);
+  };
+
   const isControl = request.type === "control";
   // У контрольной целевое количество общее для обоих вариантов (AD-8) и
   // добирается после того, как оба варианта собраны. У остальных типов —
@@ -1491,6 +1900,23 @@ export async function generateWorksheet(
     );
     if (postPrimary !== (worksheet.tasks as unknown as CleanTask[])) {
       worksheet = { ...worksheet, tasks: postPrimary as unknown as Worksheet["tasks"] };
+    }
+
+    // ТЗ-40: ПОСЛЕДОВАТЕЛЬНОСТЬ ФОРМ.
+    //
+    // Именно здесь, а не раньше: постусловие чистки только что убрало задания,
+    // а удаление может свести две одинаковые формы вместе. Серии ищутся на
+    // ИТОГОВОМ списке.
+    //
+    // Лист после этого НЕ добирается заново: чистота важнее длины (ТЗ-34,
+    // AD-1). Если задание не удалось заменить — оно удалено, и учитель видит
+    // честное «получено 9 из 12» в `quality.stillMissing`.
+    const seqPrimary = await fixTypeSequences(
+      worksheet.tasks as unknown as CleanTask[],
+      "primary#seq",
+    );
+    if (seqPrimary !== (worksheet.tasks as unknown as CleanTask[])) {
+      worksheet = { ...worksheet, tasks: seqPrimary as unknown as Worksheet["tasks"] };
     }
   }
 
@@ -1619,6 +2045,45 @@ export async function generateWorksheet(
     );
     worksheet = { ...worksheet, tasks: final1 as unknown as Worksheet["tasks"] };
     secondVariant = { ...secondVariant, tasks: final2 as unknown as Worksheet["tasks"] };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ТЗ-40: ПОСЛЕДОВАТЕЛЬНОСТИ ФОРМ В КАЖДОМ ВАРИАНТЕ
+    //
+    // Контрольная раздаётся классу двумя листами, и серия в ОДНОМ из них —
+    // та же проблема, что и в обычном листе (ТЗ-40, AD-5). Проверка идёт по
+    // каждому варианту отдельно: варианты не смешиваются.
+    //
+    // Дальше — два шага, и они обязательны именно в таком порядке:
+    //   1. выравнивание длины (механизм ТЗ-25, AD-8): удалённое при замене
+    //      задание могло оставить варианты разной длины, а раздавать классу
+    //      листы разного объёма нельзя — учитель обнаружит это на печати;
+    //   2. повторная проверка серий: добор вернул задание, и оно могло
+    //      вернуть серию. Если серий нет, повторный проход НИЧЕГО НЕ ДЕЛАЕТ
+    //      и модель не зовёт — денег это не стоит.
+    // ─────────────────────────────────────────────────────────────────────────
+    const seq1 = await fixTypeSequences(
+      worksheet.tasks as unknown as CleanTask[],
+      "variant1#seq",
+    );
+    const seq2 = await fixTypeSequences(
+      (secondVariant.tasks ?? []) as unknown as CleanTask[],
+      "variant2#seq",
+    );
+    worksheet = { ...worksheet, tasks: seq1 as unknown as Worksheet["tasks"] };
+    secondVariant = { ...secondVariant, tasks: seq2 as unknown as Worksheet["tasks"] };
+    await equalizeVariants("after-type-fix");
+
+    const seq1b = await fixTypeSequences(
+      worksheet.tasks as unknown as CleanTask[],
+      "variant1#seq2",
+    );
+    const seq2b = await fixTypeSequences(
+      (secondVariant.tasks ?? []) as unknown as CleanTask[],
+      "variant2#seq2",
+    );
+    worksheet = { ...worksheet, tasks: seq1b as unknown as Worksheet["tasks"] };
+    secondVariant = { ...secondVariant, tasks: seq2b as unknown as Worksheet["tasks"] };
+    await equalizeVariants("after-type-fix-2");
   }
 
   // Разрыв 4: обрезанный ответ выше уже отбит (ретрай с удвоенным потолком, а

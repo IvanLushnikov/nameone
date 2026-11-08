@@ -14,6 +14,7 @@ import { getBaseUrl, ENV_KEYS } from "../config";
 import { calcCost } from "../cost";
 import { InternalError } from "../../lib/errors";
 import { logLlmEvent } from "../log";
+import { cachedTextBlock } from "./cache-control";
 import type { Env } from "../../env";
 import type { LLMResponse, Provider } from "../types";
 import { contentToText } from "../types";
@@ -65,17 +66,13 @@ export function getAnthropicProvider(env: Env): Provider {
       }
 
       // Система с prompt cache (только если cacheSystemPrompt === true).
+      //
+      // Формат блока — общий с провайдером polza (`providers/cache-control.ts`):
+      // «как просить кэш» описано в одном месте, а не в двух копиях, которые
+      // разъезжаются (в prod-е работает polza, этот провайдер — резерв).
       const useCache = req.cacheSystemPrompt === true && !!systemText;
       const systemBlocks: Anthropic.Messages.TextBlockParam[] = systemText
-        ? [
-            {
-              type: "text",
-              text: systemText,
-              ...(useCache
-                ? { cache_control: { type: "ephemeral" as const } }
-                : {}),
-            },
-          ]
+        ? [cachedTextBlock(systemText, useCache)]
         : [];
 
       const body: Anthropic.Messages.MessageCreateParamsNonStreaming = {

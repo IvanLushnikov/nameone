@@ -53,6 +53,7 @@ import { classesRouter, publicClassLinksRouter } from "./routes/classes";
 import { purgeExpiredPhotos } from "./jobs/purgeExpiredPhotos";
 import { refreshWeeklyTopicState } from "./jobs/weeklyTopic";
 import { purgeExpiredForms } from "./jobs/purgeExpiredForms";
+import { recordBalanceSnapshot } from "./services/polza-balance";
 import { sendRenewalReminders, chargeDueSubscriptions } from "./jobs/billingRecurring";
 import { journalRouter } from "./routes/journal";
 import { interactivesRouter } from "./routes/interactives";
@@ -415,8 +416,7 @@ app.notFound(notFoundHandler);
  *
  * Кстати, `app.fire` в Hono — deprecated-хелпер для Service-Worker-совместимости
  * (`addEventListener("fetch", ...)`), а НЕ диспетчер событий Cloudflare.
- * Перекрывать его было нечем: cron пришёл отдельной функцией.
- */
+ * Перекрывать его было нечем: cron пришёл отдельной функцией. */
 export async function scheduled(
   event: ScheduledEvent,
   env: AppEnv["Bindings"],
@@ -465,6 +465,23 @@ export async function scheduled(
         } catch (e) {
           console.error("[cron] purgeExpiredForms failed", e);
         }
+
+        // 4) Баланс кошелька у провайдера (ТЗ-43).
+        //
+        //    Зачем: провайдер у нас один (polza.ai), и 100 % трафика идёт
+        //    через него. Если у него кончится баланс, узнаём об этом от
+        //    учителей («лист не генерится»), а не от себя. Снимок раз в
+        //    сутки — деньги на кошельке не заканчиваются за час (AD-2 ТЗ-43).
+        //
+        //    Снимок — ТЕЛЕМЕТРИЯ, а не условие работы: сама функция глотает
+        //    ошибки провайдера, и обёртка ниже не даёт упасть остальным
+        //    задачам крона. Генерация от снимка не зависит ничем.
+        try {
+          const balance = await recordBalanceSnapshot(env.DB, env);
+          console.info("[cron] recordBalanceSnapshot", JSON.stringify(balance));
+        } catch (e) {
+          console.error("[cron] recordBalanceSnapshot failed", e);
+        }
       }
 
       // 3) Биллинг (ТЗ-20) — отдельный триггер, раз в час. Подписку нельзя
@@ -508,4 +525,5 @@ export async function scheduled(
 const worker = Object.assign(app, { scheduled });
 
 export default worker;
+
 export { app };

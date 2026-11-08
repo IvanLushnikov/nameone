@@ -6,6 +6,7 @@ import {
   formatRub,
   formatPercent,
   formatDay,
+  balanceSnapshotText,
   type Money,
   type LoadResult,
 } from "@/lib/superpower-api";
@@ -32,6 +33,22 @@ import {
  *   Пополнения    — РОСТ кошелька провайдера между суточными снимками.
  *   Доля расхода  — расход ÷ выручка. null там, где выручки не было (годовая
  *                   оплата целиком попала в другой месяц) — это не «0%».
+ *
+ * ЧЕСТНОСТЬ БАЛАНСА (ТЗ-43)
+ * --------------------------
+ * Баланс провайдера — это НЕ наши деньги и не выручка: это остаток на
+ * кошельке polza.ai, с которого идут генерации. Показываем ровно то, что
+ * есть:
+ *
+ *   • снимок есть и за сегодня  — сумма и «снято сегодня в 03:00»;
+ *   • снимок есть, но не за сегодня — сумма последнего известного баланса и
+ *     «сегодня ещё не снимали» (механизм работает, до времени снятия не
+ *     дошли — это НЕ «снимков ещё нет»);
+ *   • снимков не было ни разу     — прямо говорим, что крон ещё не
+ *     отработал.
+ *
+ * Ноль в этом блоке означал бы «мы ничего не потратили», поэтому его здесь
+ * нет: неизвестное значение показывается как «нет данных».
  */
 
 /** Понятная подпись тарифа из технического плана. */
@@ -70,6 +87,7 @@ export default function SuperpowerMoneyPage() {
   const { summary, topups } = data;
 
   const overBudget = data.costByUser.filter((u) => u.overAlert);
+  const snapshot = balanceSnapshotText(data.providerBalance);
 
   return (
     <div className="space-y-6">
@@ -102,11 +120,24 @@ export default function SuperpowerMoneyPage() {
           title="Пополнения"
           hint="Рост кошелька провайдера между суточными снимками. Уменьшение баланса пополнением не считается."
         >
-          <StatCard label="Пополнено за месяц" value={formatRub(topups.totalRub)} tone="good" />
+          <StatCard
+            label="Пополнено за месяц"
+            value={formatRub(topups.totalRub)}
+            tone={topups.totalRub === null ? "default" : "good"}
+            hint={
+              topups.totalRub === null
+                ? "Нужны два снимка, чтобы увидеть рост кошелька: по одному снимку не известно, было пополнение или нет."
+                : undefined
+            }
+          />
           <div className="mt-3">
             <DataTable
               rows={topups.byDay}
-              emptyText="Пополнений не было: снимков баланса ещё недостаточно"
+              emptyText={
+                topups.totalRub === null
+                  ? "Пока нечего показывать: снимков баланса за месяц меньше двух"
+                  : "Пополнений не было: между снимками кошелёк не вырос"
+              }
               columns={[
                 { key: "date", header: "Дата", render: (r) => r.date },
                 {
@@ -119,20 +150,21 @@ export default function SuperpowerMoneyPage() {
           </div>
         </Panel>
 
-        <Panel title="Кошелёк у провайдера" hint="Снимок раз в сутки.">
+        <Panel title="Кошелёк у провайдера" hint="Снимок раз в сутки: крон снимает баланс в 03:00 UTC.">
           {data.providerBalance ? (
             <div className="space-y-2">
               <StatCard
-                label="Сейчас на балансе"
+                label={snapshot.fresh ? "Сейчас на балансе" : "На балансе по последнему снимку"}
                 value={formatRub(data.providerBalance.amountRub)}
                 tone={data.providerBalance.amountRub < 500 ? "warn" : "default"}
               />
               <div className="text-sm text-warm-600">
                 Доступно к трате: {formatRub(data.providerBalance.availableRub)}
               </div>
+              <div className="text-xs text-warm-500">{snapshot.text}</div>
             </div>
           ) : (
-            <EmptyState text="Снимков баланса ещё нет" />
+            <EmptyState text={snapshot.text} />
           )}
         </Panel>
       </div>

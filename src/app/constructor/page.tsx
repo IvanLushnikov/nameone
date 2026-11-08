@@ -47,6 +47,9 @@ import {
   Search,
 } from "lucide-react";
 import { subjects, getSubject, getGrade, getTopic } from "@/lib/content/subjects";
+// ТЗ-39: якорь по ФГОС — раздел программы и один пример формулировки.
+// Собирается из таксономии по выбранной теме; правило выбора — в файле.
+import { fgosAnchorForTopic } from "@/lib/content/fgos-anchor";
 // ТЗ-26 Ф-3: ключ предмета (`algebra`) не должен попадать ни в имя файла,
 // ни в шапку — там название по-русски из таксономии.
 import { subjectDisplayName } from "@/lib/content/subject-display-name";
@@ -1120,6 +1123,7 @@ export default function ConstructorPage() {
           return;
         }
         setInteractiveStage("Делаем лист по этой теме — это первый вызов модели…");
+        const anchor = fgosAnchorForTopic(subject, grade, topic);
         const r = await generateWorksheetSmart({
           subject,
           grade,
@@ -1129,7 +1133,7 @@ export default function ConstructorPage() {
           count,
           withAnswers,
           withExplanations,
-          ...(umk ? { meta: { umk } } : {}),
+          ...(umk || anchor ? { meta: { ...(umk ? { umk } : {}), ...(anchor ?? {}) } } : {}),
         });
         const made = r.worksheet;
         setIsDemoResult(r.isDemo);
@@ -1320,6 +1324,10 @@ export default function ConstructorPage() {
       };
     } else {
       if (!subject || !grade || !topic) return;
+      // ТЗ-39: якорь по ФГОС. Тема из каталога — раздел программы и один
+      // пример формулировки едут в `meta`; тема без раздела (их 4550 из 6567)
+      // уходит как раньше, без якоря.
+      const anchor = fgosAnchorForTopic(subject, grade, topic);
       body = {
         subject,
         grade,
@@ -1333,7 +1341,7 @@ export default function ConstructorPage() {
         // TZ-08: пробрасываем УМК в метаданные для мок-генератора
         // (будущая передача в LLM-prompt в backend). Используем существующее
         // поле `meta` чтобы не расширять контракт GenerationRequest.
-        ...(umk ? { meta: { umk } } : {}),
+        ...(umk || anchor ? { meta: { ...(umk ? { umk } : {}), ...(anchor ?? {}) } } : {}),
       };
     }
 
