@@ -169,11 +169,28 @@ export async function getLatestBalance(db: D1Database): Promise<{
   };
 }
 
-/** Прирост кошелька за период — по ТЗ-24 это и есть «пополнения». */
+/**
+ * Прирост кошелька за период — по ТЗ-24 это и есть «пополнения».
+ *
+ * ГЛАВНОЕ — `totalRub` бывает null, и это не «ноль пополнений».
+ *
+ * Пополнение видно только между ДВУМЯ снимками: первый снимок не знает, что
+ * было до него. Если за месяц снимок один (или ни одного), мы не можем
+ * сказать «пополнений не было» — мы вообще ничего не знаем о росте кошелька.
+ * Ноль в этом месте означал бы «мы ничего не получали», а это неправда: с
+ * одного снимка не видно, было пополнение или нет.
+ *
+ * Поэтому: снимков меньше двух → `totalRub = null` (экран показывает «нет
+ * данных» и объясняет, чего не хватает), два и больше → `totalRub` = сумма
+ * найденного роста, и ноль там означает ровно то, что означает: кошелёк не
+ * вырос.
+ */
 export async function getTopups(db: D1Database, from: number, to: number): Promise<{
   count: number;
-  totalRub: number;
+  totalRub: number | null;
   byDay: Array<{ date: string; amountRub: number }>;
+  /** Сколько снимков баланса попало в период. */
+  snapshots: number;
 }> {
   const rows = await db
     .prepare(
@@ -202,7 +219,9 @@ export async function getTopups(db: D1Database, from: number, to: number): Promi
 
   return {
     count: [...byDayMap.values()].length,
-    totalRub: round2(total),
+    // Меньше двух снимков — рост кошелька не виден в принципе (см. выше).
+    totalRub: rows.results.length < 2 ? null : round2(total),
+    snapshots: rows.results.length,
     byDay: [...byDayMap.entries()]
       .map(([date, amountRub]) => ({ date, amountRub: round2(amountRub) }))
       .sort((a, b) => (a.date < b.date ? -1 : 1)),
@@ -234,7 +253,7 @@ export interface Overview {
   /** Человек на платном тарифе сейчас. */
   activeSubscriptions: number;
   /** Наш кошелёк у провайдера. null, пока не было ни одного снимка. */
-  providerBalance: { amountRub: number; availableRub: number | null } | null;
+  providerBalance: { amountRub: number; availableRub: number | null; at: number } | null;
 }
 
 /**
@@ -348,7 +367,7 @@ export async function getOverview(db: D1Database, month: string): Promise<Overvi
     },
     activeSubscriptions: subs?.n ?? 0,
     providerBalance: balance
-      ? { amountRub: round2(balance.amountRub), availableRub: balance.availableRub }
+      ? { amountRub: round2(balance.amountRub), availableRub: balance.availableRub, at: balance.at }
       : null,
   };
 }
