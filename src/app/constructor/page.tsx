@@ -29,7 +29,7 @@ import { ArtifactTypePreview } from "@/components/constructor/ArtifactTypePrevie
 import { TopicSamplePreview } from "@/components/constructor/TopicSamplePreview";
 // PresetGrid на основном пути не рендерится (AD-1), но PRESETS нужны для
 // подписи «задано шаблоном» в ConfigureStep, если presetId когда-то выставлен.
-import { PRESETS } from "@/components/constructor/PresetGrid";
+import { PRESETS, type Preset } from "@/components/constructor/PresetGrid";
 import {
   Sparkles,
   Loader2,
